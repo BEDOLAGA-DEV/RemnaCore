@@ -140,11 +140,21 @@ func (o *MultiSubOrchestrator) OnSubscriptionPaused(ctx context.Context, subscri
 		}
 		if err := o.gateway.DisableUser(ctx, binding.RemnawaveUUID); err != nil {
 			binding.MarkFailed(fmt.Sprintf("remnawave disable: %s", err.Error()))
-			_ = o.bindings.Update(ctx, binding)
+			if updateErr := o.bindings.Update(ctx, binding); updateErr != nil {
+				o.logger.Warn("failed to update binding status",
+					slog.String("binding_id", binding.ID),
+					slog.String("error", updateErr.Error()),
+				)
+			}
 			continue
 		}
 		binding.Disable()
-		_ = o.bindings.Update(ctx, binding)
+		if err := o.bindings.Update(ctx, binding); err != nil {
+			o.logger.Warn("failed to update binding status",
+				slog.String("binding_id", binding.ID),
+				slog.String("error", err.Error()),
+			)
+		}
 	}
 
 	return nil
@@ -184,11 +194,21 @@ func (o *MultiSubOrchestrator) OnSubscriptionResumed(ctx context.Context, subscr
 		}
 		if err := o.gateway.EnableUser(ctx, binding.RemnawaveUUID); err != nil {
 			binding.MarkFailed(fmt.Sprintf("remnawave enable: %s", err.Error()))
-			_ = o.bindings.Update(ctx, binding)
+			if updateErr := o.bindings.Update(ctx, binding); updateErr != nil {
+				o.logger.Warn("failed to update binding status",
+					slog.String("binding_id", binding.ID),
+					slog.String("error", updateErr.Error()),
+				)
+			}
 			continue
 		}
 		binding.Enable()
-		_ = o.bindings.Update(ctx, binding)
+		if err := o.bindings.Update(ctx, binding); err != nil {
+			o.logger.Warn("failed to update binding status",
+				slog.String("binding_id", binding.ID),
+				slog.String("error", err.Error()),
+			)
+		}
 	}
 
 	return nil

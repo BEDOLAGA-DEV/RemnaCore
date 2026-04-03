@@ -79,15 +79,17 @@ func findAddon(plan *billingaggregate.Plan, addonID string) *billingaggregate.Ad
 	return nil
 }
 
+// addonNameToPurpose maps well-known addon names to their typed binding purposes.
+var addonNameToPurpose = map[string]aggregate.BindingPurpose{
+	string(aggregate.PurposeGaming):   aggregate.PurposeGaming,
+	string(aggregate.PurposeStreaming): aggregate.PurposeStreaming,
+}
+
 // purposeFromAddonName maps well-known addon names to binding purposes.
 // Unknown names default to the addon name itself as a BindingPurpose.
 func purposeFromAddonName(name string) aggregate.BindingPurpose {
-	switch name {
-	case "gaming":
-		return aggregate.PurposeGaming
-	case "streaming":
-		return aggregate.PurposeStreaming
-	default:
-		return aggregate.BindingPurpose(name)
+	if purpose, ok := addonNameToPurpose[name]; ok {
+		return purpose
 	}
+	return aggregate.BindingPurpose(name)
 }

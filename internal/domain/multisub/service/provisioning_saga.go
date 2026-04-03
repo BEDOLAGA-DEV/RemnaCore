@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	multisubdomain "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
@@ -97,12 +98,18 @@ func (s *ProvisioningSaga) Provision(ctx context.Context, req ProvisionRequest) 
 		}
 
 		// 4. Publish event
-		_ = s.publisher.Publish(ctx, multisubdomain.NewBindingProvisionedEvent(
+		if err := s.publisher.Publish(ctx, multisubdomain.NewBindingProvisionedEvent(
 			binding.ID,
 			binding.SubscriptionID,
 			rwUser.UUID,
 			string(spec.Purpose),
-		))
+		)); err != nil {
+			// Log but don't fail — binding is provisioned, event publish is secondary
+			slog.Warn("failed to publish binding.provisioned event",
+				slog.String("binding_id", binding.ID),
+				slog.String("error", err.Error()),
+			)
+		}
 
 		results = append(results, ProvisionResult{
 			BindingID:          binding.ID,
