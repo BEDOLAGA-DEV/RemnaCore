@@ -41,6 +41,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
 // New constructs the Fx application with all modules wired together.
@@ -67,6 +68,11 @@ func New() *fx.App {
 		// Bindings: interface -> implementation (identity)
 		fx.Provide(func(repo *postgres.IdentityRepository) identity.Repository { return repo }),
 		fx.Provide(postgres.NewIdentityRepository),
+
+		// Transaction manager: wraps business writes + outbox inserts in a
+		// single database transaction, preventing event loss on crashes.
+		fx.Provide(postgres.NewTxManager),
+		fx.Provide(func(tm *postgres.TxManager) txmanager.Runner { return tm }),
 
 		// Transactional outbox: domain events are written to the outbox table
 		// (same DB transaction as business logic) and relayed to NATS asynchronously.

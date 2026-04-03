@@ -29,8 +29,9 @@ func newTestBillingService() (
 	publisher := &billingtest.MockEventPublisher{}
 	prorate := NewProrateCalculator()
 	trial := NewTrialManager(DefaultTrialDays)
+	txRunner := billingtest.NoopTxRunner{}
 
-	svc := NewBillingService(plans, subs, invoices, families, publisher, prorate, trial)
+	svc := NewBillingService(plans, subs, invoices, families, publisher, prorate, trial, txRunner)
 	return svc, plans, subs, invoices, families, publisher
 }
 

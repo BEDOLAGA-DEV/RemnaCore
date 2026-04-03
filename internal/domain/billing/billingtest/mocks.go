@@ -198,3 +198,16 @@ func (m *MockEventPublisher) Publish(ctx context.Context, event domainevent.Even
 	args := m.Called(ctx, event)
 	return args.Error(0)
 }
+
+// --- NoopTxRunner ---
+
+// NoopTxRunner implements txmanager.Runner by executing fn directly without a
+// real database transaction. This is suitable for unit tests where repositories
+// and publishers are mocked.
+type NoopTxRunner struct{}
+
+// RunInTx executes fn with the original context, providing pass-through
+// semantics for tests.
+func (NoopTxRunner) RunInTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	return fn(ctx)
+}
