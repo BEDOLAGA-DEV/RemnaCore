@@ -1,0 +1,167 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"log/slog"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/billingtest"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/payment"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/payment/paymenttest"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch/hookdispatchtest"
+)
+
+// --- checkout test infrastructure ---
+
+type checkoutTestPublisher struct {
+	events []domainevent.Event
+}
+
+func (p *checkoutTestPublisher) Publish(_ context.Context, event domainevent.Event) error {
+	p.events = append(p.events, event)
+	return nil
+}
+
+func checkoutLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+}
+
+func sampleDraftInvoice(subID string) *aggregate.Invoice {
+	now := time.Now()
+	return &aggregate.Invoice{
+		ID:             "inv-1",
+		SubscriptionID: subID,
+		UserID:         "user-1",
+		LineItems:      []vo.LineItem{vo.NewLineItem("Premium VPN", vo.LineItemPlan, vo.NewMoney(999, vo.CurrencyUSD), 1)},
+		Subtotal:       vo.NewMoney(999, vo.CurrencyUSD),
+		TotalDiscount:  vo.Zero(vo.CurrencyUSD),
+		Total:          vo.NewMoney(999, vo.CurrencyUSD),
+		Status:         aggregate.InvoiceDraft,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+}
+
+// --- Tests ---
+
+func TestStartCheckout_Success(t *testing.T) {
+	// Set up billing service with mocks.
+	billingSvc, plans, subs, invoices, _, billingPub := newTestBillingService()
+
+	plan := samplePlan()
+	plans.On("GetByID", mock.Anything, "plan-premium").Return(plan, nil)
+	subs.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Subscription")).Return(nil)
+	invoices.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Invoice")).Return(nil)
+	billingPub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
+
+	// Set up payment facade with mock dispatcher.
+	chargeResult := payment.CreateChargeResult{
+		Provider:    "stripe",
+		ExternalID:  "pi_456",
+		CheckoutURL: "https://checkout.stripe.com/session/456",
+		Status:      "pending",
+	}
+	resultJSON, _ := json.Marshal(chargeResult)
+
+	dispatcher := &hookdispatchtest.MockDispatcher{}
+	dispatcher.On("DispatchSync", mock.Anything, payment.HookCreateCharge, mock.AnythingOfType("json.RawMessage")).
+		Return(json.RawMessage(resultJSON), nil)
+	// pricing.calculate hook — pass through (no pricing plugin registered).
+	dispatcher.On("DispatchSync", mock.Anything, "pricing.calculate", mock.AnythingOfType("json.RawMessage")).
+		Return(json.RawMessage(nil), nil)
+
+	paymentRepo := &paymenttest.MockPaymentRepo{}
+	paymentPub := &checkoutTestPublisher{}
+	paymentFacade := payment.NewPaymentFacade(dispatcher, paymentRepo, paymentPub, checkoutLogger())
+
+	paymentRepo.On("CreatePayment", mock.Anything, mock.AnythingOfType("*payment.PaymentRecord")).Return(nil)
+
+	// Create checkout service. Pass the dispatcher for pricing.calculate hook.
+	checkoutPub := &billingtest.MockEventPublisher{}
+	checkoutPub.On("Publish", mock.Anything, mock.Anything).Return(nil).Maybe()
+	checkoutSvc := NewCheckoutService(billingSvc, paymentFacade, dispatcher, checkoutPub, checkoutLogger())
+
+	result, err := checkoutSvc.StartCheckout(context.Background(), CheckoutRequest{
+		UserID:    "user-1",
+		UserEmail: "user@example.com",
+		PlanID:    "plan-premium",
+		ReturnURL: "https://example.com/success",
+		CancelURL: "https://example.com/cancel",
+	})
+
+	require.NoError(t, err)
+	assert.NotEmpty(t, result.SubscriptionID)
+	assert.NotEmpty(t, result.InvoiceID)
+	assert.Equal(t, "https://checkout.stripe.com/session/456", result.CheckoutURL)
+	assert.Equal(t, "stripe", result.Provider)
+
+	plans.AssertExpectations(t)
+	subs.AssertExpectations(t)
+	invoices.AssertExpectations(t)
+	paymentRepo.AssertExpectations(t)
+	dispatcher.AssertExpectations(t)
+}
+
+func TestCompleteCheckout_Success(t *testing.T) {
+	svc, _, subs, invoices, _, publisher := newTestBillingService()
+
+	sub := trialSub("user-1", "plan-premium")
+	inv := sampleDraftInvoice("sub-1")
+
+	invoices.On("GetByID", mock.Anything, "inv-1").Return(inv, nil)
+	invoices.On("Update", mock.Anything, inv).Return(nil)
+	subs.On("GetByID", mock.Anything, "sub-1").Return(sub, nil)
+	subs.On("Update", mock.Anything, sub).Return(nil)
+	publisher.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
+
+	// Payment facade is not needed for CompleteCheckout; only billing service is used.
+	checkoutSvc := NewCheckoutService(svc, nil, nil, publisher, checkoutLogger())
+
+	err := checkoutSvc.CompleteCheckout(context.Background(), "inv-1")
+
+	require.NoError(t, err)
+
+	invoices.AssertExpectations(t)
+	subs.AssertExpectations(t)
+	publisher.AssertExpectations(t)
+}
+
+func TestStartCheckout_MissingUserID(t *testing.T) {
+	checkoutSvc := NewCheckoutService(nil, nil, nil, nil, checkoutLogger())
+
+	_, err := checkoutSvc.StartCheckout(context.Background(), CheckoutRequest{
+		PlanID: "plan-premium",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "user ID is required")
+}
+
+func TestStartCheckout_MissingPlanID(t *testing.T) {
+	checkoutSvc := NewCheckoutService(nil, nil, nil, nil, checkoutLogger())
+
+	_, err := checkoutSvc.StartCheckout(context.Background(), CheckoutRequest{
+		UserID: "user-1",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "plan ID is required")
+}
+
+func TestCompleteCheckout_MissingInvoiceID(t *testing.T) {
+	checkoutSvc := NewCheckoutService(nil, nil, nil, nil, checkoutLogger())
+
+	err := checkoutSvc.CompleteCheckout(context.Background(), "")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invoice ID is required")
+}

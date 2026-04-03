@@ -1,0 +1,25 @@
+{
+  "name": "@remnacore/root",
+  "private": true,
+  "scripts": {
+    "dev:cabinet": "pnpm --filter @remnacore/cabinet dev",
+    "dev:admin": "pnpm --filter @remnacore/admin dev",
+    "build": "pnpm --filter @remnacore/shared build && pnpm --filter @remnacore/cabinet build && pnpm --filter @remnacore/admin build",
+    "build:shared": "pnpm --filter @remnacore/shared build",
+    "build:cabinet": "pnpm --filter @remnacore/cabinet build",
+    "build:admin": "pnpm --filter @remnacore/admin build",
+    "lint": "pnpm -r lint",
+    "type-check": "pnpm -r type-check",
+    "test": "pnpm -r test"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@biomejs/biome",
+      "esbuild"
+    ]
+  }
+}

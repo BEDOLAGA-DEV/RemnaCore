@@ -1,0 +1,40 @@
+{
+  "name": "@remnacore/cabinet",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "type-check": "tsc --noEmit",
+    "lint": "biome check src/"
+  },
+  "dependencies": {
+    "@remnacore/shared": "workspace:*",
+    "@tanstack/react-query": "^5.80.7",
+    "@tanstack/react-router": "^1.121.3",
+    "i18next": "^25.1.2",
+    "ky": "^1.8.1",
+    "lucide-react": "^0.511.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-hook-form": "^7.57.0",
+    "react-i18next": "^15.5.1",
+    "recharts": "^2.15.3",
+    "zod": "^3.25.17",
+    "zustand": "^5.0.5",
+    "@hookform/resolvers": "^5.0.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.5.2",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
+  }
+}

@@ -1,0 +1,27 @@
+package main
+
+import (
+	"encoding/json"
+
+	pdk "github.com/BEDOLAGA-DEV/RemnaCore/pkg/sdk"
+)
+{{range .Hooks}}
+//export on_{{.Snake}}
+func on{{.Pascal}}() int32 {
+	// Read input from the host.
+	input := pdk.Input()
+	var ctx pdk.HookContext
+	if err := json.Unmarshal(input, &ctx); err != nil {
+		result := pdk.HookResult{Action: pdk.ActionHalt, Error: "invalid input: " + err.Error()}
+		pdk.Output(result)
+		return 1
+	}
+
+	// TODO: implement {{.Snake}} logic here.
+
+	result := pdk.HookResult{Action: pdk.ActionContinue}
+	pdk.Output(result)
+	return 0
+}
+{{end}}
+func main() {}

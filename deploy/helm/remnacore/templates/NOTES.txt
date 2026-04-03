@@ -1,0 +1,58 @@
+===============================================================================
+  RemnaCore has been deployed!
+===============================================================================
+
+Release:   {{ .Release.Name }}
+Namespace: {{ .Release.Namespace }}
+Version:   {{ .Chart.AppVersion }}
+
+-------------------------------------------------------------------------------
+  API Access
+-------------------------------------------------------------------------------
+{{- if .Values.ingress.enabled }}
+  The API is available via Ingress:
+  {{- range .Values.ingress.hosts }}
+    http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}
+  {{- end }}
+{{- else if contains "NodePort" .Values.service.type }}
+  Get the API URL:
+    export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "remnacore.fullname" . }})
+    export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+    echo "API: http://$NODE_IP:$NODE_PORT"
+{{- else if contains "LoadBalancer" .Values.service.type }}
+  Get the API URL (may take a few minutes for the LB to be provisioned):
+    export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "remnacore.fullname" . }} --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+    echo "API: http://$SERVICE_IP:{{ .Values.service.port }}"
+{{- else }}
+  The API is available via port-forward:
+    kubectl port-forward --namespace {{ .Release.Namespace }} svc/{{ include "remnacore.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+    echo "API: http://127.0.0.1:{{ .Values.service.port }}"
+{{- end }}
+
+{{- if .Values.speedTest.enabled }}
+
+-------------------------------------------------------------------------------
+  Speed Test Service
+-------------------------------------------------------------------------------
+  kubectl port-forward --namespace {{ .Release.Namespace }} svc/{{ include "remnacore.fullname" . }}-speedtest {{ .Values.speedTest.service.port }}:{{ .Values.speedTest.service.port }}
+{{- end }}
+
+{{- if .Values.subscriptionProxy.enabled }}
+
+-------------------------------------------------------------------------------
+  Subscription Proxy Service
+-------------------------------------------------------------------------------
+  kubectl port-forward --namespace {{ .Release.Namespace }} svc/{{ include "remnacore.fullname" . }}-subproxy {{ .Values.subscriptionProxy.service.port }}:{{ .Values.subscriptionProxy.service.port }}
+{{- end }}
+
+-------------------------------------------------------------------------------
+  Health Check
+-------------------------------------------------------------------------------
+  kubectl exec -it deploy/{{ include "remnacore.fullname" . }} --namespace {{ .Release.Namespace }} -- wget -qO- http://localhost:4000/healthz
+
+-------------------------------------------------------------------------------
+  Helm Test
+-------------------------------------------------------------------------------
+  helm test {{ .Release.Name }} --namespace {{ .Release.Namespace }}
+
+===============================================================================

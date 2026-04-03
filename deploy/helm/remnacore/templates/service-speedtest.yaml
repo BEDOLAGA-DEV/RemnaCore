@@ -1,0 +1,19 @@
+{{- if .Values.speedTest.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "remnacore.fullname" . }}-speedtest
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "remnacore.labels" . | nindent 4 }}
+    app.kubernetes.io/component: speedtest
+spec:
+  type: {{ .Values.speedTest.service.type }}
+  ports:
+    - port: {{ .Values.speedTest.service.port }}
+      targetPort: speedtest
+      protocol: TCP
+      name: speedtest
+  selector:
+    {{- include "remnacore.selectorLabels" . | nindent 4 }}
+{{- end }}

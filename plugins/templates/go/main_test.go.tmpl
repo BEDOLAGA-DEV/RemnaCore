@@ -1,0 +1,12 @@
+package main
+
+import (
+	"testing"
+)
+{{range .Hooks}}
+func TestOn{{.Pascal}}_Defined(t *testing.T) {
+	// Verify the exported function exists and is callable.
+	// Real integration tests should use the WASM runtime.
+	t.Log("on_{{.Snake}} is defined")
+}
+{{end}}

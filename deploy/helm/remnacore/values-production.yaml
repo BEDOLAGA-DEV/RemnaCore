@@ -1,0 +1,66 @@
+# =============================================================================
+# RemnaCore Production Overrides
+# =============================================================================
+# Usage: helm install remnacore ./deploy/helm/remnacore \
+#          -f deploy/helm/remnacore/values-production.yaml \
+#          --set secrets.existingSecret=remnacore-prod-secrets
+# =============================================================================
+
+replicaCount: 3
+
+config:
+  logLevel: "warn"
+  database:
+    maxOpenConns: 50
+    maxIdleConns: 10
+    connMaxLifetimeMinutes: 10
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 1Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+  hosts:
+    - host: api.remnacore.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: remnacore-tls
+      hosts:
+        - api.remnacore.example.com
+
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: "30s"
+    labels:
+      release: prometheus
+
+# -- In production, never use secrets.create=true with real values.
+# Instead, provide an existing Kubernetes secret:
+secrets:
+  create: false
+  existingSecret: "remnacore-prod-secrets"

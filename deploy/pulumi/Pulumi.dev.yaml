@@ -1,0 +1,7 @@
+config:
+  remnacore:namespace: remnacore-dev
+  remnacore:replicas: "1"
+  remnacore:imageTag: latest
+  remnacore:dbPassword:
+    secure: dev-secret
+  remnacore:logLevel: debug

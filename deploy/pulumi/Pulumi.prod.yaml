@@ -1,0 +1,8 @@
+config:
+  remnacore:namespace: remnacore
+  remnacore:replicas: "3"
+  remnacore:imageTag: v1.0.0
+  remnacore:logLevel: warn
+  # REQUIRED: Set via `pulumi config set --secret remnacore:dbPassword <value>`
+  # remnacore:dbPassword:
+  #   secure: <encrypted>

@@ -1,0 +1,46 @@
+[plugin]
+id          = "telegram-notification"
+name        = "Telegram Notification Provider"
+version     = "1.0.0"
+description = "Send notifications via Telegram Bot API"
+author      = "RemnaCore Team"
+license     = "MIT"
+sdk_version = "^1.0.0"
+lang        = "go"
+
+[permissions]
+notifications = "emit"
+users         = "read"
+storage       = "readwrite"
+http          = ["https://api.telegram.org/*"]
+
+[hooks]
+sync  = ["notification.send"]
+async = ["subscription.activated", "payment.processed", "binding.provisioned"]
+
+[hooks.priority]
+"notification.send" = 20
+
+[config.bot_token]
+type     = "secret"
+label    = "Telegram Bot Token"
+required = true
+
+[config.default_chat_id]
+type     = "string"
+label    = "Default Chat ID (admin notifications)"
+required = false
+
+[config.parse_mode]
+type    = "select"
+label   = "Message Parse Mode"
+options = ["HTML", "MarkdownV2"]
+default = "HTML"
+
+[limits]
+max_memory_mb             = 16
+max_fuel                  = 500000
+max_storage_mb            = 10
+max_http_calls_per_minute = 100
+timeout_sync_ms           = 10000
+timeout_async_ms          = 30000

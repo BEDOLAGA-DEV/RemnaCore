@@ -1,0 +1,13 @@
+{{/*
+Namespace is intentionally not created by the chart.
+Uncomment the block below if you want the chart to manage its own namespace.
+In production, namespaces are typically managed by cluster admins or GitOps tooling.
+*/}}
+{{/*
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Release.Namespace }}
+  labels:
+    {{- include "remnacore.labels" . | nindent 4 }}
+*/}}

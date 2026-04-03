@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "remnacore.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "remnacore.labels" . | nindent 4 }}
+data:
+  # Application
+  APP_PORT: {{ .Values.service.port | quote }}
+  APP_LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  APP_LOG_FORMAT: {{ .Values.config.logFormat | quote }}
+
+  # Valkey
+  VALKEY_URL: {{ printf "redis://%s:%d" .Values.config.valkey.host (.Values.config.valkey.port | int) | quote }}
+
+  # NATS
+  NATS_URL: {{ .Values.config.nats.url | quote }}
+
+  # JWT
+  JWT_ACCESS_TOKEN_TTL: {{ .Values.config.jwt.accessTokenTTL | quote }}
+  JWT_REFRESH_TOKEN_TTL: {{ .Values.config.jwt.refreshTokenTTL | quote }}
+  JWT_PRIVATE_KEY_PATH: "/etc/remnacore/jwt/private.pem"
+  JWT_PUBLIC_KEY_PATH: "/etc/remnacore/jwt/public.pem"
+
+  # Database pool settings (not secrets)
+  DATABASE_MAX_OPEN_CONNS: {{ .Values.config.database.maxOpenConns | quote }}
+  DATABASE_MAX_IDLE_CONNS: {{ .Values.config.database.maxIdleConns | quote }}
+  DATABASE_CONN_MAX_LIFETIME: {{ printf "%dm" (.Values.config.database.connMaxLifetimeMinutes | int) | quote }}
+
+  # Remnawave
+  REMNAWAVE_URL: {{ .Values.config.remnawave.url | quote }}
+
+  # Telegram
+  TELEGRAM_WEBHOOK_URL: {{ .Values.config.telegram.webhookURL | quote }}
+  TELEGRAM_CABINET_URL: {{ .Values.config.telegram.cabinetURL | quote }}
+
+  # Billing
+  BILLING_TRIAL_DAYS: {{ .Values.config.billing.trialDays | default 7 | quote }}
+
+  # Infrastructure
+  INFRA_HEALTH_CHECK_INTERVAL: {{ printf "%ds" (.Values.config.infra.healthCheckIntervalSeconds | int) | quote }}
+  INFRA_MAX_CONCURRENT_CHECKS: {{ .Values.config.infra.maxConcurrentChecks | quote }}
+  INFRA_SPEED_TEST_PORT: {{ .Values.config.infra.speedTestPort | quote }}
+  INFRA_SUBSCRIPTION_PROXY_PORT: {{ .Values.config.infra.subscriptionProxyPort | quote }}
+
+  # Plugin
+  PLUGIN_DIR: "/app/plugins"
+  PLUGIN_MAX_PLUGINS: {{ .Values.config.plugin.maxPlugins | quote }}
+  PLUGIN_HOT_RELOAD: {{ .Values.config.plugin.hotReload | quote }}

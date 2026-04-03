@@ -1,0 +1,271 @@
+package service
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+)
+
+// lineItemQuantityOne is the standard quantity for plan and addon line items.
+const lineItemQuantityOne = 1
+
+// CreateSubscriptionCmd holds the parameters for creating a new subscription.
+type CreateSubscriptionCmd struct {
+	UserID   string
+	PlanID   string
+	AddonIDs []string
+}
+
+// BillingService implements CQRS command handlers for the billing domain.
+type BillingService struct {
+	plans     billing.PlanRepository
+	subs      billing.SubscriptionRepository
+	invoices  billing.InvoiceRepository
+	families  billing.FamilyRepository
+	publisher domainevent.Publisher
+	prorate   *ProrateCalculator
+	trial     *TrialManager
+}
+
+// NewBillingService creates a BillingService with the given dependencies.
+func NewBillingService(
+	plans billing.PlanRepository,
+	subs billing.SubscriptionRepository,
+	invoices billing.InvoiceRepository,
+	families billing.FamilyRepository,
+	publisher domainevent.Publisher,
+	prorate *ProrateCalculator,
+	trial *TrialManager,
+) *BillingService {
+	return &BillingService{
+		plans:     plans,
+		subs:      subs,
+		invoices:  invoices,
+		families:  families,
+		publisher: publisher,
+		prorate:   prorate,
+		trial:     trial,
+	}
+}
+
+// CreateSubscription creates a new subscription and its initial invoice.
+// If the plan supports trials, the subscription starts in trial status;
+// otherwise it starts as active.
+func (s *BillingService) CreateSubscription(
+	ctx context.Context,
+	cmd CreateSubscriptionCmd,
+) (*aggregate.Subscription, *aggregate.Invoice, error) {
+	plan, err := s.plans.GetByID(ctx, cmd.PlanID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("get plan: %w", err)
+	}
+
+	// Create subscription (defaults to trial)
+	sub := aggregate.NewSubscription(cmd.UserID, plan.ID, plan.Interval, cmd.AddonIDs)
+
+	// Build line items for the invoice
+	lineItems := buildLineItems(plan, cmd.AddonIDs)
+
+	inv, err := aggregate.NewInvoice(sub.ID, cmd.UserID, lineItems, nil, plan.BasePrice.Currency)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create invoice: %w", err)
+	}
+
+	if err := s.subs.Create(ctx, sub); err != nil {
+		return nil, nil, fmt.Errorf("persist subscription: %w", err)
+	}
+
+	if err := s.invoices.Create(ctx, inv); err != nil {
+		return nil, nil, fmt.Errorf("persist invoice: %w", err)
+	}
+
+	event := billing.NewSubCreatedEvent(sub.ID, sub.UserID, sub.PlanID)
+	if err := s.publisher.Publish(ctx, event); err != nil {
+		return nil, nil, fmt.Errorf("publish subscription.created: %w", err)
+	}
+
+	return sub, inv, nil
+}
+
+// CancelSubscription cancels an existing subscription.
+func (s *BillingService) CancelSubscription(ctx context.Context, subID string) error {
+	sub, err := s.subs.GetByID(ctx, subID)
+	if err != nil {
+		return fmt.Errorf("get subscription: %w", err)
+	}
+
+	if err := sub.Cancel(); err != nil {
+		return err
+	}
+
+	if err := s.subs.Update(ctx, sub); err != nil {
+		return fmt.Errorf("update subscription: %w", err)
+	}
+
+	event := billing.NewSubCancelledEvent(sub.ID, sub.UserID, "user_requested")
+	if err := s.publisher.Publish(ctx, event); err != nil {
+		return fmt.Errorf("publish subscription.cancelled: %w", err)
+	}
+
+	return nil
+}
+
+// PayInvoice marks an invoice as paid and activates the associated subscription
+// if it is in trial or past_due status.
+func (s *BillingService) PayInvoice(ctx context.Context, invoiceID string) error {
+	inv, err := s.invoices.GetByID(ctx, invoiceID)
+	if err != nil {
+		return fmt.Errorf("get invoice: %w", err)
+	}
+
+	if inv.Status == aggregate.InvoicePaid {
+		return billing.ErrInvoiceAlreadyPaid
+	}
+
+	// Transition draft -> pending if still in draft
+	if inv.Status == aggregate.InvoiceDraft {
+		if err := inv.MarkPending(); err != nil {
+			return fmt.Errorf("mark pending: %w", err)
+		}
+	}
+
+	if err := inv.MarkPaid(); err != nil {
+		return fmt.Errorf("mark paid: %w", err)
+	}
+
+	if err := s.invoices.Update(ctx, inv); err != nil {
+		return fmt.Errorf("update invoice: %w", err)
+	}
+
+	paidEvent := billing.NewInvoicePaidEvent(inv.ID, inv.SubscriptionID, inv.UserID, inv.Total.Amount)
+	if err := s.publisher.Publish(ctx, paidEvent); err != nil {
+		return fmt.Errorf("publish invoice.paid: %w", err)
+	}
+
+	// Activate subscription if it is in trial or past_due
+	sub, err := s.subs.GetByID(ctx, inv.SubscriptionID)
+	if err != nil {
+		return fmt.Errorf("get subscription for activation: %w", err)
+	}
+
+	if sub.Status == aggregate.StatusTrial || sub.Status == aggregate.StatusPastDue {
+		if err := sub.Activate(); err != nil {
+			return fmt.Errorf("activate subscription: %w", err)
+		}
+
+		if err := s.subs.Update(ctx, sub); err != nil {
+			return fmt.Errorf("update subscription: %w", err)
+		}
+
+		activatedEvent := billing.NewSubActivatedEvent(sub.ID, sub.UserID)
+		if err := s.publisher.Publish(ctx, activatedEvent); err != nil {
+			return fmt.Errorf("publish subscription.activated: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// AddFamilyMember adds a member to the subscription owner's family group.
+// The subscription's plan must have family sharing enabled.
+func (s *BillingService) AddFamilyMember(
+	ctx context.Context,
+	subID, memberUserID, nickname string,
+) error {
+	sub, err := s.subs.GetByID(ctx, subID)
+	if err != nil {
+		return fmt.Errorf("get subscription: %w", err)
+	}
+
+	plan, err := s.plans.GetByID(ctx, sub.PlanID)
+	if err != nil {
+		return fmt.Errorf("get plan: %w", err)
+	}
+
+	if !plan.FamilyEnabled {
+		return billing.ErrFamilyNotEnabled
+	}
+
+	// Get or create family group
+	fg, err := s.families.GetByOwnerID(ctx, sub.UserID)
+	if err != nil {
+		// Create a new family group if not found
+		fg = aggregate.NewFamilyGroup(sub.UserID, plan.MaxFamilyMembers)
+		if err := s.families.Create(ctx, fg); err != nil {
+			return fmt.Errorf("create family group: %w", err)
+		}
+	}
+
+	if err := fg.AddMember(memberUserID, nickname); err != nil {
+		return err
+	}
+
+	if err := s.families.Update(ctx, fg); err != nil {
+		return fmt.Errorf("update family group: %w", err)
+	}
+
+	event := billing.NewFamilyMemberAddedEvent(fg.ID, fg.OwnerID, memberUserID)
+	if err := s.publisher.Publish(ctx, event); err != nil {
+		return fmt.Errorf("publish family.member_added: %w", err)
+	}
+
+	return nil
+}
+
+// RemoveFamilyMember removes a member from the subscription owner's family group.
+func (s *BillingService) RemoveFamilyMember(
+	ctx context.Context,
+	subID, memberUserID string,
+) error {
+	sub, err := s.subs.GetByID(ctx, subID)
+	if err != nil {
+		return fmt.Errorf("get subscription: %w", err)
+	}
+
+	fg, err := s.families.GetByOwnerID(ctx, sub.UserID)
+	if err != nil {
+		return fmt.Errorf("get family group: %w", err)
+	}
+
+	if err := fg.RemoveMember(memberUserID); err != nil {
+		return err
+	}
+
+	if err := s.families.Update(ctx, fg); err != nil {
+		return fmt.Errorf("update family group: %w", err)
+	}
+
+	event := billing.NewFamilyMemberRemovedEvent(fg.ID, fg.OwnerID, memberUserID)
+	if err := s.publisher.Publish(ctx, event); err != nil {
+		return fmt.Errorf("publish family.member_removed: %w", err)
+	}
+
+	return nil
+}
+
+// buildLineItems creates invoice line items from a plan and selected addon IDs.
+func buildLineItems(plan *aggregate.Plan, addonIDs []string) []vo.LineItem {
+	items := []vo.LineItem{
+		vo.NewLineItem(plan.Name, vo.LineItemPlan, plan.BasePrice, lineItemQuantityOne),
+	}
+
+	for _, addonID := range addonIDs {
+		for _, addon := range plan.AvailableAddons {
+			if addon.ID == addonID {
+				items = append(items, vo.NewLineItem(
+					addon.Name,
+					vo.LineItemAddon,
+					addon.Price,
+					lineItemQuantityOne,
+				))
+				break
+			}
+		}
+	}
+
+	return items
+}

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "remnacore.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "remnacore.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "remnacore.selectorLabels" . | nindent 4 }}

@@ -1,0 +1,341 @@
+# =============================================================================
+# RemnaCore Helm Values
+# =============================================================================
+# All values have sensible defaults for development.
+# Override with values-production.yaml for production deployments.
+# =============================================================================
+
+# -- Number of RemnaCore replicas
+replicaCount: 1
+
+# -- Container image configuration
+image:
+  # -- Image repository
+  repository: ghcr.io/bedolaga-dev/remnacore
+  # -- Image pull policy
+  pullPolicy: IfNotPresent
+  # -- Image tag (defaults to chart appVersion if empty)
+  tag: ""
+
+# -- Image pull secrets for private registries
+imagePullSecrets: []
+
+# -- Override the chart name
+nameOverride: ""
+
+# -- Override the full release name
+fullnameOverride: ""
+
+# =============================================================================
+# Service Account
+# =============================================================================
+serviceAccount:
+  # -- Whether to create a service account
+  create: true
+  # -- Annotations to add to the service account
+  annotations: {}
+  # -- Service account name (generated from fullname if empty)
+  name: ""
+
+# =============================================================================
+# Pod-level settings
+# =============================================================================
+
+# -- Pod annotations
+podAnnotations: {}
+
+# -- Pod labels (in addition to standard labels)
+podLabels: {}
+
+# -- Pod security context (applied at pod level)
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65534
+  runAsGroup: 65534
+  fsGroup: 65534
+  seccompProfile:
+    type: RuntimeDefault
+
+# -- Container security context
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# =============================================================================
+# RemnaCore Application Config
+# =============================================================================
+config:
+  # -- Log level: debug, info, warn, error
+  logLevel: "info"
+  # -- Log format: json or text
+  logFormat: "json"
+
+  # ---------------------------------------------------------------------------
+  # Database (PostgreSQL)
+  # ---------------------------------------------------------------------------
+  database:
+    # -- PostgreSQL host
+    host: "remnacore-postgresql"
+    # -- PostgreSQL port
+    port: 5432
+    # -- Database name
+    name: "remnacore"
+    # -- Database user
+    user: "remnacore"
+    # -- Password is stored in secrets (see secrets section below)
+    # -- Maximum number of open connections
+    maxOpenConns: 25
+    # -- Maximum number of idle connections
+    maxIdleConns: 5
+    # -- Maximum connection lifetime in minutes
+    connMaxLifetimeMinutes: 5
+
+  # ---------------------------------------------------------------------------
+  # Valkey (cache / session store)
+  # ---------------------------------------------------------------------------
+  valkey:
+    # -- Valkey host
+    host: "remnacore-valkey-master"
+    # -- Valkey port
+    port: 6379
+
+  # ---------------------------------------------------------------------------
+  # NATS (messaging)
+  # ---------------------------------------------------------------------------
+  nats:
+    # -- NATS connection URL
+    url: "nats://remnacore-nats:4222"
+
+  # ---------------------------------------------------------------------------
+  # JWT Authentication
+  # ---------------------------------------------------------------------------
+  jwt:
+    # -- Access token time-to-live
+    accessTokenTTL: "15m"
+    # -- Refresh token time-to-live
+    refreshTokenTTL: "168h"
+    # -- Private and public keys are stored in secrets (see secrets section)
+
+  # ---------------------------------------------------------------------------
+  # Remnawave Integration
+  # ---------------------------------------------------------------------------
+  remnawave:
+    # -- Remnawave backend URL
+    url: "http://remnawave-backend:3000"
+    # -- API token and webhook secret are stored in secrets
+
+  # ---------------------------------------------------------------------------
+  # Billing
+  # ---------------------------------------------------------------------------
+  billing:
+    # -- Trial period in days for new users
+    trialDays: 7
+
+  # ---------------------------------------------------------------------------
+  # Telegram Bot
+  # ---------------------------------------------------------------------------
+  telegram:
+    # -- Bot token is stored in secrets
+    # -- Webhook URL for the Telegram bot
+    webhookURL: ""
+    # -- URL for the user cabinet (mini-app)
+    cabinetURL: "https://cabinet.example.com"
+
+  # ---------------------------------------------------------------------------
+  # Plugin System
+  # ---------------------------------------------------------------------------
+  plugin:
+    # -- Maximum number of loaded plugins
+    maxPlugins: 50
+    # -- Enable hot-reload of plugins (development only)
+    hotReload: false
+
+  # ---------------------------------------------------------------------------
+  # Infrastructure Services
+  # ---------------------------------------------------------------------------
+  infra:
+    # -- Health check polling interval in seconds
+    healthCheckIntervalSeconds: 10
+    # -- Maximum concurrent health checks
+    maxConcurrentChecks: 50
+    # -- Speed test listener port
+    speedTestPort: 4203
+    # -- Subscription proxy listener port
+    subscriptionProxyPort: 4100
+
+# =============================================================================
+# Secrets
+# =============================================================================
+secrets:
+  # -- Create a Kubernetes Secret resource (set to false if using existingSecret)
+  create: true
+  # -- Name of an existing secret to use instead of creating one.
+  # When set, secrets.create is ignored.
+  existingSecret: ""
+  # -- Values below are only used when secrets.create=true.
+  # In production, use existingSecret or an external secrets operator.
+  # -- PostgreSQL password
+  databasePassword: "changeme"
+  # -- ECDSA P-256 (ES256) private key for JWT signing (PEM-encoded)
+  jwtPrivateKey: ""
+  # -- ECDSA P-256 (ES256) public key for JWT verification (PEM-encoded)
+  jwtPublicKey: ""
+  # -- Remnawave API token
+  remnawaveApiToken: ""
+  # -- Remnawave webhook secret
+  remnawaveWebhookSecret: ""
+  # -- Telegram bot token
+  telegramBotToken: ""
+
+# =============================================================================
+# Services
+# =============================================================================
+
+# -- Primary HTTP API service
+service:
+  # -- Service type (ClusterIP, NodePort, LoadBalancer)
+  type: ClusterIP
+  # -- Service port
+  port: 4000
+
+# -- Speed Test service (may need NodePort/LoadBalancer for direct access)
+speedTest:
+  # -- Enable the speed test service
+  enabled: true
+  service:
+    # -- Service type
+    type: ClusterIP
+    # -- Service port
+    port: 4203
+
+# -- Subscription Proxy service
+subscriptionProxy:
+  # -- Enable the subscription proxy service
+  enabled: true
+  service:
+    # -- Service type
+    type: ClusterIP
+    # -- Service port
+    port: 4100
+
+# =============================================================================
+# Ingress
+# =============================================================================
+ingress:
+  # -- Enable ingress resource creation
+  enabled: false
+  # -- Ingress class name (e.g., nginx, traefik)
+  className: ""
+  # -- Ingress annotations
+  annotations: {}
+  # -- Ingress hosts configuration
+  hosts:
+    - host: api.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  # -- TLS configuration
+  tls: []
+  #  - secretName: remnacore-tls
+  #    hosts:
+  #      - api.example.com
+
+# =============================================================================
+# Resources
+# =============================================================================
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+
+# =============================================================================
+# Autoscaling (HPA)
+# =============================================================================
+autoscaling:
+  # -- Enable Horizontal Pod Autoscaler
+  enabled: false
+  # -- Minimum replicas
+  minReplicas: 2
+  # -- Maximum replicas
+  maxReplicas: 10
+  # -- Target CPU utilization percentage
+  targetCPUUtilizationPercentage: 70
+  # -- Target memory utilization percentage
+  targetMemoryUtilizationPercentage: 80
+
+# =============================================================================
+# Pod Disruption Budget
+# =============================================================================
+podDisruptionBudget:
+  # -- Enable PodDisruptionBudget
+  enabled: false
+  # -- Minimum available pods during voluntary disruptions
+  minAvailable: 1
+
+# =============================================================================
+# Probes
+# =============================================================================
+
+# -- Liveness probe configuration
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 15
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# -- Readiness probe configuration
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# =============================================================================
+# Scheduling
+# =============================================================================
+
+# -- Node selector labels
+nodeSelector: {}
+
+# -- Tolerations for pod scheduling
+tolerations: []
+
+# -- Affinity rules for pod scheduling
+affinity: {}
+
+# -- Topology spread constraints for pod distribution
+topologySpreadConstraints: []
+
+# =============================================================================
+# Observability
+# =============================================================================
+metrics:
+  # -- Expose /metrics endpoint
+  enabled: true
+  serviceMonitor:
+    # -- Create a Prometheus ServiceMonitor resource
+    enabled: false
+    # -- Scrape interval
+    interval: "30s"
+    # -- Namespace for the ServiceMonitor (defaults to release namespace)
+    namespace: ""
+    # -- Additional labels for ServiceMonitor discovery
+    labels: {}
+
+# -- Grafana dashboard provisioning (requires grafana sidecar)
+grafana:
+  dashboards:
+    # -- Auto-provision Grafana dashboards via ConfigMap
+    enabled: false

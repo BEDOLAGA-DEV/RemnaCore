@@ -1,0 +1,13 @@
+apiVersion: v2
+name: remnacore
+version: 0.1.0
+appVersion: "1.0.0"
+description: RemnaCore - Modular VPN Sales Platform
+type: application
+kubeVersion: ">=1.28.0"
+home: https://github.com/BEDOLAGA-DEV/RemnaCore
+sources:
+  - https://github.com/BEDOLAGA-DEV/RemnaCore
+maintainers:
+  - name: BEDOLAGA-DEV
+    url: https://github.com/BEDOLAGA-DEV

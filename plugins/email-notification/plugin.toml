@@ -1,0 +1,45 @@
+[plugin]
+id          = "email-notification"
+name        = "Email Notification Provider"
+version     = "1.0.0"
+description = "Send transactional emails via Resend API"
+author      = "RemnaCore Team"
+license     = "MIT"
+sdk_version = "^1.0.0"
+lang        = "go"
+
+[permissions]
+notifications = "emit"
+users         = "read"
+storage       = "readwrite"
+http          = ["https://api.resend.com/*"]
+
+[hooks]
+sync  = ["notification.send"]
+async = ["user.registered", "subscription.activated", "payment.processed"]
+
+[hooks.priority]
+"notification.send" = 10
+
+[config.resend_api_key]
+type     = "secret"
+label    = "Resend API Key"
+required = true
+
+[config.from_email]
+type    = "string"
+label   = "From Email Address"
+default = "noreply@remnacore.com"
+
+[config.from_name]
+type    = "string"
+label   = "From Display Name"
+default = "RemnaCore"
+
+[limits]
+max_memory_mb             = 16
+max_fuel                  = 500000
+max_storage_mb            = 10
+max_http_calls_per_minute = 300
+timeout_sync_ms           = 10000
+timeout_async_ms          = 30000

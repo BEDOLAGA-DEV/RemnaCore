@@ -1,0 +1,27 @@
+# {{.Name}}
+
+{{.Description}}
+
+## Build
+
+```bash
+make build
+```
+
+## Test
+
+```bash
+make test
+```
+
+## Install
+
+```bash
+vpnctl plugin install ./plugin.wasm
+vpnctl plugin enable {{.Name}}
+```
+
+## Hooks
+
+{{range .Hooks}}- `{{.Snake}}`
+{{end}}

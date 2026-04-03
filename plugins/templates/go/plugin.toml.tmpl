@@ -1,0 +1,16 @@
+[plugin]
+id          = "{{.Name}}"
+name        = "{{.Name}}"
+version     = "0.1.0"
+description = "{{.Description}}"
+author      = ""
+license     = "MIT"
+sdk_version = "1.0.0"
+lang        = "go"
+
+[permissions]
+
+[hooks]
+sync = [{{.HooksList}}]
+
+[limits]

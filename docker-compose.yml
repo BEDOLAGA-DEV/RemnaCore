@@ -1,0 +1,118 @@
+services:
+  # ── RemnaCore ───────────────────────────────────────────────────────────────
+  remnacore:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+    ports:
+      - "${APP_PORT:-4000}:4000"
+    environment:
+      APP_PORT: "4000"
+      APP_LOG_LEVEL: "${LOG_LEVEL:-info}"
+      APP_LOG_FORMAT: "${LOG_FORMAT:-json}"
+      DATABASE_URL: "postgres://${PLATFORM_DB_USER:-platform}:${PLATFORM_DB_PASSWORD:-secret}@platform-db:5432/${PLATFORM_DB_NAME:-remnacore}?sslmode=disable"
+      VALKEY_URL: "redis://valkey:6379"
+      NATS_URL: "nats://nats:4222"
+      JWT_PRIVATE_KEY_PATH: "${JWT_PRIVATE_KEY_PATH:-/etc/remnacore/keys/private.pem}"
+      JWT_PUBLIC_KEY_PATH: "${JWT_PUBLIC_KEY_PATH:-/etc/remnacore/keys/public.pem}"
+      REMNAWAVE_URL: "http://remnawave-backend:3000"
+      REMNAWAVE_API_TOKEN: "${REMNAWAVE_API_TOKEN:-changeme}"
+      REMNAWAVE_WEBHOOK_SECRET: "${REMNAWAVE_WEBHOOK_SECRET:-changeme}"
+    depends_on:
+      platform-db:
+        condition: service_healthy
+      valkey:
+        condition: service_started
+      nats:
+        condition: service_started
+
+  # ── Platform PostgreSQL ─────────────────────────────────────────────────────
+  platform-db:
+    image: postgres:18
+    ports:
+      - "${PLATFORM_DB_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: "${PLATFORM_DB_NAME:-remnacore}"
+      POSTGRES_USER: "${PLATFORM_DB_USER:-platform}"
+      POSTGRES_PASSWORD: "${PLATFORM_DB_PASSWORD:-secret}"
+      POSTGRES_HOST_AUTH_METHOD: "${POSTGRES_AUTH_METHOD:-scram-sha-256}"
+    volumes:
+      - platform_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-platform} -d ${POSTGRES_DB:-remnacore}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ── Valkey (Redis-compatible) ───────────────────────────────────────────────
+  valkey:
+    image: valkey/valkey:8.1-alpine
+    ports:
+      - "${VALKEY_PORT:-6379}:6379"
+    command: --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+  # ── NATS with JetStream ────────────────────────────────────────────────────
+  nats:
+    image: nats:2.12-alpine
+    ports:
+      - "${NATS_PORT:-4222}:4222"
+      - "${NATS_HTTP_PORT:-8222}:8222"
+    command: --jetstream --store_dir /data --http_port 8222
+    volumes:
+      - nats_data:/data
+
+  # ── Remnawave Backend ──────────────────────────────────────────────────────
+  remnawave-backend:
+    image: remnawave/backend:2
+    ports:
+      - "${REMNAWAVE_PORT:-3000}:3000"
+      - "${REMNAWAVE_METRICS_PORT:-3001}:3001"
+    environment:
+      APP_PORT: "3000"
+      METRICS_PORT: "3001"
+      DATABASE_URL: "postgres://${REMNAWAVE_DB_USER:-remnawave}:${REMNAWAVE_DB_PASSWORD:-secret}@remnawave-db:5432/${REMNAWAVE_DB_NAME:-remnawave}?sslmode=disable"
+      JWT_AUTH_SECRET: "${REMNAWAVE_JWT_AUTH_SECRET:-changeme}"
+      JWT_API_TOKENS_SECRET: "${REMNAWAVE_JWT_API_TOKENS_SECRET:-changeme}"
+      SUB_PUBLIC_DOMAIN: "${SUB_PUBLIC_DOMAIN:-https://sub.example.com}"
+      PANEL_DOMAIN: "${PANEL_DOMAIN:-https://panel.example.com}"
+      FRONT_END_DOMAIN: "${FRONT_END_DOMAIN:-https://panel.example.com}"
+      METRICS_USER: "${METRICS_USER:-admin}"
+      METRICS_PASS: "${METRICS_PASS:-admin}"
+      REDIS_HOST: "remnawave-valkey"
+      REDIS_PORT: "6379"
+      IS_DOCS_ENABLED: "${IS_DOCS_ENABLED:-true}"
+      WEBHOOK_ENABLED: "true"
+      WEBHOOK_URL: "http://remnacore:4000/api/webhooks/remnawave"
+      WEBHOOK_SECRET_KEY: "${REMNAWAVE_WEBHOOK_SECRET:-changeme}"
+      WEBHOOK_SECRET_HEADER: "${REMNAWAVE_WEBHOOK_SECRET_HEADER:-abcdefghijklmnopqrstuvwxyz123456}"
+      ALLOW_PLAIN_HTTP: "true"
+    depends_on:
+      remnawave-db:
+        condition: service_healthy
+      remnawave-valkey:
+        condition: service_started
+
+  # ── Remnawave PostgreSQL ───────────────────────────────────────────────────
+  remnawave-db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: "${REMNAWAVE_DB_NAME:-remnawave}"
+      POSTGRES_USER: "${REMNAWAVE_DB_USER:-remnawave}"
+      POSTGRES_PASSWORD: "${REMNAWAVE_DB_PASSWORD:-secret}"
+    volumes:
+      - remnawave_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "remnawave", "-d", "remnawave"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Remnawave Valkey ───────────────────────────────────────────────────────
+  remnawave-valkey:
+    image: valkey/valkey:9-alpine
+
+volumes:
+  platform_pgdata:
+  remnawave_pgdata:
+  nats_data:

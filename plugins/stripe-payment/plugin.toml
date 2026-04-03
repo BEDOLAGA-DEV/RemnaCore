@@ -1,0 +1,50 @@
+[plugin]
+id          = "stripe-payment"
+name        = "Stripe Payment Provider"
+version     = "1.0.0"
+description = "Accept payments via Stripe Checkout Sessions"
+author      = "RemnaCore Team"
+license     = "MIT"
+sdk_version = "^1.0.0"
+lang        = "go"
+
+[permissions]
+billing       = "read"
+payment       = "write"
+users         = "read"
+notifications = "emit"
+storage       = "readwrite"
+http          = ["https://api.stripe.com/*"]
+
+[hooks]
+sync  = ["payment.create_charge", "payment.verify_webhook", "payment.refund"]
+async = ["payment.processed"]
+
+[hooks.priority]
+"payment.create_charge"   = 10
+"payment.verify_webhook"  = 10
+"payment.refund"          = 10
+
+[config.stripe_secret_key]
+type     = "secret"
+label    = "Stripe Secret Key"
+required = true
+
+[config.stripe_webhook_secret]
+type     = "secret"
+label    = "Stripe Webhook Signing Secret"
+required = true
+
+[config.currency]
+type    = "select"
+label   = "Default Currency"
+options = ["usd", "eur", "gbp", "rub"]
+default = "usd"
+
+[limits]
+max_memory_mb             = 32
+max_fuel                  = 1000000
+max_storage_mb            = 50
+max_http_calls_per_minute = 200
+timeout_sync_ms           = 10000
+timeout_async_ms          = 30000

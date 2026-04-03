@@ -1,0 +1,14 @@
+version: "2"
+
+sql:
+  - engine: postgresql
+    queries: "internal/adapter/postgres/queries/" # Directory containing SQL query files
+    schema: "internal/adapter/postgres/migrations/" # Directory containing migration files
+    gen:
+      go:
+        package: gen                                  # Generated Go package name
+        out: "internal/adapter/postgres/gen"          # Output directory for generated code
+        sql_package: "pgx/v5"                         # Use pgx/v5 as the SQL driver
+        emit_json_tags: true                          # Add JSON struct tags
+        emit_empty_slices: true                       # Return empty slices instead of nil
+        emit_pointers_for_null_types: true            # Use pointers for nullable columns
