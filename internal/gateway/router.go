@@ -173,6 +173,7 @@ func NewRouter(p RouterParams) http.Handler {
 				admin.Post("/plugins/{pluginID}/disable", p.PluginHandler.DisablePlugin)
 				admin.Delete("/plugins/{pluginID}", p.PluginHandler.UninstallPlugin)
 				admin.Put("/plugins/{pluginID}/config", p.PluginHandler.UpdatePluginConfig)
+				admin.Put("/plugins/{pluginID}/reload", p.PluginHandler.HotReloadPlugin)
 
 				// User / subscription / invoice management
 				admin.Get("/users", p.AdminHandler.ListUsers)

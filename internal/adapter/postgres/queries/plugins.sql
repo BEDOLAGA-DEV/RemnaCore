@@ -17,6 +17,13 @@ SELECT * FROM plugins.plugin_registry WHERE status = 'enabled' ORDER BY installe
 -- name: UpdatePluginStatus :exec
 UPDATE plugins.plugin_registry SET status = $2, error_log = $3, enabled_at = $4, updated_at = now() WHERE id = $1;
 
+-- name: UpdatePlugin :exec
+UPDATE plugins.plugin_registry
+SET name = $2, version = $3, description = $4, author = $5, license = $6,
+    sdk_version = $7, lang = $8, wasm_bytes = $9, manifest = $10,
+    permissions = $11, updated_at = $12
+WHERE id = $1;
+
 -- name: UpdatePluginConfig :exec
 UPDATE plugins.plugin_registry SET config = $2, updated_at = now() WHERE id = $1;
 

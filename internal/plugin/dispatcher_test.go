@@ -300,3 +300,115 @@ func TestUnregisterHooks_DoesNotAffectOtherPlugins(t *testing.T) {
 	require.Len(t, regs, 1)
 	assert.Equal(t, "plugin-b", regs[0].PluginSlug)
 }
+
+// --- DispatchSyncVersioned Tests ---
+
+func TestDispatchSyncVersioned_FallbackToV1(t *testing.T) {
+	d, _ := dispatcherWithMock(t, map[string]func(ctx context.Context, funcName string, input []byte) ([]byte, error){
+		"plugin-a": func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+			return hookResultBytes(sdk.ActionModify, json.RawMessage(`{"version":"v1"}`), ""), nil
+		},
+	})
+
+	// Register handler for the unversioned (v1) hook only.
+	d.RegisterHooks([]HookRegistration{
+		{PluginID: "id-a", PluginSlug: "plugin-a", HookName: "payment.create_charge", HookType: HookSync, Priority: 10, FuncName: "payment.create_charge"},
+	})
+
+	payload := json.RawMessage(`{"amount":100}`)
+	result, err := d.DispatchSyncVersioned(context.Background(), "payment.create_charge", 2, payload)
+	require.NoError(t, err)
+
+	// Should fall back to v1 handler since no v2 handler is registered.
+	assert.JSONEq(t, `{"version":"v1"}`, string(result))
+}
+
+func TestDispatchSyncVersioned_UsesV2(t *testing.T) {
+	d, _ := dispatcherWithMock(t, map[string]func(ctx context.Context, funcName string, input []byte) ([]byte, error){
+		"plugin-a": func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+			return hookResultBytes(sdk.ActionModify, json.RawMessage(`{"version":"v2"}`), ""), nil
+		},
+	})
+
+	// Register handler for the v2 hook.
+	d.RegisterHooks([]HookRegistration{
+		{PluginID: "id-a", PluginSlug: "plugin-a", HookName: "payment.create_charge.v2", HookType: HookSync, Priority: 10, FuncName: "payment.create_charge.v2"},
+	})
+
+	payload := json.RawMessage(`{"amount":100}`)
+	result, err := d.DispatchSyncVersioned(context.Background(), "payment.create_charge", 2, payload)
+	require.NoError(t, err)
+
+	// Should use v2 handler.
+	assert.JSONEq(t, `{"version":"v2"}`, string(result))
+}
+
+func TestDispatchSyncVersioned_UsesHighestAvailable(t *testing.T) {
+	d, _ := dispatcherWithMock(t, map[string]func(ctx context.Context, funcName string, input []byte) ([]byte, error){
+		"plugin-v2": func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+			return hookResultBytes(sdk.ActionModify, json.RawMessage(`{"version":"v2"}`), ""), nil
+		},
+		"plugin-v1": func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+			return hookResultBytes(sdk.ActionModify, json.RawMessage(`{"version":"v1"}`), ""), nil
+		},
+	})
+
+	// Register v1 and v2 handlers.
+	d.RegisterHooks([]HookRegistration{
+		{PluginID: "id-v1", PluginSlug: "plugin-v1", HookName: "payment.create_charge", HookType: HookSync, Priority: 10, FuncName: "payment.create_charge"},
+		{PluginID: "id-v2", PluginSlug: "plugin-v2", HookName: "payment.create_charge.v2", HookType: HookSync, Priority: 10, FuncName: "payment.create_charge.v2"},
+	})
+
+	payload := json.RawMessage(`{"amount":100}`)
+
+	// Dispatch with currentVersion=3 — should try v3 (not found), then v2 (found).
+	result, err := d.DispatchSyncVersioned(context.Background(), "payment.create_charge", 3, payload)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"version":"v2"}`, string(result))
+}
+
+func TestDispatchSyncVersioned_NoHandlersPassesThrough(t *testing.T) {
+	rp := NewRuntimePool(dispatcherLogger(), nil)
+	d := NewHookDispatcher(rp, &mockPublisher{}, dispatcherLogger())
+
+	// No handlers registered at all.
+	payload := json.RawMessage(`{"amount":100}`)
+	result, err := d.DispatchSyncVersioned(context.Background(), "nonexistent.hook", 3, payload)
+	require.NoError(t, err)
+
+	// Should pass through unchanged (no handlers for any version).
+	assert.JSONEq(t, `{"amount":100}`, string(result))
+}
+
+func TestDispatchSyncVersioned_Version1DispatchesToBase(t *testing.T) {
+	d, _ := dispatcherWithMock(t, map[string]func(ctx context.Context, funcName string, input []byte) ([]byte, error){
+		"plugin-a": func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+			return hookResultBytes(sdk.ActionModify, json.RawMessage(`{"version":"base"}`), ""), nil
+		},
+	})
+
+	d.RegisterHooks([]HookRegistration{
+		{PluginID: "id-a", PluginSlug: "plugin-a", HookName: "payment.create_charge", HookType: HookSync, Priority: 10, FuncName: "payment.create_charge"},
+	})
+
+	payload := json.RawMessage(`{"amount":100}`)
+
+	// currentVersion=1 means only the base hook.
+	result, err := d.DispatchSyncVersioned(context.Background(), "payment.create_charge", 1, payload)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"version":"base"}`, string(result))
+}
+
+func TestHasHandlers(t *testing.T) {
+	rp := NewRuntimePool(dispatcherLogger(), nil)
+	d := NewHookDispatcher(rp, &mockPublisher{}, dispatcherLogger())
+
+	assert.False(t, d.hasHandlers("nonexistent.hook"))
+
+	d.RegisterHooks([]HookRegistration{
+		{PluginID: "id-a", PluginSlug: "plugin-a", HookName: "invoice.created", HookType: HookSync, Priority: 10, FuncName: "invoice.created"},
+	})
+
+	assert.True(t, d.hasHandlers("invoice.created"))
+	assert.False(t, d.hasHandlers("invoice.created.v2"))
+}

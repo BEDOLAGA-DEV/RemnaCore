@@ -149,6 +149,43 @@ func (h *PluginHandler) UninstallPlugin(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "uninstalled"})
 }
 
+// HotReloadPlugin handles PUT /api/admin/plugins/{pluginID}/reload.
+// It atomically replaces a running plugin with a new version while preserving
+// existing configuration and ensuring zero hook downtime.
+func (h *PluginHandler) HotReloadPlugin(w http.ResponseWriter, r *http.Request) {
+	pluginID := chi.URLParam(r, "pluginID")
+	if pluginID == "" {
+		writeError(w, http.StatusBadRequest, "plugin ID is required")
+		return
+	}
+
+	var req installPluginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.Manifest == "" {
+		writeError(w, http.StatusBadRequest, "manifest is required")
+		return
+	}
+
+	// The CLI sends the manifest as base64-encoded TOML. Attempt to decode;
+	// if it fails, treat the string as plain TOML.
+	manifestBytes := []byte(req.Manifest)
+	if decoded, decErr := base64.StdEncoding.DecodeString(req.Manifest); decErr == nil {
+		manifestBytes = decoded
+	}
+
+	if err := h.lifecycle.HotReload(r.Context(), pluginID, manifestBytes, req.WASM); err != nil {
+		status, message := mapServiceError(err)
+		writeError(w, status, message)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "hot_reloaded"})
+}
+
 // UpdatePluginConfig handles PUT /api/admin/plugins/{pluginID}/config.
 func (h *PluginHandler) UpdatePluginConfig(w http.ResponseWriter, r *http.Request) {
 	pluginID := chi.URLParam(r, "pluginID")

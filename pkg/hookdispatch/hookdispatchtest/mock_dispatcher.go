@@ -23,3 +23,13 @@ func (m *MockDispatcher) DispatchSync(ctx context.Context, hookName string, payl
 	}
 	return args.Get(0).(json.RawMessage), args.Error(1)
 }
+
+// DispatchSyncVersioned dispatches a versioned hook synchronously, returning
+// the mocked response.
+func (m *MockDispatcher) DispatchSyncVersioned(ctx context.Context, hookName string, currentVersion int, payload json.RawMessage) (json.RawMessage, error) {
+	args := m.Called(ctx, hookName, currentVersion, payload)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(json.RawMessage), args.Error(1)
+}

@@ -18,6 +18,16 @@ import (
 // NATS subject prefix for async hook dispatch.
 const asyncHookSubjectPrefix = "plugin.hook."
 
+// HookVersionSeparator separates a base hook name from its version number.
+const HookVersionSeparator = ".v"
+
+// DefaultHookVersion is the implicit version of an unversioned hook name.
+const DefaultHookVersion = 1
+
+// MinHookVersion is the lowest version that maps to a versioned hook name.
+// Version 1 is always the unversioned (base) hook name.
+const MinHookVersion = 2
+
 // HookDispatcher routes hook invocations to registered plugins. Sync hooks
 // execute in priority order with payload chaining; async hooks are published to
 // NATS for background processing.
@@ -193,6 +203,30 @@ func (d *HookDispatcher) DispatchSync(ctx context.Context, hookName string, payl
 	}
 
 	return currentPayload, nil
+}
+
+// DispatchSyncVersioned dispatches to the highest available version of a hook.
+// It tries hookName.v{N}, hookName.v{N-1}, ..., down to the unversioned base
+// name (which is implicitly v1). This allows plugins to register for a specific
+// hook version and the platform to gracefully fall back.
+func (d *HookDispatcher) DispatchSyncVersioned(ctx context.Context, hookName string, currentVersion int, payload json.RawMessage) (json.RawMessage, error) {
+	for v := currentVersion; v >= MinHookVersion; v-- {
+		versionedName := fmt.Sprintf("%s%s%d", hookName, HookVersionSeparator, v)
+		if d.hasHandlers(versionedName) {
+			return d.DispatchSync(ctx, versionedName, payload)
+		}
+	}
+	// Fall back to unversioned (v1).
+	return d.DispatchSync(ctx, hookName, payload)
+}
+
+// hasHandlers returns true if at least one handler is registered for the given
+// hook name.
+func (d *HookDispatcher) hasHandlers(hookName string) bool {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	regs, ok := d.registrations[hookName]
+	return ok && len(regs) > 0
 }
 
 // DispatchAsync publishes a hook event to NATS for asynchronous processing.

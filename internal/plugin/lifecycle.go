@@ -4,9 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
+
+// HotReloadSwapTimeout is the maximum duration allowed for the atomic hook
+// swap (unregister old + register new) during a hot reload operation.
+const HotReloadSwapTimeout = 100 * time.Millisecond
 
 // LifecycleManager orchestrates all plugin state transitions: install, enable,
 // disable, uninstall, and configuration updates. It is the single source of
@@ -229,6 +234,100 @@ func (lm *LifecycleManager) UpdateConfig(ctx context.Context, pluginID string, c
 	}
 
 	lm.logger.Info("plugin config updated", "slug", p.Slug, "id", p.ID)
+	return nil
+}
+
+// HotReload atomically replaces a running plugin with a new version. The old
+// version continues serving hooks until the new one is ready, ensuring zero
+// downtime. The plugin must be in StatusEnabled. The slug (plugin.id) must
+// match between old and new manifests — identity cannot change during reload.
+func (lm *LifecycleManager) HotReload(ctx context.Context, pluginID string, manifestBytes, wasmBytes []byte) error {
+	// 1. Fetch current plugin.
+	old, err := lm.repo.GetByID(ctx, pluginID)
+	if err != nil {
+		return fmt.Errorf("get plugin for hot reload: %w", err)
+	}
+
+	if old.Status != StatusEnabled {
+		return fmt.Errorf("hot reload requires enabled plugin: %w", ErrPluginNotRunning)
+	}
+
+	// 2. Parse and validate new manifest.
+	newManifest, err := ParseManifest(manifestBytes)
+	if err != nil {
+		return fmt.Errorf("parse new manifest: %w", err)
+	}
+
+	// 3. Verify slug matches — cannot change identity during hot reload.
+	if newManifest.Plugin.ID != old.Slug {
+		return fmt.Errorf("%w: expected %q, got %q", ErrSlugMismatch, old.Slug, newManifest.Plugin.ID)
+	}
+
+	oldVersion := old.Version
+
+	// 4. Build updated plugin (preserving ID, config, enabled state).
+	now := time.Now()
+	updated := &Plugin{
+		ID:          old.ID,
+		Slug:        old.Slug,
+		Name:        newManifest.Plugin.Name,
+		Version:     newManifest.Plugin.Version,
+		Description: newManifest.Plugin.Description,
+		Author:      newManifest.Plugin.Author,
+		License:     newManifest.Plugin.License,
+		SDKVersion:  newManifest.Plugin.SDKVersion,
+		Lang:        newManifest.Plugin.Lang,
+		WASMBytes:   wasmBytes,
+		Manifest:    newManifest,
+		Status:      StatusEnabled,
+		Config:      old.Config,
+		Permissions: newManifest.ParsePermissions(),
+		InstalledAt: old.InstalledAt,
+		EnabledAt:   old.EnabledAt,
+		UpdatedAt:   now,
+	}
+
+	// 5. Pre-compile new WASM while old version is still serving.
+	if err := lm.runtime.LoadPlugin(updated); err != nil {
+		return fmt.Errorf("load new plugin version: %w", err)
+	}
+
+	// 6. Atomic hook swap: unregister old hooks, register new hooks.
+	lm.dispatcher.UnregisterHooks(old.Slug)
+	lm.dispatcher.RegisterHooks(newManifest.HookRegistrations(old.ID))
+
+	// 7. Persist the updated plugin to database.
+	if err := lm.repo.UpdatePlugin(ctx, updated); err != nil {
+		// Rollback: re-register old hooks and reload old WASM.
+		lm.dispatcher.UnregisterHooks(old.Slug)
+		if old.Manifest != nil {
+			lm.dispatcher.RegisterHooks(old.Manifest.HookRegistrations(old.ID))
+		}
+		if loadErr := lm.runtime.LoadPlugin(old); loadErr != nil {
+			lm.logger.Error("rollback failed: could not reload old plugin version",
+				slog.String("slug", old.Slug),
+				slog.String("error", loadErr.Error()),
+			)
+		}
+		return fmt.Errorf("persist hot reload: %w", err)
+	}
+
+	// 8. Publish event.
+	if lm.publisher != nil {
+		if err := lm.publisher.Publish(ctx, NewPluginHotReloadedEvent(updated.ID, updated.Slug, oldVersion, updated.Version)); err != nil {
+			lm.logger.Warn("failed to publish event",
+				"event_type", string(EventPluginHotReloaded),
+				"error", err.Error(),
+			)
+		}
+	}
+
+	lm.logger.Info("plugin hot reloaded",
+		slog.String("slug", old.Slug),
+		slog.String("old_version", oldVersion),
+		slog.String("new_version", newManifest.Plugin.Version),
+	)
+
 	return nil
 }
 

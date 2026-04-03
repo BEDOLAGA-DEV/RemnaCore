@@ -186,6 +186,29 @@ func (r *PluginRepository) UpdateConfig(ctx context.Context, id string, config m
 	return pgutil.MapErr(err, "update plugin config", plugin.ErrPluginNotFound)
 }
 
+func (r *PluginRepository) UpdatePlugin(ctx context.Context, p *plugin.Plugin) error {
+	manifestJSON, err := json.Marshal(p.Manifest)
+	if err != nil {
+		return fmt.Errorf("marshal plugin manifest for update: %w", err)
+	}
+
+	err = r.queries.UpdatePlugin(ctx, gen.UpdatePluginParams{
+		ID:          pgutil.UUIDToPgtype(p.ID),
+		Name:        p.Name,
+		Version:     p.Version,
+		Description: pgutil.StrPtrOrNil(p.Description),
+		Author:      pgutil.StrPtrOrNil(p.Author),
+		License:     pgutil.StrPtrOrNil(p.License),
+		SdkVersion:  pgutil.StrPtrOrNil(p.SDKVersion),
+		Lang:        pgutil.StrPtrOrNil(p.Lang),
+		WasmBytes:   p.WASMBytes,
+		Manifest:    manifestJSON,
+		Permissions: permissionsToStrings(p.Permissions),
+		UpdatedAt:   pgutil.TimeToPgtype(p.UpdatedAt),
+	})
+	return pgutil.MapErr(err, "update plugin", plugin.ErrPluginNotFound)
+}
+
 func (r *PluginRepository) Delete(ctx context.Context, id string) error {
 	err := r.queries.DeletePlugin(ctx, pgutil.UUIDToPgtype(id))
 	return pgutil.MapErr(err, "delete plugin", plugin.ErrPluginNotFound)

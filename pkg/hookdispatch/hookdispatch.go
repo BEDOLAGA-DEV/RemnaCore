@@ -13,4 +13,5 @@ import (
 // plugin.HookDispatcher in the plugin runtime layer.
 type Dispatcher interface {
 	DispatchSync(ctx context.Context, hookName string, payload json.RawMessage) (json.RawMessage, error)
+	DispatchSyncVersioned(ctx context.Context, hookName string, currentVersion int, payload json.RawMessage) (json.RawMessage, error)
 }

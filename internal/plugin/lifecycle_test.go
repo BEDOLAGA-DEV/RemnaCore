@@ -94,6 +94,20 @@ func (r *mockRepo) UpdateConfig(_ context.Context, id string, config map[string]
 	return nil
 }
 
+func (r *mockRepo) UpdatePlugin(_ context.Context, p *Plugin) error {
+	existing, ok := r.plugins[p.ID]
+	if !ok {
+		return ErrPluginNotFound
+	}
+	// Preserve the slug index.
+	if existing.Slug != p.Slug {
+		delete(r.slugIdx, existing.Slug)
+		r.slugIdx[p.Slug] = p.ID
+	}
+	r.plugins[p.ID] = p
+	return nil
+}
+
 func (r *mockRepo) Delete(_ context.Context, id string) error {
 	p, ok := r.plugins[id]
 	if !ok {
@@ -441,4 +455,175 @@ func TestEnable_NotFound(t *testing.T) {
 	err := lm.Enable(ctx, "nonexistent-id")
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrPluginNotFound))
+}
+
+// --- Hot Reload Tests ---
+
+var hotReloadManifestV2 = []byte(`
+[plugin]
+id = "test-plugin"
+name = "Test Plugin"
+version = "2.0.0"
+description = "Updated test plugin"
+author = "tester"
+
+[hooks]
+sync = ["invoice.created", "payment.completed"]
+`)
+
+func TestHotReload_Success(t *testing.T) {
+	lm, repo, _, pub := newTestLifecycleManager()
+	ctx := context.Background()
+
+	// Install and enable v1.
+	p, err := lm.Install(ctx, validManifestTOML, []byte("fake-wasm-v1"))
+	require.NoError(t, err)
+
+	err = lm.Enable(ctx, p.ID)
+	require.NoError(t, err)
+
+	pub.events = nil
+
+	// Hot reload to v2.
+	err = lm.HotReload(ctx, p.ID, hotReloadManifestV2, []byte("fake-wasm-v2"))
+	require.NoError(t, err)
+
+	// Verify version updated in repo.
+	stored, err := repo.GetByID(ctx, p.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "2.0.0", stored.Version)
+	assert.Equal(t, "Updated test plugin", stored.Description)
+	assert.Equal(t, StatusEnabled, stored.Status)
+
+	// Verify old hooks replaced with new hooks.
+	invoiceRegs := lm.dispatcher.Registrations("invoice.created")
+	assert.Len(t, invoiceRegs, 1)
+
+	paymentRegs := lm.dispatcher.Registrations("payment.completed")
+	assert.Len(t, paymentRegs, 1)
+
+	// Verify plugin is still loaded in runtime.
+	slugs := lm.runtime.LoadedSlugs()
+	assert.Contains(t, slugs, "test-plugin")
+
+	// Verify hot_reloaded event published.
+	require.Len(t, pub.events, 1)
+	assert.Equal(t, EventPluginHotReloaded, pub.events[0].Type)
+	assert.Equal(t, "1.0.0", pub.events[0].Data["old_version"])
+	assert.Equal(t, "2.0.0", pub.events[0].Data["new_version"])
+}
+
+func TestHotReload_SlugMismatch(t *testing.T) {
+	lm, _, _, _ := newTestLifecycleManager()
+	ctx := context.Background()
+
+	p, err := lm.Install(ctx, validManifestTOML, []byte("fake-wasm"))
+	require.NoError(t, err)
+
+	err = lm.Enable(ctx, p.ID)
+	require.NoError(t, err)
+
+	// Try to hot reload with a manifest that has a different slug.
+	differentSlugManifest := []byte(`
+[plugin]
+id = "different-plugin"
+name = "Different Plugin"
+version = "2.0.0"
+
+[hooks]
+sync = ["invoice.created"]
+`)
+
+	err = lm.HotReload(ctx, p.ID, differentSlugManifest, []byte("fake-wasm-v2"))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrSlugMismatch)
+}
+
+func TestHotReload_PluginNotEnabled(t *testing.T) {
+	lm, _, _, _ := newTestLifecycleManager()
+	ctx := context.Background()
+
+	// Install but do NOT enable.
+	p, err := lm.Install(ctx, validManifestTOML, []byte("fake-wasm"))
+	require.NoError(t, err)
+
+	err = lm.HotReload(ctx, p.ID, hotReloadManifestV2, []byte("fake-wasm-v2"))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrPluginNotRunning)
+}
+
+func TestHotReload_PluginNotFound(t *testing.T) {
+	lm, _, _, _ := newTestLifecycleManager()
+	ctx := context.Background()
+
+	err := lm.HotReload(ctx, "nonexistent-id", hotReloadManifestV2, []byte("fake-wasm-v2"))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrPluginNotFound)
+}
+
+func TestHotReload_InvalidManifest(t *testing.T) {
+	lm, _, _, _ := newTestLifecycleManager()
+	ctx := context.Background()
+
+	p, err := lm.Install(ctx, validManifestTOML, []byte("fake-wasm"))
+	require.NoError(t, err)
+
+	err = lm.Enable(ctx, p.ID)
+	require.NoError(t, err)
+
+	err = lm.HotReload(ctx, p.ID, []byte("not valid toml {{{"), []byte("fake-wasm-v2"))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrInvalidManifest)
+}
+
+func TestHotReload_PreservesConfig(t *testing.T) {
+	lm, repo, _, _ := newTestLifecycleManager()
+	ctx := context.Background()
+
+	manifestWithConfig := []byte(`
+[plugin]
+id = "config-plugin"
+name = "Config Plugin"
+version = "1.0.0"
+
+[hooks]
+sync = ["invoice.created"]
+
+[config.api_key]
+type = "secret"
+label = "API Key"
+required = true
+`)
+
+	p, err := lm.Install(ctx, manifestWithConfig, []byte("wasm"))
+	require.NoError(t, err)
+
+	err = lm.UpdateConfig(ctx, p.ID, map[string]string{"api_key": "sk-test-123"})
+	require.NoError(t, err)
+
+	err = lm.Enable(ctx, p.ID)
+	require.NoError(t, err)
+
+	v2Manifest := []byte(`
+[plugin]
+id = "config-plugin"
+name = "Config Plugin"
+version = "2.0.0"
+
+[hooks]
+sync = ["invoice.created", "payment.completed"]
+
+[config.api_key]
+type = "secret"
+label = "API Key"
+required = true
+`)
+
+	err = lm.HotReload(ctx, p.ID, v2Manifest, []byte("wasm-v2"))
+	require.NoError(t, err)
+
+	stored, err := repo.GetByID(ctx, p.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "2.0.0", stored.Version)
+	assert.Equal(t, "sk-test-123", stored.Config["api_key"])
 }

@@ -14,5 +14,6 @@ type PluginRepository interface {
 	GetEnabled(ctx context.Context) ([]*Plugin, error)
 	UpdateStatus(ctx context.Context, id string, status PluginStatus, errorLog string, enabledAt *time.Time) error
 	UpdateConfig(ctx context.Context, id string, config map[string]string) error
+	UpdatePlugin(ctx context.Context, p *Plugin) error
 	Delete(ctx context.Context, id string) error
 }

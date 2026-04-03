@@ -304,6 +304,47 @@ func (q *Queries) StorageSet(ctx context.Context, arg StorageSetParams) error {
 	return err
 }
 
+const updatePlugin = `-- name: UpdatePlugin :exec
+UPDATE plugins.plugin_registry
+SET name = $2, version = $3, description = $4, author = $5, license = $6,
+    sdk_version = $7, lang = $8, wasm_bytes = $9, manifest = $10,
+    permissions = $11, updated_at = $12
+WHERE id = $1
+`
+
+type UpdatePluginParams struct {
+	ID          pgtype.UUID        `json:"id"`
+	Name        string             `json:"name"`
+	Version     string             `json:"version"`
+	Description *string            `json:"description"`
+	Author      *string            `json:"author"`
+	License     *string            `json:"license"`
+	SdkVersion  *string            `json:"sdk_version"`
+	Lang        *string            `json:"lang"`
+	WasmBytes   []byte             `json:"wasm_bytes"`
+	Manifest    []byte             `json:"manifest"`
+	Permissions []string           `json:"permissions"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) UpdatePlugin(ctx context.Context, arg UpdatePluginParams) error {
+	_, err := q.db.Exec(ctx, updatePlugin,
+		arg.ID,
+		arg.Name,
+		arg.Version,
+		arg.Description,
+		arg.Author,
+		arg.License,
+		arg.SdkVersion,
+		arg.Lang,
+		arg.WasmBytes,
+		arg.Manifest,
+		arg.Permissions,
+		arg.UpdatedAt,
+	)
+	return err
+}
+
 const updatePluginConfig = `-- name: UpdatePluginConfig :exec
 UPDATE plugins.plugin_registry SET config = $2, updated_at = now() WHERE id = $1
 `

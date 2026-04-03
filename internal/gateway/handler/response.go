@@ -141,6 +141,10 @@ func mapServiceError(err error) (status int, message string) {
 		return http.StatusForbidden, "plugin permission denied"
 	case errors.Is(err, plugin.ErrWASMCompilationFailed):
 		return http.StatusUnprocessableEntity, "WASM compilation failed"
+	case errors.Is(err, plugin.ErrSlugMismatch):
+		return http.StatusBadRequest, "plugin slug mismatch during hot reload"
+	case errors.Is(err, plugin.ErrPluginNotRunning):
+		return http.StatusConflict, "plugin is not running"
 
 	default:
 		return http.StatusInternalServerError, "internal server error"

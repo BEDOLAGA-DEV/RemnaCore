@@ -7,7 +7,8 @@ const (
 	EventPluginInstalled   domainevent.EventType = "plugin.installed"
 	EventPluginEnabled     domainevent.EventType = "plugin.enabled"
 	EventPluginDisabled    domainevent.EventType = "plugin.disabled"
-	EventPluginUninstalled domainevent.EventType = "plugin.uninstalled"
+	EventPluginUninstalled  domainevent.EventType = "plugin.uninstalled"
+	EventPluginHotReloaded domainevent.EventType = "plugin.hot_reloaded"
 	EventPluginError       domainevent.EventType = "plugin.error"
 	EventHookExecuted      domainevent.EventType = "plugin.hook.executed"
 	EventHookFailed        domainevent.EventType = "plugin.hook.failed"
@@ -52,6 +53,17 @@ func NewPluginUninstalledEvent(pluginID, slug string) Event {
 	return domainevent.New(EventPluginUninstalled, map[string]any{
 		"plugin_id": pluginID,
 		"slug":      slug,
+	})
+}
+
+// NewPluginHotReloadedEvent creates an event for a plugin that was atomically
+// replaced with a new version while running.
+func NewPluginHotReloadedEvent(pluginID, slug, oldVersion, newVersion string) Event {
+	return domainevent.New(EventPluginHotReloaded, map[string]any{
+		"plugin_id":   pluginID,
+		"slug":        slug,
+		"old_version": oldVersion,
+		"new_version": newVersion,
 	})
 }
 
