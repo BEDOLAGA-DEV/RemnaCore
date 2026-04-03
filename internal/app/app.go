@@ -43,19 +43,6 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
 )
 
-// natsDomainPublisher adapts the NATS EventPublisher to the shared
-// domainevent.Publisher interface used by all bounded contexts.
-type natsDomainPublisher struct {
-	pub *natsadapter.EventPublisher
-}
-
-func (p *natsDomainPublisher) Publish(ctx context.Context, event domainevent.Event) error {
-	return p.pub.Publish(ctx, string(event.Type), event)
-}
-
-// compile-time interface check
-var _ domainevent.Publisher = (*natsDomainPublisher)(nil)
-
 // New constructs the Fx application with all modules wired together.
 func New() *fx.App {
 	return fx.New(
@@ -80,9 +67,13 @@ func New() *fx.App {
 		// Bindings: interface -> implementation (identity)
 		fx.Provide(func(repo *postgres.IdentityRepository) identity.Repository { return repo }),
 		fx.Provide(postgres.NewIdentityRepository),
-		fx.Provide(func(pub *natsadapter.EventPublisher) domainevent.Publisher {
-			return &natsDomainPublisher{pub: pub}
-		}),
+
+		// Transactional outbox: domain events are written to the outbox table
+		// (same DB transaction as business logic) and relayed to NATS asynchronously.
+		fx.Provide(postgres.NewOutboxRepository),
+		fx.Provide(postgres.NewOutboxPublisher),
+		fx.Provide(func(pub *postgres.OutboxPublisher) domainevent.Publisher { return pub }),
+		fx.Provide(natsadapter.NewOutboxRelay),
 
 		// Billing domain
 		billingservice.Module,
@@ -180,6 +171,9 @@ func New() *fx.App {
 
 		// Load enabled plugins on startup
 		fx.Invoke(loadEnabledPlugins),
+
+		// Outbox relay (polls outbox table, publishes to NATS)
+		fx.Invoke(startOutboxRelay),
 
 		// Start billing event consumer (routes to MultiSubOrchestrator)
 		fx.Invoke(startBillingEventConsumer),
@@ -360,6 +354,29 @@ func startSyncService(lc fx.Lifecycle, syncService *multisubservice.SyncService,
 			lc.Append(fx.Hook{
 				OnStop: func(_ context.Context) error {
 					logger.Info("periodic sync service stopping")
+					cancel()
+					return nil
+				},
+			})
+			return nil
+		},
+	})
+}
+
+// startOutboxRelay spawns the transactional outbox relay as a background
+// goroutine managed by the Fx lifecycle. The relay polls the outbox table for
+// unpublished domain events and forwards them to NATS.
+func startOutboxRelay(lc fx.Lifecycle, relay *natsadapter.OutboxRelay, logger *slog.Logger) {
+	lc.Append(fx.Hook{
+		OnStart: func(_ context.Context) error {
+			relayCtx, cancel := context.WithCancel(context.Background())
+			go func() {
+				logger.Info("outbox relay started")
+				relay.Run(relayCtx)
+			}()
+			lc.Append(fx.Hook{
+				OnStop: func(_ context.Context) error {
+					logger.Info("outbox relay stopping")
 					cancel()
 					return nil
 				},

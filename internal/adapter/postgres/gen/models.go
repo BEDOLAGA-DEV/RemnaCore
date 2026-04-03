@@ -170,6 +170,15 @@ type MultisubRemnawaveBinding struct {
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
 
+type Outbox struct {
+	ID          pgtype.UUID        `json:"id"`
+	EventType   string             `json:"event_type"`
+	Payload     []byte             `json:"payload"`
+	Published   bool               `json:"published"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	PublishedAt pgtype.Timestamptz `json:"published_at"`
+}
+
 type PaymentPaymentRecord struct {
 	ID         pgtype.UUID        `json:"id"`
 	InvoiceID  pgtype.UUID        `json:"invoice_id"`
