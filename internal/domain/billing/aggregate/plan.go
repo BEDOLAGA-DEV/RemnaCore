@@ -135,8 +135,9 @@ func (p *Plan) HasAddon(addonID string) bool {
 func (p *Plan) CalculateTotal(addonIDs []string) (vo.Money, error) {
 	total := p.BasePrice
 
+	addonMap := p.addonMap()
 	for _, id := range addonIDs {
-		addon, ok := p.findAddon(id)
+		addon, ok := addonMap[id]
 		if !ok {
 			return vo.Money{}, errors.New("addon not found: " + id)
 		}
@@ -150,11 +151,12 @@ func (p *Plan) CalculateTotal(addonIDs []string) (vo.Money, error) {
 	return total, nil
 }
 
-func (p *Plan) findAddon(id string) (Addon, bool) {
+// addonMap builds a lookup map from addon ID to Addon for O(1) access.
+func (p *Plan) addonMap() map[string]Addon {
+	m := make(map[string]Addon, len(p.AvailableAddons))
 	for _, a := range p.AvailableAddons {
-		if a.ID == id {
-			return a, true
-		}
+		m[a.ID] = a
 	}
-	return Addon{}, false
+	return m
 }
+

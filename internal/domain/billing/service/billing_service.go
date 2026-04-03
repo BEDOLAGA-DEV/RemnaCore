@@ -282,17 +282,19 @@ func buildLineItems(plan *aggregate.Plan, addonIDs []string) []vo.LineItem {
 		vo.NewLineItem(plan.Name, vo.LineItemPlan, plan.BasePrice, lineItemQuantityOne),
 	}
 
+	addonMap := make(map[string]aggregate.Addon, len(plan.AvailableAddons))
+	for _, addon := range plan.AvailableAddons {
+		addonMap[addon.ID] = addon
+	}
+
 	for _, addonID := range addonIDs {
-		for _, addon := range plan.AvailableAddons {
-			if addon.ID == addonID {
-				items = append(items, vo.NewLineItem(
-					addon.Name,
-					vo.LineItemAddon,
-					addon.Price,
-					lineItemQuantityOne,
-				))
-				break
-			}
+		if addon, ok := addonMap[addonID]; ok {
+			items = append(items, vo.NewLineItem(
+				addon.Name,
+				vo.LineItemAddon,
+				addon.Price,
+				lineItemQuantityOne,
+			))
 		}
 	}
 

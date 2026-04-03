@@ -61,7 +61,11 @@ func (rc *ResilientClient) CreateUser(ctx context.Context, req CreateUserRequest
 	if err != nil {
 		return nil, fmt.Errorf("circuit breaker: %w", err)
 	}
-	return result.(*RemnawaveUser), nil
+	user, ok := result.(*RemnawaveUser)
+	if !ok {
+		return nil, fmt.Errorf("circuit breaker: unexpected result type %T", result)
+	}
+	return user, nil
 }
 
 // GetNodes returns all proxy nodes through the circuit breaker.
@@ -72,7 +76,11 @@ func (rc *ResilientClient) GetNodes(ctx context.Context) ([]RemnawaveNode, error
 	if err != nil {
 		return nil, fmt.Errorf("circuit breaker: %w", err)
 	}
-	return result.([]RemnawaveNode), nil
+	nodes, ok := result.([]RemnawaveNode)
+	if !ok {
+		return nil, fmt.Errorf("circuit breaker: unexpected result type %T", result)
+	}
+	return nodes, nil
 }
 
 // GetUserByUUID retrieves a single VPN user with traffic stats through the
@@ -84,7 +92,11 @@ func (rc *ResilientClient) GetUserByUUID(ctx context.Context, uuid string) (*Rem
 	if err != nil {
 		return nil, fmt.Errorf("circuit breaker: %w", err)
 	}
-	return result.(*RemnawaveUserWithTraffic), nil
+	user, ok := result.(*RemnawaveUserWithTraffic)
+	if !ok {
+		return nil, fmt.Errorf("circuit breaker: unexpected result type %T", result)
+	}
+	return user, nil
 }
 
 // UpdateUser modifies an existing VPN user through the circuit breaker.
@@ -95,7 +107,11 @@ func (rc *ResilientClient) UpdateUser(ctx context.Context, req UpdateUserRequest
 	if err != nil {
 		return nil, fmt.Errorf("circuit breaker: %w", err)
 	}
-	return result.(*RemnawaveUser), nil
+	user, ok := result.(*RemnawaveUser)
+	if !ok {
+		return nil, fmt.Errorf("circuit breaker: unexpected result type %T", result)
+	}
+	return user, nil
 }
 
 // DeleteUser removes a VPN user through the circuit breaker.

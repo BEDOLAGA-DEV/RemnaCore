@@ -36,10 +36,15 @@ func (bc *BindingCalculator) Calculate(
 		TrafficLimit: plan.TrafficLimitBytes,
 	}
 
-	// 2. Process addons
+	// 2. Process addons — build map for O(1) lookup
+	addonMap := make(map[string]multisubdomain.AddonSnapshot, len(plan.Addons))
+	for _, a := range plan.Addons {
+		addonMap[a.ID] = a
+	}
+
 	for _, addonID := range addonIDs {
-		addon := findAddon(plan, addonID)
-		if addon == nil {
+		addon, ok := addonMap[addonID]
+		if !ok {
 			continue
 		}
 		switch addon.Type {
@@ -67,16 +72,6 @@ func (bc *BindingCalculator) Calculate(
 	}
 
 	return specs
-}
-
-// findAddon locates an addon on a plan snapshot by ID, returning nil if not found.
-func findAddon(plan multisubdomain.PlanSnapshot, addonID string) *multisubdomain.AddonSnapshot {
-	for i := range plan.Addons {
-		if plan.Addons[i].ID == addonID {
-			return &plan.Addons[i]
-		}
-	}
-	return nil
 }
 
 // addonNameToPurpose maps well-known addon names to their typed binding purposes.
