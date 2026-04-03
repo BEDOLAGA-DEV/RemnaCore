@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 
@@ -28,18 +29,29 @@ type HostFunctions struct {
 	// pluginRegistry is used to look up a plugin instance for permission
 	// checks. Populated during Fx wiring.
 	pluginRegistry func(slug string) (*Plugin, error)
+	// urlChecker validates whether a URL targets a blocked internal address.
+	// Defaults to isBlockedHostname. Can be overridden in tests.
+	urlChecker func(rawURL string) (blocked bool, err error)
 }
 
-// NewHostFunctions creates a HostFunctions value with sensible defaults. Fields
-// that depend on Fx-provided services (Storage, Publisher) can be nil and are
-// expected to be set before the runtime starts.
+// NewHostFunctions creates a HostFunctions value with sensible defaults. The
+// HTTP client is configured with an SSRF-safe transport that blocks connections
+// to private/internal network addresses after DNS resolution. Fields that depend
+// on Fx-provided services (Storage, Publisher) can be nil and are expected to be
+// set before the runtime starts.
 func NewHostFunctions(logger *slog.Logger) *HostFunctions {
+	dialer := &net.Dialer{Timeout: SSRFSafeDialTimeout}
+	transport := &http.Transport{
+		DialContext: ssrfSafeDialContext(dialer),
+	}
 	return &HostFunctions{
 		Logger:      logger,
 		Permissions: &PermissionChecker{},
 		HTTPClient: &http.Client{
-			Timeout: time.Duration(DefaultPluginHTTPTimeoutMs) * time.Millisecond,
+			Timeout:   time.Duration(DefaultPluginHTTPTimeoutMs) * time.Millisecond,
+			Transport: transport,
 		},
+		urlChecker: isBlockedHostname,
 	}
 }
 
@@ -50,18 +62,39 @@ func (hf *HostFunctions) SetPluginRegistry(fn func(slug string) (*Plugin, error)
 }
 
 // HTTPRequest performs an outbound HTTP request on behalf of a plugin after
-// validating the target URL against the plugin's HTTP allowlist.
-func (hf *HostFunctions) HTTPRequest(pluginSlug string, req sdk.HTTPRequest) (*sdk.HTTPResponse, error) {
+// validating the target URL against the plugin's HTTP allowlist and blocking
+// access to internal/private network addresses (SSRF protection).
+//
+// Security layers (applied in order):
+//  1. URL allowlist check from the plugin manifest.
+//  2. Pre-flight hostname check for known loopback/local names.
+//  3. Transport-level dial guard that rejects resolved private IPs (DNS rebinding).
+func (hf *HostFunctions) HTTPRequest(ctx context.Context, pluginSlug string, req sdk.HTTPRequest) (*sdk.HTTPResponse, error) {
 	p, err := hf.resolvePlugin(pluginSlug)
 	if err != nil {
 		return nil, err
 	}
 
+	// Layer 1: URL allowlist.
 	if !hf.Permissions.ValidateHTTPRequest(p, req.URL) {
-		return nil, fmt.Errorf("%w: HTTP request to %s not in allowlist", ErrPermissionDenied, req.URL)
+		return nil, fmt.Errorf("%w: HTTP request to %s not in allowlist for plugin %s",
+			ErrPermissionDenied, req.URL, pluginSlug)
 	}
 
-	httpReq, err := http.NewRequest(req.Method, req.URL, nil)
+	// Layer 2: pre-flight hostname check (fast, no DNS).
+	blocked, err := hf.urlChecker(req.URL)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInternalNetworkAccess, err)
+	}
+	if blocked {
+		return nil, fmt.Errorf("%w: plugin %s cannot access internal address in URL %s",
+			ErrInternalNetworkAccess, pluginSlug, req.URL)
+	}
+
+	// Layer 3: DNS-rebinding protection is handled by the SSRF-safe transport
+	// on hf.HTTPClient, which validates resolved IPs in DialContext.
+
+	httpReq, err := http.NewRequestWithContext(ctx, req.Method, req.URL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("invalid HTTP request: %w", err)
 	}
