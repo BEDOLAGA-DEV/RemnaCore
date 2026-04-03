@@ -93,6 +93,45 @@ func (d *HookDispatcher) UnregisterHooks(pluginSlug string) {
 	}
 }
 
+// SwapHooks atomically replaces all hooks for a plugin. This holds the write
+// lock across both the unregister and register operations, preventing a window
+// where the plugin has zero hooks registered.
+func (d *HookDispatcher) SwapHooks(pluginSlug string, newRegs []HookRegistration) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// Remove old hooks for this plugin.
+	for hookName, regs := range d.registrations {
+		filtered := make([]HookRegistration, 0, len(regs))
+		for _, r := range regs {
+			if r.PluginSlug != pluginSlug {
+				filtered = append(filtered, r)
+			}
+		}
+		if len(filtered) > 0 {
+			d.registrations[hookName] = filtered
+		} else {
+			delete(d.registrations, hookName)
+		}
+	}
+
+	// Add new hooks.
+	for _, reg := range newRegs {
+		d.registrations[reg.HookName] = append(d.registrations[reg.HookName], reg)
+	}
+
+	// Re-sort all affected hooks by priority.
+	affected := make(map[string]struct{})
+	for _, reg := range newRegs {
+		affected[reg.HookName] = struct{}{}
+	}
+	for hookName := range affected {
+		sort.Slice(d.registrations[hookName], func(i, j int) bool {
+			return d.registrations[hookName][i].Priority < d.registrations[hookName][j].Priority
+		})
+	}
+}
+
 // DispatchSync executes synchronous hooks in priority order, chaining payload
 // modifications from one plugin to the next. If any plugin returns action
 // "halt", the chain stops and ErrHookHalted is returned.

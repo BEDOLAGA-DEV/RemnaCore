@@ -14,8 +14,21 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/sdk"
 )
 
-// Default timeout for outbound HTTP requests made by plugins.
-const DefaultPluginHTTPTimeoutMs = 10000 // 10 seconds
+// MaxPluginResponseBodyBytes is the maximum size of an HTTP response body that
+// a plugin is allowed to read. Responses larger than this are truncated.
+const MaxPluginResponseBodyBytes = 5 << 20 // 5 MB
+
+// DefaultPluginHTTPTimeout is the default timeout for outbound HTTP requests
+// made by plugins.
+const DefaultPluginHTTPTimeout = 10 * time.Second
+
+// Log level constants for plugin log entries.
+const (
+	LogLevelDebug = "debug"
+	LogLevelInfo  = "info"
+	LogLevelWarn  = "warn"
+	LogLevelError = "error"
+)
 
 // HostFunctions defines the platform capabilities injected into WASM plugins
 // via host function calls. Each method corresponds to a pdk_* function that
@@ -48,7 +61,7 @@ func NewHostFunctions(logger *slog.Logger) *HostFunctions {
 		Logger:      logger,
 		Permissions: &PermissionChecker{},
 		HTTPClient: &http.Client{
-			Timeout:   time.Duration(DefaultPluginHTTPTimeoutMs) * time.Millisecond,
+			Timeout:   DefaultPluginHTTPTimeout,
 			Transport: transport,
 		},
 		urlChecker: isBlockedHostname,
@@ -114,7 +127,7 @@ func (hf *HostFunctions) HTTPRequest(ctx context.Context, pluginSlug string, req
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxPluginResponseBodyBytes))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read HTTP response body: %w", err)
 	}
@@ -190,11 +203,11 @@ func (hf *HostFunctions) Log(pluginSlug, level, message string, fields map[strin
 	}
 
 	switch level {
-	case "debug":
+	case LogLevelDebug:
 		hf.Logger.Debug(message, args...)
-	case "warn":
+	case LogLevelWarn:
 		hf.Logger.Warn(message, args...)
-	case "error":
+	case LogLevelError:
 		hf.Logger.Error(message, args...)
 	default:
 		hf.Logger.Info(message, args...)

@@ -3,14 +3,11 @@ package plugin
 import (
 	"context"
 	"errors"
-	"log/slog"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
 
 // --- Mock PluginRepository ---
@@ -137,22 +134,7 @@ func (s *mockStorage) DeleteAll(_ context.Context, slug string) error {
 }
 func (s *mockStorage) GetUsedBytes(_ context.Context, _ string) (int64, error) { return 0, nil }
 
-// --- Mock Publisher ---
-
-type lifecycleMockPublisher struct {
-	events []domainevent.Event
-}
-
-func (p *lifecycleMockPublisher) Publish(_ context.Context, event domainevent.Event) error {
-	p.events = append(p.events, event)
-	return nil
-}
-
 // --- Helpers ---
-
-func lifecycleLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-}
 
 var validManifestTOML = []byte(`
 [plugin]
@@ -176,11 +158,11 @@ version = "1.0.0"
 async = ["payment.completed"]
 `)
 
-func newTestLifecycleManager() (*LifecycleManager, *mockRepo, *mockStorage, *lifecycleMockPublisher) {
+func newTestLifecycleManager() (*LifecycleManager, *mockRepo, *mockStorage, *testPublisher) {
 	repo := newMockRepo()
 	storage := newMockStorage()
-	pub := &lifecycleMockPublisher{}
-	logger := lifecycleLogger()
+	pub := &testPublisher{}
+	logger := testErrorLogger()
 
 	factory := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
 		return &mockRunner{callFn: func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
@@ -356,12 +338,12 @@ func TestLoadAllEnabled_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create a fresh runtime pool (simulating restart).
-	logger := lifecycleLogger()
+	logger := testErrorLogger()
 	factory := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
 		return &mockRunner{}, nil
 	}
 	freshRuntime := NewRuntimePool(logger, factory)
-	freshDispatcher := NewHookDispatcher(freshRuntime, &lifecycleMockPublisher{}, logger)
+	freshDispatcher := NewHookDispatcher(freshRuntime, &testPublisher{}, logger)
 
 	lm.runtime = freshRuntime
 	lm.dispatcher = freshDispatcher

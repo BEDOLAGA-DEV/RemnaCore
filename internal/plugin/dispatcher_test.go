@@ -3,8 +3,6 @@ package plugin
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,27 +11,13 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/sdk"
 )
 
-// mockPublisher records all published events for assertions.
-type mockPublisher struct {
-	events []domainevent.Event
-}
-
-func (mp *mockPublisher) Publish(_ context.Context, event domainevent.Event) error {
-	mp.events = append(mp.events, event)
-	return nil
-}
-
-func dispatcherLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-}
-
 // dispatcherWithMock creates a HookDispatcher backed by a mock runtime pool
 // where each slug maps to a specific WASMRunner call function.
-func dispatcherWithMock(t *testing.T, slugCallFns map[string]func(ctx context.Context, funcName string, input []byte) ([]byte, error)) (*HookDispatcher, *mockPublisher) {
+func dispatcherWithMock(t *testing.T, slugCallFns map[string]func(ctx context.Context, funcName string, input []byte) ([]byte, error)) (*HookDispatcher, *testPublisher) {
 	t.Helper()
 
-	logger := dispatcherLogger()
-	pub := &mockPublisher{}
+	logger := testErrorLogger()
+	pub := &testPublisher{}
 
 	rp := NewRuntimePool(logger, nil)
 	for slug, callFn := range slugCallFns {
@@ -155,8 +139,8 @@ func TestDispatchSync_TwoPlugins_PriorityOrdering(t *testing.T) {
 }
 
 func TestDispatchSync_NoHandlers(t *testing.T) {
-	rp := NewRuntimePool(dispatcherLogger(), nil)
-	d := NewHookDispatcher(rp, &mockPublisher{}, dispatcherLogger())
+	rp := NewRuntimePool(testErrorLogger(), nil)
+	d := NewHookDispatcher(rp, &testPublisher{}, testErrorLogger())
 
 	payload := json.RawMessage(`{"amount":100}`)
 	result, err := d.DispatchSync(context.Background(), "nonexistent.hook", payload)
@@ -167,8 +151,8 @@ func TestDispatchSync_NoHandlers(t *testing.T) {
 }
 
 func TestRegisterHooks_And_UnregisterHooks(t *testing.T) {
-	rp := NewRuntimePool(dispatcherLogger(), nil)
-	d := NewHookDispatcher(rp, &mockPublisher{}, dispatcherLogger())
+	rp := NewRuntimePool(testErrorLogger(), nil)
+	d := NewHookDispatcher(rp, &testPublisher{}, testErrorLogger())
 
 	regs := []HookRegistration{
 		{PluginID: "id-a", PluginSlug: "plugin-a", HookName: "invoice.created", HookType: HookSync, Priority: 10, FuncName: "invoice.created"},
@@ -185,9 +169,9 @@ func TestRegisterHooks_And_UnregisterHooks(t *testing.T) {
 }
 
 func TestDispatchAsync_PublishesEvent(t *testing.T) {
-	rp := NewRuntimePool(dispatcherLogger(), nil)
-	pub := &mockPublisher{}
-	d := NewHookDispatcher(rp, pub, dispatcherLogger())
+	rp := NewRuntimePool(testErrorLogger(), nil)
+	pub := &testPublisher{}
+	d := NewHookDispatcher(rp, pub, testErrorLogger())
 
 	payload := json.RawMessage(`{"user_id":"u-1"}`)
 	err := d.DispatchAsync(context.Background(), "subscription.renewed", payload)
@@ -199,8 +183,8 @@ func TestDispatchAsync_PublishesEvent(t *testing.T) {
 }
 
 func TestDispatchAsync_NilPublisher(t *testing.T) {
-	rp := NewRuntimePool(dispatcherLogger(), nil)
-	d := NewHookDispatcher(rp, nil, dispatcherLogger())
+	rp := NewRuntimePool(testErrorLogger(), nil)
+	d := NewHookDispatcher(rp, nil, testErrorLogger())
 
 	err := d.DispatchAsync(context.Background(), "hook.name", json.RawMessage(`{}`))
 	require.Error(t, err)
@@ -251,8 +235,8 @@ func TestDispatchSync_Timeout(t *testing.T) {
 
 func TestDispatchSync_Timeout_CustomManifest(t *testing.T) {
 	// Create a plugin with a very short custom timeout.
-	logger := dispatcherLogger()
-	pub := &mockPublisher{}
+	logger := testErrorLogger()
+	pub := &testPublisher{}
 
 	rp := NewRuntimePool(logger, nil)
 
@@ -286,8 +270,8 @@ func TestDispatchSync_Timeout_CustomManifest(t *testing.T) {
 }
 
 func TestUnregisterHooks_DoesNotAffectOtherPlugins(t *testing.T) {
-	rp := NewRuntimePool(dispatcherLogger(), nil)
-	d := NewHookDispatcher(rp, &mockPublisher{}, dispatcherLogger())
+	rp := NewRuntimePool(testErrorLogger(), nil)
+	d := NewHookDispatcher(rp, &testPublisher{}, testErrorLogger())
 
 	d.RegisterHooks([]HookRegistration{
 		{PluginID: "id-a", PluginSlug: "plugin-a", HookName: "invoice.created", HookType: HookSync, Priority: 10, FuncName: "invoice.created"},
@@ -368,8 +352,8 @@ func TestDispatchSyncVersioned_UsesHighestAvailable(t *testing.T) {
 }
 
 func TestDispatchSyncVersioned_NoHandlersPassesThrough(t *testing.T) {
-	rp := NewRuntimePool(dispatcherLogger(), nil)
-	d := NewHookDispatcher(rp, &mockPublisher{}, dispatcherLogger())
+	rp := NewRuntimePool(testErrorLogger(), nil)
+	d := NewHookDispatcher(rp, &testPublisher{}, testErrorLogger())
 
 	// No handlers registered at all.
 	payload := json.RawMessage(`{"amount":100}`)
@@ -400,8 +384,8 @@ func TestDispatchSyncVersioned_Version1DispatchesToBase(t *testing.T) {
 }
 
 func TestHasHandlers(t *testing.T) {
-	rp := NewRuntimePool(dispatcherLogger(), nil)
-	d := NewHookDispatcher(rp, &mockPublisher{}, dispatcherLogger())
+	rp := NewRuntimePool(testErrorLogger(), nil)
+	d := NewHookDispatcher(rp, &testPublisher{}, testErrorLogger())
 
 	assert.False(t, d.hasHandlers("nonexistent.hook"))
 

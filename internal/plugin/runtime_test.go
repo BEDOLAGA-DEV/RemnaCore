@@ -3,8 +3,6 @@ package plugin
 import (
 	"context"
 	"errors"
-	"log/slog"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -29,10 +27,6 @@ func (m *mockRunner) Close() error {
 	return nil
 }
 
-func testLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-}
-
 func mockFactory(callFn func(ctx context.Context, funcName string, input []byte) ([]byte, error)) WASMRunnerFactory {
 	return func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
 		return &mockRunner{callFn: callFn}, nil
@@ -49,7 +43,7 @@ func testPlugin(slug string) *Plugin {
 }
 
 func TestRuntimePool_LoadPlugin(t *testing.T) {
-	rp := NewRuntimePool(testLogger(), mockFactory(nil))
+	rp := NewRuntimePool(testErrorLogger(), mockFactory(nil))
 
 	p := testPlugin("test-plugin")
 	err := rp.LoadPlugin(p)
@@ -60,7 +54,7 @@ func TestRuntimePool_LoadPlugin(t *testing.T) {
 }
 
 func TestRuntimePool_LoadPlugin_NilPlugin(t *testing.T) {
-	rp := NewRuntimePool(testLogger(), mockFactory(nil))
+	rp := NewRuntimePool(testErrorLogger(), mockFactory(nil))
 
 	err := rp.LoadPlugin(nil)
 	require.Error(t, err)
@@ -77,7 +71,7 @@ func TestRuntimePool_LoadPlugin_ReplacesExisting(t *testing.T) {
 		return &mockRunner{}, nil
 	}
 
-	rp := NewRuntimePool(testLogger(), factory)
+	rp := NewRuntimePool(testErrorLogger(), factory)
 
 	p := testPlugin("test-plugin")
 	require.NoError(t, rp.LoadPlugin(p))
@@ -94,7 +88,7 @@ func TestRuntimePool_UnloadPlugin(t *testing.T) {
 		return runner, nil
 	}
 
-	rp := NewRuntimePool(testLogger(), factory)
+	rp := NewRuntimePool(testErrorLogger(), factory)
 
 	p := testPlugin("test-plugin")
 	require.NoError(t, rp.LoadPlugin(p))
@@ -105,14 +99,14 @@ func TestRuntimePool_UnloadPlugin(t *testing.T) {
 }
 
 func TestRuntimePool_UnloadPlugin_NotFound(t *testing.T) {
-	rp := NewRuntimePool(testLogger(), mockFactory(nil))
+	rp := NewRuntimePool(testErrorLogger(), mockFactory(nil))
 
 	err := rp.UnloadPlugin("nonexistent")
 	require.ErrorIs(t, err, ErrPluginNotFound)
 }
 
 func TestRuntimePool_GetInstance(t *testing.T) {
-	rp := NewRuntimePool(testLogger(), mockFactory(nil))
+	rp := NewRuntimePool(testErrorLogger(), mockFactory(nil))
 
 	p := testPlugin("test-plugin")
 	require.NoError(t, rp.LoadPlugin(p))
@@ -124,7 +118,7 @@ func TestRuntimePool_GetInstance(t *testing.T) {
 }
 
 func TestRuntimePool_GetInstance_NotFound(t *testing.T) {
-	rp := NewRuntimePool(testLogger(), mockFactory(nil))
+	rp := NewRuntimePool(testErrorLogger(), mockFactory(nil))
 
 	_, err := rp.GetInstance("nonexistent")
 	require.ErrorIs(t, err, ErrPluginNotFound)
@@ -137,7 +131,7 @@ func TestRuntimePool_CallHook(t *testing.T) {
 		return expected, nil
 	})
 
-	rp := NewRuntimePool(testLogger(), factory)
+	rp := NewRuntimePool(testErrorLogger(), factory)
 
 	p := testPlugin("test-plugin")
 	require.NoError(t, rp.LoadPlugin(p))
@@ -148,7 +142,7 @@ func TestRuntimePool_CallHook(t *testing.T) {
 }
 
 func TestRuntimePool_CallHook_NotFound(t *testing.T) {
-	rp := NewRuntimePool(testLogger(), mockFactory(nil))
+	rp := NewRuntimePool(testErrorLogger(), mockFactory(nil))
 
 	_, err := rp.CallHook(context.Background(), "nonexistent", "hook.test", nil)
 	require.ErrorIs(t, err, ErrPluginNotFound)
@@ -158,7 +152,7 @@ func TestRuntimePool_CallHook_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately.
 
-	rp := NewRuntimePool(testLogger(), mockFactory(nil))
+	rp := NewRuntimePool(testErrorLogger(), mockFactory(nil))
 
 	p := testPlugin("test-plugin")
 	require.NoError(t, rp.LoadPlugin(p))
@@ -173,7 +167,7 @@ func TestRuntimePool_CallHook_RunnerError(t *testing.T) {
 		return nil, errors.New("wasm trap")
 	})
 
-	rp := NewRuntimePool(testLogger(), factory)
+	rp := NewRuntimePool(testErrorLogger(), factory)
 
 	p := testPlugin("test-plugin")
 	require.NoError(t, rp.LoadPlugin(p))
@@ -184,7 +178,7 @@ func TestRuntimePool_CallHook_RunnerError(t *testing.T) {
 }
 
 func TestRuntimePool_LoadPlugin_NilFactory(t *testing.T) {
-	rp := NewRuntimePool(testLogger(), nil)
+	rp := NewRuntimePool(testErrorLogger(), nil)
 
 	p := testPlugin("test-plugin")
 	err := rp.LoadPlugin(p)
@@ -201,7 +195,7 @@ func TestRuntimePool_LoadPlugin_FactoryError(t *testing.T) {
 		return nil, errors.New("compilation error")
 	}
 
-	rp := NewRuntimePool(testLogger(), factory)
+	rp := NewRuntimePool(testErrorLogger(), factory)
 
 	p := testPlugin("test-plugin")
 	err := rp.LoadPlugin(p)

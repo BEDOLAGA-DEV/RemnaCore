@@ -9,10 +9,6 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
 
-// HotReloadSwapTimeout is the maximum duration allowed for the atomic hook
-// swap (unregister old + register new) during a hot reload operation.
-const HotReloadSwapTimeout = 100 * time.Millisecond
-
 // LifecycleManager orchestrates all plugin state transitions: install, enable,
 // disable, uninstall, and configuration updates. It is the single source of
 // truth for plugin lifecycle operations.
@@ -292,22 +288,32 @@ func (lm *LifecycleManager) HotReload(ctx context.Context, pluginID string, mani
 		return fmt.Errorf("load new plugin version: %w", err)
 	}
 
-	// 6. Atomic hook swap: unregister old hooks, register new hooks.
-	lm.dispatcher.UnregisterHooks(old.Slug)
-	lm.dispatcher.RegisterHooks(newManifest.HookRegistrations(old.ID))
+	// 6. Atomic hook swap: replace old hooks with new hooks under a single lock.
+	newRegs := newManifest.HookRegistrations(old.ID)
+	lm.dispatcher.SwapHooks(old.Slug, newRegs)
 
 	// 7. Persist the updated plugin to database.
 	if err := lm.repo.UpdatePlugin(ctx, updated); err != nil {
-		// Rollback: re-register old hooks and reload old WASM.
-		lm.dispatcher.UnregisterHooks(old.Slug)
+		// Rollback: atomically swap back to old hooks and reload old WASM.
+		var oldRegs []HookRegistration
 		if old.Manifest != nil {
-			lm.dispatcher.RegisterHooks(old.Manifest.HookRegistrations(old.ID))
+			oldRegs = old.Manifest.HookRegistrations(old.ID)
 		}
+		lm.dispatcher.SwapHooks(old.Slug, oldRegs)
+
 		if loadErr := lm.runtime.LoadPlugin(old); loadErr != nil {
-			lm.logger.Error("rollback failed: could not reload old plugin version",
+			lm.logger.Error("hot reload rollback failed — plugin in broken state",
 				slog.String("slug", old.Slug),
 				slog.String("error", loadErr.Error()),
 			)
+			// Set plugin to error state in DB so operators can see it is broken.
+			reason := "hot reload rollback failed: " + loadErr.Error()
+			if statusErr := lm.repo.UpdateStatus(ctx, old.ID, StatusError, reason, nil); statusErr != nil {
+				lm.logger.Error("failed to set plugin error status after rollback failure",
+					slog.String("slug", old.Slug),
+					slog.String("error", statusErr.Error()),
+				)
+			}
 		}
 		return fmt.Errorf("persist hot reload: %w", err)
 	}
