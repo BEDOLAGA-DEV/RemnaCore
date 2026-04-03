@@ -143,6 +143,7 @@ name = "Test Plugin"
 version = "1.0.0"
 description = "A test plugin"
 author = "tester"
+sdk_version = "1.0.0"
 
 [hooks]
 sync = ["invoice.created"]
@@ -153,6 +154,7 @@ var validManifestTOML2 = []byte(`
 id = "another-plugin"
 name = "Another Plugin"
 version = "1.0.0"
+sdk_version = "1.0.0"
 
 [hooks]
 async = ["payment.completed"]
@@ -365,6 +367,7 @@ func TestUpdateConfig_Success(t *testing.T) {
 id = "configurable-plugin"
 name = "Configurable"
 version = "1.0.0"
+sdk_version = "1.0.0"
 
 [hooks]
 sync = ["invoice.created"]
@@ -395,6 +398,7 @@ func TestUpdateConfig_MissingRequired(t *testing.T) {
 id = "required-config-plugin"
 name = "Required Config"
 version = "1.0.0"
+sdk_version = "1.0.0"
 
 [hooks]
 sync = ["invoice.created"]
@@ -439,6 +443,74 @@ func TestEnable_NotFound(t *testing.T) {
 	assert.True(t, errors.Is(err, ErrPluginNotFound))
 }
 
+// --- SDK Version Compatibility Tests ---
+
+func TestInstall_IncompatibleSDKVersion(t *testing.T) {
+	lm, _, _, _ := newTestLifecycleManager()
+	ctx := context.Background()
+
+	incompatibleManifest := []byte(`
+[plugin]
+id = "bad-sdk-plugin"
+name = "Bad SDK"
+version = "1.0.0"
+sdk_version = "2.0.0"
+
+[hooks]
+sync = ["invoice.created"]
+`)
+
+	_, err := lm.Install(ctx, incompatibleManifest, []byte("fake-wasm"))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrIncompatibleSDK)
+}
+
+func TestInstall_MissingSDKVersion(t *testing.T) {
+	lm, _, _, _ := newTestLifecycleManager()
+	ctx := context.Background()
+
+	// Manifest without sdk_version field (empty string).
+	noSDKManifest := []byte(`
+[plugin]
+id = "no-sdk-plugin"
+name = "No SDK"
+version = "1.0.0"
+
+[hooks]
+sync = ["invoice.created"]
+`)
+
+	_, err := lm.Install(ctx, noSDKManifest, []byte("fake-wasm"))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrInvalidManifest)
+}
+
+func TestHotReload_IncompatibleSDKVersion(t *testing.T) {
+	lm, _, _, _ := newTestLifecycleManager()
+	ctx := context.Background()
+
+	p, err := lm.Install(ctx, validManifestTOML, []byte("fake-wasm"))
+	require.NoError(t, err)
+
+	err = lm.Enable(ctx, p.ID)
+	require.NoError(t, err)
+
+	incompatibleV2 := []byte(`
+[plugin]
+id = "test-plugin"
+name = "Test Plugin"
+version = "2.0.0"
+sdk_version = "2.0.0"
+
+[hooks]
+sync = ["invoice.created"]
+`)
+
+	err = lm.HotReload(ctx, p.ID, incompatibleV2, []byte("fake-wasm-v2"))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrIncompatibleSDK)
+}
+
 // --- Hot Reload Tests ---
 
 var hotReloadManifestV2 = []byte(`
@@ -448,6 +520,7 @@ name = "Test Plugin"
 version = "2.0.0"
 description = "Updated test plugin"
 author = "tester"
+sdk_version = "1.0.0"
 
 [hooks]
 sync = ["invoice.created", "payment.completed"]
@@ -511,6 +584,7 @@ func TestHotReload_SlugMismatch(t *testing.T) {
 id = "different-plugin"
 name = "Different Plugin"
 version = "2.0.0"
+sdk_version = "1.0.0"
 
 [hooks]
 sync = ["invoice.created"]
@@ -567,6 +641,7 @@ func TestHotReload_PreservesConfig(t *testing.T) {
 id = "config-plugin"
 name = "Config Plugin"
 version = "1.0.0"
+sdk_version = "1.0.0"
 
 [hooks]
 sync = ["invoice.created"]
@@ -591,6 +666,7 @@ required = true
 id = "config-plugin"
 name = "Config Plugin"
 version = "2.0.0"
+sdk_version = "1.0.0"
 
 [hooks]
 sync = ["invoice.created", "payment.completed"]

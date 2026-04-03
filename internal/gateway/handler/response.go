@@ -145,6 +145,8 @@ func mapServiceError(err error) (status int, message string) {
 		return http.StatusBadRequest, "plugin slug mismatch during hot reload"
 	case errors.Is(err, plugin.ErrPluginNotRunning):
 		return http.StatusConflict, "plugin is not running"
+	case errors.Is(err, plugin.ErrIncompatibleSDK):
+		return http.StatusConflict, "incompatible plugin SDK version"
 
 	default:
 		return http.StatusInternalServerError, "internal server error"

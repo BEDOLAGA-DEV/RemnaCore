@@ -49,6 +49,16 @@ const (
 	DefaultPluginPriority     = 50    // middle priority (0 = first, 100 = last)
 )
 
+// WASM instance pool sizing.
+const (
+	DefaultPoolSize    = 4  // instances per plugin
+	MaxPoolSize        = 16 // hard cap
+)
+
+// CurrentSDKVersion is the platform's current plugin SDK version.
+// Plugins must declare a compatible sdk_version in their manifest.
+const CurrentSDKVersion = "1.0.0"
+
 // Slug validation constraints.
 const (
 	MaxPluginSlugLen = 64

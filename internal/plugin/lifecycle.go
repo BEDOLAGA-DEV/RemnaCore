@@ -50,6 +50,11 @@ func (lm *LifecycleManager) Install(ctx context.Context, manifestBytes, wasmByte
 		return nil, err
 	}
 
+	// Verify SDK version compatibility before any persistence.
+	if err := checkSDKCompatibility(manifest.Plugin.SDKVersion); err != nil {
+		return nil, fmt.Errorf("sdk version check: %w", err)
+	}
+
 	// Check slug uniqueness.
 	existing, err := lm.repo.GetBySlug(ctx, manifest.Plugin.ID)
 	if err == nil && existing != nil {
@@ -85,6 +90,13 @@ func (lm *LifecycleManager) Enable(ctx context.Context, pluginID string) error {
 	p, err := lm.repo.GetByID(ctx, pluginID)
 	if err != nil {
 		return fmt.Errorf("get plugin for enable: %w", err)
+	}
+
+	// Verify SDK version compatibility before enabling.
+	if p.Manifest != nil {
+		if err := checkSDKCompatibility(p.Manifest.Plugin.SDKVersion); err != nil {
+			return fmt.Errorf("sdk version check: %w", err)
+		}
 	}
 
 	if err := p.Enable(); err != nil {
@@ -254,7 +266,12 @@ func (lm *LifecycleManager) HotReload(ctx context.Context, pluginID string, mani
 		return fmt.Errorf("parse new manifest: %w", err)
 	}
 
-	// 3. Verify slug matches — cannot change identity during hot reload.
+	// 3. Verify SDK version compatibility of new manifest.
+	if err := checkSDKCompatibility(newManifest.Plugin.SDKVersion); err != nil {
+		return fmt.Errorf("sdk version check: %w", err)
+	}
+
+	// 4. Verify slug matches — cannot change identity during hot reload.
 	if newManifest.Plugin.ID != old.Slug {
 		return fmt.Errorf("%w: expected %q, got %q", ErrSlugMismatch, old.Slug, newManifest.Plugin.ID)
 	}

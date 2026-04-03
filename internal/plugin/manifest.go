@@ -70,6 +70,7 @@ type ManifestLimits struct {
 	MaxHTTPCallsPerMin int `toml:"max_http_calls_per_minute"`
 	TimeoutSyncMs      int `toml:"timeout_sync_ms"`
 	TimeoutAsyncMs     int `toml:"timeout_async_ms"`
+	PoolSize           int `toml:"pool_size"` // WASM instance pool size (default 4, max 16)
 }
 
 // ParseManifest deserialises TOML bytes into a Manifest and validates it.
@@ -128,6 +129,9 @@ func (m *Manifest) EffectiveLimits() ManifestLimits {
 	}
 	if l.TimeoutAsyncMs == 0 {
 		l.TimeoutAsyncMs = DefaultAsyncTimeoutMs
+	}
+	if l.PoolSize == 0 {
+		l.PoolSize = DefaultPoolSize
 	}
 	return l
 }

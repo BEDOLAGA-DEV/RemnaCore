@@ -24,10 +24,8 @@ func dispatcherWithMock(t *testing.T, slugCallFns map[string]func(ctx context.Co
 		p := testPlugin(slug)
 		require.NoError(t, rp.LoadPlugin(p))
 
-		// Manually set the runner with the provided callFn.
-		rp.mu.Lock()
-		rp.plugins[slug].Runner = &mockRunner{callFn: callFn}
-		rp.mu.Unlock()
+		// Inject a mock runner via the test helper.
+		rp.SetRunnerForTest(slug, &mockRunner{callFn: callFn})
 	}
 
 	d := NewHookDispatcher(rp, pub, logger)

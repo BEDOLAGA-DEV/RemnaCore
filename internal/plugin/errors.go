@@ -19,4 +19,5 @@ var (
 	ErrNoHandlerForHook      = errors.New("no plugin handler for hook")
 	ErrSlugMismatch          = errors.New("plugin slug mismatch during hot reload")
 	ErrPluginNotRunning      = errors.New("plugin is not running")
+	ErrIncompatibleSDK       = errors.New("incompatible plugin SDK version")
 )
