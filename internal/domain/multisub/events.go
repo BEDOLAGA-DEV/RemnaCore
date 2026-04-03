@@ -20,45 +20,45 @@ type EventType = domainevent.EventType
 
 // NewBindingProvisionedEvent creates an event when a binding is provisioned in Remnawave.
 func NewBindingProvisionedEvent(bindingID, subscriptionID, remnawaveUUID, purpose string) Event {
-	return domainevent.New(EventBindingProvisioned, map[string]any{
-		"binding_id":      bindingID,
-		"subscription_id": subscriptionID,
-		"remnawave_uuid":  remnawaveUUID,
-		"purpose":         purpose,
+	return domainevent.New(EventBindingProvisioned, BindingProvisionedPayload{
+		BindingID:      bindingID,
+		SubscriptionID: subscriptionID,
+		RemnawaveUUID:  remnawaveUUID,
+		Purpose:        purpose,
 	})
 }
 
 // NewBindingDeprovisionedEvent creates an event when a binding is removed from Remnawave.
 func NewBindingDeprovisionedEvent(bindingID, subscriptionID, remnawaveUUID string) Event {
-	return domainevent.New(EventBindingDeprovisioned, map[string]any{
-		"binding_id":      bindingID,
-		"subscription_id": subscriptionID,
-		"remnawave_uuid":  remnawaveUUID,
+	return domainevent.New(EventBindingDeprovisioned, BindingDeprovisionedPayload{
+		BindingID:      bindingID,
+		SubscriptionID: subscriptionID,
+		RemnawaveUUID:  remnawaveUUID,
 	})
 }
 
 // NewBindingSyncFailedEvent creates an event when binding synchronisation fails.
 func NewBindingSyncFailedEvent(bindingID, subscriptionID, reason string) Event {
-	return domainevent.New(EventBindingSyncFailed, map[string]any{
-		"binding_id":      bindingID,
-		"subscription_id": subscriptionID,
-		"reason":          reason,
+	return domainevent.New(EventBindingSyncFailed, BindingSyncFailedPayload{
+		BindingID:      bindingID,
+		SubscriptionID: subscriptionID,
+		Reason:         reason,
 	})
 }
 
 // NewBindingSyncCompletedEvent creates an event when a binding sync succeeds.
 func NewBindingSyncCompletedEvent(bindingID, subscriptionID string) Event {
-	return domainevent.New(EventBindingSyncCompleted, map[string]any{
-		"binding_id":      bindingID,
-		"subscription_id": subscriptionID,
+	return domainevent.New(EventBindingSyncCompleted, BindingSyncCompletedPayload{
+		BindingID:      bindingID,
+		SubscriptionID: subscriptionID,
 	})
 }
 
 // NewBindingTrafficExceededEvent creates an event when a binding exceeds its traffic limit.
 func NewBindingTrafficExceededEvent(bindingID, subscriptionID, remnawaveUUID string) Event {
-	return domainevent.New(EventBindingTrafficExceeded, map[string]any{
-		"binding_id":      bindingID,
-		"subscription_id": subscriptionID,
-		"remnawave_uuid":  remnawaveUUID,
+	return domainevent.New(EventBindingTrafficExceeded, BindingTrafficExceededPayload{
+		BindingID:      bindingID,
+		SubscriptionID: subscriptionID,
+		RemnawaveUUID:  remnawaveUUID,
 	})
 }

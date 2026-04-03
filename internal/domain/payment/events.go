@@ -17,50 +17,50 @@ type Event = domainevent.Event
 
 // NewChargeCreatedEvent creates an event for a newly created payment charge.
 func NewChargeCreatedEvent(paymentID, invoiceID, provider, externalID string, amount int64) Event {
-	return domainevent.New(EventChargeCreated, map[string]any{
-		"payment_id":  paymentID,
-		"invoice_id":  invoiceID,
-		"provider":    provider,
-		"external_id": externalID,
-		"amount":      amount,
+	return domainevent.New(EventChargeCreated, ChargeCreatedPayload{
+		PaymentID:  paymentID,
+		InvoiceID:  invoiceID,
+		Provider:   provider,
+		ExternalID: externalID,
+		Amount:     amount,
 	})
 }
 
 // NewChargeCompletedEvent creates an event for a successfully completed payment.
 func NewChargeCompletedEvent(paymentID, invoiceID, provider string, amount int64) Event {
-	return domainevent.New(EventChargeCompleted, map[string]any{
-		"payment_id": paymentID,
-		"invoice_id": invoiceID,
-		"provider":   provider,
-		"amount":     amount,
+	return domainevent.New(EventChargeCompleted, ChargeCompletedPayload{
+		PaymentID: paymentID,
+		InvoiceID: invoiceID,
+		Provider:  provider,
+		Amount:    amount,
 	})
 }
 
 // NewChargeFailedEvent creates an event for a failed payment charge.
 func NewChargeFailedEvent(paymentID, invoiceID, provider, reason string) Event {
-	return domainevent.New(EventChargeFailed, map[string]any{
-		"payment_id": paymentID,
-		"invoice_id": invoiceID,
-		"provider":   provider,
-		"reason":     reason,
+	return domainevent.New(EventChargeFailed, ChargeFailedPayload{
+		PaymentID: paymentID,
+		InvoiceID: invoiceID,
+		Provider:  provider,
+		Reason:    reason,
 	})
 }
 
 // NewRefundCompletedEvent creates an event for a completed refund.
 func NewRefundCompletedEvent(paymentID, invoiceID, provider string, amount int64) Event {
-	return domainevent.New(EventRefundCompleted, map[string]any{
-		"payment_id": paymentID,
-		"invoice_id": invoiceID,
-		"provider":   provider,
-		"amount":     amount,
+	return domainevent.New(EventRefundCompleted, RefundCompletedPayload{
+		PaymentID: paymentID,
+		InvoiceID: invoiceID,
+		Provider:  provider,
+		Amount:    amount,
 	})
 }
 
 // NewWebhookReceivedEvent creates an event for a received payment webhook.
 func NewWebhookReceivedEvent(provider, externalID, status string) Event {
-	return domainevent.New(EventWebhookReceived, map[string]any{
-		"provider":    provider,
-		"external_id": externalID,
-		"status":      status,
+	return domainevent.New(EventWebhookReceived, WebhookReceivedPayload{
+		Provider:   provider,
+		ExternalID: externalID,
+		Status:     status,
 	})
 }

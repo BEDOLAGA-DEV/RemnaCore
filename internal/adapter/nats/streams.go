@@ -14,6 +14,7 @@ const (
 	StreamPayment   = "PAYMENT"
 	StreamInfra     = "INFRA"
 	StreamPlugins   = "PLUGINS"
+	StreamDLQ       = "DLQ"
 )
 
 // Retention duration constants used by stream configurations.
@@ -63,6 +64,12 @@ func StreamConfigs() []jetstream.StreamConfig {
 			Subjects: []string{"plugin.>"},
 			Storage:  jetstream.FileStorage,
 			MaxAge:   RetentionWeek,
+		},
+		{
+			Name:     StreamDLQ,
+			Subjects: []string{"dlq.>"},
+			Storage:  jetstream.FileStorage,
+			MaxAge:   RetentionMonth,
 		},
 	}
 }

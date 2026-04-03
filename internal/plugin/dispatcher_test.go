@@ -178,7 +178,7 @@ func TestDispatchAsync_PublishesEvent(t *testing.T) {
 
 	require.Len(t, pub.events, 1)
 	assert.Equal(t, domainevent.EventType("plugin.hook.subscription.renewed"), pub.events[0].Type)
-	assert.Equal(t, "subscription.renewed", pub.events[0].Data["hook_name"])
+	assert.Equal(t, "subscription.renewed", pub.events[0].DataAsMap()["hook_name"])
 }
 
 func TestDispatchAsync_NilPublisher(t *testing.T) {

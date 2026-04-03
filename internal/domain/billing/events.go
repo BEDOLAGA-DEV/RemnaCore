@@ -33,41 +33,41 @@ type EventType = domainevent.EventType
 
 // NewInvoiceCreatedEvent creates an event for a newly generated invoice.
 func NewInvoiceCreatedEvent(invoiceID, subscriptionID, userID string, amountCents int64) Event {
-	return domainevent.New(EventInvoiceCreated, map[string]any{
-		"invoice_id":      invoiceID,
-		"subscription_id": subscriptionID,
-		"user_id":         userID,
-		"amount_cents":    amountCents,
+	return domainevent.New(EventInvoiceCreated, InvoiceCreatedPayload{
+		InvoiceID:      invoiceID,
+		SubscriptionID: subscriptionID,
+		UserID:         userID,
+		AmountCents:    amountCents,
 	})
 }
 
 // NewInvoicePaidEvent creates an event for a successfully paid invoice.
 func NewInvoicePaidEvent(invoiceID, subscriptionID, userID string, amountCents int64) Event {
-	return domainevent.New(EventInvoicePaid, map[string]any{
-		"invoice_id":      invoiceID,
-		"subscription_id": subscriptionID,
-		"user_id":         userID,
-		"amount_cents":    amountCents,
+	return domainevent.New(EventInvoicePaid, InvoicePaidPayload{
+		InvoiceID:      invoiceID,
+		SubscriptionID: subscriptionID,
+		UserID:         userID,
+		AmountCents:    amountCents,
 	})
 }
 
 // NewInvoiceFailedEvent creates an event for a failed invoice payment.
 func NewInvoiceFailedEvent(invoiceID, subscriptionID, userID, reason string) Event {
-	return domainevent.New(EventInvoiceFailed, map[string]any{
-		"invoice_id":      invoiceID,
-		"subscription_id": subscriptionID,
-		"user_id":         userID,
-		"reason":          reason,
+	return domainevent.New(EventInvoiceFailed, InvoiceFailedPayload{
+		InvoiceID:      invoiceID,
+		SubscriptionID: subscriptionID,
+		UserID:         userID,
+		Reason:         reason,
 	})
 }
 
 // NewInvoiceRefundedEvent creates an event for a refunded invoice.
 func NewInvoiceRefundedEvent(invoiceID, subscriptionID, userID string, amountCents int64) Event {
-	return domainevent.New(EventInvoiceRefunded, map[string]any{
-		"invoice_id":      invoiceID,
-		"subscription_id": subscriptionID,
-		"user_id":         userID,
-		"amount_cents":    amountCents,
+	return domainevent.New(EventInvoiceRefunded, InvoiceRefundedPayload{
+		InvoiceID:      invoiceID,
+		SubscriptionID: subscriptionID,
+		UserID:         userID,
+		AmountCents:    amountCents,
 	})
 }
 
@@ -75,89 +75,89 @@ func NewInvoiceRefundedEvent(invoiceID, subscriptionID, userID string, amountCen
 
 // NewSubCreatedEvent creates an event for a newly created subscription.
 func NewSubCreatedEvent(subscriptionID, userID, planID string) Event {
-	return domainevent.New(EventSubCreated, map[string]any{
-		"subscription_id": subscriptionID,
-		"user_id":         userID,
-		"plan_id":         planID,
+	return domainevent.New(EventSubCreated, SubCreatedPayload{
+		SubscriptionID: subscriptionID,
+		UserID:         userID,
+		PlanID:         planID,
 	})
 }
 
 // NewSubActivatedEvent creates an event for a subscription activation.
 func NewSubActivatedEvent(subscriptionID, userID string) Event {
-	return domainevent.New(EventSubActivated, map[string]any{
-		"subscription_id": subscriptionID,
-		"user_id":         userID,
+	return domainevent.New(EventSubActivated, SubActivatedPayload{
+		SubscriptionID: subscriptionID,
+		UserID:         userID,
 	})
 }
 
 // NewSubCancelledEvent creates an event for a subscription cancellation.
 func NewSubCancelledEvent(subscriptionID, userID, reason string) Event {
-	return domainevent.New(EventSubCancelled, map[string]any{
-		"subscription_id": subscriptionID,
-		"user_id":         userID,
-		"reason":          reason,
+	return domainevent.New(EventSubCancelled, SubCancelledPayload{
+		SubscriptionID: subscriptionID,
+		UserID:         userID,
+		Reason:         reason,
 	})
 }
 
 // NewSubRenewedEvent creates an event for a subscription renewal.
 func NewSubRenewedEvent(subscriptionID, userID string) Event {
-	return domainevent.New(EventSubRenewed, map[string]any{
-		"subscription_id": subscriptionID,
-		"user_id":         userID,
+	return domainevent.New(EventSubRenewed, SubRenewedPayload{
+		SubscriptionID: subscriptionID,
+		UserID:         userID,
 	})
 }
 
 // NewSubUpgradedEvent creates an event for a subscription plan upgrade.
 func NewSubUpgradedEvent(subscriptionID, userID, fromPlanID, toPlanID string) Event {
-	return domainevent.New(EventSubUpgraded, map[string]any{
-		"subscription_id": subscriptionID,
-		"user_id":         userID,
-		"from_plan_id":    fromPlanID,
-		"to_plan_id":      toPlanID,
+	return domainevent.New(EventSubUpgraded, SubUpgradedPayload{
+		SubscriptionID: subscriptionID,
+		UserID:         userID,
+		FromPlanID:     fromPlanID,
+		ToPlanID:       toPlanID,
 	})
 }
 
 // NewSubDowngradedEvent creates an event for a subscription plan downgrade.
 func NewSubDowngradedEvent(subscriptionID, userID, fromPlanID, toPlanID string) Event {
-	return domainevent.New(EventSubDowngraded, map[string]any{
-		"subscription_id": subscriptionID,
-		"user_id":         userID,
-		"from_plan_id":    fromPlanID,
-		"to_plan_id":      toPlanID,
+	return domainevent.New(EventSubDowngraded, SubDowngradedPayload{
+		SubscriptionID: subscriptionID,
+		UserID:         userID,
+		FromPlanID:     fromPlanID,
+		ToPlanID:       toPlanID,
 	})
 }
 
 // NewSubTrialStartedEvent creates an event for a trial period start.
 func NewSubTrialStartedEvent(subscriptionID, userID, planID string) Event {
-	return domainevent.New(EventSubTrialStarted, map[string]any{
-		"subscription_id": subscriptionID,
-		"user_id":         userID,
-		"plan_id":         planID,
+	return domainevent.New(EventSubTrialStarted, SubTrialStartedPayload{
+		SubscriptionID: subscriptionID,
+		UserID:         userID,
+		PlanID:         planID,
 	})
 }
 
 // NewSubTrialEndingEvent creates an event for a trial about to expire.
 func NewSubTrialEndingEvent(subscriptionID, userID string, daysRemaining int) Event {
-	return domainevent.New(EventSubTrialEnding, map[string]any{
-		"subscription_id": subscriptionID,
-		"user_id":         userID,
-		"days_remaining":  daysRemaining,
+	return domainevent.New(EventSubTrialEnding, SubTrialEndingPayload{
+		SubscriptionID: subscriptionID,
+		UserID:         userID,
+		DaysRemaining:  daysRemaining,
 	})
 }
 
 // NewSubPausedEvent creates an event for a paused subscription.
 func NewSubPausedEvent(subscriptionID, userID string) Event {
-	return domainevent.New(EventSubPaused, map[string]any{
-		"subscription_id": subscriptionID,
-		"user_id":         userID,
+	return domainevent.New(EventSubPaused, SubPausedPayload{
+		SubscriptionID: subscriptionID,
+		UserID:         userID,
 	})
 }
 
 // NewSubResumedEvent creates an event for a resumed subscription.
 func NewSubResumedEvent(subscriptionID, userID string) Event {
-	return domainevent.New(EventSubResumed, map[string]any{
-		"subscription_id": subscriptionID,
-		"user_id":         userID,
+	return domainevent.New(EventSubResumed, SubResumedPayload{
+		SubscriptionID: subscriptionID,
+		UserID:         userID,
 	})
 }
 
@@ -165,18 +165,18 @@ func NewSubResumedEvent(subscriptionID, userID string) Event {
 
 // NewFamilyMemberAddedEvent creates an event for adding a family member.
 func NewFamilyMemberAddedEvent(familyGroupID, ownerID, memberID string) Event {
-	return domainevent.New(EventFamilyMemberAdded, map[string]any{
-		"family_group_id": familyGroupID,
-		"owner_id":        ownerID,
-		"member_id":       memberID,
+	return domainevent.New(EventFamilyMemberAdded, FamilyMemberAddedPayload{
+		FamilyGroupID: familyGroupID,
+		OwnerID:       ownerID,
+		MemberID:      memberID,
 	})
 }
 
 // NewFamilyMemberRemovedEvent creates an event for removing a family member.
 func NewFamilyMemberRemovedEvent(familyGroupID, ownerID, memberID string) Event {
-	return domainevent.New(EventFamilyMemberRemoved, map[string]any{
-		"family_group_id": familyGroupID,
-		"owner_id":        ownerID,
-		"member_id":       memberID,
+	return domainevent.New(EventFamilyMemberRemoved, FamilyMemberRemovedPayload{
+		FamilyGroupID: familyGroupID,
+		OwnerID:       ownerID,
+		MemberID:      memberID,
 	})
 }

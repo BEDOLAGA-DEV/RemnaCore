@@ -126,10 +126,10 @@ func (s *SyncSaga) HandleWebhookEvent(ctx context.Context, remnawaveUUID string,
 		return fmt.Errorf("update binding: %w", err)
 	}
 
-	webhookEvent := domainevent.New(domainEventType, map[string]any{
-		"binding_id":      binding.ID,
-		"subscription_id": binding.SubscriptionID,
-		"remnawave_uuid":  binding.RemnawaveUUID,
+	webhookEvent := domainevent.New(domainEventType, multisubdomain.BindingWebhookPayload{
+		BindingID:      binding.ID,
+		SubscriptionID: binding.SubscriptionID,
+		RemnawaveUUID:  binding.RemnawaveUUID,
 	})
 	if err := s.publisher.Publish(ctx, webhookEvent); err != nil {
 		slog.Warn("failed to publish event",

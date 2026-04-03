@@ -564,8 +564,9 @@ func TestHotReload_Success(t *testing.T) {
 	// Verify hot_reloaded event published.
 	require.Len(t, pub.events, 1)
 	assert.Equal(t, EventPluginHotReloaded, pub.events[0].Type)
-	assert.Equal(t, "1.0.0", pub.events[0].Data["old_version"])
-	assert.Equal(t, "2.0.0", pub.events[0].Data["new_version"])
+	data := pub.events[0].DataAsMap()
+	assert.Equal(t, "1.0.0", data["old_version"])
+	assert.Equal(t, "2.0.0", data["new_version"])
 }
 
 func TestHotReload_SlugMismatch(t *testing.T) {
