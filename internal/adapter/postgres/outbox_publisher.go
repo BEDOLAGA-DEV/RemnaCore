@@ -30,7 +30,10 @@ func (p *OutboxPublisher) Publish(ctx context.Context, event domainevent.Event) 
 	if err != nil {
 		return fmt.Errorf("marshal outbox event: %w", err)
 	}
-	return p.repo.Store(ctx, string(event.Type), payload)
+	if err := p.repo.Store(ctx, string(event.Type), payload); err != nil {
+		return fmt.Errorf("outbox publish: %w", err)
+	}
+	return nil
 }
 
 // compile-time interface check

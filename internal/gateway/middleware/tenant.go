@@ -31,7 +31,7 @@ func TenantResolver(resellerSvc *reseller.ResellerService) func(http.Handler) ht
 			if apiKey := r.Header.Get(APIKeyHeader); apiKey != "" {
 				tenant, err := resellerSvc.ValidateAPIKey(ctx, apiKey)
 				if err != nil {
-					writeTenantError(w, http.StatusUnauthorized, "invalid API key")
+					writeMiddlewareError(w, http.StatusUnauthorized, "invalid API key")
 					return
 				}
 				ctx = context.WithValue(ctx, TenantContextKey, tenant)
@@ -86,11 +86,4 @@ func extractDomain(r *http.Request) string {
 		host = host[:idx]
 	}
 	return host
-}
-
-// writeTenantError writes a JSON error response for tenant resolution failures.
-func writeTenantError(w http.ResponseWriter, status int, message string) {
-	w.Header().Set(httpconst.HeaderContentType, httpconst.ContentTypeJSON)
-	w.WriteHeader(status)
-	_, _ = w.Write([]byte(`{"error":"` + message + `"}`))
 }

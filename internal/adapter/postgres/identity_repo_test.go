@@ -45,7 +45,7 @@ func setupTestDB(t *testing.T) *pgxpool.Pool {
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").
 				WithOccurrence(2).
-				WithStartupTimeout(30*time.Second),
+				WithStartupTimeout(testContainerStartupTimeout),
 		),
 	)
 	if err != nil {

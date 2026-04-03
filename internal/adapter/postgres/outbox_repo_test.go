@@ -19,6 +19,10 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres"
 )
 
+// testContainerStartupTimeout is the maximum time to wait for the PostgreSQL
+// container to become ready during integration tests.
+const testContainerStartupTimeout = 30 * time.Second
+
 // setupOutboxDB starts a PostgreSQL 18 container, applies the outbox migration,
 // and returns a connected pool. The container is terminated when the test finishes.
 func setupOutboxDB(t *testing.T) *pgxpool.Pool {
@@ -37,7 +41,7 @@ func setupOutboxDB(t *testing.T) *pgxpool.Pool {
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").
 				WithOccurrence(2).
-				WithStartupTimeout(30*time.Second),
+				WithStartupTimeout(testContainerStartupTimeout),
 		),
 	)
 	if err != nil {
@@ -77,32 +81,26 @@ func TestOutboxStore(t *testing.T) {
 }
 
 func TestOutboxGetUnpublished(t *testing.T) {
-	pool := setupOutboxDB(t)
-	repo := postgres.NewOutboxRepository(pool)
-	ctx := context.Background()
-
 	tests := []struct {
 		name      string
-		setup     func(t *testing.T)
+		setup     func(t *testing.T, repo *postgres.OutboxRepository, ctx context.Context)
 		limit     int
 		wantCount int
 	}{
 		{
 			name:      "empty outbox returns empty slice",
-			setup:     func(t *testing.T) {},
+			setup:     func(t *testing.T, _ *postgres.OutboxRepository, _ context.Context) {},
 			limit:     10,
 			wantCount: 0,
 		},
 		{
 			name: "returns only unpublished events",
-			setup: func(t *testing.T) {
+			setup: func(t *testing.T, repo *postgres.OutboxRepository, ctx context.Context) {
 				t.Helper()
-				// Store two events.
 				for i := 0; i < 2; i++ {
 					payload, _ := json.Marshal(map[string]int{"i": i})
 					require.NoError(t, repo.Store(ctx, "test.event", payload))
 				}
-				// Mark the first one as published.
 				events, err := repo.GetUnpublished(ctx, 10)
 				require.NoError(t, err)
 				require.NotEmpty(t, events)
@@ -113,7 +111,7 @@ func TestOutboxGetUnpublished(t *testing.T) {
 		},
 		{
 			name: "respects limit parameter",
-			setup: func(t *testing.T) {
+			setup: func(t *testing.T, repo *postgres.OutboxRepository, ctx context.Context) {
 				t.Helper()
 				for i := 0; i < 5; i++ {
 					payload, _ := json.Marshal(map[string]int{"i": i})
@@ -128,32 +126,13 @@ func TestOutboxGetUnpublished(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Each subtest gets a fresh DB to avoid cross-contamination.
-			innerPool := setupOutboxDB(t)
-			innerRepo := postgres.NewOutboxRepository(innerPool)
-			// Rebind the package-level repo for the setup closure.
-			_ = innerRepo
-			// We need a fresh repo for each test, so re-create the setup context.
-			freshCtx := context.Background()
+			pool := setupOutboxDB(t)
+			repo := postgres.NewOutboxRepository(pool)
+			ctx := context.Background()
 
-			// Run setup with the fresh repo.
-			switch tt.name {
-			case "returns only unpublished events":
-				for i := 0; i < 2; i++ {
-					payload, _ := json.Marshal(map[string]int{"i": i})
-					require.NoError(t, innerRepo.Store(freshCtx, "test.event", payload))
-				}
-				events, err := innerRepo.GetUnpublished(freshCtx, 10)
-				require.NoError(t, err)
-				require.NotEmpty(t, events)
-				require.NoError(t, innerRepo.MarkPublished(freshCtx, events[0].ID))
-			case "respects limit parameter":
-				for i := 0; i < 5; i++ {
-					payload, _ := json.Marshal(map[string]int{"i": i})
-					require.NoError(t, innerRepo.Store(freshCtx, "test.event", payload))
-				}
-			}
+			tt.setup(t, repo, ctx)
 
-			events, err := innerRepo.GetUnpublished(freshCtx, tt.limit)
+			events, err := repo.GetUnpublished(ctx, tt.limit)
 			require.NoError(t, err)
 			assert.Len(t, events, tt.wantCount)
 		})

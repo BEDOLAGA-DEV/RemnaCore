@@ -22,14 +22,14 @@ func Auth(jwt *authutil.JWTIssuer) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			header := r.Header.Get(httpconst.HeaderAuthorization)
 			if header == "" || !strings.HasPrefix(header, httpconst.BearerPrefix) {
-				writeAuthError(w, http.StatusUnauthorized, "missing or malformed authorization header")
+				writeMiddlewareError(w, http.StatusUnauthorized, "missing or malformed authorization header")
 				return
 			}
 
 			tokenString := strings.TrimPrefix(header, httpconst.BearerPrefix)
 			claims, err := jwt.Verify(tokenString)
 			if err != nil {
-				writeAuthError(w, http.StatusUnauthorized, "invalid or expired token")
+				writeMiddlewareError(w, http.StatusUnauthorized, "invalid or expired token")
 				return
 			}
 
@@ -44,12 +44,4 @@ func Auth(jwt *authutil.JWTIssuer) func(http.Handler) http.Handler {
 func GetClaims(ctx context.Context) *authutil.UserClaims {
 	claims, _ := ctx.Value(ClaimsContextKey).(*authutil.UserClaims)
 	return claims
-}
-
-// writeAuthError writes a JSON error response for authentication failures.
-func writeAuthError(w http.ResponseWriter, status int, message string) {
-	w.Header().Set(httpconst.HeaderContentType, httpconst.ContentTypeJSON)
-	w.WriteHeader(status)
-	// Minimal JSON — no need to pull in encoding/json for a static format.
-	_, _ = w.Write([]byte(`{"error":"` + message + `"}`))
 }
