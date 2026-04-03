@@ -188,7 +188,7 @@ func TestProvision_CompensationOnDBFail(t *testing.T) {
 	dbErr := errors.New("database connection lost")
 	repo.On("Update", ctx, mock.AnythingOfType("*aggregate.RemnawaveBinding")).Return(dbErr).Once()
 
-	// COMPENSATION: Remnawave user must be deleted
+	// COMPENSATION: Remnawave user must be deleted (succeeds on first attempt)
 	gw.On("DeleteUser", ctx, "rw-uuid-1").Return(nil).Once()
 
 	results, err := saga.Provision(ctx, service.ProvisionRequest{
@@ -203,5 +203,56 @@ func TestProvision_CompensationOnDBFail(t *testing.T) {
 	assert.Empty(t, results)
 
 	gw.AssertExpectations(t)
+	repo.AssertExpectations(t)
+}
+
+func TestProvision_CompensationRetryOnDeleteFail(t *testing.T) {
+	// Use a context with short timeout so backoff sleeps are cancelled quickly.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	repo := new(multisubtest.MockBindingRepo)
+	gw := new(multisubtest.MockRemnawaveGateway)
+	pub := new(multisubtest.MockEventPublisher)
+	calc := service.NewBindingCalculator()
+
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc)
+	plan := newPlanForSaga(t)
+
+	// Create binding in DB succeeds
+	repo.On("Create", ctx, mock.AnythingOfType("*aggregate.RemnawaveBinding")).Return(nil).Once()
+
+	// Create user in Remnawave succeeds
+	gw.On("CreateUser", ctx, mock.MatchedBy(func(req multisub.CreateRemnawaveUserRequest) bool {
+		return true
+	})).Return(&multisub.RemnawaveUserResult{
+		UUID:      "rw-uuid-1",
+		ShortUUID: "rw-short-1",
+	}, nil).Once()
+
+	// DB update fails
+	dbErr := errors.New("database connection lost")
+	repo.On("Update", ctx, mock.AnythingOfType("*aggregate.RemnawaveBinding")).Return(dbErr).Once()
+
+	// COMPENSATION: first delete fails, cancel context to abort remaining retries
+	deleteErr := errors.New("remnawave unavailable")
+	gw.On("DeleteUser", ctx, "rw-uuid-1").Return(deleteErr).Once().Run(func(_ mock.Arguments) {
+		// Cancel context after first failed attempt to avoid waiting for backoff.
+		cancel()
+	})
+
+	results, err := saga.Provision(ctx, service.ProvisionRequest{
+		SubscriptionID: "sub-1",
+		PlatformUserID: "user-abc12345xyz",
+		Plan:           plan,
+		AddonIDs:       nil,
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "update binding")
+	assert.Empty(t, results)
+
+	// DeleteUser was called at least once (context cancellation prevents further retries)
+	gw.AssertCalled(t, "DeleteUser", ctx, "rw-uuid-1")
 	repo.AssertExpectations(t)
 }
