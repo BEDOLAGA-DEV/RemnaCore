@@ -7,7 +7,8 @@ const (
 	EventUserRegistered         domainevent.EventType = "user.registered"
 	EventEmailVerified          domainevent.EventType = "user.email_verified"
 	EventUserLoggedIn           domainevent.EventType = "user.logged_in"
-	EventProfileUpdated         domainevent.EventType = "user.profile_updated"
+	// EventProfileUpdated is reserved for future use.
+	EventProfileUpdated domainevent.EventType = "user.profile_updated"
 	EventPasswordResetRequested domainevent.EventType = "user.password_reset_requested"
 	EventPasswordReset          domainevent.EventType = "user.password_reset"
 )

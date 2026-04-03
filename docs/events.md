@@ -601,7 +601,7 @@ Emitted when a payment provider webhook is received and verified.
 
 ## Reseller Events
 
-Stream: (published to outbox, routed by event type)
+Stream: `RESELLER` | Subjects: `reseller.>`
 
 ### `reseller.tenant_created`
 

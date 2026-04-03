@@ -56,6 +56,11 @@ func (p *EventPublisher) Publish(_ context.Context, topic string, payload interf
 	return nil
 }
 
+// PublishRaw publishes a pre-serialized Watermill message to a topic.
+func (p *EventPublisher) PublishRaw(topic string, msg *message.Message) error {
+	return p.publisher.Publish(topic, msg)
+}
+
 // Close shuts down the underlying Watermill publisher.
 func (p *EventPublisher) Close() error {
 	return p.publisher.Close()

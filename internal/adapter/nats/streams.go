@@ -13,6 +13,7 @@ const (
 	StreamRemnawave = "REMNAWAVE"
 	StreamPayment   = "PAYMENT"
 	StreamInfra     = "INFRA"
+	StreamReseller  = "RESELLER"
 	StreamPlugins   = "PLUGINS"
 	StreamDLQ       = "DLQ"
 )
@@ -58,6 +59,12 @@ func StreamConfigs() []jetstream.StreamConfig {
 			Subjects: []string{"infra.>", "node.>"},
 			Storage: jetstream.MemoryStorage,
 			MaxAge:  RetentionDay,
+		},
+		{
+			Name:     StreamReseller,
+			Subjects: []string{"reseller.>"},
+			Storage:  jetstream.FileStorage,
+			MaxAge:   RetentionMonth,
 		},
 		{
 			Name:     StreamPlugins,

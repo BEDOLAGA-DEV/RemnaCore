@@ -3,6 +3,7 @@ package nats
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -11,9 +12,14 @@ import (
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/message"
 
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
+
+// errMissingSubscriptionID is returned when a billing event lacks the required
+// subscription_id field in its data payload.
+var errMissingSubscriptionID = errors.New("subscription_id missing from event data")
 
 // Dead-letter queue and retry constants.
 const (
@@ -113,10 +119,10 @@ func NewBillingEventConsumer(
 // billingSubscriptionSubjects returns the NATS subjects this consumer listens to.
 func billingSubscriptionSubjects() []string {
 	return []string{
-		"subscription.activated",
-		"subscription.cancelled",
-		"subscription.paused",
-		"subscription.resumed",
+		string(billing.EventSubActivated),
+		string(billing.EventSubCancelled),
+		string(billing.EventSubPaused),
+		string(billing.EventSubResumed),
 	}
 }
 
@@ -232,13 +238,13 @@ func (c *BillingEventConsumer) handleMessage(ctx context.Context, subject string
 // processEvent routes the parsed event to the appropriate handler.
 func (c *BillingEventConsumer) processEvent(ctx context.Context, subject string, event domainevent.Event) error {
 	switch subject {
-	case "subscription.activated":
+	case string(billing.EventSubActivated):
 		return c.handleActivated(ctx, event)
-	case "subscription.cancelled":
+	case string(billing.EventSubCancelled):
 		return c.handleSimple(ctx, event, c.handler.OnSubscriptionCancelled)
-	case "subscription.paused":
+	case string(billing.EventSubPaused):
 		return c.handleSimple(ctx, event, c.handler.OnSubscriptionPaused)
-	case "subscription.resumed":
+	case string(billing.EventSubResumed):
 		return c.handleSimple(ctx, event, c.handler.OnSubscriptionResumed)
 	default:
 		c.logger.Warn("unhandled billing event subject", slog.String("subject", subject))
@@ -269,7 +275,7 @@ func (c *BillingEventConsumer) sendToDLQ(subject string, msg *message.Message, p
 	}
 
 	dlqMsg := message.NewMessage(watermill.NewUUID(), data)
-	if err := c.publisher.publisher.Publish(dlqSubject, dlqMsg); err != nil {
+	if err := c.publisher.PublishRaw(dlqSubject, dlqMsg); err != nil {
 		c.logger.Error("failed to publish to DLQ",
 			slog.String("subject", dlqSubject),
 			slog.Any("error", err),
@@ -306,7 +312,7 @@ func getRetryCount(msg *message.Message) int {
 func (c *BillingEventConsumer) handleActivated(ctx context.Context, event domainevent.Event) error {
 	subscriptionID := extractString(event.Data, "subscription_id")
 	if subscriptionID == "" {
-		return fmt.Errorf("subscription_id missing from event data")
+		return errMissingSubscriptionID
 	}
 
 	subInfo, err := c.lookup.GetSubscriptionByID(ctx, subscriptionID)
@@ -346,15 +352,14 @@ func (c *BillingEventConsumer) handleSimple(
 ) error {
 	subscriptionID := extractString(event.Data, "subscription_id")
 	if subscriptionID == "" {
-		return fmt.Errorf("subscription_id missing from event data")
+		return errMissingSubscriptionID
 	}
 
 	return fn(ctx, subscriptionID)
 }
 
-// extractString safely extracts a string value from the event's Data field.
-// It supports both typed payload structs (via JSON round-trip) and the legacy
-// map[string]any format.
+// extractString extracts a string field from event data.
+// Data is expected to be map[string]any (from JSON unmarshal of NATS messages).
 func extractString(data any, key string) string {
 	m, ok := data.(map[string]any)
 	if !ok {
