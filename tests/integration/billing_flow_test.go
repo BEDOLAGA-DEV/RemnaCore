@@ -24,6 +24,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/handler"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
 )
 
@@ -63,7 +64,7 @@ func newBillingTestHarness(t *testing.T) *billingTestHarness {
 	prorate := billingservice.NewProrateCalculator()
 	trial := billingservice.NewTrialManager(billingservice.DefaultTrialDays)
 	txRunner := billingtest.NoopTxRunner{}
-	svc := billingservice.NewBillingService(plans, subs, invoices, families, pub, prorate, trial, txRunner)
+	svc := billingservice.NewBillingService(plans, subs, invoices, families, pub, prorate, trial, txRunner, clock.NewReal())
 
 	bh := handler.NewBillingHandler(svc, plans, subs, invoices)
 

@@ -21,6 +21,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/handler"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
 )
 
@@ -53,7 +54,7 @@ func newIdentityTestHarness(t *testing.T) *identityTestHarness {
 	repo := new(identitytest.MockRepository)
 	pub := new(identitytest.MockPublisher)
 
-	svc := identity.NewService(repo, pub, jwtIssuer, testAccessTTL, testRefreshTTL)
+	svc := identity.NewService(repo, pub, jwtIssuer, clock.NewReal(), testAccessTTL, testRefreshTTL)
 	h := handler.NewIdentityHandler(svc)
 
 	r := chi.NewRouter()

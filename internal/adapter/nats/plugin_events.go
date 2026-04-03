@@ -3,6 +3,7 @@ package nats
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strings"
 
@@ -48,7 +49,7 @@ type asyncHookPayload struct {
 func (c *PluginAsyncConsumer) Start(ctx context.Context) error {
 	ch, err := c.subscriber.Subscribe(ctx, "plugin.hook.>")
 	if err != nil {
-		return err
+		return fmt.Errorf("subscribe plugin hook events: %w", err)
 	}
 
 	go func() {

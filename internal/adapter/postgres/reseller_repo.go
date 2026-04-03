@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -34,7 +35,12 @@ func NewResellerRepository(pool *pgxpool.Pool) *ResellerRepository {
 func tenantRowToDomain(row gen.ResellerTenant) *reseller.Tenant {
 	var branding reseller.BrandingConfig
 	if len(row.BrandingConfig) > 0 {
-		_ = json.Unmarshal(row.BrandingConfig, &branding)
+		if err := json.Unmarshal(row.BrandingConfig, &branding); err != nil {
+			slog.Warn("corrupt branding config in database",
+				slog.String("tenant_id", pgutil.PgtypeToUUID(row.ID)),
+				slog.String("error", err.Error()),
+			)
+		}
 	}
 
 	return &reseller.Tenant{

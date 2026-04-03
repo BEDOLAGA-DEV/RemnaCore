@@ -35,4 +35,8 @@ const (
 
 	// HeaderAPIKey is the HTTP header used to carry the tenant API key.
 	HeaderAPIKey = "X-API-Key"
+
+	// MaxWebhookBodySize is the maximum allowed size for incoming webhook
+	// request bodies (1 MiB).
+	MaxWebhookBodySize = 1 << 20
 )

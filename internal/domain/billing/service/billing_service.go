@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tracing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
@@ -34,6 +34,7 @@ type BillingService struct {
 	prorate   *ProrateCalculator
 	trial     *TrialManager
 	txRunner  txmanager.Runner
+	clock     clock.Clock
 }
 
 // NewBillingService creates a BillingService with the given dependencies.
@@ -46,6 +47,7 @@ func NewBillingService(
 	prorate *ProrateCalculator,
 	trial *TrialManager,
 	txRunner txmanager.Runner,
+	clk clock.Clock,
 ) *BillingService {
 	return &BillingService{
 		plans:     plans,
@@ -56,6 +58,7 @@ func NewBillingService(
 		prorate:   prorate,
 		trial:     trial,
 		txRunner:  txRunner,
+		clock:     clk,
 	}
 }
 
@@ -76,7 +79,7 @@ func (s *BillingService) CreateSubscription(
 	}
 
 	// Create subscription (defaults to trial)
-	now := time.Now()
+	now := s.clock.Now()
 	sub := aggregate.NewSubscription(cmd.UserID, plan.ID, plan.Interval, cmd.AddonIDs, now)
 
 	// Build line items for the invoice
@@ -118,7 +121,7 @@ func (s *BillingService) CancelSubscription(ctx context.Context, subID string) e
 		return fmt.Errorf("get subscription: %w", err)
 	}
 
-	if err := sub.Cancel(time.Now()); err != nil {
+	if err := sub.Cancel(s.clock.Now()); err != nil {
 		return fmt.Errorf("cancel subscription: %w", err)
 	}
 
@@ -149,7 +152,7 @@ func (s *BillingService) PayInvoice(ctx context.Context, invoiceID string) error
 		return billing.ErrInvoiceAlreadyPaid
 	}
 
-	now := time.Now()
+	now := s.clock.Now()
 
 	// Transition draft -> pending if still in draft
 	if inv.Status == aggregate.InvoiceDraft {
@@ -218,7 +221,7 @@ func (s *BillingService) AddFamilyMember(
 		return billing.ErrFamilyNotEnabled
 	}
 
-	now := time.Now()
+	now := s.clock.Now()
 	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		// Get or create family group
 		fg, err := s.families.GetByOwnerID(txCtx, sub.UserID)
@@ -267,7 +270,7 @@ func (s *BillingService) RemoveFamilyMember(
 		return fmt.Errorf("get family group: %w", err)
 	}
 
-	if err := fg.RemoveMember(memberUserID, time.Now()); err != nil {
+	if err := fg.RemoveMember(memberUserID, s.clock.Now()); err != nil {
 		return fmt.Errorf("remove family member: %w", err)
 	}
 

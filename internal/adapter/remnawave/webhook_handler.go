@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
 )
 
 const (
@@ -32,10 +34,10 @@ func NewWebhookHandler(secret string, onPayload func(WebhookPayload)) *WebhookHa
 }
 
 // ServeHTTP implements http.Handler. It reads the body (limited to
-// MaxWebhookBodySize), verifies the HMAC-SHA256 signature, parses the payload,
-// and invokes the callback.
+// httpconst.MaxWebhookBodySize), verifies the HMAC-SHA256 signature, parses
+// the payload, and invokes the callback.
 func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(io.LimitReader(r.Body, MaxWebhookBodySize))
+	body, err := io.ReadAll(io.LimitReader(r.Body, httpconst.MaxWebhookBodySize))
 	if err != nil {
 		http.Error(w, "failed to read body", http.StatusInternalServerError)
 		return

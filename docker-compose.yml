@@ -4,6 +4,11 @@ services:
     build:
       context: .
       dockerfile: deploy/docker/Dockerfile
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
     ports:
       - "${APP_PORT:-4000}:4000"
     environment:

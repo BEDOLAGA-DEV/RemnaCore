@@ -94,7 +94,10 @@ func (o *MultiSubOrchestrator) OnSubscriptionActivated(
 		AddonIDs:        addonIDs,
 		FamilyMemberIDs: familyMemberIDs,
 	})
-	return err
+	if err != nil {
+		return fmt.Errorf("provision bindings: %w", err)
+	}
+	return nil
 }
 
 // OnSubscriptionCancelled is called when billing publishes

@@ -8,10 +8,8 @@ import (
 
 	billingservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/payment"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
 )
-
-// maxWebhookBodySize limits the size of incoming webhook payloads to 1 MB.
-const maxWebhookBodySize = 1 << 20 // 1 MiB
 
 // PaymentWebhookHandler receives webhooks from payment providers (Stripe,
 // BTCPay, etc.) and dispatches them through the payment facade for
@@ -41,7 +39,7 @@ func (h *PaymentWebhookHandler) HandlePaymentWebhook(w http.ResponseWriter, r *h
 		return
 	}
 
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxWebhookBodySize))
+	body, err := io.ReadAll(io.LimitReader(r.Body, httpconst.MaxWebhookBodySize))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "failed to read request body")
 		return

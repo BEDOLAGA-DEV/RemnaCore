@@ -40,6 +40,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/telegram"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
@@ -63,6 +64,9 @@ func New() *fx.App {
 		valkey.Module,
 		natsadapter.Module,
 		remnawave.Module,
+
+		// Clock — shared wall-clock dependency injected into domain services
+		fx.Provide(func() clock.Clock { return clock.NewReal() }),
 
 		// JWT issuer
 		fx.Provide(provideJWTIssuer),

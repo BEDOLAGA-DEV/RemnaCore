@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -145,7 +146,7 @@ func (r *PlanRepository) Create(ctx context.Context, plan *aggregate.Plan) error
 
 	for _, addon := range plan.AvailableAddons {
 		if err := r.createAddon(ctx, plan.ID, addon); err != nil {
-			return err
+			return fmt.Errorf("create addon %s for plan: %w", addon.ID, err)
 		}
 	}
 	return nil
@@ -195,7 +196,7 @@ func (r *PlanRepository) Update(ctx context.Context, plan *aggregate.Plan) error
 	}
 	for _, addon := range plan.AvailableAddons {
 		if err := r.createAddon(ctx, plan.ID, addon); err != nil {
-			return err
+			return fmt.Errorf("recreate addon %s for plan: %w", addon.ID, err)
 		}
 	}
 	return nil
@@ -456,7 +457,7 @@ func (r *InvoiceRepository) Create(ctx context.Context, inv *aggregate.Invoice) 
 
 	for _, item := range inv.LineItems {
 		if err := r.createLineItem(ctx, inv.ID, item); err != nil {
-			return err
+			return fmt.Errorf("create line item %q for invoice: %w", item.Description, err)
 		}
 	}
 	return nil
@@ -576,7 +577,7 @@ func (r *FamilyRepository) Create(ctx context.Context, fg *aggregate.FamilyGroup
 
 	for _, member := range fg.Members {
 		if err := r.createMember(ctx, fg.ID, member); err != nil {
-			return err
+			return fmt.Errorf("create member %s for family group: %w", member.UserID, err)
 		}
 	}
 	return nil
@@ -608,7 +609,7 @@ func (r *FamilyRepository) Update(ctx context.Context, fg *aggregate.FamilyGroup
 	}
 	for _, member := range fg.Members {
 		if err := r.createMember(ctx, fg.ID, member); err != nil {
-			return err
+			return fmt.Errorf("recreate member %s for family group: %w", member.UserID, err)
 		}
 	}
 	return nil

@@ -13,13 +13,8 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tracing"
 )
 
-const (
-	// DefaultHTTPTimeout is the default timeout for HTTP requests to Remnawave.
-	DefaultHTTPTimeout = 30 * time.Second
-
-	// MaxWebhookBodySize is the maximum allowed size for incoming webhook bodies.
-	MaxWebhookBodySize = 1 << 20 // 1 MB
-)
+// DefaultHTTPTimeout is the default timeout for HTTP requests to Remnawave.
+const DefaultHTTPTimeout = 30 * time.Second
 
 // isHTTPSuccess reports whether the given HTTP status code is in the 2xx range.
 func isHTTPSuccess(statusCode int) bool {

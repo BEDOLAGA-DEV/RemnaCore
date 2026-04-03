@@ -19,6 +19,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/identitytest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
 )
 
@@ -33,7 +34,7 @@ func newTestIdentityHandler(t *testing.T) (*IdentityHandler, *identitytest.MockR
 	key := generateTestECDSAKey(t)
 	jwtIssuer := authutil.NewJWTIssuer(key, &key.PublicKey)
 
-	svc := identity.NewService(repo, pub, jwtIssuer, 15*time.Minute, 7*24*time.Hour)
+	svc := identity.NewService(repo, pub, jwtIssuer, clock.NewReal(), 15*time.Minute, 7*24*time.Hour)
 	h := NewIdentityHandler(svc)
 	return h, repo, pub
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/billingtest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 )
 
 func newTestBillingService() (
@@ -30,8 +31,9 @@ func newTestBillingService() (
 	prorate := NewProrateCalculator()
 	trial := NewTrialManager(DefaultTrialDays)
 	txRunner := billingtest.NoopTxRunner{}
+	clk := clock.NewReal()
 
-	svc := NewBillingService(plans, subs, invoices, families, publisher, prorate, trial, txRunner)
+	svc := NewBillingService(plans, subs, invoices, families, publisher, prorate, trial, txRunner, clk)
 	return svc, plans, subs, invoices, families, publisher
 }
 

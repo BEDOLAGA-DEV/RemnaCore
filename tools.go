@@ -24,5 +24,4 @@ import (
 	_ "github.com/sony/gobreaker/v2"
 	_ "github.com/stretchr/testify/assert"
 	_ "go.uber.org/fx"
-	_ "golang.org/x/crypto/bcrypt"
 )

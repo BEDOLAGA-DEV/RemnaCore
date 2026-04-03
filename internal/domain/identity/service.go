@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
 
@@ -24,6 +25,7 @@ type Service struct {
 	repo       Repository
 	publisher  domainevent.Publisher
 	jwt        *authutil.JWTIssuer
+	clock      clock.Clock
 	accessTTL  time.Duration
 	refreshTTL time.Duration
 }
@@ -31,11 +33,12 @@ type Service struct {
 // NewService creates a Service with the given dependencies. accessTTL and
 // refreshTTL control token lifetimes and must be supplied by the caller
 // (typically from configuration).
-func NewService(repo Repository, publisher domainevent.Publisher, jwt *authutil.JWTIssuer, accessTTL, refreshTTL time.Duration) *Service {
+func NewService(repo Repository, publisher domainevent.Publisher, jwt *authutil.JWTIssuer, clk clock.Clock, accessTTL, refreshTTL time.Duration) *Service {
 	return &Service{
 		repo:       repo,
 		publisher:  publisher,
 		jwt:        jwt,
+		clock:      clk,
 		accessTTL:  accessTTL,
 		refreshTTL: refreshTTL,
 	}
@@ -78,7 +81,7 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (*RegisterR
 		return nil, ErrEmailTaken
 	}
 
-	now := time.Now()
+	now := s.clock.Now()
 	user, err := NewPlatformUser(input.Email, input.Password, now)
 	if err != nil {
 		return nil, fmt.Errorf("creating user: %w", err)
@@ -140,7 +143,7 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (*LoginResult, er
 		return nil, fmt.Errorf("generating refresh token: %w", err)
 	}
 
-	now := time.Now()
+	now := s.clock.Now()
 	session := &Session{
 		ID:           uuid.New().String(),
 		UserID:       user.ID,
@@ -174,7 +177,7 @@ func (s *Service) VerifyEmail(ctx context.Context, token string) error {
 		return fmt.Errorf("finding verification: %w", err)
 	}
 
-	if verification.IsExpiredAt(time.Now()) {
+	if verification.IsExpiredAt(s.clock.Now()) {
 		return ErrTokenExpired
 	}
 
@@ -183,7 +186,7 @@ func (s *Service) VerifyEmail(ctx context.Context, token string) error {
 		return fmt.Errorf("finding user: %w", err)
 	}
 
-	user.VerifyEmail(time.Now())
+	user.VerifyEmail(s.clock.Now())
 	if err := s.repo.UpdateUser(ctx, user); err != nil {
 		return fmt.Errorf("updating user: %w", err)
 	}
@@ -210,7 +213,7 @@ func (s *Service) RefreshToken(ctx context.Context, refreshToken string) (*Login
 		return nil, fmt.Errorf("finding session: %w", err)
 	}
 
-	if time.Now().After(session.ExpiresAt) {
+	if s.clock.Now().After(session.ExpiresAt) {
 		return nil, ErrSessionExpired
 	}
 
@@ -229,7 +232,7 @@ func (s *Service) RefreshToken(ctx context.Context, refreshToken string) (*Login
 		return nil, fmt.Errorf("generating refresh token: %w", err)
 	}
 
-	now := time.Now()
+	now := s.clock.Now()
 	newSession := &Session{
 		ID:           uuid.New().String(),
 		UserID:       user.ID,
@@ -282,7 +285,7 @@ func (s *Service) UpdateDisplayName(ctx context.Context, userID, displayName str
 		return fmt.Errorf("finding user: %w", err)
 	}
 	user.DisplayName = displayName
-	user.UpdatedAt = time.Now()
+	user.UpdatedAt = s.clock.Now()
 	if err := s.repo.UpdateUser(ctx, user); err != nil {
 		return fmt.Errorf("updating user: %w", err)
 	}
@@ -295,7 +298,7 @@ func (s *Service) LinkTelegram(ctx context.Context, userID string, telegramID in
 	if err != nil {
 		return fmt.Errorf("finding user: %w", err)
 	}
-	now := time.Now()
+	now := s.clock.Now()
 	user.TelegramID = &telegramID
 	user.UpdatedAt = now
 	if err := s.repo.UpdateUser(ctx, user); err != nil {
@@ -311,7 +314,7 @@ func (s *Service) UnlinkTelegram(ctx context.Context, userID string) error {
 		return fmt.Errorf("finding user: %w", err)
 	}
 	user.TelegramID = nil
-	user.UpdatedAt = time.Now()
+	user.UpdatedAt = s.clock.Now()
 	if err := s.repo.UpdateUser(ctx, user); err != nil {
 		return fmt.Errorf("updating user: %w", err)
 	}
@@ -345,7 +348,7 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 		return fmt.Errorf("clearing existing resets: %w", err)
 	}
 
-	reset := NewPasswordReset(user.ID, user.Email, time.Now())
+	reset := NewPasswordReset(user.ID, user.Email, s.clock.Now())
 	if err := s.repo.CreatePasswordReset(ctx, reset); err != nil {
 		return fmt.Errorf("persisting password reset: %w", err)
 	}
@@ -372,7 +375,7 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 		return fmt.Errorf("finding password reset: %w", err)
 	}
 
-	if reset.IsExpiredAt(time.Now()) {
+	if reset.IsExpiredAt(s.clock.Now()) {
 		return ErrPasswordResetExpired
 	}
 
@@ -390,7 +393,7 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 		return fmt.Errorf("finding user: %w", err)
 	}
 
-	now := time.Now()
+	now := s.clock.Now()
 	user.PasswordHash = hash
 	user.UpdatedAt = now
 	if err := s.repo.UpdateUser(ctx, user); err != nil {
