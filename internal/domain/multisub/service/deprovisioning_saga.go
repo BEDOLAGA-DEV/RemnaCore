@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	multisubdomain "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
@@ -59,19 +60,35 @@ func (s *DeprovisioningSaga) deprovisionOne(ctx context.Context, binding *aggreg
 		if err := s.gateway.DeleteUser(ctx, binding.RemnawaveUUID); err != nil {
 			// Mark binding as failed and persist — do not stop the saga.
 			binding.MarkFailed(fmt.Sprintf("remnawave delete: %s", err.Error()))
-			_ = s.bindings.Update(ctx, binding)
+			if updateErr := s.bindings.Update(ctx, binding); updateErr != nil {
+				slog.Warn("failed to update binding after remnawave delete failure",
+					slog.String("binding_id", binding.ID),
+					slog.String("error", updateErr.Error()),
+				)
+			}
 			return
 		}
 	}
 
 	// 2. Mark binding as deprovisioned
 	binding.Deprovision()
-	_ = s.bindings.Update(ctx, binding)
+	if err := s.bindings.Update(ctx, binding); err != nil {
+		slog.Warn("failed to update binding after deprovision",
+			slog.String("binding_id", binding.ID),
+			slog.String("error", err.Error()),
+		)
+	}
 
 	// 3. Publish deprovisioned event
-	_ = s.publisher.Publish(ctx, multisubdomain.NewBindingDeprovisionedEvent(
+	event := multisubdomain.NewBindingDeprovisionedEvent(
 		binding.ID,
 		binding.SubscriptionID,
 		binding.RemnawaveUUID,
-	))
+	)
+	if err := s.publisher.Publish(ctx, event); err != nil {
+		slog.Warn("failed to publish event",
+			slog.String("event_type", string(event.Type)),
+			slog.String("error", err.Error()),
+		)
+	}
 }

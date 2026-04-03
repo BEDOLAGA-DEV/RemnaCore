@@ -135,14 +135,24 @@ func (d *HookDispatcher) DispatchSync(ctx context.Context, hookName string, payl
 				d.logger.Error("hook execution timed out",
 					"hook", hookName, "plugin", reg.PluginSlug, "timeout", timeout, "duration_ms", durationMs)
 				if d.publisher != nil {
-					_ = d.publisher.Publish(ctx, NewHookFailedEvent(reg.PluginID, reg.PluginSlug, hookName, "timed out"))
+					if pubErr := d.publisher.Publish(ctx, NewHookFailedEvent(reg.PluginID, reg.PluginSlug, hookName, "timed out")); pubErr != nil {
+						d.logger.Warn("failed to publish event",
+							"event_type", string(EventHookFailed),
+							"error", pubErr.Error(),
+						)
+					}
 				}
 				return nil, fmt.Errorf("%w: plugin %q timed out after %v", ErrHookTimeout, reg.PluginSlug, timeout)
 			}
 			d.logger.Error("hook execution failed",
 				"hook", hookName, "plugin", reg.PluginSlug, "error", err, "duration_ms", durationMs)
 			if d.publisher != nil {
-				_ = d.publisher.Publish(ctx, NewHookFailedEvent(reg.PluginID, reg.PluginSlug, hookName, err.Error()))
+				if pubErr := d.publisher.Publish(ctx, NewHookFailedEvent(reg.PluginID, reg.PluginSlug, hookName, err.Error())); pubErr != nil {
+					d.logger.Warn("failed to publish event",
+						"event_type", string(EventHookFailed),
+						"error", pubErr.Error(),
+					)
+				}
 			}
 			return nil, fmt.Errorf("hook %q failed for plugin %q: %w", hookName, reg.PluginSlug, err)
 		}
@@ -155,7 +165,12 @@ func (d *HookDispatcher) DispatchSync(ctx context.Context, hookName string, payl
 		}
 
 		if d.publisher != nil {
-			_ = d.publisher.Publish(ctx, NewHookExecutedEvent(reg.PluginID, reg.PluginSlug, hookName, durationMs))
+			if pubErr := d.publisher.Publish(ctx, NewHookExecutedEvent(reg.PluginID, reg.PluginSlug, hookName, durationMs)); pubErr != nil {
+				d.logger.Warn("failed to publish event",
+					"event_type", string(EventHookExecuted),
+					"error", pubErr.Error(),
+				)
+			}
 		}
 
 		switch result.Action {

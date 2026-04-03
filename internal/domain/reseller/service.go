@@ -47,7 +47,12 @@ func (s *ResellerService) CreateTenant(ctx context.Context, name, domain, ownerU
 		return nil, "", fmt.Errorf("persisting tenant: %w", err)
 	}
 
-	_ = s.publisher.Publish(ctx, NewTenantCreatedEvent(tenant.ID, ownerUserID))
+	if err := s.publisher.Publish(ctx, NewTenantCreatedEvent(tenant.ID, ownerUserID)); err != nil {
+		s.logger.Warn("failed to publish event",
+			slog.String("event_type", string(EventTenantCreated)),
+			slog.String("error", err.Error()),
+		)
+	}
 
 	s.logger.Info("tenant created",
 		slog.String("tenant_id", tenant.ID),
@@ -111,7 +116,12 @@ func (s *ResellerService) CreateResellerAccount(ctx context.Context, tenantID, u
 		return nil, fmt.Errorf("persisting reseller account: %w", err)
 	}
 
-	_ = s.publisher.Publish(ctx, NewResellerCreatedEvent(account.ID, tenantID, userID))
+	if err := s.publisher.Publish(ctx, NewResellerCreatedEvent(account.ID, tenantID, userID)); err != nil {
+		s.logger.Warn("failed to publish event",
+			slog.String("event_type", string(EventResellerCreated)),
+			slog.String("error", err.Error()),
+		)
+	}
 
 	s.logger.Info("reseller account created",
 		slog.String("reseller_id", account.ID),
@@ -142,7 +152,12 @@ func (s *ResellerService) RecordCommission(ctx context.Context, resellerID, sale
 		return nil, fmt.Errorf("updating reseller balance: %w", err)
 	}
 
-	_ = s.publisher.Publish(ctx, NewCommissionCreatedEvent(commission.ID, resellerID, commission.Amount))
+	if err := s.publisher.Publish(ctx, NewCommissionCreatedEvent(commission.ID, resellerID, commission.Amount)); err != nil {
+		s.logger.Warn("failed to publish event",
+			slog.String("event_type", string(EventCommissionCreated)),
+			slog.String("error", err.Error()),
+		)
+	}
 
 	return commission, nil
 }

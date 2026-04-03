@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"time"
 
 	"go.uber.org/fx"
 
@@ -43,6 +44,10 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
+
+// httpShutdownTimeout is the maximum time allowed for the HTTP server to
+// complete in-flight requests during graceful shutdown.
+const httpShutdownTimeout = 10 * time.Second
 
 // New constructs the Fx application with all modules wired together.
 func New() *fx.App {
@@ -328,7 +333,9 @@ func startHTTPServer(lc fx.Lifecycle, router http.Handler, cfg *config.Config, l
 		},
 		OnStop: func(ctx context.Context) error {
 			logger.Info("http server shutting down")
-			return srv.Shutdown(ctx)
+			shutdownCtx, cancel := context.WithTimeout(ctx, httpShutdownTimeout)
+			defer cancel()
+			return srv.Shutdown(shutdownCtx)
 		},
 	})
 }
@@ -405,11 +412,20 @@ func startOutboxRelay(lc fx.Lifecycle, relay *natsadapter.OutboxRelay, logger *s
 // subscription events to the MultiSubOrchestrator for provisioning/deprovisioning.
 func startBillingEventConsumer(lc fx.Lifecycle, consumer *natsadapter.BillingEventConsumer, logger *slog.Logger) {
 	lc.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error {
-			if err := consumer.Start(ctx); err != nil {
+		OnStart: func(_ context.Context) error {
+			consumerCtx, cancel := context.WithCancel(context.Background())
+			if err := consumer.Start(consumerCtx); err != nil {
+				cancel()
 				return fmt.Errorf("failed to start billing event consumer: %w", err)
 			}
 			logger.Info("billing event consumer started")
+			lc.Append(fx.Hook{
+				OnStop: func(_ context.Context) error {
+					logger.Info("billing event consumer stopping")
+					cancel()
+					return nil
+				},
+			})
 			return nil
 		},
 	})
@@ -442,11 +458,20 @@ func startTelegramBot(lc fx.Lifecycle, bot *telegram.Bot, logger *slog.Logger) {
 // hook events. It manages the consumer lifecycle via the Fx lifecycle hooks.
 func startPluginAsyncConsumer(lc fx.Lifecycle, consumer *natsadapter.PluginAsyncConsumer, logger *slog.Logger) {
 	lc.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error {
-			if err := consumer.Start(ctx); err != nil {
+		OnStart: func(_ context.Context) error {
+			consumerCtx, cancel := context.WithCancel(context.Background())
+			if err := consumer.Start(consumerCtx); err != nil {
+				cancel()
 				return fmt.Errorf("failed to start async plugin consumer: %w", err)
 			}
 			logger.Info("async plugin consumer started")
+			lc.Append(fx.Hook{
+				OnStop: func(_ context.Context) error {
+					logger.Info("async plugin consumer stopping")
+					cancel()
+					return nil
+				},
+			})
 			return nil
 		},
 	})

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	multisubdomain "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
@@ -49,11 +50,17 @@ func (s *SyncSaga) SyncBinding(ctx context.Context, bindingID string) error {
 
 	status, err := s.gateway.GetUser(ctx, binding.RemnawaveUUID)
 	if err != nil {
-		_ = s.publisher.Publish(ctx, multisubdomain.NewBindingSyncFailedEvent(
+		syncFailedEvent := multisubdomain.NewBindingSyncFailedEvent(
 			binding.ID,
 			binding.SubscriptionID,
 			err.Error(),
-		))
+		)
+		if pubErr := s.publisher.Publish(ctx, syncFailedEvent); pubErr != nil {
+			slog.Warn("failed to publish event",
+				slog.String("event_type", string(syncFailedEvent.Type)),
+				slog.String("error", pubErr.Error()),
+			)
+		}
 		return fmt.Errorf("remnawave get user: %w", err)
 	}
 
@@ -68,10 +75,16 @@ func (s *SyncSaga) SyncBinding(ctx context.Context, bindingID string) error {
 		return fmt.Errorf("update binding: %w", err)
 	}
 
-	_ = s.publisher.Publish(ctx, multisubdomain.NewBindingSyncCompletedEvent(
+	syncCompletedEvent := multisubdomain.NewBindingSyncCompletedEvent(
 		binding.ID,
 		binding.SubscriptionID,
-	))
+	)
+	if err := s.publisher.Publish(ctx, syncCompletedEvent); err != nil {
+		slog.Warn("failed to publish event",
+			slog.String("event_type", string(syncCompletedEvent.Type)),
+			slog.String("error", err.Error()),
+		)
+	}
 
 	return nil
 }
@@ -113,11 +126,17 @@ func (s *SyncSaga) HandleWebhookEvent(ctx context.Context, remnawaveUUID string,
 		return fmt.Errorf("update binding: %w", err)
 	}
 
-	_ = s.publisher.Publish(ctx, domainevent.New(domainEventType, map[string]any{
+	webhookEvent := domainevent.New(domainEventType, map[string]any{
 		"binding_id":      binding.ID,
 		"subscription_id": binding.SubscriptionID,
 		"remnawave_uuid":  binding.RemnawaveUUID,
-	}))
+	})
+	if err := s.publisher.Publish(ctx, webhookEvent); err != nil {
+		slog.Warn("failed to publish event",
+			slog.String("event_type", string(webhookEvent.Type)),
+			slog.String("error", err.Error()),
+		)
+	}
 
 	return nil
 }

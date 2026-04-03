@@ -30,7 +30,12 @@ const (
 )
 
 // defaultCORSOrigins is used when no CORS_ALLOWED_ORIGINS env var is set.
-var defaultCORSOrigins = []string{"http://localhost:*", "https://*"}
+// Only localhost variants are allowed by default; production origins MUST be
+// set via the CORS_ALLOWED_ORIGINS environment variable.
+var defaultCORSOrigins = []string{
+	"http://localhost:*",
+	"http://127.0.0.1:*",
+}
 
 // RouterParams groups the dependencies required to build the HTTP router.
 type RouterParams struct {

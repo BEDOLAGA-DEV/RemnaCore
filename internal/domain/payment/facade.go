@@ -81,9 +81,15 @@ func (f *PaymentFacade) CreateCharge(ctx context.Context, req CreateChargeReques
 	}
 
 	if f.publisher != nil {
-		_ = f.publisher.Publish(ctx, NewChargeCreatedEvent(
+		chargeEvent := NewChargeCreatedEvent(
 			record.ID, record.InvoiceID, record.Provider, record.ExternalID, record.Amount,
-		))
+		)
+		if err := f.publisher.Publish(ctx, chargeEvent); err != nil {
+			f.logger.Warn("failed to publish event",
+				slog.String("event_type", string(chargeEvent.Type)),
+				slog.String("error", err.Error()),
+			)
+		}
 	}
 
 	f.logger.Info("payment charge created",
@@ -123,7 +129,13 @@ func (f *PaymentFacade) VerifyWebhook(ctx context.Context, provider string, head
 	}
 
 	if f.publisher != nil {
-		_ = f.publisher.Publish(ctx, NewWebhookReceivedEvent(provider, verified.ExternalID, verified.Status))
+		webhookEvent := NewWebhookReceivedEvent(provider, verified.ExternalID, verified.Status)
+		if err := f.publisher.Publish(ctx, webhookEvent); err != nil {
+			f.logger.Warn("failed to publish event",
+				slog.String("event_type", string(webhookEvent.Type)),
+				slog.String("error", err.Error()),
+			)
+		}
 	}
 
 	f.logger.Info("webhook verified",
@@ -166,9 +178,15 @@ func (f *PaymentFacade) Refund(ctx context.Context, paymentID string, amount int
 	}
 
 	if f.publisher != nil {
-		_ = f.publisher.Publish(ctx, NewRefundCompletedEvent(
+		refundEvent := NewRefundCompletedEvent(
 			record.ID, record.InvoiceID, record.Provider, amount,
-		))
+		)
+		if err := f.publisher.Publish(ctx, refundEvent); err != nil {
+			f.logger.Warn("failed to publish event",
+				slog.String("event_type", string(refundEvent.Type)),
+				slog.String("error", err.Error()),
+			)
+		}
 	}
 
 	f.logger.Info("payment refunded",
@@ -196,9 +214,15 @@ func (f *PaymentFacade) CompletePayment(ctx context.Context, provider, externalI
 	}
 
 	if f.publisher != nil {
-		_ = f.publisher.Publish(ctx, NewChargeCompletedEvent(
+		completedEvent := NewChargeCompletedEvent(
 			record.ID, record.InvoiceID, record.Provider, record.Amount,
-		))
+		)
+		if err := f.publisher.Publish(ctx, completedEvent); err != nil {
+			f.logger.Warn("failed to publish event",
+				slog.String("event_type", string(completedEvent.Type)),
+				slog.String("error", err.Error()),
+			)
+		}
 	}
 
 	return record, nil

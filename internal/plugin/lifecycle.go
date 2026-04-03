@@ -65,7 +65,12 @@ func (lm *LifecycleManager) Install(ctx context.Context, manifestBytes, wasmByte
 	}
 
 	if lm.publisher != nil {
-		_ = lm.publisher.Publish(ctx, NewPluginInstalledEvent(p.ID, p.Slug, p.Version))
+		if err := lm.publisher.Publish(ctx, NewPluginInstalledEvent(p.ID, p.Slug, p.Version)); err != nil {
+			lm.logger.Warn("failed to publish event",
+				"event_type", string(EventPluginInstalled),
+				"error", err.Error(),
+			)
+		}
 	}
 
 	lm.logger.Info("plugin installed", "slug", p.Slug, "id", p.ID)
@@ -102,7 +107,12 @@ func (lm *LifecycleManager) Enable(ctx context.Context, pluginID string) error {
 	}
 
 	if lm.publisher != nil {
-		_ = lm.publisher.Publish(ctx, NewPluginEnabledEvent(p.ID, p.Slug))
+		if err := lm.publisher.Publish(ctx, NewPluginEnabledEvent(p.ID, p.Slug)); err != nil {
+			lm.logger.Warn("failed to publish event",
+				"event_type", string(EventPluginEnabled),
+				"error", err.Error(),
+			)
+		}
 	}
 
 	lm.logger.Info("plugin enabled", "slug", p.Slug, "id", p.ID)
@@ -132,7 +142,12 @@ func (lm *LifecycleManager) Disable(ctx context.Context, pluginID string) error 
 	}
 
 	if lm.publisher != nil {
-		_ = lm.publisher.Publish(ctx, NewPluginDisabledEvent(p.ID, p.Slug))
+		if err := lm.publisher.Publish(ctx, NewPluginDisabledEvent(p.ID, p.Slug)); err != nil {
+			lm.logger.Warn("failed to publish event",
+				"event_type", string(EventPluginDisabled),
+				"error", err.Error(),
+			)
+		}
 	}
 
 	lm.logger.Info("plugin disabled", "slug", p.Slug, "id", p.ID)
@@ -168,7 +183,12 @@ func (lm *LifecycleManager) Uninstall(ctx context.Context, pluginID string) erro
 	}
 
 	if lm.publisher != nil {
-		_ = lm.publisher.Publish(ctx, NewPluginUninstalledEvent(p.ID, p.Slug))
+		if err := lm.publisher.Publish(ctx, NewPluginUninstalledEvent(p.ID, p.Slug)); err != nil {
+			lm.logger.Warn("failed to publish event",
+				"event_type", string(EventPluginUninstalled),
+				"error", err.Error(),
+			)
+		}
 	}
 
 	lm.logger.Info("plugin uninstalled", "slug", p.Slug, "id", p.ID)

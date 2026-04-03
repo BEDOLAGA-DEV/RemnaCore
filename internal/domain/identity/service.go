@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -91,7 +92,12 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (*RegisterR
 		return nil, fmt.Errorf("persisting email verification: %w", err)
 	}
 
-	_ = s.publisher.Publish(ctx, NewUserRegisteredEvent(user.ID, user.Email))
+	if err := s.publisher.Publish(ctx, NewUserRegisteredEvent(user.ID, user.Email)); err != nil {
+		slog.Warn("failed to publish event",
+			slog.String("event_type", string(EventUserRegistered)),
+			slog.String("error", err.Error()),
+		)
+	}
 
 	return &RegisterResult{
 		User:              user,
@@ -144,7 +150,12 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (*LoginResult, er
 		return nil, fmt.Errorf("persisting session: %w", err)
 	}
 
-	_ = s.publisher.Publish(ctx, NewUserLoggedInEvent(user.ID))
+	if err := s.publisher.Publish(ctx, NewUserLoggedInEvent(user.ID)); err != nil {
+		slog.Warn("failed to publish event",
+			slog.String("event_type", string(EventUserLoggedIn)),
+			slog.String("error", err.Error()),
+		)
+	}
 
 	return &LoginResult{
 		AccessToken:  accessToken,
@@ -179,7 +190,12 @@ func (s *Service) VerifyEmail(ctx context.Context, token string) error {
 		return fmt.Errorf("deleting verification: %w", err)
 	}
 
-	_ = s.publisher.Publish(ctx, NewEmailVerifiedEvent(user.ID, user.Email))
+	if err := s.publisher.Publish(ctx, NewEmailVerifiedEvent(user.ID, user.Email)); err != nil {
+		slog.Warn("failed to publish event",
+			slog.String("event_type", string(EventEmailVerified)),
+			slog.String("error", err.Error()),
+		)
+	}
 
 	return nil
 }
@@ -331,7 +347,12 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 	}
 
 	// Notification plugins listen for this event to send the actual email.
-	_ = s.publisher.Publish(ctx, NewPasswordResetRequestedEvent(user.ID, user.Email, reset.Token))
+	if err := s.publisher.Publish(ctx, NewPasswordResetRequestedEvent(user.ID, user.Email, reset.Token)); err != nil {
+		slog.Warn("failed to publish event",
+			slog.String("event_type", string(EventPasswordResetRequested)),
+			slog.String("error", err.Error()),
+		)
+	}
 
 	return nil
 }
@@ -381,7 +402,12 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 		return fmt.Errorf("deleting password reset: %w", err)
 	}
 
-	_ = s.publisher.Publish(ctx, NewPasswordResetEvent(user.ID))
+	if err := s.publisher.Publish(ctx, NewPasswordResetEvent(user.ID)); err != nil {
+		slog.Warn("failed to publish event",
+			slog.String("event_type", string(EventPasswordReset)),
+			slog.String("error", err.Error()),
+		)
+	}
 
 	return nil
 }
