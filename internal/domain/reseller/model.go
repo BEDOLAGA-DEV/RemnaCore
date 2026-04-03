@@ -80,8 +80,7 @@ type Commission struct {
 }
 
 // NewTenant creates a new Tenant with a generated UUID and default settings.
-func NewTenant(name, domain, ownerUserID string) *Tenant {
-	now := time.Now()
+func NewTenant(name, domain, ownerUserID string, now time.Time) *Tenant {
 	return &Tenant{
 		ID:          uuid.New().String(),
 		Name:        name,
@@ -96,7 +95,7 @@ func NewTenant(name, domain, ownerUserID string) *Tenant {
 // GenerateAPIKey creates a cryptographically random API key, stores its SHA-256
 // hash on the tenant, and returns the plain-text key. The plain-text key is
 // only available at generation time; it is NEVER persisted.
-func (t *Tenant) GenerateAPIKey() (string, error) {
+func (t *Tenant) GenerateAPIKey(now time.Time) (string, error) {
 	keyBytes := make([]byte, APIKeyLen)
 	if _, err := rand.Read(keyBytes); err != nil {
 		return "", fmt.Errorf("generating random bytes: %w", err)
@@ -104,7 +103,7 @@ func (t *Tenant) GenerateAPIKey() (string, error) {
 
 	plainKey := hex.EncodeToString(keyBytes)
 	t.APIKeyHash = HashAPIKey(plainKey)
-	t.UpdatedAt = time.Now()
+	t.UpdatedAt = now
 
 	return plainKey, nil
 }
@@ -117,7 +116,7 @@ func HashAPIKey(plainKey string) string {
 
 // NewResellerAccount creates a new ResellerAccount after validating the
 // commission rate is within the allowed range.
-func NewResellerAccount(tenantID, userID string, commissionRate int) (*ResellerAccount, error) {
+func NewResellerAccount(tenantID, userID string, commissionRate int, now time.Time) (*ResellerAccount, error) {
 	if commissionRate < MinCommissionRate || commissionRate > MaxCommissionRate {
 		return nil, ErrInvalidCommissionRate
 	}
@@ -128,12 +127,12 @@ func NewResellerAccount(tenantID, userID string, commissionRate int) (*ResellerA
 		UserID:         userID,
 		CommissionRate: commissionRate,
 		Balance:        0,
-		CreatedAt:      time.Now(),
+		CreatedAt:      now,
 	}, nil
 }
 
 // NewCommission calculates and creates a commission record for a sale.
-func NewCommission(resellerID, saleID string, saleAmount int64, commissionRate int, currency string) *Commission {
+func NewCommission(resellerID, saleID string, saleAmount int64, commissionRate int, currency string, now time.Time) *Commission {
 	amount := saleAmount * int64(commissionRate) / PercentBase
 
 	return &Commission{
@@ -143,6 +142,6 @@ func NewCommission(resellerID, saleID string, saleAmount int64, commissionRate i
 		Amount:     amount,
 		Currency:   currency,
 		Status:     CommissionPending,
-		CreatedAt:  time.Now(),
+		CreatedAt:  now,
 	}
 }

@@ -1,11 +1,10 @@
 package service
 
 import (
-	"time"
-
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 )
 
 // DefaultTrialDays is the default number of days for a trial period.
@@ -14,15 +13,22 @@ const DefaultTrialDays = 7
 // TrialManager handles trial-related logic for subscriptions.
 type TrialManager struct {
 	trialDays int
+	clock     clock.Clock
 }
 
 // NewTrialManager creates a TrialManager with the specified trial duration.
 // If trialDays is zero or negative, DefaultTrialDays is used.
 func NewTrialManager(trialDays int) *TrialManager {
+	return NewTrialManagerWithClock(trialDays, clock.NewReal())
+}
+
+// NewTrialManagerWithClock creates a TrialManager with an explicit clock for
+// deterministic testing.
+func NewTrialManagerWithClock(trialDays int, c clock.Clock) *TrialManager {
 	if trialDays <= 0 {
 		trialDays = DefaultTrialDays
 	}
-	return &TrialManager{trialDays: trialDays}
+	return &TrialManager{trialDays: trialDays, clock: c}
 }
 
 // TrialDays returns the configured number of trial days.
@@ -38,7 +44,7 @@ func (tm *TrialManager) StartTrial(sub *aggregate.Subscription) error {
 		return billing.ErrNotTrialStatus
 	}
 
-	now := time.Now()
+	now := tm.clock.Now()
 	sub.Period = vo.BillingPeriod{
 		Start:    now,
 		End:      now.AddDate(0, 0, tm.trialDays),
@@ -56,7 +62,7 @@ func (tm *TrialManager) IsTrialExpiring(sub *aggregate.Subscription, warningDays
 		return false
 	}
 
-	deadline := time.Now().AddDate(0, 0, warningDays)
+	deadline := tm.clock.Now().AddDate(0, 0, warningDays)
 	return sub.Period.End.Before(deadline) || sub.Period.End.Equal(deadline)
 }
 
@@ -67,5 +73,5 @@ func (tm *TrialManager) IsTrialExpired(sub *aggregate.Subscription) bool {
 		return false
 	}
 
-	return time.Now().After(sub.Period.End)
+	return tm.clock.Now().After(sub.Period.End)
 }

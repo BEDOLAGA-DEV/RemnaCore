@@ -59,7 +59,7 @@ type Invoice struct {
 
 // NewInvoice creates an Invoice, calculating subtotal, discount and total.
 // At least one line item is required.
-func NewInvoice(subID, userID string, lineItems []vo.LineItem, discounts []vo.Discount, currency vo.Currency) (*Invoice, error) {
+func NewInvoice(subID, userID string, lineItems []vo.LineItem, discounts []vo.Discount, currency vo.Currency, now time.Time) (*Invoice, error) {
 	if len(lineItems) == 0 {
 		return nil, ErrInvoiceRequiresLineItems
 	}
@@ -69,7 +69,6 @@ func NewInvoice(subID, userID string, lineItems []vo.LineItem, discounts []vo.Di
 		return nil, err
 	}
 
-	now := time.Now()
 	return &Invoice{
 		ID:             uuid.New().String(),
 		SubscriptionID: subID,
@@ -86,44 +85,43 @@ func NewInvoice(subID, userID string, lineItems []vo.LineItem, discounts []vo.Di
 }
 
 // MarkPending transitions the invoice from draft to pending.
-func (inv *Invoice) MarkPending() error {
+func (inv *Invoice) MarkPending(now time.Time) error {
 	if inv.Status != InvoiceDraft {
 		return ErrInvoiceMustBeDraftForPending
 	}
 	inv.Status = InvoicePending
-	inv.UpdatedAt = time.Now()
+	inv.UpdatedAt = now
 	return nil
 }
 
 // MarkPaid transitions the invoice from pending to paid.
-func (inv *Invoice) MarkPaid() error {
+func (inv *Invoice) MarkPaid(now time.Time) error {
 	if inv.Status != InvoicePending {
 		return ErrInvoiceMustBePendingForPaid
 	}
 	inv.Status = InvoicePaid
-	now := time.Now()
 	inv.PaidAt = &now
 	inv.UpdatedAt = now
 	return nil
 }
 
 // MarkFailed transitions the invoice from pending to failed.
-func (inv *Invoice) MarkFailed() error {
+func (inv *Invoice) MarkFailed(now time.Time) error {
 	if inv.Status != InvoicePending {
 		return ErrInvoiceMustBePendingForFailed
 	}
 	inv.Status = InvoiceFailed
-	inv.UpdatedAt = time.Now()
+	inv.UpdatedAt = now
 	return nil
 }
 
 // Refund transitions the invoice from paid to refunded.
-func (inv *Invoice) Refund() error {
+func (inv *Invoice) Refund(now time.Time) error {
 	if inv.Status != InvoicePaid {
 		return ErrInvoiceMustBePaidForRefund
 	}
 	inv.Status = InvoiceRefunded
-	inv.UpdatedAt = time.Now()
+	inv.UpdatedAt = now
 	return nil
 }
 

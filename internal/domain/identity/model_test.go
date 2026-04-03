@@ -9,7 +9,7 @@ import (
 )
 
 func TestNewPlatformUser_Valid(t *testing.T) {
-	user, err := NewPlatformUser("alice@example.com", "StrongP4ss")
+	user, err := NewPlatformUser("alice@example.com", "StrongP4ss", time.Now())
 	require.NoError(t, err)
 
 	assert.NotEmpty(t, user.ID)
@@ -22,32 +22,32 @@ func TestNewPlatformUser_Valid(t *testing.T) {
 }
 
 func TestNewPlatformUser_InvalidEmail(t *testing.T) {
-	_, err := NewPlatformUser("not-an-email", "StrongP4ss")
+	_, err := NewPlatformUser("not-an-email", "StrongP4ss", time.Now())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "email")
 }
 
 func TestNewPlatformUser_WeakPassword(t *testing.T) {
-	_, err := NewPlatformUser("alice@example.com", "123")
+	_, err := NewPlatformUser("alice@example.com", "123", time.Now())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "password")
 }
 
 func TestPlatformUser_VerifyEmail(t *testing.T) {
-	user, err := NewPlatformUser("alice@example.com", "StrongP4ss")
+	user, err := NewPlatformUser("alice@example.com", "StrongP4ss", time.Now())
 	require.NoError(t, err)
 	assert.False(t, user.EmailVerified)
 
 	before := user.UpdatedAt
 	time.Sleep(time.Millisecond) // ensure time advances
-	user.VerifyEmail()
+	user.VerifyEmail(time.Now())
 
 	assert.True(t, user.EmailVerified)
 	assert.True(t, user.UpdatedAt.After(before))
 }
 
 func TestEmailVerification_Generate(t *testing.T) {
-	v := NewEmailVerification("user-123", "alice@example.com")
+	v := NewEmailVerification("user-123", "alice@example.com", time.Now())
 
 	assert.NotEmpty(t, v.ID)
 	assert.Equal(t, "user-123", v.UserID)
@@ -60,7 +60,7 @@ func TestEmailVerification_Generate(t *testing.T) {
 }
 
 func TestEmailVerification_IsExpired(t *testing.T) {
-	v := NewEmailVerification("user-123", "alice@example.com")
+	v := NewEmailVerification("user-123", "alice@example.com", time.Now())
 	v.ExpiresAt = time.Now().Add(-time.Hour)
 
 	assert.True(t, v.IsExpired())

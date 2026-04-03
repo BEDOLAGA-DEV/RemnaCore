@@ -79,11 +79,18 @@ func (d Discount) Apply(price Money) (Money, error) {
 	}
 }
 
-// IsExpired reports whether the discount has passed its expiration time.
-// Discounts with no expiry (nil ExpiresAt) never expire.
-func (d Discount) IsExpired() bool {
+// IsExpiredAt reports whether the discount has passed its expiration time
+// relative to the given time. Discounts with no expiry never expire.
+func (d Discount) IsExpiredAt(now time.Time) bool {
 	if d.ExpiresAt == nil {
 		return false
 	}
-	return time.Now().After(*d.ExpiresAt)
+	return now.After(*d.ExpiresAt)
+}
+
+// IsExpired reports whether the discount has passed its expiration time.
+// Discounts with no expiry (nil ExpiresAt) never expire.
+// Deprecated: Use IsExpiredAt with an explicit time for deterministic testing.
+func (d Discount) IsExpired() bool {
+	return d.IsExpiredAt(time.Now())
 }

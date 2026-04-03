@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -59,7 +60,7 @@ func TestGetTenant_Success(t *testing.T) {
 	svc, tenantRepo, _, _ := newTestService(t)
 	ctx := context.Background()
 
-	expected := reseller.NewTenant("Acme VPN", "acme.vpn.com", "owner-1")
+	expected := reseller.NewTenant("Acme VPN", "acme.vpn.com", "owner-1", time.Now())
 	tenantRepo.On("GetTenantByID", ctx, expected.ID).Return(expected, nil)
 
 	tenant, err := svc.GetTenant(ctx, expected.ID)
@@ -142,8 +143,8 @@ func TestValidateAPIKey_Success(t *testing.T) {
 	svc, tenantRepo, _, _ := newTestService(t)
 	ctx := context.Background()
 
-	tenant := reseller.NewTenant("Acme VPN", "acme.vpn.com", "owner-1")
-	plainKey, _ := tenant.GenerateAPIKey()
+	tenant := reseller.NewTenant("Acme VPN", "acme.vpn.com", "owner-1", time.Now())
+	plainKey, _ := tenant.GenerateAPIKey(time.Now())
 	expectedHash := reseller.HashAPIKey(plainKey)
 
 	tenantRepo.On("GetTenantByAPIKeyHash", ctx, expectedHash).Return(tenant, nil)
@@ -172,9 +173,9 @@ func TestValidateAPIKey_InactiveTenant(t *testing.T) {
 	svc, tenantRepo, _, _ := newTestService(t)
 	ctx := context.Background()
 
-	tenant := reseller.NewTenant("Acme VPN", "acme.vpn.com", "owner-1")
+	tenant := reseller.NewTenant("Acme VPN", "acme.vpn.com", "owner-1", time.Now())
 	tenant.IsActive = false
-	plainKey, _ := tenant.GenerateAPIKey()
+	plainKey, _ := tenant.GenerateAPIKey(time.Now())
 	expectedHash := reseller.HashAPIKey(plainKey)
 
 	tenantRepo.On("GetTenantByAPIKeyHash", ctx, expectedHash).Return(tenant, nil)
@@ -190,7 +191,7 @@ func TestUpdateBranding_Success(t *testing.T) {
 	svc, tenantRepo, _, _ := newTestService(t)
 	ctx := context.Background()
 
-	tenant := reseller.NewTenant("Acme VPN", "acme.vpn.com", "owner-1")
+	tenant := reseller.NewTenant("Acme VPN", "acme.vpn.com", "owner-1", time.Now())
 	tenantRepo.On("GetTenantByID", ctx, tenant.ID).Return(tenant, nil)
 	tenantRepo.On("UpdateTenant", ctx, mock.AnythingOfType("*reseller.Tenant")).Return(nil)
 

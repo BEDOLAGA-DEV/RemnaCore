@@ -54,8 +54,7 @@ type Subscription struct {
 }
 
 // NewSubscription creates a new subscription in the trial state.
-func NewSubscription(userID, planID string, interval vo.BillingInterval, addonIDs []string) *Subscription {
-	now := time.Now()
+func NewSubscription(userID, planID string, interval vo.BillingInterval, addonIDs []string, now time.Time) *Subscription {
 	return &Subscription{
 		ID:        uuid.New().String(),
 		UserID:    userID,
@@ -84,48 +83,46 @@ func (s *Subscription) CanTransitionTo(target SubscriptionStatus) bool {
 }
 
 // transitionTo attempts to move the subscription to the target status.
-func (s *Subscription) transitionTo(target SubscriptionStatus) error {
+func (s *Subscription) transitionTo(target SubscriptionStatus, now time.Time) error {
 	if !s.CanTransitionTo(target) {
 		return ErrInvalidTransition
 	}
 	s.Status = target
-	s.UpdatedAt = time.Now()
+	s.UpdatedAt = now
 	return nil
 }
 
 // Activate moves the subscription from trial or past_due to active.
-func (s *Subscription) Activate() error {
-	return s.transitionTo(StatusActive)
+func (s *Subscription) Activate(now time.Time) error {
+	return s.transitionTo(StatusActive, now)
 }
 
 // MarkPastDue moves the subscription from active to past_due.
-func (s *Subscription) MarkPastDue() error {
-	return s.transitionTo(StatusPastDue)
+func (s *Subscription) MarkPastDue(now time.Time) error {
+	return s.transitionTo(StatusPastDue, now)
 }
 
 // Cancel moves the subscription to cancelled from any non-terminal state.
-func (s *Subscription) Cancel() error {
-	if err := s.transitionTo(StatusCancelled); err != nil {
+func (s *Subscription) Cancel(now time.Time) error {
+	if err := s.transitionTo(StatusCancelled, now); err != nil {
 		return err
 	}
-	now := time.Now()
 	s.CancelledAt = &now
 	return nil
 }
 
 // Pause moves the subscription from active to paused.
-func (s *Subscription) Pause() error {
-	if err := s.transitionTo(StatusPaused); err != nil {
+func (s *Subscription) Pause(now time.Time) error {
+	if err := s.transitionTo(StatusPaused, now); err != nil {
 		return err
 	}
-	now := time.Now()
 	s.PausedAt = &now
 	return nil
 }
 
 // Resume moves the subscription from paused to active.
-func (s *Subscription) Resume() error {
-	if err := s.transitionTo(StatusActive); err != nil {
+func (s *Subscription) Resume(now time.Time) error {
+	if err := s.transitionTo(StatusActive, now); err != nil {
 		return err
 	}
 	s.PausedAt = nil
@@ -133,16 +130,16 @@ func (s *Subscription) Resume() error {
 }
 
 // Expire moves the subscription to expired from any non-terminal state.
-func (s *Subscription) Expire() error {
-	return s.transitionTo(StatusExpired)
+func (s *Subscription) Expire(now time.Time) error {
+	return s.transitionTo(StatusExpired, now)
 }
 
 // Renew updates the subscription's billing period. Only allowed when active.
-func (s *Subscription) Renew(newPeriod vo.BillingPeriod) error {
+func (s *Subscription) Renew(newPeriod vo.BillingPeriod, now time.Time) error {
 	if s.Status != StatusActive {
 		return ErrSubscriptionNotActiveForRenewal
 	}
 	s.Period = newPeriod
-	s.UpdatedAt = time.Now()
+	s.UpdatedAt = now
 	return nil
 }

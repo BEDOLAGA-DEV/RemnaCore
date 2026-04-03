@@ -78,7 +78,8 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (*RegisterR
 		return nil, ErrEmailTaken
 	}
 
-	user, err := NewPlatformUser(input.Email, input.Password)
+	now := time.Now()
+	user, err := NewPlatformUser(input.Email, input.Password, now)
 	if err != nil {
 		return nil, fmt.Errorf("creating user: %w", err)
 	}
@@ -87,7 +88,7 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (*RegisterR
 		return nil, fmt.Errorf("persisting user: %w", err)
 	}
 
-	verification := NewEmailVerification(user.ID, user.Email)
+	verification := NewEmailVerification(user.ID, user.Email, now)
 	if err := s.repo.CreateEmailVerification(ctx, verification); err != nil {
 		return nil, fmt.Errorf("persisting email verification: %w", err)
 	}
@@ -139,12 +140,13 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (*LoginResult, er
 		return nil, fmt.Errorf("generating refresh token: %w", err)
 	}
 
+	now := time.Now()
 	session := &Session{
 		ID:           uuid.New().String(),
 		UserID:       user.ID,
 		RefreshToken: refreshToken,
-		ExpiresAt:    time.Now().Add(s.refreshTTL),
-		CreatedAt:    time.Now(),
+		ExpiresAt:    now.Add(s.refreshTTL),
+		CreatedAt:    now,
 	}
 	if err := s.repo.CreateSession(ctx, session); err != nil {
 		return nil, fmt.Errorf("persisting session: %w", err)
@@ -181,7 +183,7 @@ func (s *Service) VerifyEmail(ctx context.Context, token string) error {
 		return fmt.Errorf("finding user: %w", err)
 	}
 
-	user.VerifyEmail()
+	user.VerifyEmail(time.Now())
 	if err := s.repo.UpdateUser(ctx, user); err != nil {
 		return fmt.Errorf("updating user: %w", err)
 	}
@@ -227,12 +229,13 @@ func (s *Service) RefreshToken(ctx context.Context, refreshToken string) (*Login
 		return nil, fmt.Errorf("generating refresh token: %w", err)
 	}
 
+	now := time.Now()
 	newSession := &Session{
 		ID:           uuid.New().String(),
 		UserID:       user.ID,
 		RefreshToken: newRefreshToken,
-		ExpiresAt:    time.Now().Add(s.refreshTTL),
-		CreatedAt:    time.Now(),
+		ExpiresAt:    now.Add(s.refreshTTL),
+		CreatedAt:    now,
 	}
 	if err := s.repo.CreateSession(ctx, newSession); err != nil {
 		return nil, fmt.Errorf("persisting new session: %w", err)
@@ -292,8 +295,9 @@ func (s *Service) LinkTelegram(ctx context.Context, userID string, telegramID in
 	if err != nil {
 		return fmt.Errorf("finding user: %w", err)
 	}
+	now := time.Now()
 	user.TelegramID = &telegramID
-	user.UpdatedAt = time.Now()
+	user.UpdatedAt = now
 	if err := s.repo.UpdateUser(ctx, user); err != nil {
 		return fmt.Errorf("updating user: %w", err)
 	}
@@ -341,7 +345,7 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 		return fmt.Errorf("clearing existing resets: %w", err)
 	}
 
-	reset := NewPasswordReset(user.ID, user.Email)
+	reset := NewPasswordReset(user.ID, user.Email, time.Now())
 	if err := s.repo.CreatePasswordReset(ctx, reset); err != nil {
 		return fmt.Errorf("persisting password reset: %w", err)
 	}
@@ -386,8 +390,9 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 		return fmt.Errorf("finding user: %w", err)
 	}
 
+	now := time.Now()
 	user.PasswordHash = hash
-	user.UpdatedAt = time.Now()
+	user.UpdatedAt = now
 	if err := s.repo.UpdateUser(ctx, user); err != nil {
 		return fmt.Errorf("updating user: %w", err)
 	}

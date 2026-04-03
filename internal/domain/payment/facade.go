@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
@@ -75,7 +76,7 @@ func (f *PaymentFacade) CreateCharge(ctx context.Context, req CreateChargeReques
 		return nil, fmt.Errorf("%w: plugin returned incomplete result", ErrPaymentFailed)
 	}
 
-	record := NewPaymentRecord(req.InvoiceID, result.Provider, result.ExternalID, req.Amount, req.Currency)
+	record := NewPaymentRecord(req.InvoiceID, result.Provider, result.ExternalID, req.Amount, req.Currency, time.Now())
 	if err := f.repo.CreatePayment(ctx, record); err != nil {
 		return nil, fmt.Errorf("persist payment record: %w", err)
 	}
@@ -169,7 +170,7 @@ func (f *PaymentFacade) Refund(ctx context.Context, paymentID string, amount int
 		return fmt.Errorf("%w: %v", ErrRefundFailed, err)
 	}
 
-	if err := record.MarkRefunded(); err != nil {
+	if err := record.MarkRefunded(time.Now()); err != nil {
 		return fmt.Errorf("mark payment refunded: %w", err)
 	}
 
@@ -205,7 +206,7 @@ func (f *PaymentFacade) CompletePayment(ctx context.Context, provider, externalI
 		return nil, fmt.Errorf("get payment by external id: %w", err)
 	}
 
-	if err := record.MarkCompleted(); err != nil {
+	if err := record.MarkCompleted(time.Now()); err != nil {
 		return nil, fmt.Errorf("mark payment completed: %w", err)
 	}
 
@@ -231,7 +232,7 @@ func (f *PaymentFacade) CompletePayment(ctx context.Context, provider, externalI
 // CheckIdempotency checks if a webhook has already been processed. Returns
 // true if the webhook is a duplicate, false otherwise.
 func (f *PaymentFacade) CheckIdempotency(ctx context.Context, provider, externalID string, rawBody []byte) (bool, error) {
-	webhookLog := NewWebhookLog(provider, externalID, rawBody)
+	webhookLog := NewWebhookLog(provider, externalID, rawBody, time.Now())
 	err := f.repo.CreateWebhookLog(ctx, webhookLog)
 	if err != nil {
 		if isWebhookDuplicate(err) {
@@ -248,7 +249,7 @@ func (f *PaymentFacade) MarkWebhookProcessed(ctx context.Context, provider, exte
 	if err != nil {
 		return fmt.Errorf("get webhook log: %w", err)
 	}
-	wh.MarkProcessed()
+	wh.MarkProcessed(time.Now())
 	return f.repo.UpdateWebhookLog(ctx, wh)
 }
 
@@ -258,7 +259,7 @@ func (f *PaymentFacade) MarkWebhookFailed(ctx context.Context, provider, externa
 	if err != nil {
 		return fmt.Errorf("get webhook log: %w", err)
 	}
-	wh.MarkFailed()
+	wh.MarkFailed(time.Now())
 	return f.repo.UpdateWebhookLog(ctx, wh)
 }
 

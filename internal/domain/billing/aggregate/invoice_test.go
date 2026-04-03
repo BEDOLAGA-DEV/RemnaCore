@@ -2,6 +2,7 @@ package aggregate
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,7 +15,7 @@ func TestNewInvoice_Valid(t *testing.T) {
 		vo.NewLineItem("Extra Traffic", vo.LineItemAddon, vo.NewMoney(299, vo.CurrencyUSD), 1),
 	}
 
-	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD)
+	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD, time.Now())
 
 	require.NoError(t, err)
 	assert.NotEmpty(t, inv.ID)
@@ -29,14 +30,14 @@ func TestNewInvoice_Valid(t *testing.T) {
 }
 
 func TestNewInvoice_NoLineItems(t *testing.T) {
-	_, err := NewInvoice("sub-1", "user-1", nil, nil, vo.CurrencyUSD)
+	_, err := NewInvoice("sub-1", "user-1", nil, nil, vo.CurrencyUSD, time.Now())
 
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "line item")
 }
 
 func TestNewInvoice_EmptyLineItems(t *testing.T) {
-	_, err := NewInvoice("sub-1", "user-1", []vo.LineItem{}, nil, vo.CurrencyUSD)
+	_, err := NewInvoice("sub-1", "user-1", []vo.LineItem{}, nil, vo.CurrencyUSD, time.Now())
 
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "line item")
@@ -49,7 +50,7 @@ func TestNewInvoice_WithPercentDiscount(t *testing.T) {
 	discount, err := vo.NewPercentDiscount(20, "SAVE20", nil)
 	require.NoError(t, err)
 
-	inv, err := NewInvoice("sub-1", "user-1", items, []vo.Discount{discount}, vo.CurrencyUSD)
+	inv, err := NewInvoice("sub-1", "user-1", items, []vo.Discount{discount}, vo.CurrencyUSD, time.Now())
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(10000), inv.Subtotal.Amount)
@@ -64,7 +65,7 @@ func TestNewInvoice_WithFixedDiscount(t *testing.T) {
 	discount, err := vo.NewFixedDiscount(2500, vo.CurrencyUSD, "FLAT25", nil)
 	require.NoError(t, err)
 
-	inv, err := NewInvoice("sub-1", "user-1", items, []vo.Discount{discount}, vo.CurrencyUSD)
+	inv, err := NewInvoice("sub-1", "user-1", items, []vo.Discount{discount}, vo.CurrencyUSD, time.Now())
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(10000), inv.Subtotal.Amount)
@@ -79,7 +80,7 @@ func TestNewInvoice_DiscountExceedsSubtotal_FloorZero(t *testing.T) {
 	discount, err := vo.NewFixedDiscount(2000, vo.CurrencyUSD, "BIG", nil)
 	require.NoError(t, err)
 
-	inv, err := NewInvoice("sub-1", "user-1", items, []vo.Discount{discount}, vo.CurrencyUSD)
+	inv, err := NewInvoice("sub-1", "user-1", items, []vo.Discount{discount}, vo.CurrencyUSD, time.Now())
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(500), inv.Subtotal.Amount)
@@ -96,7 +97,7 @@ func TestNewInvoice_MultipleDiscounts(t *testing.T) {
 	d2, err := vo.NewFixedDiscount(500, vo.CurrencyUSD, "FLAT5", nil)
 	require.NoError(t, err)
 
-	inv, err := NewInvoice("sub-1", "user-1", items, []vo.Discount{d1, d2}, vo.CurrencyUSD)
+	inv, err := NewInvoice("sub-1", "user-1", items, []vo.Discount{d1, d2}, vo.CurrencyUSD, time.Now())
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(10000), inv.Subtotal.Amount)
@@ -109,7 +110,7 @@ func TestNewInvoice_WithQuantity(t *testing.T) {
 		vo.NewLineItem("Extra Nodes", vo.LineItemAddon, vo.NewMoney(200, vo.CurrencyUSD), 3),
 	}
 
-	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD)
+	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD, time.Now())
 
 	require.NoError(t, err)
 	// 200 * 3 = 600
@@ -121,10 +122,10 @@ func TestInvoice_MarkPending(t *testing.T) {
 	items := []vo.LineItem{
 		vo.NewLineItem("Plan", vo.LineItemPlan, vo.NewMoney(999, vo.CurrencyUSD), 1),
 	}
-	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD)
+	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD, time.Now())
 	require.NoError(t, err)
 
-	err = inv.MarkPending()
+	err = inv.MarkPending(time.Now())
 
 	require.NoError(t, err)
 	assert.Equal(t, InvoicePending, inv.Status)
@@ -134,11 +135,11 @@ func TestInvoice_MarkPaid(t *testing.T) {
 	items := []vo.LineItem{
 		vo.NewLineItem("Plan", vo.LineItemPlan, vo.NewMoney(999, vo.CurrencyUSD), 1),
 	}
-	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD)
+	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD, time.Now())
 	require.NoError(t, err)
-	require.NoError(t, inv.MarkPending())
+	require.NoError(t, inv.MarkPending(time.Now()))
 
-	err = inv.MarkPaid()
+	err = inv.MarkPaid(time.Now())
 
 	require.NoError(t, err)
 	assert.Equal(t, InvoicePaid, inv.Status)
@@ -149,10 +150,10 @@ func TestInvoice_MarkPaid_FromDraft_Invalid(t *testing.T) {
 	items := []vo.LineItem{
 		vo.NewLineItem("Plan", vo.LineItemPlan, vo.NewMoney(999, vo.CurrencyUSD), 1),
 	}
-	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD)
+	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD, time.Now())
 	require.NoError(t, err)
 
-	err = inv.MarkPaid()
+	err = inv.MarkPaid(time.Now())
 
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "pending")
@@ -162,12 +163,12 @@ func TestInvoice_MarkPaid_AlreadyPaid(t *testing.T) {
 	items := []vo.LineItem{
 		vo.NewLineItem("Plan", vo.LineItemPlan, vo.NewMoney(999, vo.CurrencyUSD), 1),
 	}
-	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD)
+	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD, time.Now())
 	require.NoError(t, err)
-	require.NoError(t, inv.MarkPending())
-	require.NoError(t, inv.MarkPaid())
+	require.NoError(t, inv.MarkPending(time.Now()))
+	require.NoError(t, inv.MarkPaid(time.Now()))
 
-	err = inv.MarkPaid()
+	err = inv.MarkPaid(time.Now())
 
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "pending")
@@ -177,11 +178,11 @@ func TestInvoice_MarkFailed(t *testing.T) {
 	items := []vo.LineItem{
 		vo.NewLineItem("Plan", vo.LineItemPlan, vo.NewMoney(999, vo.CurrencyUSD), 1),
 	}
-	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD)
+	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD, time.Now())
 	require.NoError(t, err)
-	require.NoError(t, inv.MarkPending())
+	require.NoError(t, inv.MarkPending(time.Now()))
 
-	err = inv.MarkFailed()
+	err = inv.MarkFailed(time.Now())
 
 	require.NoError(t, err)
 	assert.Equal(t, InvoiceFailed, inv.Status)
@@ -191,12 +192,12 @@ func TestInvoice_Refund(t *testing.T) {
 	items := []vo.LineItem{
 		vo.NewLineItem("Plan", vo.LineItemPlan, vo.NewMoney(999, vo.CurrencyUSD), 1),
 	}
-	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD)
+	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD, time.Now())
 	require.NoError(t, err)
-	require.NoError(t, inv.MarkPending())
-	require.NoError(t, inv.MarkPaid())
+	require.NoError(t, inv.MarkPending(time.Now()))
+	require.NoError(t, inv.MarkPaid(time.Now()))
 
-	err = inv.Refund()
+	err = inv.Refund(time.Now())
 
 	require.NoError(t, err)
 	assert.Equal(t, InvoiceRefunded, inv.Status)
@@ -206,11 +207,11 @@ func TestInvoice_Refund_NotPaid(t *testing.T) {
 	items := []vo.LineItem{
 		vo.NewLineItem("Plan", vo.LineItemPlan, vo.NewMoney(999, vo.CurrencyUSD), 1),
 	}
-	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD)
+	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD, time.Now())
 	require.NoError(t, err)
-	require.NoError(t, inv.MarkPending())
+	require.NoError(t, inv.MarkPending(time.Now()))
 
-	err = inv.Refund()
+	err = inv.Refund(time.Now())
 
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "paid")
@@ -220,10 +221,10 @@ func TestInvoice_MarkFailed_FromDraft(t *testing.T) {
 	items := []vo.LineItem{
 		vo.NewLineItem("Plan", vo.LineItemPlan, vo.NewMoney(999, vo.CurrencyUSD), 1),
 	}
-	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD)
+	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD, time.Now())
 	require.NoError(t, err)
 
-	err = inv.MarkFailed()
+	err = inv.MarkFailed(time.Now())
 
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "pending")

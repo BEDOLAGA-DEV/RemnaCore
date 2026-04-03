@@ -19,9 +19,15 @@ type Event struct {
 
 // New creates an Event with the given type, data, and the current timestamp.
 func New(eventType EventType, data map[string]any) Event {
+	return NewAt(eventType, data, time.Now())
+}
+
+// NewAt creates an Event with an explicit timestamp. Use this in aggregate
+// constructors and service methods that receive a deterministic time.Time.
+func NewAt(eventType EventType, data map[string]any, ts time.Time) Event {
 	return Event{
 		Type:      eventType,
-		Timestamp: time.Now(),
+		Timestamp: ts,
 		Data:      data,
 	}
 }

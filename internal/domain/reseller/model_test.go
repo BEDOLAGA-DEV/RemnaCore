@@ -2,13 +2,14 @@ package reseller
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestNewTenant(t *testing.T) {
-	tenant := NewTenant("Acme VPN", "acme.vpn.com", "owner-123")
+	tenant := NewTenant("Acme VPN", "acme.vpn.com", "owner-123", time.Now())
 
 	assert.NotEmpty(t, tenant.ID)
 	assert.Equal(t, "Acme VPN", tenant.Name)
@@ -20,9 +21,9 @@ func TestNewTenant(t *testing.T) {
 }
 
 func TestTenant_GenerateAPIKey(t *testing.T) {
-	tenant := NewTenant("Acme VPN", "acme.vpn.com", "owner-123")
+	tenant := NewTenant("Acme VPN", "acme.vpn.com", "owner-123", time.Now())
 
-	plainKey, err := tenant.GenerateAPIKey()
+	plainKey, err := tenant.GenerateAPIKey(time.Now())
 	require.NoError(t, err)
 
 	assert.Len(t, plainKey, APIKeyLen*2) // hex-encoded
@@ -31,9 +32,9 @@ func TestTenant_GenerateAPIKey(t *testing.T) {
 }
 
 func TestTenant_GenerateAPIKey_HashConsistency(t *testing.T) {
-	tenant := NewTenant("Acme VPN", "acme.vpn.com", "owner-123")
+	tenant := NewTenant("Acme VPN", "acme.vpn.com", "owner-123", time.Now())
 
-	plainKey, err := tenant.GenerateAPIKey()
+	plainKey, err := tenant.GenerateAPIKey(time.Now())
 	require.NoError(t, err)
 
 	// Hashing the same key should produce the same hash.
@@ -49,7 +50,7 @@ func TestHashAPIKey_DifferentKeysProduceDifferentHashes(t *testing.T) {
 }
 
 func TestNewResellerAccount_Valid(t *testing.T) {
-	account, err := NewResellerAccount("tenant-1", "user-1", 20)
+	account, err := NewResellerAccount("tenant-1", "user-1", 20, time.Now())
 	require.NoError(t, err)
 
 	assert.NotEmpty(t, account.ID)
@@ -61,31 +62,31 @@ func TestNewResellerAccount_Valid(t *testing.T) {
 }
 
 func TestNewResellerAccount_ZeroRate(t *testing.T) {
-	account, err := NewResellerAccount("tenant-1", "user-1", 0)
+	account, err := NewResellerAccount("tenant-1", "user-1", 0, time.Now())
 	require.NoError(t, err)
 	assert.Equal(t, 0, account.CommissionRate)
 }
 
 func TestNewResellerAccount_MaxRate(t *testing.T) {
-	account, err := NewResellerAccount("tenant-1", "user-1", 100)
+	account, err := NewResellerAccount("tenant-1", "user-1", 100, time.Now())
 	require.NoError(t, err)
 	assert.Equal(t, 100, account.CommissionRate)
 }
 
 func TestNewResellerAccount_RateTooLow(t *testing.T) {
-	_, err := NewResellerAccount("tenant-1", "user-1", -1)
+	_, err := NewResellerAccount("tenant-1", "user-1", -1, time.Now())
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrInvalidCommissionRate)
 }
 
 func TestNewResellerAccount_RateTooHigh(t *testing.T) {
-	_, err := NewResellerAccount("tenant-1", "user-1", 101)
+	_, err := NewResellerAccount("tenant-1", "user-1", 101, time.Now())
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrInvalidCommissionRate)
 }
 
 func TestNewCommission(t *testing.T) {
-	commission := NewCommission("reseller-1", "sale-abc", 10000, 15, "USD")
+	commission := NewCommission("reseller-1", "sale-abc", 10000, 15, "USD", time.Now())
 
 	assert.NotEmpty(t, commission.ID)
 	assert.Equal(t, "reseller-1", commission.ResellerID)
@@ -98,17 +99,17 @@ func TestNewCommission(t *testing.T) {
 }
 
 func TestNewCommission_ZeroRate(t *testing.T) {
-	commission := NewCommission("reseller-1", "sale-abc", 10000, 0, "USD")
+	commission := NewCommission("reseller-1", "sale-abc", 10000, 0, "USD", time.Now())
 	assert.Equal(t, int64(0), commission.Amount)
 }
 
 func TestNewCommission_FullRate(t *testing.T) {
-	commission := NewCommission("reseller-1", "sale-abc", 10000, 100, "USD")
+	commission := NewCommission("reseller-1", "sale-abc", 10000, 100, "USD", time.Now())
 	assert.Equal(t, int64(10000), commission.Amount)
 }
 
 func TestNewCommission_RoundsDown(t *testing.T) {
 	// 33% of 100 cents = 33 cents (integer division rounds down).
-	commission := NewCommission("reseller-1", "sale-abc", 100, 33, "USD")
+	commission := NewCommission("reseller-1", "sale-abc", 100, 33, "USD", time.Now())
 	assert.Equal(t, int64(33), commission.Amount)
 }

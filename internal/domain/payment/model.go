@@ -40,8 +40,7 @@ type PaymentRecord struct {
 }
 
 // NewPaymentRecord creates a new PaymentRecord in pending status.
-func NewPaymentRecord(invoiceID, provider, externalID string, amount int64, currency string) *PaymentRecord {
-	now := time.Now()
+func NewPaymentRecord(invoiceID, provider, externalID string, amount int64, currency string, now time.Time) *PaymentRecord {
 	return &PaymentRecord{
 		ID:         uuid.New().String(),
 		InvoiceID:  invoiceID,
@@ -56,32 +55,32 @@ func NewPaymentRecord(invoiceID, provider, externalID string, amount int64, curr
 }
 
 // MarkCompleted transitions a pending payment to completed.
-func (p *PaymentRecord) MarkCompleted() error {
+func (p *PaymentRecord) MarkCompleted(now time.Time) error {
 	if p.Status != PaymentPending {
 		return ErrInvalidPaymentState
 	}
 	p.Status = PaymentCompleted
-	p.UpdatedAt = time.Now()
+	p.UpdatedAt = now
 	return nil
 }
 
 // MarkFailed transitions a pending payment to failed.
-func (p *PaymentRecord) MarkFailed() error {
+func (p *PaymentRecord) MarkFailed(now time.Time) error {
 	if p.Status != PaymentPending {
 		return ErrInvalidPaymentState
 	}
 	p.Status = PaymentFailed
-	p.UpdatedAt = time.Now()
+	p.UpdatedAt = now
 	return nil
 }
 
 // MarkRefunded transitions a completed payment to refunded.
-func (p *PaymentRecord) MarkRefunded() error {
+func (p *PaymentRecord) MarkRefunded(now time.Time) error {
 	if p.Status != PaymentCompleted {
 		return ErrInvalidPaymentState
 	}
 	p.Status = PaymentRefunded
-	p.UpdatedAt = time.Now()
+	p.UpdatedAt = now
 	return nil
 }
 
@@ -97,27 +96,25 @@ type WebhookLog struct {
 }
 
 // NewWebhookLog creates a new WebhookLog entry in pending status.
-func NewWebhookLog(provider, externalID string, rawBody []byte) *WebhookLog {
+func NewWebhookLog(provider, externalID string, rawBody []byte, now time.Time) *WebhookLog {
 	return &WebhookLog{
 		ID:         uuid.New().String(),
 		Provider:   provider,
 		ExternalID: externalID,
 		RawBody:    rawBody,
 		Status:     WebhookPending,
-		CreatedAt:  time.Now(),
+		CreatedAt:  now,
 	}
 }
 
 // MarkProcessed transitions the webhook log to processed status.
-func (w *WebhookLog) MarkProcessed() {
-	now := time.Now()
+func (w *WebhookLog) MarkProcessed(now time.Time) {
 	w.Status = WebhookProcessed
 	w.ProcessedAt = &now
 }
 
 // MarkFailed transitions the webhook log to failed status.
-func (w *WebhookLog) MarkFailed() {
-	now := time.Now()
+func (w *WebhookLog) MarkFailed(now time.Time) {
 	w.Status = WebhookFailed
 	w.ProcessedAt = &now
 }

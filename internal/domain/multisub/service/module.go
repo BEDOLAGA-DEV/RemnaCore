@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	multisubdomain "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	multisubagg "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
@@ -134,12 +135,13 @@ func (o *MultiSubOrchestrator) OnSubscriptionPaused(ctx context.Context, subscri
 		return nil
 	}
 
+	now := time.Now()
 	for _, binding := range bindings {
 		if binding.RemnawaveUUID == "" {
 			continue
 		}
 		if err := o.gateway.DisableUser(ctx, binding.RemnawaveUUID); err != nil {
-			binding.MarkFailed(fmt.Sprintf("remnawave disable: %s", err.Error()))
+			binding.MarkFailed(fmt.Sprintf("remnawave disable: %s", err.Error()), now)
 			if updateErr := o.bindings.Update(ctx, binding); updateErr != nil {
 				o.logger.Warn("failed to update binding status",
 					slog.String("binding_id", binding.ID),
@@ -148,7 +150,7 @@ func (o *MultiSubOrchestrator) OnSubscriptionPaused(ctx context.Context, subscri
 			}
 			continue
 		}
-		binding.Disable()
+		binding.Disable(now)
 		if err := o.bindings.Update(ctx, binding); err != nil {
 			o.logger.Warn("failed to update binding status",
 				slog.String("binding_id", binding.ID),
@@ -185,6 +187,7 @@ func (o *MultiSubOrchestrator) OnSubscriptionResumed(ctx context.Context, subscr
 		return nil
 	}
 
+	now := time.Now()
 	for _, binding := range bindings {
 		if binding.Status != multisubagg.BindingDisabled {
 			continue
@@ -193,7 +196,7 @@ func (o *MultiSubOrchestrator) OnSubscriptionResumed(ctx context.Context, subscr
 			continue
 		}
 		if err := o.gateway.EnableUser(ctx, binding.RemnawaveUUID); err != nil {
-			binding.MarkFailed(fmt.Sprintf("remnawave enable: %s", err.Error()))
+			binding.MarkFailed(fmt.Sprintf("remnawave enable: %s", err.Error()), now)
 			if updateErr := o.bindings.Update(ctx, binding); updateErr != nil {
 				o.logger.Warn("failed to update binding status",
 					slog.String("binding_id", binding.ID),
@@ -202,7 +205,7 @@ func (o *MultiSubOrchestrator) OnSubscriptionResumed(ctx context.Context, subscr
 			}
 			continue
 		}
-		binding.Enable()
+		binding.Enable(now)
 		if err := o.bindings.Update(ctx, binding); err != nil {
 			o.logger.Warn("failed to update binding status",
 				slog.String("binding_id", binding.ID),

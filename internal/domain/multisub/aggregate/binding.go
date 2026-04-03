@@ -51,8 +51,7 @@ type RemnawaveBinding struct {
 
 // NewBinding creates a new RemnawaveBinding in the pending state.
 // It uses naming.BuildRemnawaveUsername to generate a deterministic username.
-func NewBinding(subID, platformUserID, purpose string, index int, trafficLimit int64) *RemnawaveBinding {
-	now := time.Now()
+func NewBinding(subID, platformUserID, purpose string, index int, trafficLimit int64, now time.Time) *RemnawaveBinding {
 	return &RemnawaveBinding{
 		ID:                uuid.New().String(),
 		SubscriptionID:    subID,
@@ -68,34 +67,34 @@ func NewBinding(subID, platformUserID, purpose string, index int, trafficLimit i
 
 // MarkProvisioned transitions the binding from pending to active after the
 // Remnawave user has been created successfully.
-func (b *RemnawaveBinding) MarkProvisioned(remnawaveUUID, shortUUID string) {
+func (b *RemnawaveBinding) MarkProvisioned(remnawaveUUID, shortUUID string, now time.Time) {
 	b.RemnawaveUUID = remnawaveUUID
 	b.RemnawaveShortUUID = shortUUID
 	b.Status = BindingActive
-	b.UpdatedAt = time.Now()
+	b.UpdatedAt = now
 }
 
 // MarkFailed transitions the binding to the failed state with a reason.
-func (b *RemnawaveBinding) MarkFailed(reason string) {
+func (b *RemnawaveBinding) MarkFailed(reason string, now time.Time) {
 	b.Status = BindingFailed
 	b.FailReason = reason
-	b.UpdatedAt = time.Now()
+	b.UpdatedAt = now
 }
 
 // Disable transitions the binding from active to disabled.
-func (b *RemnawaveBinding) Disable() {
+func (b *RemnawaveBinding) Disable(now time.Time) {
 	b.Status = BindingDisabled
-	b.UpdatedAt = time.Now()
+	b.UpdatedAt = now
 }
 
 // Enable transitions the binding from disabled to active.
-func (b *RemnawaveBinding) Enable() {
+func (b *RemnawaveBinding) Enable(now time.Time) {
 	b.Status = BindingActive
-	b.UpdatedAt = time.Now()
+	b.UpdatedAt = now
 }
 
 // Deprovision transitions the binding to deprovisioned.
-func (b *RemnawaveBinding) Deprovision() {
+func (b *RemnawaveBinding) Deprovision(now time.Time) {
 	b.Status = BindingDeprovisioned
-	b.UpdatedAt = time.Now()
+	b.UpdatedAt = now
 }

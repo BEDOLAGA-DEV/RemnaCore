@@ -316,7 +316,7 @@ func TestAddFamilyMember_Success(t *testing.T) {
 	plan := samplePlan()
 	sub := activeSubscription("user-1", "plan-premium")
 
-	fg := aggregate.NewFamilyGroup("user-1", 5)
+	fg := aggregate.NewFamilyGroup("user-1", 5, time.Now())
 
 	subs.On("GetByID", ctx, "sub-1").Return(sub, nil)
 	plans.On("GetByID", ctx, "plan-premium").Return(plan, nil)
@@ -384,8 +384,8 @@ func TestRemoveFamilyMember_Success(t *testing.T) {
 	ctx := context.Background()
 
 	sub := activeSubscription("user-1", "plan-premium")
-	fg := aggregate.NewFamilyGroup("user-1", 5)
-	require.NoError(t, fg.AddMember("member-1", "Alice"))
+	fg := aggregate.NewFamilyGroup("user-1", 5, time.Now())
+	require.NoError(t, fg.AddMember("member-1", "Alice", time.Now()))
 
 	subs.On("GetByID", ctx, "sub-1").Return(sub, nil)
 	families.On("GetByOwnerID", ctx, "user-1").Return(fg, nil)

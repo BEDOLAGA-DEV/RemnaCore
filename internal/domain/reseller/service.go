@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
@@ -36,9 +37,10 @@ func NewResellerService(
 // CreateTenant creates a new tenant, generates an API key, and returns both the
 // persisted tenant and the plain-text API key (shown only once).
 func (s *ResellerService) CreateTenant(ctx context.Context, name, domain, ownerUserID string) (*Tenant, string, error) {
-	tenant := NewTenant(name, domain, ownerUserID)
+	now := time.Now()
+	tenant := NewTenant(name, domain, ownerUserID, now)
 
-	plainKey, err := tenant.GenerateAPIKey()
+	plainKey, err := tenant.GenerateAPIKey(now)
 	if err != nil {
 		return nil, "", fmt.Errorf("generating API key: %w", err)
 	}
@@ -107,7 +109,7 @@ func (s *ResellerService) UpdateBranding(ctx context.Context, tenantID string, b
 
 // CreateResellerAccount creates a new reseller account linked to a tenant.
 func (s *ResellerService) CreateResellerAccount(ctx context.Context, tenantID, userID string, rate int) (*ResellerAccount, error) {
-	account, err := NewResellerAccount(tenantID, userID, rate)
+	account, err := NewResellerAccount(tenantID, userID, rate, time.Now())
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +137,7 @@ func (s *ResellerService) CreateResellerAccount(ctx context.Context, tenantID, u
 // RecordCommission creates a commission for a sale and updates the reseller's
 // accumulated balance.
 func (s *ResellerService) RecordCommission(ctx context.Context, resellerID, saleID string, saleAmount int64, rate int, currency string) (*Commission, error) {
-	commission := NewCommission(resellerID, saleID, saleAmount, rate, currency)
+	commission := NewCommission(resellerID, saleID, saleAmount, rate, currency, time.Now())
 
 	if err := s.commissions.CreateCommission(ctx, commission); err != nil {
 		return nil, fmt.Errorf("persisting commission: %w", err)

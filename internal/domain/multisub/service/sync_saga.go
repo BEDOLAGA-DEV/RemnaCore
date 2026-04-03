@@ -65,10 +65,10 @@ func (s *SyncSaga) SyncBinding(ctx context.Context, bindingID string) error {
 	}
 
 	// Reconcile remote status with local binding.
-	s.reconcileStatus(binding, status)
+	now := time.Now()
+	s.reconcileStatus(binding, status, now)
 
 	// Update sync timestamp.
-	now := time.Now()
 	binding.SyncedAt = &now
 
 	if err := s.bindings.Update(ctx, binding); err != nil {
@@ -90,14 +90,14 @@ func (s *SyncSaga) SyncBinding(ctx context.Context, bindingID string) error {
 }
 
 // reconcileStatus updates the binding status based on the Remnawave user state.
-func (s *SyncSaga) reconcileStatus(binding *aggregate.RemnawaveBinding, status *multisubdomain.RemnawaveUserStatus) {
+func (s *SyncSaga) reconcileStatus(binding *aggregate.RemnawaveBinding, status *multisubdomain.RemnawaveUserStatus, now time.Time) {
 	switch {
 	case status.Expired:
-		binding.Disable()
+		binding.Disable(now)
 	case !status.Enabled && binding.Status == aggregate.BindingActive:
-		binding.Disable()
+		binding.Disable(now)
 	case status.Enabled && binding.Status == aggregate.BindingDisabled:
-		binding.Enable()
+		binding.Enable(now)
 	}
 }
 
@@ -110,16 +110,16 @@ func (s *SyncSaga) HandleWebhookEvent(ctx context.Context, remnawaveUUID string,
 		return fmt.Errorf("find binding by remnawave uuid: %w", err)
 	}
 
+	now := time.Now()
 	switch domainEventType {
 	case multisubdomain.EventBindingTrafficExceeded:
-		binding.Disable()
+		binding.Disable(now)
 	case multisubdomain.EventBindingSyncFailed:
-		binding.MarkFailed("webhook: sync failed")
+		binding.MarkFailed("webhook: sync failed", now)
 	default:
 		// Unknown event type — update sync timestamp only.
 	}
 
-	now := time.Now()
 	binding.SyncedAt = &now
 
 	if err := s.bindings.Update(ctx, binding); err != nil {

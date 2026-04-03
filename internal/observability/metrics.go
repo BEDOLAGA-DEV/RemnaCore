@@ -14,7 +14,8 @@ const (
 	MetricPluginHookDuration   = "platform_plugin_hook_duration_seconds"
 	MetricPluginHookErrors     = "platform_plugin_hook_errors_total"
 	MetricPluginHookTotal      = "platform_plugin_hook_invocations_total"
-	MetricPluginMemory         = "platform_plugin_memory_bytes"
+	MetricPluginMemory           = "platform_plugin_memory_bytes"
+	MetricEventPublishFailures   = "platform_event_publish_failures_total"
 )
 
 // Metric help string constants.
@@ -26,7 +27,8 @@ const (
 	helpPluginHookDuration   = "Duration of plugin hook executions in seconds."
 	helpPluginHookErrors     = "Total number of plugin hook execution errors."
 	helpPluginHookTotal      = "Total number of plugin hook invocations."
-	helpPluginMemory         = "Current memory usage of a plugin in bytes."
+	helpPluginMemory           = "Current memory usage of a plugin in bytes."
+	helpEventPublishFailures   = "Total number of failed domain event publish attempts."
 )
 
 // Label name constants.
@@ -37,7 +39,8 @@ const (
 	LabelEndpoint = "endpoint"
 	LabelPlugin   = "plugin"
 	LabelHook     = "hook"
-	LabelAction   = "action"
+	LabelAction    = "action"
+	LabelEventType = "event_type"
 )
 
 // DefaultHTTPBuckets defines histogram buckets for HTTP request durations.
@@ -59,6 +62,7 @@ type Metrics struct {
 	PluginHookErrors     *prometheus.CounterVec
 	PluginHookTotal      *prometheus.CounterVec
 	PluginMemoryBytes    *prometheus.GaugeVec
+	EventPublishFailures *prometheus.CounterVec
 }
 
 // NewMetrics registers and returns the platform Prometheus metrics.
@@ -106,5 +110,10 @@ func NewMetrics() *Metrics {
 			Name: MetricPluginMemory,
 			Help: helpPluginMemory,
 		}, []string{LabelPlugin}),
+
+		EventPublishFailures: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: MetricEventPublishFailures,
+			Help: helpEventPublishFailures,
+		}, []string{LabelEventType}),
 	}
 }

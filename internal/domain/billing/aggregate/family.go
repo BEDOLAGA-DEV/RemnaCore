@@ -37,8 +37,7 @@ type FamilyGroup struct {
 }
 
 // NewFamilyGroup creates a new family group with the owner as the first member.
-func NewFamilyGroup(ownerID string, maxMembers int) *FamilyGroup {
-	now := time.Now()
+func NewFamilyGroup(ownerID string, maxMembers int, now time.Time) *FamilyGroup {
 	return &FamilyGroup{
 		ID:         uuid.New().String(),
 		OwnerID:    ownerID,
@@ -58,7 +57,7 @@ func NewFamilyGroup(ownerID string, maxMembers int) *FamilyGroup {
 
 // AddMember adds a new member to the family group.
 // Returns an error if the group is full or the user is already a member.
-func (fg *FamilyGroup) AddMember(userID, nickname string) error {
+func (fg *FamilyGroup) AddMember(userID, nickname string, now time.Time) error {
 	if fg.HasMember(userID) {
 		return errors.New("user is already a member of this family group")
 	}
@@ -70,15 +69,15 @@ func (fg *FamilyGroup) AddMember(userID, nickname string) error {
 		UserID:   userID,
 		Role:     MemberMember,
 		Nickname: nickname,
-		JoinedAt: time.Now(),
+		JoinedAt: now,
 	})
-	fg.UpdatedAt = time.Now()
+	fg.UpdatedAt = now
 	return nil
 }
 
 // RemoveMember removes a member from the family group.
 // The owner cannot be removed.
-func (fg *FamilyGroup) RemoveMember(userID string) error {
+func (fg *FamilyGroup) RemoveMember(userID string, now time.Time) error {
 	if userID == fg.OwnerID {
 		return errors.New("cannot remove the owner from the family group")
 	}
@@ -86,7 +85,7 @@ func (fg *FamilyGroup) RemoveMember(userID string) error {
 	for i, m := range fg.Members {
 		if m.UserID == userID {
 			fg.Members = append(fg.Members[:i], fg.Members[i+1:]...)
-			fg.UpdatedAt = time.Now()
+			fg.UpdatedAt = now
 			return nil
 		}
 	}

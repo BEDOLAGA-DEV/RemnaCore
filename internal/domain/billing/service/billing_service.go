@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
@@ -71,12 +72,13 @@ func (s *BillingService) CreateSubscription(
 	}
 
 	// Create subscription (defaults to trial)
-	sub := aggregate.NewSubscription(cmd.UserID, plan.ID, plan.Interval, cmd.AddonIDs)
+	now := time.Now()
+	sub := aggregate.NewSubscription(cmd.UserID, plan.ID, plan.Interval, cmd.AddonIDs, now)
 
 	// Build line items for the invoice
 	lineItems := buildLineItems(plan, cmd.AddonIDs)
 
-	inv, err := aggregate.NewInvoice(sub.ID, cmd.UserID, lineItems, nil, plan.BasePrice.Currency)
+	inv, err := aggregate.NewInvoice(sub.ID, cmd.UserID, lineItems, nil, plan.BasePrice.Currency, now)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create invoice: %w", err)
 	}
@@ -112,7 +114,7 @@ func (s *BillingService) CancelSubscription(ctx context.Context, subID string) e
 		return fmt.Errorf("get subscription: %w", err)
 	}
 
-	if err := sub.Cancel(); err != nil {
+	if err := sub.Cancel(time.Now()); err != nil {
 		return fmt.Errorf("cancel subscription: %w", err)
 	}
 
@@ -143,14 +145,16 @@ func (s *BillingService) PayInvoice(ctx context.Context, invoiceID string) error
 		return billing.ErrInvoiceAlreadyPaid
 	}
 
+	now := time.Now()
+
 	// Transition draft -> pending if still in draft
 	if inv.Status == aggregate.InvoiceDraft {
-		if err := inv.MarkPending(); err != nil {
+		if err := inv.MarkPending(now); err != nil {
 			return fmt.Errorf("mark pending: %w", err)
 		}
 	}
 
-	if err := inv.MarkPaid(); err != nil {
+	if err := inv.MarkPaid(now); err != nil {
 		return fmt.Errorf("mark paid: %w", err)
 	}
 
@@ -171,7 +175,7 @@ func (s *BillingService) PayInvoice(ctx context.Context, invoiceID string) error
 		}
 
 		if sub.Status == aggregate.StatusTrial || sub.Status == aggregate.StatusPastDue {
-			if err := sub.Activate(); err != nil {
+			if err := sub.Activate(now); err != nil {
 				return fmt.Errorf("activate subscription: %w", err)
 			}
 
@@ -210,6 +214,7 @@ func (s *BillingService) AddFamilyMember(
 		return billing.ErrFamilyNotEnabled
 	}
 
+	now := time.Now()
 	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		// Get or create family group
 		fg, err := s.families.GetByOwnerID(txCtx, sub.UserID)
@@ -218,13 +223,13 @@ func (s *BillingService) AddFamilyMember(
 				return fmt.Errorf("get family group: %w", err)
 			}
 			// Create a new family group if not found
-			fg = aggregate.NewFamilyGroup(sub.UserID, plan.MaxFamilyMembers)
+			fg = aggregate.NewFamilyGroup(sub.UserID, plan.MaxFamilyMembers, now)
 			if err := s.families.Create(txCtx, fg); err != nil {
 				return fmt.Errorf("create family group: %w", err)
 			}
 		}
 
-		if err := fg.AddMember(memberUserID, nickname); err != nil {
+		if err := fg.AddMember(memberUserID, nickname, now); err != nil {
 			return fmt.Errorf("add family member: %w", err)
 		}
 
@@ -258,7 +263,7 @@ func (s *BillingService) RemoveFamilyMember(
 		return fmt.Errorf("get family group: %w", err)
 	}
 
-	if err := fg.RemoveMember(memberUserID); err != nil {
+	if err := fg.RemoveMember(memberUserID, time.Now()); err != nil {
 		return fmt.Errorf("remove family member: %w", err)
 	}
 

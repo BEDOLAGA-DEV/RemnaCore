@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	multisubdomain "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
@@ -55,11 +56,12 @@ func (s *DeprovisioningSaga) Deprovision(ctx context.Context, subscriptionID str
 // are recorded on the binding itself so that the caller can continue with the
 // next binding.
 func (s *DeprovisioningSaga) deprovisionOne(ctx context.Context, binding *aggregate.RemnawaveBinding) {
+	now := time.Now()
 	// 1. Delete user in Remnawave
 	if binding.RemnawaveUUID != "" {
 		if err := s.gateway.DeleteUser(ctx, binding.RemnawaveUUID); err != nil {
 			// Mark binding as failed and persist — do not stop the saga.
-			binding.MarkFailed(fmt.Sprintf("remnawave delete: %s", err.Error()))
+			binding.MarkFailed(fmt.Sprintf("remnawave delete: %s", err.Error()), now)
 			if updateErr := s.bindings.Update(ctx, binding); updateErr != nil {
 				slog.Warn("failed to update binding after remnawave delete failure",
 					slog.String("binding_id", binding.ID),
@@ -71,7 +73,7 @@ func (s *DeprovisioningSaga) deprovisionOne(ctx context.Context, binding *aggreg
 	}
 
 	// 2. Mark binding as deprovisioned
-	binding.Deprovision()
+	binding.Deprovision(now)
 	if err := s.bindings.Update(ctx, binding); err != nil {
 		slog.Warn("failed to update binding after deprovision",
 			slog.String("binding_id", binding.ID),

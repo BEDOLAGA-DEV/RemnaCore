@@ -73,6 +73,7 @@ func NewPlan(
 	maxRemnawaveBindings int,
 	familyEnabled bool,
 	maxFamilyMembers int,
+	now time.Time,
 ) (*Plan, error) {
 	if name == "" {
 		return nil, errors.New("plan name must not be empty")
@@ -87,7 +88,6 @@ func NewPlan(
 		return nil, errors.New("family is disabled but maxFamilyMembers is set")
 	}
 
-	now := time.Now()
 	return &Plan{
 		ID:                   uuid.New().String(),
 		Name:                 name,
@@ -111,12 +111,12 @@ func NewPlan(
 
 // AddAddon adds an addon to the plan. Returns an error if an addon with the
 // same ID already exists.
-func (p *Plan) AddAddon(addon Addon) error {
+func (p *Plan) AddAddon(addon Addon, now time.Time) error {
 	if p.HasAddon(addon.ID) {
 		return errors.New("addon already exists on this plan")
 	}
 	p.AvailableAddons = append(p.AvailableAddons, addon)
-	p.UpdatedAt = time.Now()
+	p.UpdatedAt = now
 	return nil
 }
 

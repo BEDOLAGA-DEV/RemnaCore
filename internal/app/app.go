@@ -83,7 +83,9 @@ func New() *fx.App {
 		// (same DB transaction as business logic) and relayed to NATS asynchronously.
 		fx.Provide(postgres.NewOutboxRepository),
 		fx.Provide(postgres.NewOutboxPublisher),
-		fx.Provide(func(pub *postgres.OutboxPublisher) domainevent.Publisher { return pub }),
+		fx.Provide(func(pub *postgres.OutboxPublisher, metrics *observability.Metrics) domainevent.Publisher {
+			return observability.NewMeteredPublisher(pub, metrics)
+		}),
 		fx.Provide(natsadapter.NewOutboxRelay),
 
 		// Billing domain

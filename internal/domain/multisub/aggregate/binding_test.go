@@ -2,6 +2,7 @@ package aggregate_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -9,7 +10,7 @@ import (
 )
 
 func TestNewBinding(t *testing.T) {
-	b := aggregate.NewBinding("sub-1", "user-abc12345xyz", "base", 0, 100_000_000_000)
+	b := aggregate.NewBinding("sub-1", "user-abc12345xyz", "base", 0, 100_000_000_000, time.Now())
 
 	require.NotEmpty(t, b.ID)
 	assert.Equal(t, "sub-1", b.SubscriptionID)
@@ -24,10 +25,10 @@ func TestNewBinding(t *testing.T) {
 }
 
 func TestMarkProvisioned(t *testing.T) {
-	b := aggregate.NewBinding("sub-1", "user-abc12345xyz", "base", 0, 100_000_000_000)
+	b := aggregate.NewBinding("sub-1", "user-abc12345xyz", "base", 0, 100_000_000_000, time.Now())
 	before := b.UpdatedAt
 
-	b.MarkProvisioned("rw-uuid-123", "rw-short-456")
+	b.MarkProvisioned("rw-uuid-123", "rw-short-456", time.Now())
 
 	assert.Equal(t, aggregate.BindingActive, b.Status)
 	assert.Equal(t, "rw-uuid-123", b.RemnawaveUUID)
@@ -36,38 +37,38 @@ func TestMarkProvisioned(t *testing.T) {
 }
 
 func TestMarkFailed(t *testing.T) {
-	b := aggregate.NewBinding("sub-1", "user-abc12345xyz", "base", 0, 100_000_000_000)
+	b := aggregate.NewBinding("sub-1", "user-abc12345xyz", "base", 0, 100_000_000_000, time.Now())
 
-	b.MarkFailed("connection refused")
+	b.MarkFailed("connection refused", time.Now())
 
 	assert.Equal(t, aggregate.BindingFailed, b.Status)
 	assert.Equal(t, "connection refused", b.FailReason)
 }
 
 func TestDisable(t *testing.T) {
-	b := aggregate.NewBinding("sub-1", "user-abc12345xyz", "base", 0, 100_000_000_000)
-	b.MarkProvisioned("rw-uuid-123", "rw-short-456")
+	b := aggregate.NewBinding("sub-1", "user-abc12345xyz", "base", 0, 100_000_000_000, time.Now())
+	b.MarkProvisioned("rw-uuid-123", "rw-short-456", time.Now())
 
-	b.Disable()
+	b.Disable(time.Now())
 
 	assert.Equal(t, aggregate.BindingDisabled, b.Status)
 }
 
 func TestEnable(t *testing.T) {
-	b := aggregate.NewBinding("sub-1", "user-abc12345xyz", "base", 0, 100_000_000_000)
-	b.MarkProvisioned("rw-uuid-123", "rw-short-456")
-	b.Disable()
+	b := aggregate.NewBinding("sub-1", "user-abc12345xyz", "base", 0, 100_000_000_000, time.Now())
+	b.MarkProvisioned("rw-uuid-123", "rw-short-456", time.Now())
+	b.Disable(time.Now())
 
-	b.Enable()
+	b.Enable(time.Now())
 
 	assert.Equal(t, aggregate.BindingActive, b.Status)
 }
 
 func TestDeprovision(t *testing.T) {
-	b := aggregate.NewBinding("sub-1", "user-abc12345xyz", "base", 0, 100_000_000_000)
-	b.MarkProvisioned("rw-uuid-123", "rw-short-456")
+	b := aggregate.NewBinding("sub-1", "user-abc12345xyz", "base", 0, 100_000_000_000, time.Now())
+	b.MarkProvisioned("rw-uuid-123", "rw-short-456", time.Now())
 
-	b.Deprovision()
+	b.Deprovision(time.Now())
 
 	assert.Equal(t, aggregate.BindingDeprovisioned, b.Status)
 }
