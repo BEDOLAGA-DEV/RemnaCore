@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -119,11 +120,25 @@ func (d *HookDispatcher) DispatchSync(ctx context.Context, hookName string, payl
 			continue
 		}
 
+		// Resolve per-plugin timeout from manifest, falling back to the
+		// platform default.
+		timeout := d.syncTimeoutForPlugin(reg.PluginSlug)
+		callCtx, callCancel := context.WithTimeout(ctx, timeout)
+
 		start := time.Now()
-		output, err := d.runtime.CallHook(ctx, reg.PluginSlug, reg.FuncName, inputBytes)
+		output, err := d.runtime.CallHook(callCtx, reg.PluginSlug, reg.FuncName, inputBytes)
 		durationMs := time.Since(start).Milliseconds()
+		callCancel()
 
 		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrHookTimeout) {
+				d.logger.Error("hook execution timed out",
+					"hook", hookName, "plugin", reg.PluginSlug, "timeout", timeout, "duration_ms", durationMs)
+				if d.publisher != nil {
+					_ = d.publisher.Publish(ctx, NewHookFailedEvent(reg.PluginID, reg.PluginSlug, hookName, "timed out"))
+				}
+				return nil, fmt.Errorf("%w: plugin %q timed out after %v", ErrHookTimeout, reg.PluginSlug, timeout)
+			}
 			d.logger.Error("hook execution failed",
 				"hook", hookName, "plugin", reg.PluginSlug, "error", err, "duration_ms", durationMs)
 			if d.publisher != nil {
@@ -190,4 +205,18 @@ func (d *HookDispatcher) Registrations(hookName string) []HookRegistration {
 	out := make([]HookRegistration, len(regs))
 	copy(out, regs)
 	return out
+}
+
+// syncTimeoutForPlugin returns the sync hook timeout for the given plugin. If
+// the plugin is loaded and its manifest declares a custom timeout_sync_ms, that
+// value is used. Otherwise, the platform default (DefaultSyncTimeoutMs) applies.
+func (d *HookDispatcher) syncTimeoutForPlugin(slug string) time.Duration {
+	inst, err := d.runtime.GetInstance(slug)
+	if err == nil && inst.Manifest != nil {
+		limits := inst.Manifest.EffectiveLimits()
+		if limits.TimeoutSyncMs > 0 {
+			return time.Duration(limits.TimeoutSyncMs) * time.Millisecond
+		}
+	}
+	return time.Duration(DefaultSyncTimeoutMs) * time.Millisecond
 }

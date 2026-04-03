@@ -45,6 +45,14 @@ SELECT id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uu
        allowed_nodes, inbound_tags, synced_at, created_at, updated_at
 FROM multisub.remnawave_bindings WHERE status = 'active' ORDER BY created_at;
 
+-- name: GetFailedBindingsWithRemnawaveUUID :many
+SELECT id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uuid,
+       remnawave_username, purpose, status, traffic_limit_bytes,
+       allowed_nodes, inbound_tags, synced_at, created_at, updated_at
+FROM multisub.remnawave_bindings
+WHERE status = 'failed' AND remnawave_uuid IS NOT NULL
+ORDER BY created_at;
+
 -- name: UpdateBinding :exec
 UPDATE multisub.remnawave_bindings
 SET remnawave_uuid = $2, remnawave_short_uuid = $3, status = $4,
@@ -53,3 +61,15 @@ WHERE id = $1;
 
 -- name: DeleteBinding :exec
 DELETE FROM multisub.remnawave_bindings WHERE id = $1;
+
+-- ============================================================================
+-- Idempotency Keys
+-- ============================================================================
+
+-- name: TryAcquireIdempotencyKey :execresult
+INSERT INTO multisub.idempotency_keys (key, created_at, expires_at)
+VALUES ($1, now(), now() + interval '24 hours')
+ON CONFLICT (key) DO NOTHING;
+
+-- name: CleanupExpiredIdempotencyKeys :exec
+DELETE FROM multisub.idempotency_keys WHERE expires_at < now();

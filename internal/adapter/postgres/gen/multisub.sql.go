@@ -8,8 +8,18 @@ package gen
 import (
 	"context"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const cleanupExpiredIdempotencyKeys = `-- name: CleanupExpiredIdempotencyKeys :exec
+DELETE FROM multisub.idempotency_keys WHERE expires_at < now()
+`
+
+func (q *Queries) CleanupExpiredIdempotencyKeys(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, cleanupExpiredIdempotencyKeys)
+	return err
+}
 
 const createBinding = `-- name: CreateBinding :exec
 
@@ -293,6 +303,64 @@ func (q *Queries) GetBindingsBySubscriptionID(ctx context.Context, subscriptionI
 		return nil, err
 	}
 	return items, nil
+}
+
+const getFailedBindingsWithRemnawaveUUID = `-- name: GetFailedBindingsWithRemnawaveUUID :many
+SELECT id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uuid,
+       remnawave_username, purpose, status, traffic_limit_bytes,
+       allowed_nodes, inbound_tags, synced_at, created_at, updated_at
+FROM multisub.remnawave_bindings
+WHERE status = 'failed' AND remnawave_uuid IS NOT NULL
+ORDER BY created_at
+`
+
+func (q *Queries) GetFailedBindingsWithRemnawaveUUID(ctx context.Context) ([]MultisubRemnawaveBinding, error) {
+	rows, err := q.db.Query(ctx, getFailedBindingsWithRemnawaveUUID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MultisubRemnawaveBinding{}
+	for rows.Next() {
+		var i MultisubRemnawaveBinding
+		if err := rows.Scan(
+			&i.ID,
+			&i.SubscriptionID,
+			&i.PlatformUserID,
+			&i.RemnawaveUuid,
+			&i.RemnawaveShortUuid,
+			&i.RemnawaveUsername,
+			&i.Purpose,
+			&i.Status,
+			&i.TrafficLimitBytes,
+			&i.AllowedNodes,
+			&i.InboundTags,
+			&i.SyncedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const tryAcquireIdempotencyKey = `-- name: TryAcquireIdempotencyKey :execresult
+
+INSERT INTO multisub.idempotency_keys (key, created_at, expires_at)
+VALUES ($1, now(), now() + interval '24 hours')
+ON CONFLICT (key) DO NOTHING
+`
+
+// ============================================================================
+// Idempotency Keys
+// ============================================================================
+func (q *Queries) TryAcquireIdempotencyKey(ctx context.Context, key string) (pgconn.CommandTag, error) {
+	return q.db.Exec(ctx, tryAcquireIdempotencyKey, key)
 }
 
 const updateBinding = `-- name: UpdateBinding :exec

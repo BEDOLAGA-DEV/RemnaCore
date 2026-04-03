@@ -14,6 +14,7 @@ type BindingRepository interface {
 	GetByRemnawaveUUID(ctx context.Context, rwUUID string) (*aggregate.RemnawaveBinding, error)
 	GetActiveBySubscriptionID(ctx context.Context, subID string) ([]*aggregate.RemnawaveBinding, error)
 	GetAllActive(ctx context.Context) ([]*aggregate.RemnawaveBinding, error)
+	GetFailedWithRemnawaveUUID(ctx context.Context) ([]*aggregate.RemnawaveBinding, error)
 	Create(ctx context.Context, binding *aggregate.RemnawaveBinding) error
 	Update(ctx context.Context, binding *aggregate.RemnawaveBinding) error
 	Delete(ctx context.Context, id string) error

@@ -226,6 +226,65 @@ func TestDispatchSync_SkipsAsyncRegistrations(t *testing.T) {
 	assert.JSONEq(t, `{"amount":100}`, string(result))
 }
 
+func TestDispatchSync_Timeout(t *testing.T) {
+	// Create a mock runner that blocks until context is cancelled, simulating
+	// a stuck plugin that exceeds its timeout.
+	d, _ := dispatcherWithMock(t, map[string]func(ctx context.Context, funcName string, input []byte) ([]byte, error){
+		"slow-plugin": func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+			// Block until the context deadline fires.
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	})
+
+	d.RegisterHooks([]HookRegistration{
+		{PluginID: "id-slow", PluginSlug: "slow-plugin", HookName: "invoice.created", HookType: HookSync, Priority: 10, FuncName: "invoice.created"},
+	})
+
+	payload := json.RawMessage(`{"amount":100}`)
+	_, err := d.DispatchSync(context.Background(), "invoice.created", payload)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrHookTimeout)
+	assert.Contains(t, err.Error(), "slow-plugin")
+	assert.Contains(t, err.Error(), "timed out")
+}
+
+func TestDispatchSync_Timeout_CustomManifest(t *testing.T) {
+	// Create a plugin with a very short custom timeout.
+	logger := dispatcherLogger()
+	pub := &mockPublisher{}
+
+	rp := NewRuntimePool(logger, nil)
+
+	// Build a plugin whose manifest declares a 50ms sync timeout.
+	m := &Manifest{
+		Plugin: ManifestPlugin{ID: "fast-timeout", Name: "FastTimeout", Version: "1.0.0"},
+		Hooks:  ManifestHooks{Sync: []string{"hook.test"}},
+		Limits: ManifestLimits{TimeoutSyncMs: 50},
+	}
+	p, err := NewPlugin(m, []byte("fake-wasm"))
+	require.NoError(t, err)
+	require.NoError(t, rp.LoadPlugin(p))
+
+	// Set a runner that blocks longer than the 50ms timeout.
+	rp.SetRunnerForTest("fast-timeout", &mockRunner{
+		callFn: func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	})
+
+	d := NewHookDispatcher(rp, pub, logger)
+	d.RegisterHooks([]HookRegistration{
+		{PluginID: p.ID, PluginSlug: "fast-timeout", HookName: "hook.test", HookType: HookSync, Priority: 10, FuncName: "hook.test"},
+	})
+
+	payload := json.RawMessage(`{"key":"value"}`)
+	_, err = d.DispatchSync(context.Background(), "hook.test", payload)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrHookTimeout)
+}
+
 func TestUnregisterHooks_DoesNotAffectOtherPlugins(t *testing.T) {
 	rp := NewRuntimePool(dispatcherLogger(), nil)
 	d := NewHookDispatcher(rp, &mockPublisher{}, dispatcherLogger())

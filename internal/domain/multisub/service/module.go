@@ -20,6 +20,7 @@ var Module = fx.Module("multisub",
 	fx.Provide(NewSyncSaga),
 	fx.Provide(NewSyncService),
 	fx.Provide(NewMultiSubOrchestrator),
+	fx.Provide(NewBindingReconciler),
 )
 
 // MultiSubOrchestrator is the facade that coordinates billing lifecycle events

@@ -115,6 +115,12 @@ func New() *fx.App {
 			return natsadapter.NewEventSubscriber(conn, "remnacore")
 		}),
 
+		// Idempotency repository for NATS message deduplication
+		fx.Provide(postgres.NewIdempotencyRepository),
+		fx.Provide(func(r *postgres.IdempotencyRepository) natsadapter.IdempotencyChecker {
+			return r
+		}),
+
 		// Billing event consumer dependencies
 		fx.Provide(natsadapter.NewBillingSubscriptionLookup),
 		fx.Provide(func(l *natsadapter.BillingSubscriptionLookup) natsadapter.SubscriptionLookup {
@@ -174,6 +180,9 @@ func New() *fx.App {
 
 		// Periodic sync
 		fx.Invoke(startSyncService),
+
+		// Binding reconciler (cleans up orphaned Remnawave users from failed compensations)
+		fx.Invoke(startBindingReconciler),
 
 		// Load enabled plugins on startup
 		fx.Invoke(loadEnabledPlugins),
@@ -481,6 +490,29 @@ func startSpeedTest(lc fx.Lifecycle, st *infra.SpeedTestServer, cfg *config.Conf
 			lc.Append(fx.Hook{
 				OnStop: func(_ context.Context) error {
 					logger.Info("speed test server stopping")
+					cancel()
+					return nil
+				},
+			})
+			return nil
+		},
+	})
+}
+
+// startBindingReconciler spawns the orphaned Remnawave user reconciler as a
+// background goroutine managed by the Fx lifecycle. It periodically cleans up
+// ghost Remnawave users left behind by failed saga compensations.
+func startBindingReconciler(lc fx.Lifecycle, reconciler *multisubservice.BindingReconciler, logger *slog.Logger) {
+	lc.Append(fx.Hook{
+		OnStart: func(_ context.Context) error {
+			recCtx, cancel := context.WithCancel(context.Background())
+			go func() {
+				logger.Info("binding reconciler started")
+				reconciler.Run(recCtx)
+			}()
+			lc.Append(fx.Hook{
+				OnStop: func(_ context.Context) error {
+					logger.Info("binding reconciler stopping")
 					cancel()
 					return nil
 				},

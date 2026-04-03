@@ -108,6 +108,18 @@ func (r *BindingRepository) GetAllActive(ctx context.Context) ([]*aggregate.Remn
 	return bindings, nil
 }
 
+func (r *BindingRepository) GetFailedWithRemnawaveUUID(ctx context.Context) ([]*aggregate.RemnawaveBinding, error) {
+	rows, err := r.queries.GetFailedBindingsWithRemnawaveUUID(ctx)
+	if err != nil {
+		return nil, pgutil.MapErr(err, "get failed bindings with remnawave uuid", multisub.ErrBindingNotFound)
+	}
+	bindings := make([]*aggregate.RemnawaveBinding, len(rows))
+	for i, row := range rows {
+		bindings[i] = bindingRowToDomain(row)
+	}
+	return bindings, nil
+}
+
 func (r *BindingRepository) Create(ctx context.Context, b *aggregate.RemnawaveBinding) error {
 	err := r.queries.CreateBinding(ctx, gen.CreateBindingParams{
 		ID:                 pgutil.UUIDToPgtype(b.ID),

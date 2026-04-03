@@ -45,14 +45,22 @@ type SubscriptionInfo struct {
 	AddonIDs []string
 }
 
+// IdempotencyChecker provides message-level deduplication. The adapter layer
+// owns this interface; the postgres.IdempotencyRepository satisfies it.
+type IdempotencyChecker interface {
+	// TryAcquire returns true if the key is new, false if it was already seen.
+	TryAcquire(ctx context.Context, key string) (bool, error)
+}
+
 // BillingEventConsumer subscribes to billing domain events on NATS and routes
 // them to the SubscriptionEventHandler (MultiSubOrchestrator) for Remnawave
 // provisioning and deprovisioning.
 type BillingEventConsumer struct {
-	subscriber *EventSubscriber
-	handler    SubscriptionEventHandler
-	lookup     SubscriptionLookup
-	logger     *slog.Logger
+	subscriber  *EventSubscriber
+	handler     SubscriptionEventHandler
+	lookup      SubscriptionLookup
+	idempotency IdempotencyChecker
+	logger      *slog.Logger
 }
 
 // NewBillingEventConsumer creates a BillingEventConsumer with the given
@@ -61,13 +69,15 @@ func NewBillingEventConsumer(
 	subscriber *EventSubscriber,
 	handler SubscriptionEventHandler,
 	lookup SubscriptionLookup,
+	idempotency IdempotencyChecker,
 	logger *slog.Logger,
 ) *BillingEventConsumer {
 	return &BillingEventConsumer{
-		subscriber: subscriber,
-		handler:    handler,
-		lookup:     lookup,
-		logger:     logger,
+		subscriber:  subscriber,
+		handler:     handler,
+		lookup:      lookup,
+		idempotency: idempotency,
+		logger:      logger,
 	}
 }
 
@@ -125,9 +135,28 @@ func (c *BillingEventConsumer) consumeLoop(ctx context.Context, subject string, 
 	}
 }
 
-// handleMessage parses and routes a single billing event message.
+// handleMessage parses and routes a single billing event message. It performs
+// message-level deduplication via the idempotency checker before dispatching
+// to the handler.
 func (c *BillingEventConsumer) handleMessage(ctx context.Context, subject string, msg *message.Message) {
 	defer msg.Ack()
+
+	// Dedup by Watermill message UUID. If the idempotency check fails (DB
+	// error), we fail open — at-least-once delivery is safer than dropping.
+	isNew, err := c.idempotency.TryAcquire(ctx, msg.UUID)
+	if err != nil {
+		c.logger.Warn("idempotency check failed, processing message anyway",
+			slog.String("msg_id", msg.UUID),
+			slog.String("subject", subject),
+			slog.Any("error", err),
+		)
+	} else if !isNew {
+		c.logger.Debug("duplicate message, skipping",
+			slog.String("msg_id", msg.UUID),
+			slog.String("subject", subject),
+		)
+		return
+	}
 
 	var event domainevent.Event
 	if err := json.Unmarshal(msg.Payload, &event); err != nil {
@@ -138,27 +167,27 @@ func (c *BillingEventConsumer) handleMessage(ctx context.Context, subject string
 		return
 	}
 
-	var err error
+	var handleErr error
 
 	switch subject {
 	case "subscription.activated":
-		err = c.handleActivated(ctx, event)
+		handleErr = c.handleActivated(ctx, event)
 	case "subscription.cancelled":
-		err = c.handleSimple(ctx, event, c.handler.OnSubscriptionCancelled)
+		handleErr = c.handleSimple(ctx, event, c.handler.OnSubscriptionCancelled)
 	case "subscription.paused":
-		err = c.handleSimple(ctx, event, c.handler.OnSubscriptionPaused)
+		handleErr = c.handleSimple(ctx, event, c.handler.OnSubscriptionPaused)
 	case "subscription.resumed":
-		err = c.handleSimple(ctx, event, c.handler.OnSubscriptionResumed)
+		handleErr = c.handleSimple(ctx, event, c.handler.OnSubscriptionResumed)
 	default:
 		c.logger.Warn("unhandled billing event subject", slog.String("subject", subject))
 		return
 	}
 
-	if err != nil {
+	if handleErr != nil {
 		c.logger.Error("failed to handle billing event",
 			slog.String("subject", subject),
 			slog.String("subscription_id", extractString(event.Data, "subscription_id")),
-			slog.Any("error", err),
+			slog.Any("error", handleErr),
 		)
 	}
 }
