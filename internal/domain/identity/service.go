@@ -174,7 +174,7 @@ func (s *Service) VerifyEmail(ctx context.Context, token string) error {
 		return fmt.Errorf("finding verification: %w", err)
 	}
 
-	if verification.IsExpired() {
+	if verification.IsExpiredAt(time.Now()) {
 		return ErrTokenExpired
 	}
 
@@ -372,7 +372,7 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 		return fmt.Errorf("finding password reset: %w", err)
 	}
 
-	if reset.IsExpired() {
+	if reset.IsExpiredAt(time.Now()) {
 		return ErrPasswordResetExpired
 	}
 

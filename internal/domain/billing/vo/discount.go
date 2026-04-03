@@ -57,11 +57,11 @@ func NewFixedDiscount(amount int64, _ Currency, code string, expiresAt *time.Tim
 	}, nil
 }
 
-// Apply calculates the discounted price. Returns an error if the discount is
-// expired. The result is floored at zero for fixed discounts.
-func (d Discount) Apply(price Money) (Money, error) {
-	if d.IsExpired() {
-		return Money{}, errors.New("discount is expired")
+// Apply calculates the discounted price. Returns the original price unchanged
+// if the discount has expired. The result is floored at zero for fixed discounts.
+func (d Discount) Apply(price Money, now time.Time) (Money, error) {
+	if d.IsExpiredAt(now) {
+		return price, nil // expired discount, return original price
 	}
 
 	switch d.Type {
@@ -88,9 +88,3 @@ func (d Discount) IsExpiredAt(now time.Time) bool {
 	return now.After(*d.ExpiresAt)
 }
 
-// IsExpired reports whether the discount has passed its expiration time.
-// Discounts with no expiry (nil ExpiresAt) never expire.
-// Deprecated: Use IsExpiredAt with an explicit time for deterministic testing.
-func (d Discount) IsExpired() bool {
-	return d.IsExpiredAt(time.Now())
-}

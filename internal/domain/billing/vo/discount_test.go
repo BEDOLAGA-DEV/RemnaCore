@@ -68,7 +68,7 @@ func TestDiscount_ApplyPercent(t *testing.T) {
 
 	price := NewMoney(10000, CurrencyUSD) // $100.00
 
-	result, err := d.Apply(price)
+	result, err := d.Apply(price, time.Now())
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(7500), result.Amount) // $75.00
@@ -81,7 +81,7 @@ func TestDiscount_ApplyPercent100(t *testing.T) {
 
 	price := NewMoney(5000, CurrencyUSD)
 
-	result, err := d.Apply(price)
+	result, err := d.Apply(price, time.Now())
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), result.Amount)
@@ -93,7 +93,7 @@ func TestDiscount_ApplyFixed(t *testing.T) {
 
 	price := NewMoney(1000, CurrencyUSD) // $10.00
 
-	result, err := d.Apply(price)
+	result, err := d.Apply(price, time.Now())
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(700), result.Amount) // $7.00
@@ -105,7 +105,7 @@ func TestDiscount_ApplyFixed_FloorAtZero(t *testing.T) {
 
 	price := NewMoney(500, CurrencyUSD) // $5.00
 
-	result, err := d.Apply(price)
+	result, err := d.Apply(price, time.Now())
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), result.Amount, "fixed discount must not go below zero")
@@ -118,17 +118,17 @@ func TestDiscount_ApplyExpired(t *testing.T) {
 
 	price := NewMoney(1000, CurrencyUSD)
 
-	_, err = d.Apply(price)
+	result, err := d.Apply(price, time.Now())
 
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "expired")
+	require.NoError(t, err)
+	assert.Equal(t, price.Amount, result.Amount, "expired discount must return original price")
 }
 
 func TestDiscount_IsExpired_NoExpiry(t *testing.T) {
 	d, err := NewPercentDiscount(10, "FOREVER", nil)
 	require.NoError(t, err)
 
-	assert.False(t, d.IsExpired())
+	assert.False(t, d.IsExpiredAt(time.Now()))
 }
 
 func TestDiscount_IsExpired_Future(t *testing.T) {
@@ -136,7 +136,7 @@ func TestDiscount_IsExpired_Future(t *testing.T) {
 	d, err := NewPercentDiscount(10, "VALID", &future)
 	require.NoError(t, err)
 
-	assert.False(t, d.IsExpired())
+	assert.False(t, d.IsExpiredAt(time.Now()))
 }
 
 func TestDiscount_IsExpired_Past(t *testing.T) {
@@ -144,7 +144,7 @@ func TestDiscount_IsExpired_Past(t *testing.T) {
 	d, err := NewPercentDiscount(10, "OLD", &past)
 	require.NoError(t, err)
 
-	assert.True(t, d.IsExpired())
+	assert.True(t, d.IsExpiredAt(time.Now()))
 }
 
 func TestDiscount_Immutability(t *testing.T) {
@@ -152,7 +152,7 @@ func TestDiscount_Immutability(t *testing.T) {
 	require.NoError(t, err)
 
 	price := NewMoney(1000, CurrencyUSD)
-	result, err := d.Apply(price)
+	result, err := d.Apply(price, time.Now())
 	require.NoError(t, err)
 
 	assert.Equal(t, int64(1000), price.Amount, "original price must not change")

@@ -142,12 +142,6 @@ func (v *EmailVerification) IsExpiredAt(now time.Time) bool {
 	return now.After(v.ExpiresAt)
 }
 
-// IsExpired returns true if the verification token has passed its expiration.
-// Deprecated: Use IsExpiredAt with an explicit time for deterministic testing.
-func (v *EmailVerification) IsExpired() bool {
-	return v.IsExpiredAt(time.Now())
-}
-
 // PasswordReset represents a token-based password reset request.
 type PasswordReset struct {
 	ID        string
@@ -182,8 +176,3 @@ func (pr *PasswordReset) IsExpiredAt(now time.Time) bool {
 	return now.After(pr.ExpiresAt)
 }
 
-// IsExpired returns true if the password reset token has passed its expiration.
-// Deprecated: Use IsExpiredAt with an explicit time for deterministic testing.
-func (pr *PasswordReset) IsExpired() bool {
-	return pr.IsExpiredAt(time.Now())
-}

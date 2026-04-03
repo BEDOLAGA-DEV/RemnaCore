@@ -54,7 +54,7 @@ func TestEmailVerification_Generate(t *testing.T) {
 	assert.Equal(t, "alice@example.com", v.Email)
 	assert.NotEmpty(t, v.Token)
 	assert.Len(t, v.Token, VerificationTokenLen*2) // hex-encoded
-	assert.False(t, v.IsExpired())
+	assert.False(t, v.IsExpiredAt(time.Now()))
 	assert.False(t, v.CreatedAt.IsZero())
 	assert.True(t, v.ExpiresAt.After(time.Now()))
 }
@@ -63,5 +63,5 @@ func TestEmailVerification_IsExpired(t *testing.T) {
 	v := NewEmailVerification("user-123", "alice@example.com", time.Now())
 	v.ExpiresAt = time.Now().Add(-time.Hour)
 
-	assert.True(t, v.IsExpired())
+	assert.True(t, v.IsExpiredAt(time.Now()))
 }
