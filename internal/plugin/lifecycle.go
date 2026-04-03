@@ -61,7 +61,7 @@ func (lm *LifecycleManager) Install(ctx context.Context, manifestBytes, wasmByte
 		return nil, fmt.Errorf("%w: slug %q", ErrPluginAlreadyExists, manifest.Plugin.ID)
 	}
 
-	p, err := NewPlugin(manifest, wasmBytes)
+	p, err := NewPlugin(manifest, wasmBytes, time.Now())
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func (lm *LifecycleManager) Enable(ctx context.Context, pluginID string) error {
 		}
 	}
 
-	if err := p.Enable(); err != nil {
+	if err := p.Enable(time.Now()); err != nil {
 		return fmt.Errorf("transition plugin to enabled: %w", err)
 	}
 
@@ -148,7 +148,7 @@ func (lm *LifecycleManager) Disable(ctx context.Context, pluginID string) error 
 		return fmt.Errorf("unloading plugin from runtime: %w", unloadErr)
 	}
 
-	p.Disable()
+	p.Disable(time.Now())
 
 	if err := lm.repo.UpdateStatus(ctx, p.ID, p.Status, "", nil); err != nil {
 		return fmt.Errorf("persisting disabled status: %w", err)
@@ -363,6 +363,18 @@ func (lm *LifecycleManager) LoadAllEnabled(ctx context.Context) error {
 	}
 
 	for _, p := range plugins {
+		if p.Manifest != nil {
+			if err := checkSDKCompatibility(p.Manifest.Plugin.SDKVersion); err != nil {
+				lm.logger.Warn("skipping incompatible plugin",
+					slog.String("slug", p.Slug),
+					slog.String("sdk_version", p.Manifest.Plugin.SDKVersion),
+					slog.String("error", err.Error()),
+				)
+				lm.repo.UpdateStatus(ctx, p.ID, StatusError, "incompatible SDK version: "+err.Error(), nil)
+				continue
+			}
+		}
+
 		if err := lm.runtime.LoadPlugin(p); err != nil {
 			lm.logger.Error("failed to load enabled plugin on startup",
 				"slug", p.Slug, "id", p.ID, "error", err)

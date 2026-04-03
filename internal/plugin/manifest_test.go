@@ -65,9 +65,10 @@ timeout_async_ms       = 15000
 
 const minimalManifestTOML = `
 [plugin]
-id      = "minimal-plugin"
-name    = "Minimal"
-version = "0.0.1"
+id          = "minimal-plugin"
+name        = "Minimal"
+version     = "0.0.1"
+sdk_version = "1.0.0"
 
 [hooks]
 sync = ["invoice.created"]
@@ -200,11 +201,22 @@ name = "Test"
 sync = ["invoice.created"]`,
 		},
 		{
-			"no hooks",
+			"missing sdk_version",
 			`[plugin]
 id      = "test-plugin"
 name    = "Test"
-version = "1.0.0"`,
+version = "1.0.0"
+
+[hooks]
+sync = ["invoice.created"]`,
+		},
+		{
+			"no hooks",
+			`[plugin]
+id          = "test-plugin"
+name        = "Test"
+version     = "1.0.0"
+sdk_version = "1.0.0"`,
 		},
 	}
 

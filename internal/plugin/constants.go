@@ -70,3 +70,13 @@ const (
 	MinHookPriority = 0
 	MaxHookPriority = 100
 )
+
+// Permission manifest values used in ParsePermissions to map human-friendly
+// TOML strings to typed PermissionScope values.
+const (
+	PermValueRead      = "read"
+	PermValueWrite     = "write"
+	PermValueReadWrite = "readwrite"
+	PermValueEmit      = "emit"
+	PermValueRoutes    = "routes"
+)

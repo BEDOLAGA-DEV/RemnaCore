@@ -102,6 +102,9 @@ func (m *Manifest) Validate() error {
 	if m.Plugin.Version == "" {
 		return fmt.Errorf("%w: plugin.version is required", ErrInvalidManifest)
 	}
+	if m.Plugin.SDKVersion == "" {
+		return fmt.Errorf("%w: sdk_version is required", ErrInvalidManifest)
+	}
 	if len(m.Hooks.Sync) == 0 && len(m.Hooks.Async) == 0 {
 		return fmt.Errorf("%w: at least one hook (sync or async) is required", ErrInvalidManifest)
 	}
@@ -133,6 +136,9 @@ func (m *Manifest) EffectiveLimits() ManifestLimits {
 	if l.PoolSize == 0 {
 		l.PoolSize = DefaultPoolSize
 	}
+	if l.PoolSize > MaxPoolSize {
+		l.PoolSize = MaxPoolSize
+	}
 	return l
 }
 
@@ -142,46 +148,46 @@ func (m *Manifest) ParsePermissions() []PermissionScope {
 	var perms []PermissionScope
 
 	switch m.Permissions.Billing {
-	case "read":
+	case PermValueRead:
 		perms = append(perms, PermBillingRead)
-	case "write":
+	case PermValueWrite:
 		perms = append(perms, PermBillingRead, PermBillingWrite)
 	}
 
-	if m.Permissions.Payment == "write" {
+	if m.Permissions.Payment == PermValueWrite {
 		perms = append(perms, PermPaymentWrite)
 	}
 
 	switch m.Permissions.Users {
-	case "read":
+	case PermValueRead:
 		perms = append(perms, PermUsersRead)
-	case "write":
+	case PermValueWrite:
 		perms = append(perms, PermUsersRead, PermUsersWrite)
 	}
 
-	if m.Permissions.Notifications == "emit" {
+	if m.Permissions.Notifications == PermValueEmit {
 		perms = append(perms, PermNotificationsEmit)
 	}
 
-	if m.Permissions.Analytics == "write" {
+	if m.Permissions.Analytics == PermValueWrite {
 		perms = append(perms, PermAnalyticsWrite)
 	}
 
 	switch m.Permissions.Storage {
-	case "read":
+	case PermValueRead:
 		perms = append(perms, PermStorageRead)
-	case "readwrite":
+	case PermValueReadWrite:
 		perms = append(perms, PermStorageRead, PermStorageWrite)
 	}
 
 	switch m.Permissions.VPN {
-	case "read":
+	case PermValueRead:
 		perms = append(perms, PermVPNRead)
-	case "write":
+	case PermValueWrite:
 		perms = append(perms, PermVPNRead, PermVPNWrite)
 	}
 
-	if m.Permissions.API == "routes" {
+	if m.Permissions.API == PermValueRoutes {
 		perms = append(perms, PermAPIRoutes)
 	}
 

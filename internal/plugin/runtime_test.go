@@ -41,7 +41,7 @@ func testPlugin(slug string) *Plugin {
 		Plugin: ManifestPlugin{ID: slug, Name: "Test", Version: "1.0.0", SDKVersion: CurrentSDKVersion},
 		Hooks:  ManifestHooks{Sync: []string{"hook.test"}},
 	}
-	p, _ := NewPlugin(m, []byte("fake-wasm"))
+	p, _ := NewPlugin(m, []byte("fake-wasm"), time.Now())
 	return p
 }
 
@@ -51,7 +51,7 @@ func testPluginWithPoolSize(slug string, poolSize int) *Plugin {
 		Hooks:  ManifestHooks{Sync: []string{"hook.test"}},
 		Limits: ManifestLimits{PoolSize: poolSize},
 	}
-	p, _ := NewPlugin(m, []byte("fake-wasm"))
+	p, _ := NewPlugin(m, []byte("fake-wasm"), time.Now())
 	return p
 }
 

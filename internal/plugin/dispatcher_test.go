@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -240,11 +241,11 @@ func TestDispatchSync_Timeout_CustomManifest(t *testing.T) {
 
 	// Build a plugin whose manifest declares a 50ms sync timeout.
 	m := &Manifest{
-		Plugin: ManifestPlugin{ID: "fast-timeout", Name: "FastTimeout", Version: "1.0.0"},
+		Plugin: ManifestPlugin{ID: "fast-timeout", Name: "FastTimeout", Version: "1.0.0", SDKVersion: CurrentSDKVersion},
 		Hooks:  ManifestHooks{Sync: []string{"hook.test"}},
 		Limits: ManifestLimits{TimeoutSyncMs: 50},
 	}
-	p, err := NewPlugin(m, []byte("fake-wasm"))
+	p, err := NewPlugin(m, []byte("fake-wasm"), time.Now())
 	require.NoError(t, err)
 	require.NoError(t, rp.LoadPlugin(p))
 

@@ -6,6 +6,10 @@ import (
 	"strings"
 )
 
+// semverComponentCount is the expected number of components in a semver string
+// (major.minor.patch).
+const semverComponentCount = 3
+
 // checkSDKCompatibility verifies the plugin's declared sdk_version is
 // compatible with the current platform SDK version. Uses simple semver major
 // version check: major versions must match. This allows minor/patch updates
@@ -36,7 +40,7 @@ func parseMajorVersion(version string) (int, error) {
 	// Strip leading constraint characters.
 	version = strings.TrimLeft(version, "^~>=<! ")
 
-	parts := strings.SplitN(version, ".", 3)
+	parts := strings.SplitN(version, ".", semverComponentCount)
 	if len(parts) == 0 || parts[0] == "" {
 		return 0, fmt.Errorf("empty version")
 	}

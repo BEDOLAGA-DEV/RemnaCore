@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -16,7 +17,8 @@ func TestNewPlugin(t *testing.T) {
 	m := validTestManifest()
 	require.NotNil(t, m)
 
-	p, err := NewPlugin(m, nil)
+	now := time.Now()
+	p, err := NewPlugin(m, nil, now)
 	require.NoError(t, err)
 	require.NotNil(t, p)
 
@@ -27,52 +29,58 @@ func TestNewPlugin(t *testing.T) {
 	assert.Equal(t, StatusInstalled, p.Status)
 	assert.NotNil(t, p.Config)
 	assert.Nil(t, p.EnabledAt)
-	assert.False(t, p.InstalledAt.IsZero())
-	assert.False(t, p.UpdatedAt.IsZero())
+	assert.Equal(t, now, p.InstalledAt)
+	assert.Equal(t, now, p.UpdatedAt)
 }
 
 func TestNewPlugin_NilManifest(t *testing.T) {
-	_, err := NewPlugin(nil, nil)
+	_, err := NewPlugin(nil, nil, time.Now())
 	require.ErrorIs(t, err, ErrInvalidManifest)
 }
 
 func TestPlugin_Enable(t *testing.T) {
 	m := validTestManifest()
-	p, err := NewPlugin(m, nil)
+	p, err := NewPlugin(m, nil, time.Now())
 	require.NoError(t, err)
 
-	err = p.Enable()
+	now := time.Now()
+	err = p.Enable(now)
 	require.NoError(t, err)
 	assert.Equal(t, StatusEnabled, p.Status)
 	assert.NotNil(t, p.EnabledAt)
+	assert.Equal(t, now, *p.EnabledAt)
 }
 
 func TestPlugin_EnableAlreadyEnabled(t *testing.T) {
 	m := validTestManifest()
-	p, err := NewPlugin(m, nil)
+	p, err := NewPlugin(m, nil, time.Now())
 	require.NoError(t, err)
 
-	require.NoError(t, p.Enable())
-	err = p.Enable()
+	require.NoError(t, p.Enable(time.Now()))
+	err = p.Enable(time.Now())
 	require.ErrorIs(t, err, ErrPluginAlreadyEnabled)
 }
 
 func TestPlugin_Disable(t *testing.T) {
 	m := validTestManifest()
-	p, err := NewPlugin(m, nil)
+	p, err := NewPlugin(m, nil, time.Now())
 	require.NoError(t, err)
 
-	require.NoError(t, p.Enable())
-	p.Disable()
+	require.NoError(t, p.Enable(time.Now()))
+	now := time.Now()
+	p.Disable(now)
 	assert.Equal(t, StatusDisabled, p.Status)
+	assert.Equal(t, now, p.UpdatedAt)
 }
 
 func TestPlugin_SetError(t *testing.T) {
 	m := validTestManifest()
-	p, err := NewPlugin(m, nil)
+	p, err := NewPlugin(m, nil, time.Now())
 	require.NoError(t, err)
 
-	p.SetError("compilation failed")
+	now := time.Now()
+	p.SetError("compilation failed", now)
 	assert.Equal(t, StatusError, p.Status)
 	assert.Equal(t, "compilation failed", p.ErrorLog)
+	assert.Equal(t, now, p.UpdatedAt)
 }
