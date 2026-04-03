@@ -7,7 +7,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
 )
 
@@ -41,10 +40,6 @@ type updatePluginConfigRequest struct {
 
 // ListPlugins handles GET /api/admin/plugins.
 func (h *PluginHandler) ListPlugins(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
-
 	plugins, err := h.repo.GetAll(r.Context())
 	if err != nil {
 		status, message := mapServiceError(err)
@@ -57,10 +52,6 @@ func (h *PluginHandler) ListPlugins(w http.ResponseWriter, r *http.Request) {
 
 // GetPlugin handles GET /api/admin/plugins/{pluginID}.
 func (h *PluginHandler) GetPlugin(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
-
 	pluginID := chi.URLParam(r, "pluginID")
 	if pluginID == "" {
 		writeError(w, http.StatusBadRequest, "plugin ID is required")
@@ -79,10 +70,6 @@ func (h *PluginHandler) GetPlugin(w http.ResponseWriter, r *http.Request) {
 
 // InstallPlugin handles POST /api/admin/plugins.
 func (h *PluginHandler) InstallPlugin(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
-
 	var req installPluginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -113,10 +100,6 @@ func (h *PluginHandler) InstallPlugin(w http.ResponseWriter, r *http.Request) {
 
 // EnablePlugin handles POST /api/admin/plugins/{pluginID}/enable.
 func (h *PluginHandler) EnablePlugin(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
-
 	pluginID := chi.URLParam(r, "pluginID")
 	if pluginID == "" {
 		writeError(w, http.StatusBadRequest, "plugin ID is required")
@@ -134,10 +117,6 @@ func (h *PluginHandler) EnablePlugin(w http.ResponseWriter, r *http.Request) {
 
 // DisablePlugin handles POST /api/admin/plugins/{pluginID}/disable.
 func (h *PluginHandler) DisablePlugin(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
-
 	pluginID := chi.URLParam(r, "pluginID")
 	if pluginID == "" {
 		writeError(w, http.StatusBadRequest, "plugin ID is required")
@@ -155,10 +134,6 @@ func (h *PluginHandler) DisablePlugin(w http.ResponseWriter, r *http.Request) {
 
 // UninstallPlugin handles DELETE /api/admin/plugins/{pluginID}.
 func (h *PluginHandler) UninstallPlugin(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
-
 	pluginID := chi.URLParam(r, "pluginID")
 	if pluginID == "" {
 		writeError(w, http.StatusBadRequest, "plugin ID is required")
@@ -176,10 +151,6 @@ func (h *PluginHandler) UninstallPlugin(w http.ResponseWriter, r *http.Request) 
 
 // UpdatePluginConfig handles PUT /api/admin/plugins/{pluginID}/config.
 func (h *PluginHandler) UpdatePluginConfig(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
-
 	pluginID := chi.URLParam(r, "pluginID")
 	if pluginID == "" {
 		writeError(w, http.StatusBadRequest, "plugin ID is required")
@@ -199,19 +170,4 @@ func (h *PluginHandler) UpdatePluginConfig(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "config_updated"})
-}
-
-// requireAdmin checks that the authenticated user has the "admin" role.
-// Returns true if the check passes; writes an error and returns false otherwise.
-func requireAdmin(w http.ResponseWriter, r *http.Request) bool {
-	claims := middleware.GetClaims(r.Context())
-	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "authentication required")
-		return false
-	}
-	if claims.Role != "admin" {
-		writeError(w, http.StatusForbidden, "admin access required")
-		return false
-	}
-	return true
 }

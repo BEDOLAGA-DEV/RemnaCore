@@ -155,25 +155,26 @@ func NewRouter(p RouterParams) http.Handler {
 			protected.Post("/family/members", p.FamilyHandler.AddMember)
 			protected.Delete("/family/members/{userID}", p.FamilyHandler.RemoveMember)
 
-			// Admin plugin management (role check inside each handler).
-			protected.Route("/admin/plugins", func(admin chi.Router) {
-				admin.Get("/", p.PluginHandler.ListPlugins)
-				admin.Post("/", p.PluginHandler.InstallPlugin)
-				admin.Get("/{pluginID}", p.PluginHandler.GetPlugin)
-				admin.Post("/{pluginID}/enable", p.PluginHandler.EnablePlugin)
-				admin.Post("/{pluginID}/disable", p.PluginHandler.DisablePlugin)
-				admin.Delete("/{pluginID}", p.PluginHandler.UninstallPlugin)
-				admin.Put("/{pluginID}/config", p.PluginHandler.UpdatePluginConfig)
-			})
-
-			// Admin user/subscription/invoice management (role check inside each handler).
+			// Admin routes — require admin role (enforced by middleware).
 			protected.Route("/admin", func(admin chi.Router) {
+				admin.Use(middleware.RequireAdmin)
+
+				// Plugin management
+				admin.Get("/plugins", p.PluginHandler.ListPlugins)
+				admin.Post("/plugins", p.PluginHandler.InstallPlugin)
+				admin.Get("/plugins/{pluginID}", p.PluginHandler.GetPlugin)
+				admin.Post("/plugins/{pluginID}/enable", p.PluginHandler.EnablePlugin)
+				admin.Post("/plugins/{pluginID}/disable", p.PluginHandler.DisablePlugin)
+				admin.Delete("/plugins/{pluginID}", p.PluginHandler.UninstallPlugin)
+				admin.Put("/plugins/{pluginID}/config", p.PluginHandler.UpdatePluginConfig)
+
+				// User / subscription / invoice management
 				admin.Get("/users", p.AdminHandler.ListUsers)
 				admin.Get("/users/{userID}", p.AdminHandler.GetUser)
 				admin.Get("/subscriptions", p.AdminHandler.ListSubscriptions)
 				admin.Get("/invoices", p.AdminHandler.ListInvoices)
 
-				// Tenant management (admin only, role check inside each handler).
+				// Tenant management
 				admin.Post("/tenants", p.ResellerHandler.CreateTenant)
 				admin.Get("/tenants", p.ResellerHandler.ListTenants)
 				admin.Get("/tenants/{tenantID}", p.ResellerHandler.GetTenant)

@@ -42,10 +42,6 @@ type updateBrandingRequest struct {
 
 // CreateTenant handles POST /api/admin/tenants -- create a new tenant (admin only).
 func (h *ResellerHandler) CreateTenant(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
-
 	var req createTenantRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -72,10 +68,6 @@ func (h *ResellerHandler) CreateTenant(w http.ResponseWriter, r *http.Request) {
 
 // ListTenants handles GET /api/admin/tenants -- list all tenants (admin only).
 func (h *ResellerHandler) ListTenants(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
-
 	limit, offset := parsePagination(r)
 	tenants, err := h.service.ListTenants(r.Context(), limit, offset)
 	if err != nil {
@@ -93,10 +85,6 @@ func (h *ResellerHandler) ListTenants(w http.ResponseWriter, r *http.Request) {
 
 // GetTenant handles GET /api/admin/tenants/{tenantID} -- tenant detail (admin only).
 func (h *ResellerHandler) GetTenant(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
-
 	tenantID := chi.URLParam(r, "tenantID")
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant ID is required")
@@ -115,10 +103,6 @@ func (h *ResellerHandler) GetTenant(w http.ResponseWriter, r *http.Request) {
 
 // UpdateBranding handles PUT /api/admin/tenants/{tenantID}/branding -- update branding (admin only).
 func (h *ResellerHandler) UpdateBranding(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
-
 	tenantID := chi.URLParam(r, "tenantID")
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant ID is required")

@@ -58,10 +58,6 @@ func parsePagination(r *http.Request) (limit, offset int) {
 
 // ListUsers handles GET /api/admin/users -- list all users (paginated).
 func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
-
 	limit, offset := parsePagination(r)
 	users, err := h.identitySvc.ListUsers(r.Context(), limit, offset)
 	if err != nil {
@@ -75,10 +71,6 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 
 // GetUser handles GET /api/admin/users/{userID} -- get a single user detail.
 func (h *AdminHandler) GetUser(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
-
 	userID := chi.URLParam(r, "userID")
 	if userID == "" {
 		writeError(w, http.StatusBadRequest, "user ID is required")
@@ -98,10 +90,6 @@ func (h *AdminHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 // ListSubscriptions handles GET /api/admin/subscriptions -- list all
 // subscriptions (paginated).
 func (h *AdminHandler) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
-
 	limit, offset := parsePagination(r)
 	subs, err := h.subs.GetAll(r.Context(), limit, offset)
 	if err != nil {
@@ -115,10 +103,6 @@ func (h *AdminHandler) ListSubscriptions(w http.ResponseWriter, r *http.Request)
 
 // ListInvoices handles GET /api/admin/invoices -- list all invoices (paginated).
 func (h *AdminHandler) ListInvoices(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
-
 	limit, offset := parsePagination(r)
 	invoices, err := h.invoices.GetAll(r.Context(), limit, offset)
 	if err != nil {
