@@ -13,9 +13,10 @@ import (
 // TracerName is the instrumentation library name used for all manual spans.
 const TracerName = "remnacore"
 
-// tracer is the package-level tracer instance. It resolves to whatever
-// TracerProvider has been set globally via otel.SetTracerProvider (which
-// happens in internal/observability.InitTracer at startup).
+// tracer uses OTel's global tracer provider which resolves lazily.
+// Even though this is initialized before otel.SetTracerProvider is called,
+// the global provider delegates to whatever provider is set at call time,
+// not at tracer-creation time. This is safe and documented OTel behavior.
 var tracer = otel.Tracer(TracerName)
 
 // StartSpan creates a new span from the given context using the global tracer.
