@@ -1,7 +1,7 @@
 package service
 
 import (
-	billingaggregate "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
+	multisubdomain "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
 )
 
@@ -22,9 +22,9 @@ func NewBindingCalculator() *BindingCalculator {
 }
 
 // Calculate returns the list of binding specifications needed for a subscription
-// based on the plan, active addon IDs, and family members.
+// based on the plan snapshot, active addon IDs, and family members.
 func (bc *BindingCalculator) Calculate(
-	plan *billingaggregate.Plan,
+	plan multisubdomain.PlanSnapshot,
 	addonIDs []string,
 	familyMembers []string,
 ) []BindingSpec {
@@ -43,13 +43,13 @@ func (bc *BindingCalculator) Calculate(
 			continue
 		}
 		switch addon.Type {
-		case billingaggregate.AddonNodes:
+		case multisubdomain.AddonSnapshotNodes:
 			specs = append(specs, BindingSpec{
 				Purpose:      purposeFromAddonName(addon.Name),
 				TrafficLimit: addon.ExtraTrafficBytes,
 				AllowedNodes: addon.ExtraNodes,
 			})
-		case billingaggregate.AddonTraffic:
+		case multisubdomain.AddonSnapshotTraffic:
 			// Traffic addons increase the base binding's traffic limit.
 			base.TrafficLimit += addon.ExtraTrafficBytes
 		}
@@ -69,11 +69,11 @@ func (bc *BindingCalculator) Calculate(
 	return specs
 }
 
-// findAddon locates an addon on a plan by ID, returning nil if not found.
-func findAddon(plan *billingaggregate.Plan, addonID string) *billingaggregate.Addon {
-	for i := range plan.AvailableAddons {
-		if plan.AvailableAddons[i].ID == addonID {
-			return &plan.AvailableAddons[i]
+// findAddon locates an addon on a plan snapshot by ID, returning nil if not found.
+func findAddon(plan multisubdomain.PlanSnapshot, addonID string) *multisubdomain.AddonSnapshot {
+	for i := range plan.Addons {
+		if plan.Addons[i].ID == addonID {
+			return &plan.Addons[i]
 		}
 	}
 	return nil

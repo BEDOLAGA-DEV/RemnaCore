@@ -8,19 +8,22 @@ import (
 
 	"github.com/ThreeDotsLabs/watermill/message"
 
-	billingaggregate "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
 
 // SubscriptionEventHandler defines the contract for handling billing
 // subscription lifecycle events. The MultiSubOrchestrator satisfies this
 // interface, keeping the NATS adapter decoupled from the multisub domain.
+//
+// Plan data is passed as multisub.PlanSnapshot (an Anti-Corruption Layer type)
+// so that the handler never depends on billing/aggregate types.
 type SubscriptionEventHandler interface {
 	OnSubscriptionActivated(
 		ctx context.Context,
 		subscriptionID string,
 		platformUserID string,
-		plan *billingaggregate.Plan,
+		plan multisub.PlanSnapshot,
 		addonIDs []string,
 		familyMemberIDs []string,
 	) error
@@ -31,9 +34,11 @@ type SubscriptionEventHandler interface {
 
 // SubscriptionLookup provides read access to billing data so the consumer can
 // enrich sparse domain events with the full context the orchestrator requires.
+// Plan data is returned as multisub.PlanSnapshot, translated at the adapter
+// boundary (Anti-Corruption Layer).
 type SubscriptionLookup interface {
 	GetSubscriptionByID(ctx context.Context, id string) (SubscriptionInfo, error)
-	GetPlanByID(ctx context.Context, id string) (*billingaggregate.Plan, error)
+	GetPlanSnapshot(ctx context.Context, id string) (multisub.PlanSnapshot, error)
 	GetFamilyMemberIDs(ctx context.Context, ownerID string) ([]string, error)
 }
 
@@ -205,7 +210,7 @@ func (c *BillingEventConsumer) handleActivated(ctx context.Context, event domain
 		return fmt.Errorf("lookup subscription %s: %w", subscriptionID, err)
 	}
 
-	plan, err := c.lookup.GetPlanByID(ctx, subInfo.PlanID)
+	plan, err := c.lookup.GetPlanSnapshot(ctx, subInfo.PlanID)
 	if err != nil {
 		return fmt.Errorf("lookup plan %s: %w", subInfo.PlanID, err)
 	}

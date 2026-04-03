@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	multisubdomain "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	multisubagg "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
@@ -24,10 +23,10 @@ const (
 
 // ProvisionRequest holds the input data for a provisioning saga run.
 type ProvisionRequest struct {
-	SubscriptionID string
-	PlatformUserID string
-	Plan           *aggregate.Plan
-	AddonIDs       []string
+	SubscriptionID  string
+	PlatformUserID  string
+	Plan            multisubdomain.PlanSnapshot
+	AddonIDs        []string
 	FamilyMemberIDs []string
 }
 

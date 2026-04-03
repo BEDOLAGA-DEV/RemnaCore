@@ -27,6 +27,7 @@ FROM public.outbox
 WHERE published = false
 ORDER BY created_at
 LIMIT $1
+FOR UPDATE SKIP LOCKED
 `
 
 type GetUnpublishedOutboxEventsRow struct {

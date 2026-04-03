@@ -7,7 +7,8 @@ SELECT id, event_type, payload, created_at
 FROM public.outbox
 WHERE published = false
 ORDER BY created_at
-LIMIT $1;
+LIMIT $1
+FOR UPDATE SKIP LOCKED;
 
 -- name: MarkOutboxEventPublished :exec
 UPDATE public.outbox

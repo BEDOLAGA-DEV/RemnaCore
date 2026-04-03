@@ -8,42 +8,27 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	billingaggregate "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/multisubtest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/service"
 )
 
-func newPlanForSaga(t *testing.T) *billingaggregate.Plan {
-	t.Helper()
-	plan, err := billingaggregate.NewPlan(
-		"Premium VPN",
-		"Premium plan with gaming addon",
-		vo.Money{Amount: 999, Currency: "USD"},
-		vo.IntervalMonth,
-		100_000_000_000,
-		5,
-		[]string{"US", "DE"},
-		[]string{"wireguard"},
-		billingaggregate.TierPremium,
-		4,
-		true,
-		3,
-	)
-	require.NoError(t, err)
-
-	_ = plan.AddAddon(billingaggregate.Addon{
-		ID:                "addon-gaming",
-		Name:              "gaming",
-		Price:             vo.Money{Amount: 499, Currency: "USD"},
-		Type:              billingaggregate.AddonNodes,
-		ExtraTrafficBytes: 50_000_000_000,
-		ExtraNodes:        []string{"node-gaming-us"},
-	})
-
-	return plan
+func newPlanSnapshotForSaga() multisub.PlanSnapshot {
+	return multisub.PlanSnapshot{
+		ID:                   "plan-premium",
+		TrafficLimitBytes:    100_000_000_000,
+		MaxRemnawaveBindings: 4,
+		Addons: []multisub.AddonSnapshot{
+			{
+				ID:                "addon-gaming",
+				Name:              "gaming",
+				Type:              multisub.AddonSnapshotNodes,
+				ExtraTrafficBytes: 50_000_000_000,
+				ExtraNodes:        []string{"node-gaming-us"},
+			},
+		},
+	}
 }
 
 func TestProvision_Success(t *testing.T) {
@@ -54,7 +39,7 @@ func TestProvision_Success(t *testing.T) {
 	calc := service.NewBindingCalculator()
 
 	saga := service.NewProvisioningSaga(repo, gw, pub, calc)
-	plan := newPlanForSaga(t)
+	plan := newPlanSnapshotForSaga()
 
 	// Expect 3 bindings: base + gaming + 1 family member
 	repo.On("Create", ctx, mock.AnythingOfType("*aggregate.RemnawaveBinding")).Return(nil).Times(3)
@@ -114,7 +99,7 @@ func TestProvision_RemnawaveFail(t *testing.T) {
 	calc := service.NewBindingCalculator()
 
 	saga := service.NewProvisioningSaga(repo, gw, pub, calc)
-	plan := newPlanForSaga(t)
+	plan := newPlanSnapshotForSaga()
 
 	// First binding: base - succeeds fully
 	repo.On("Create", ctx, mock.AnythingOfType("*aggregate.RemnawaveBinding")).Return(nil).Times(2)
@@ -171,7 +156,7 @@ func TestProvision_CompensationOnDBFail(t *testing.T) {
 	calc := service.NewBindingCalculator()
 
 	saga := service.NewProvisioningSaga(repo, gw, pub, calc)
-	plan := newPlanForSaga(t)
+	plan := newPlanSnapshotForSaga()
 
 	// Create binding in DB succeeds
 	repo.On("Create", ctx, mock.AnythingOfType("*aggregate.RemnawaveBinding")).Return(nil).Once()
@@ -217,7 +202,7 @@ func TestProvision_CompensationRetryOnDeleteFail(t *testing.T) {
 	calc := service.NewBindingCalculator()
 
 	saga := service.NewProvisioningSaga(repo, gw, pub, calc)
-	plan := newPlanForSaga(t)
+	plan := newPlanSnapshotForSaga()
 
 	// Create binding in DB succeeds
 	repo.On("Create", ctx, mock.AnythingOfType("*aggregate.RemnawaveBinding")).Return(nil).Once()

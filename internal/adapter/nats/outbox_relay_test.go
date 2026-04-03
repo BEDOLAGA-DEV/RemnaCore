@@ -29,6 +29,6 @@ func TestOutboxRelayConstants(t *testing.T) {
 func TestNewOutboxRelay(t *testing.T) {
 	// NewOutboxRelay should not panic with nil dependencies (constructor only
 	// assigns fields).
-	relay := natsadapter.NewOutboxRelay(nil, nil, nil)
+	relay := natsadapter.NewOutboxRelay(nil, nil, nil, nil)
 	assert.NotNil(t, relay)
 }

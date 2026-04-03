@@ -6,11 +6,13 @@ import (
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	billingaggregate "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 )
 
 // BillingSubscriptionLookup implements SubscriptionLookup by delegating to the
 // billing domain repositories. It bridges the NATS consumer's enrichment needs
-// with the billing bounded context.
+// with the billing bounded context and serves as the Anti-Corruption Layer that
+// translates billing types into multisub PlanSnapshot values.
 type BillingSubscriptionLookup struct {
 	subs     billing.SubscriptionRepository
 	plans    billing.PlanRepository
@@ -46,9 +48,16 @@ func (l *BillingSubscriptionLookup) GetSubscriptionByID(ctx context.Context, id 
 	}, nil
 }
 
-// GetPlanByID fetches a plan by ID.
-func (l *BillingSubscriptionLookup) GetPlanByID(ctx context.Context, id string) (*billingaggregate.Plan, error) {
-	return l.plans.GetByID(ctx, id)
+// GetPlanSnapshot fetches a billing plan by ID and translates it into the
+// multisub Anti-Corruption Layer type. This is the boundary where billing
+// domain types are converted into multisub-local types.
+func (l *BillingSubscriptionLookup) GetPlanSnapshot(ctx context.Context, id string) (multisub.PlanSnapshot, error) {
+	plan, err := l.plans.GetByID(ctx, id)
+	if err != nil {
+		return multisub.PlanSnapshot{}, fmt.Errorf("get plan: %w", err)
+	}
+
+	return planToSnapshot(plan), nil
 }
 
 // GetFamilyMemberIDs fetches the user IDs of family members for the given
@@ -70,6 +79,46 @@ func (l *BillingSubscriptionLookup) GetFamilyMemberIDs(ctx context.Context, owne
 	}
 
 	return memberIDs, nil
+}
+
+// planToSnapshot translates a billing Plan aggregate into a multisub
+// PlanSnapshot. This is the Anti-Corruption Layer translation point: all
+// billing-specific types (AddonType, Money, etc.) are mapped to multisub-local
+// equivalents so the multisub domain never imports billing types.
+func planToSnapshot(plan *billingaggregate.Plan) multisub.PlanSnapshot {
+	addons := make([]multisub.AddonSnapshot, len(plan.AvailableAddons))
+	for i, a := range plan.AvailableAddons {
+		addons[i] = multisub.AddonSnapshot{
+			ID:                a.ID,
+			Name:              a.Name,
+			Type:              addonTypeToSnapshot(a.Type),
+			ExtraTrafficBytes: a.ExtraTrafficBytes,
+			ExtraNodes:        a.ExtraNodes,
+		}
+	}
+	return multisub.PlanSnapshot{
+		ID:                   plan.ID,
+		TrafficLimitBytes:    plan.TrafficLimitBytes,
+		MaxRemnawaveBindings: plan.MaxRemnawaveBindings,
+		Addons:               addons,
+	}
+}
+
+// addonTypeToSnapshot maps billing AddonType to multisub AddonSnapshotType.
+var addonTypeMap = map[billingaggregate.AddonType]multisub.AddonSnapshotType{
+	billingaggregate.AddonTraffic: multisub.AddonSnapshotTraffic,
+	billingaggregate.AddonNodes:   multisub.AddonSnapshotNodes,
+	billingaggregate.AddonFeature: multisub.AddonSnapshotFeature,
+}
+
+// addonTypeToSnapshot translates a billing AddonType to the multisub
+// AddonSnapshotType. Unknown types default to the string value of the billing
+// type to avoid data loss.
+func addonTypeToSnapshot(t billingaggregate.AddonType) multisub.AddonSnapshotType {
+	if mapped, ok := addonTypeMap[t]; ok {
+		return mapped
+	}
+	return multisub.AddonSnapshotType(t)
 }
 
 // compile-time interface check

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	billingaggregate "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	multisubdomain "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	multisubagg "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
@@ -71,7 +70,7 @@ func (o *MultiSubOrchestrator) OnSubscriptionActivated(
 	ctx context.Context,
 	subscriptionID string,
 	platformUserID string,
-	plan *billingaggregate.Plan,
+	plan multisubdomain.PlanSnapshot,
 	addonIDs []string,
 	familyMemberIDs []string,
 ) error {

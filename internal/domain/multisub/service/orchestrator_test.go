@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/multisubtest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/service"
@@ -45,6 +46,25 @@ func newOrchestrator(
 		pub,
 		testLogger(),
 	)
+}
+
+// newPlanSnapshotForOrchestrator returns a PlanSnapshot with a gaming addon
+// suitable for orchestrator tests.
+func newPlanSnapshotForOrchestrator() multisub.PlanSnapshot {
+	return multisub.PlanSnapshot{
+		ID:                   "plan-premium",
+		TrafficLimitBytes:    100_000_000_000,
+		MaxRemnawaveBindings: 4,
+		Addons: []multisub.AddonSnapshot{
+			{
+				ID:                "addon-gaming",
+				Name:              "gaming",
+				Type:              multisub.AddonSnapshotNodes,
+				ExtraTrafficBytes: 50_000_000_000,
+				ExtraNodes:        []string{"node-gaming-us"},
+			},
+		},
+	}
 }
 
 // disabledBinding returns a binding in the disabled state for use in resume tests.
@@ -96,7 +116,7 @@ func TestOnSubscriptionActivated_Idempotent(t *testing.T) {
 			repo.On("GetActiveBySubscriptionID", ctx, "sub-1").
 				Return(tt.existing, nil)
 
-			plan := newPlanForSaga(t)
+			plan := newPlanSnapshotForOrchestrator()
 
 			err := orch.OnSubscriptionActivated(ctx, "sub-1", "user-1", plan, nil, nil)
 
@@ -121,7 +141,7 @@ func TestOnSubscriptionActivated_RepoError(t *testing.T) {
 	repo.On("GetActiveBySubscriptionID", ctx, "sub-1").
 		Return(nil, errors.New("db connection lost"))
 
-	plan := newPlanForSaga(t)
+	plan := newPlanSnapshotForOrchestrator()
 
 	err := orch.OnSubscriptionActivated(ctx, "sub-1", "user-1", plan, nil, nil)
 

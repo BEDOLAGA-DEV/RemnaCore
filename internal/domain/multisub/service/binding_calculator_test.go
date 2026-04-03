@@ -5,35 +5,22 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	billingaggregate "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/service"
 )
 
-func newTestPlan(t *testing.T) *billingaggregate.Plan {
-	t.Helper()
-	plan, err := billingaggregate.NewPlan(
-		"Premium VPN",
-		"Premium plan",
-		vo.Money{Amount: 999, Currency: "USD"},
-		vo.IntervalMonth,
-		100_000_000_000, // 100 GB
-		5,
-		[]string{"US", "DE"},
-		[]string{"wireguard"},
-		billingaggregate.TierPremium,
-		4,
-		true,
-		3,
-	)
-	require.NoError(t, err)
-	return plan
+func newTestPlanSnapshot() multisub.PlanSnapshot {
+	return multisub.PlanSnapshot{
+		ID:                   "plan-premium",
+		TrafficLimitBytes:    100_000_000_000, // 100 GB
+		MaxRemnawaveBindings: 4,
+	}
 }
 
 func TestCalculate_BaseOnly(t *testing.T) {
 	calc := service.NewBindingCalculator()
-	plan := newTestPlan(t)
+	plan := newTestPlanSnapshot()
 
 	specs := calc.Calculate(plan, nil, nil)
 
@@ -44,15 +31,16 @@ func TestCalculate_BaseOnly(t *testing.T) {
 
 func TestCalculate_WithGamingAddon(t *testing.T) {
 	calc := service.NewBindingCalculator()
-	plan := newTestPlan(t)
-	_ = plan.AddAddon(billingaggregate.Addon{
-		ID:                "addon-gaming",
-		Name:              "gaming",
-		Price:             vo.Money{Amount: 499, Currency: "USD"},
-		Type:              billingaggregate.AddonNodes,
-		ExtraTrafficBytes: 50_000_000_000,
-		ExtraNodes:        []string{"node-gaming-us", "node-gaming-eu"},
-	})
+	plan := newTestPlanSnapshot()
+	plan.Addons = []multisub.AddonSnapshot{
+		{
+			ID:                "addon-gaming",
+			Name:              "gaming",
+			Type:              multisub.AddonSnapshotNodes,
+			ExtraTrafficBytes: 50_000_000_000,
+			ExtraNodes:        []string{"node-gaming-us", "node-gaming-eu"},
+		},
+	}
 
 	specs := calc.Calculate(plan, []string{"addon-gaming"}, nil)
 
@@ -68,7 +56,7 @@ func TestCalculate_WithGamingAddon(t *testing.T) {
 
 func TestCalculate_WithFamilyMembers(t *testing.T) {
 	calc := service.NewBindingCalculator()
-	plan := newTestPlan(t)
+	plan := newTestPlanSnapshot()
 
 	specs := calc.Calculate(plan, nil, []string{"family-1", "family-2"})
 
@@ -82,14 +70,15 @@ func TestCalculate_WithFamilyMembers(t *testing.T) {
 
 func TestCalculate_WithTrafficAddon(t *testing.T) {
 	calc := service.NewBindingCalculator()
-	plan := newTestPlan(t)
-	_ = plan.AddAddon(billingaggregate.Addon{
-		ID:                "addon-extra-traffic",
-		Name:              "extra-traffic",
-		Price:             vo.Money{Amount: 299, Currency: "USD"},
-		Type:              billingaggregate.AddonTraffic,
-		ExtraTrafficBytes: 50_000_000_000,
-	})
+	plan := newTestPlanSnapshot()
+	plan.Addons = []multisub.AddonSnapshot{
+		{
+			ID:                "addon-extra-traffic",
+			Name:              "extra-traffic",
+			Type:              multisub.AddonSnapshotTraffic,
+			ExtraTrafficBytes: 50_000_000_000,
+		},
+	}
 
 	specs := calc.Calculate(plan, []string{"addon-extra-traffic"}, nil)
 
@@ -100,7 +89,7 @@ func TestCalculate_WithTrafficAddon(t *testing.T) {
 
 func TestCalculate_EmptyPlan(t *testing.T) {
 	calc := service.NewBindingCalculator()
-	plan := newTestPlan(t)
+	plan := newTestPlanSnapshot()
 	plan.TrafficLimitBytes = 0 // unlimited
 
 	specs := calc.Calculate(plan, nil, nil)
@@ -112,7 +101,7 @@ func TestCalculate_EmptyPlan(t *testing.T) {
 
 func TestCalculate_UnknownAddonIgnored(t *testing.T) {
 	calc := service.NewBindingCalculator()
-	plan := newTestPlan(t)
+	plan := newTestPlanSnapshot()
 
 	specs := calc.Calculate(plan, []string{"nonexistent-addon"}, nil)
 
@@ -122,30 +111,29 @@ func TestCalculate_UnknownAddonIgnored(t *testing.T) {
 
 func TestCalculate_CombinedScenario(t *testing.T) {
 	calc := service.NewBindingCalculator()
-	plan := newTestPlan(t)
-	_ = plan.AddAddon(billingaggregate.Addon{
-		ID:                "addon-gaming",
-		Name:              "gaming",
-		Price:             vo.Money{Amount: 499, Currency: "USD"},
-		Type:              billingaggregate.AddonNodes,
-		ExtraTrafficBytes: 50_000_000_000,
-		ExtraNodes:        []string{"node-gaming-us"},
-	})
-	_ = plan.AddAddon(billingaggregate.Addon{
-		ID:                "addon-streaming",
-		Name:              "streaming",
-		Price:             vo.Money{Amount: 399, Currency: "USD"},
-		Type:              billingaggregate.AddonNodes,
-		ExtraTrafficBytes: 80_000_000_000,
-		ExtraNodes:        []string{"node-stream-us"},
-	})
-	_ = plan.AddAddon(billingaggregate.Addon{
-		ID:                "addon-extra-traffic",
-		Name:              "extra-traffic",
-		Price:             vo.Money{Amount: 299, Currency: "USD"},
-		Type:              billingaggregate.AddonTraffic,
-		ExtraTrafficBytes: 25_000_000_000,
-	})
+	plan := newTestPlanSnapshot()
+	plan.Addons = []multisub.AddonSnapshot{
+		{
+			ID:                "addon-gaming",
+			Name:              "gaming",
+			Type:              multisub.AddonSnapshotNodes,
+			ExtraTrafficBytes: 50_000_000_000,
+			ExtraNodes:        []string{"node-gaming-us"},
+		},
+		{
+			ID:                "addon-streaming",
+			Name:              "streaming",
+			Type:              multisub.AddonSnapshotNodes,
+			ExtraTrafficBytes: 80_000_000_000,
+			ExtraNodes:        []string{"node-stream-us"},
+		},
+		{
+			ID:                "addon-extra-traffic",
+			Name:              "extra-traffic",
+			Type:              multisub.AddonSnapshotTraffic,
+			ExtraTrafficBytes: 25_000_000_000,
+		},
+	}
 
 	specs := calc.Calculate(
 		plan,
