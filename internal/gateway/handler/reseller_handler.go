@@ -137,12 +137,6 @@ func (h *ResellerHandler) UpdateBranding(w http.ResponseWriter, r *http.Request)
 
 // Dashboard handles GET /api/reseller/dashboard -- reseller's own dashboard.
 func (h *ResellerHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
-	claims := middleware.GetClaims(r.Context())
-	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "authentication required")
-		return
-	}
-
 	tenant := middleware.GetTenant(r.Context())
 	if tenant == nil {
 		writeError(w, http.StatusForbidden, "tenant context required")
@@ -158,12 +152,6 @@ func (h *ResellerHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 
 // Commissions handles GET /api/reseller/commissions -- reseller's commissions.
 func (h *ResellerHandler) Commissions(w http.ResponseWriter, r *http.Request) {
-	claims := middleware.GetClaims(r.Context())
-	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "authentication required")
-		return
-	}
-
 	// For now, commissions endpoint returns a placeholder.
 	// Full implementation requires resolving the reseller account from the
 	// claims user ID and tenant context.
@@ -174,12 +162,6 @@ func (h *ResellerHandler) Commissions(w http.ResponseWriter, r *http.Request) {
 
 // Customers handles GET /api/reseller/customers -- reseller's customers scoped by tenant.
 func (h *ResellerHandler) Customers(w http.ResponseWriter, r *http.Request) {
-	claims := middleware.GetClaims(r.Context())
-	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "authentication required")
-		return
-	}
-
 	tenant := middleware.GetTenant(r.Context())
 	if tenant == nil {
 		writeError(w, http.StatusForbidden, "tenant context required")

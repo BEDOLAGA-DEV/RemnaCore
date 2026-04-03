@@ -184,8 +184,9 @@ func NewRouter(p RouterParams) http.Handler {
 			// Routing
 			protected.Post("/routing/select", p.RoutingHandler.SelectNode)
 
-			// Reseller self-service endpoints (role check inside each handler).
+			// Reseller self-service endpoints — require reseller or admin role.
 			protected.Route("/reseller", func(resellerRouter chi.Router) {
+				resellerRouter.Use(middleware.RequireReseller)
 				resellerRouter.Get("/dashboard", p.ResellerHandler.Dashboard)
 				resellerRouter.Get("/commissions", p.ResellerHandler.Commissions)
 				resellerRouter.Get("/customers", p.ResellerHandler.Customers)
