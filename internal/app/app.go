@@ -91,6 +91,10 @@ func New() *fx.App {
 		// Billing domain
 		billingservice.Module,
 
+		// Billing -> Payment ACL: billing.PaymentGateway wraps *payment.PaymentFacade
+		// so that the billing domain never imports the payment domain directly.
+		fx.Provide(newPaymentGatewayAdapter),
+
 		// Billing repos -> interface bindings
 		fx.Provide(postgres.NewPlanRepository),
 		fx.Provide(func(repo *postgres.PlanRepository) billing.PlanRepository { return repo }),

@@ -6,6 +6,7 @@ import (
 	"context"
 
 	"github.com/stretchr/testify/mock"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
@@ -197,6 +198,23 @@ type MockEventPublisher struct {
 func (m *MockEventPublisher) Publish(ctx context.Context, event domainevent.Event) error {
 	args := m.Called(ctx, event)
 	return args.Error(0)
+}
+
+// --- MockPaymentGateway ---
+
+// MockPaymentGateway is a testify/mock implementation of billing.PaymentGateway.
+// This allows billing tests to mock the payment ACL boundary without importing
+// the payment domain.
+type MockPaymentGateway struct {
+	mock.Mock
+}
+
+func (m *MockPaymentGateway) CreateCharge(ctx context.Context, req billing.CreateChargeRequest) (*billing.CreateChargeResult, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*billing.CreateChargeResult), args.Error(1)
 }
 
 // --- NoopTxRunner ---

@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"os"
 	"testing"
@@ -11,11 +10,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/billingtest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/payment"
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/payment/paymenttest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch/hookdispatchtest"
 )
@@ -63,32 +61,25 @@ func TestStartCheckout_Success(t *testing.T) {
 	invoices.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Invoice")).Return(nil)
 	billingPub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
-	// Set up payment facade with mock dispatcher.
-	chargeResult := payment.CreateChargeResult{
-		Provider:    "stripe",
-		ExternalID:  "pi_456",
-		CheckoutURL: "https://checkout.stripe.com/session/456",
-		Status:      "pending",
-	}
-	resultJSON, _ := json.Marshal(chargeResult)
+	// Set up payment gateway mock (billing-owned ACL interface).
+	paymentGW := &billingtest.MockPaymentGateway{}
+	paymentGW.On("CreateCharge", mock.Anything, mock.AnythingOfType("billing.CreateChargeRequest")).
+		Return(&billing.CreateChargeResult{
+			Provider:    "stripe",
+			ExternalID:  "pi_456",
+			CheckoutURL: "https://checkout.stripe.com/session/456",
+			Status:      "pending",
+		}, nil)
 
+	// Pricing hook dispatcher.
 	dispatcher := &hookdispatchtest.MockDispatcher{}
-	dispatcher.On("DispatchSync", mock.Anything, payment.HookCreateCharge, mock.AnythingOfType("json.RawMessage")).
-		Return(json.RawMessage(resultJSON), nil)
-	// pricing.calculate hook — pass through (no pricing plugin registered).
 	dispatcher.On("DispatchSync", mock.Anything, "pricing.calculate", mock.AnythingOfType("json.RawMessage")).
-		Return(json.RawMessage(nil), nil)
+		Return(nil, nil)
 
-	paymentRepo := &paymenttest.MockPaymentRepo{}
-	paymentPub := &checkoutTestPublisher{}
-	paymentFacade := payment.NewPaymentFacade(dispatcher, paymentRepo, paymentPub, checkoutLogger())
-
-	paymentRepo.On("CreatePayment", mock.Anything, mock.AnythingOfType("*payment.PaymentRecord")).Return(nil)
-
-	// Create checkout service. Pass the dispatcher for pricing.calculate hook.
+	// Create checkout service with billing-owned PaymentGateway.
 	checkoutPub := &billingtest.MockEventPublisher{}
 	checkoutPub.On("Publish", mock.Anything, mock.Anything).Return(nil).Maybe()
-	checkoutSvc := NewCheckoutService(billingSvc, paymentFacade, dispatcher, checkoutPub, checkoutLogger())
+	checkoutSvc := NewCheckoutService(billingSvc, paymentGW, dispatcher, checkoutPub, checkoutLogger())
 
 	result, err := checkoutSvc.StartCheckout(context.Background(), CheckoutRequest{
 		UserID:    "user-1",
@@ -107,7 +98,7 @@ func TestStartCheckout_Success(t *testing.T) {
 	plans.AssertExpectations(t)
 	subs.AssertExpectations(t)
 	invoices.AssertExpectations(t)
-	paymentRepo.AssertExpectations(t)
+	paymentGW.AssertExpectations(t)
 	dispatcher.AssertExpectations(t)
 }
 
@@ -123,7 +114,7 @@ func TestCompleteCheckout_Success(t *testing.T) {
 	subs.On("Update", mock.Anything, sub).Return(nil)
 	publisher.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
-	// Payment facade is not needed for CompleteCheckout; only billing service is used.
+	// Payment gateway is not needed for CompleteCheckout; only billing service is used.
 	checkoutSvc := NewCheckoutService(svc, nil, nil, publisher, checkoutLogger())
 
 	err := checkoutSvc.CompleteCheckout(context.Background(), "inv-1")

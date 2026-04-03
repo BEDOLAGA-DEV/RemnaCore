@@ -6,16 +6,16 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/payment"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
 )
 
 // CheckoutService orchestrates the full checkout flow: subscription creation,
-// invoice generation, and payment charge initiation via the payment facade.
+// invoice generation, and payment charge initiation via the payment gateway.
 type CheckoutService struct {
 	billing    *BillingService
-	payment    *payment.PaymentFacade
+	payment    billing.PaymentGateway
 	dispatcher hookdispatch.Dispatcher
 	publisher  domainevent.Publisher
 	logger     *slog.Logger
@@ -23,15 +23,15 @@ type CheckoutService struct {
 
 // NewCheckoutService creates a CheckoutService with the given dependencies.
 func NewCheckoutService(
-	billing *BillingService,
-	paymentFacade *payment.PaymentFacade,
+	billingSvc *BillingService,
+	paymentGateway billing.PaymentGateway,
 	dispatcher hookdispatch.Dispatcher,
 	publisher domainevent.Publisher,
 	logger *slog.Logger,
 ) *CheckoutService {
 	return &CheckoutService{
-		billing:    billing,
-		payment:    paymentFacade,
+		billing:    billingSvc,
+		payment:    paymentGateway,
 		dispatcher: dispatcher,
 		publisher:  publisher,
 		logger:     logger,
@@ -57,7 +57,7 @@ type CheckoutResult struct {
 }
 
 // StartCheckout creates a subscription and invoice, then initiates a payment
-// charge through the payment facade. Returns the checkout URL for the user to
+// charge through the payment gateway. Returns the checkout URL for the user to
 // complete payment.
 func (cs *CheckoutService) StartCheckout(ctx context.Context, req CheckoutRequest) (*CheckoutResult, error) {
 	if req.UserID == "" {
@@ -95,8 +95,8 @@ func (cs *CheckoutService) StartCheckout(ctx context.Context, req CheckoutReques
 		}
 	}
 
-	// 3. Initiate payment charge via the payment facade (dispatches to plugin).
-	chargeResult, err := cs.payment.CreateCharge(ctx, payment.CreateChargeRequest{
+	// 3. Initiate payment charge via the payment gateway (ACL boundary).
+	chargeResult, err := cs.payment.CreateCharge(ctx, billing.CreateChargeRequest{
 		InvoiceID: inv.ID,
 		Amount:    inv.Total.Amount,
 		Currency:  string(inv.Total.Currency),
