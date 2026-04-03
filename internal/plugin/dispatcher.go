@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/sdk"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tracing"
 )
 
 // NATS subject prefix for async hook dispatch.
@@ -136,6 +137,9 @@ func (d *HookDispatcher) SwapHooks(pluginSlug string, newRegs []HookRegistration
 // modifications from one plugin to the next. If any plugin returns action
 // "halt", the chain stops and ErrHookHalted is returned.
 func (d *HookDispatcher) DispatchSync(ctx context.Context, hookName string, payload json.RawMessage) (json.RawMessage, error) {
+	ctx, span := tracing.StartSpan(ctx, "plugin.dispatch_sync."+hookName)
+	defer span.End()
+
 	d.mu.RLock()
 	regs := make([]HookRegistration, len(d.registrations[hookName]))
 	copy(regs, d.registrations[hookName])

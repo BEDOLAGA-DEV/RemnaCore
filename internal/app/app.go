@@ -179,6 +179,9 @@ func New() *fx.App {
 		// Telegram bot
 		telegram.Module,
 
+		// OpenTelemetry tracing lifecycle
+		fx.Invoke(startTracing),
+
 		// HTTP server
 		fx.Invoke(startHTTPServer),
 
@@ -307,6 +310,33 @@ func provideWebhookHandler(cfg *config.Config, pub *natsadapter.EventPublisher, 
 				slog.Any("error", err),
 			)
 		}
+	})
+}
+
+// startTracing initialises the OpenTelemetry tracer provider on start and
+// flushes pending spans on stop. When no TRACING_ENDPOINT is configured a noop
+// provider is used and the shutdown function is a harmless no-op.
+func startTracing(lc fx.Lifecycle, cfg *config.Config, logger *slog.Logger) {
+	var shutdown observability.TracerShutdownFunc
+
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			var err error
+			shutdown, err = observability.InitTracer(ctx, cfg, logger)
+			if err != nil {
+				return fmt.Errorf("init tracer: %w", err)
+			}
+			return nil
+		},
+		OnStop: func(ctx context.Context) error {
+			if shutdown == nil {
+				return nil
+			}
+			logger.Info("tracer provider shutting down")
+			shutdownCtx, cancel := context.WithTimeout(ctx, observability.TracerShutdownTimeout)
+			defer cancel()
+			return shutdown(shutdownCtx)
+		},
 	})
 }
 

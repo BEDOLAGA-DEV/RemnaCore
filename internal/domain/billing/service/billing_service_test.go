@@ -91,10 +91,10 @@ func TestCreateSubscription_Success(t *testing.T) {
 	ctx := context.Background()
 	plan := samplePlan()
 
-	plans.On("GetByID", ctx, "plan-premium").Return(plan, nil)
-	subs.On("Create", ctx, mock.AnythingOfType("*aggregate.Subscription")).Return(nil)
-	invoices.On("Create", ctx, mock.AnythingOfType("*aggregate.Invoice")).Return(nil)
-	publisher.On("Publish", ctx, mock.AnythingOfType("domainevent.Event")).Return(nil)
+	plans.On("GetByID", mock.Anything, "plan-premium").Return(plan, nil)
+	subs.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Subscription")).Return(nil)
+	invoices.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Invoice")).Return(nil)
+	publisher.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
 	cmd := CreateSubscriptionCmd{
 		UserID: "user-1",
@@ -121,7 +121,7 @@ func TestCreateSubscription_PlanNotFound(t *testing.T) {
 	svc, plans, _, _, _, _ := newTestBillingService()
 	ctx := context.Background()
 
-	plans.On("GetByID", ctx, "nonexistent").Return(nil, billing.ErrPlanNotFound)
+	plans.On("GetByID", mock.Anything, "nonexistent").Return(nil, billing.ErrPlanNotFound)
 
 	cmd := CreateSubscriptionCmd{
 		UserID: "user-1",
@@ -143,10 +143,10 @@ func TestCreateSubscription_WithAddons(t *testing.T) {
 	ctx := context.Background()
 	plan := samplePlan()
 
-	plans.On("GetByID", ctx, "plan-premium").Return(plan, nil)
-	subs.On("Create", ctx, mock.AnythingOfType("*aggregate.Subscription")).Return(nil)
-	invoices.On("Create", ctx, mock.AnythingOfType("*aggregate.Invoice")).Return(nil)
-	publisher.On("Publish", ctx, mock.AnythingOfType("domainevent.Event")).Return(nil)
+	plans.On("GetByID", mock.Anything, "plan-premium").Return(plan, nil)
+	subs.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Subscription")).Return(nil)
+	invoices.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Invoice")).Return(nil)
+	publisher.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
 	cmd := CreateSubscriptionCmd{
 		UserID:   "user-1",
@@ -174,9 +174,9 @@ func TestCancelSubscription_Success(t *testing.T) {
 	ctx := context.Background()
 	sub := activeSubscription("user-1", "plan-premium")
 
-	subs.On("GetByID", ctx, "sub-1").Return(sub, nil)
-	subs.On("Update", ctx, sub).Return(nil)
-	publisher.On("Publish", ctx, mock.AnythingOfType("domainevent.Event")).Return(nil)
+	subs.On("GetByID", mock.Anything, "sub-1").Return(sub, nil)
+	subs.On("Update", mock.Anything, sub).Return(nil)
+	publisher.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
 	err := svc.CancelSubscription(ctx, "sub-1")
 
@@ -194,7 +194,7 @@ func TestCancelSubscription_AlreadyCancelled(t *testing.T) {
 	sub := activeSubscription("user-1", "plan-premium")
 	sub.Status = aggregate.StatusCancelled
 
-	subs.On("GetByID", ctx, "sub-1").Return(sub, nil)
+	subs.On("GetByID", mock.Anything, "sub-1").Return(sub, nil)
 
 	err := svc.CancelSubscription(ctx, "sub-1")
 
@@ -225,11 +225,11 @@ func TestPayInvoice_Success(t *testing.T) {
 		UpdatedAt:      time.Now(),
 	}
 
-	invoices.On("GetByID", ctx, "inv-1").Return(inv, nil)
-	invoices.On("Update", ctx, inv).Return(nil)
-	subs.On("GetByID", ctx, "sub-1").Return(sub, nil)
-	subs.On("Update", ctx, sub).Return(nil)
-	publisher.On("Publish", ctx, mock.AnythingOfType("domainevent.Event")).Return(nil)
+	invoices.On("GetByID", mock.Anything, "inv-1").Return(inv, nil)
+	invoices.On("Update", mock.Anything, inv).Return(nil)
+	subs.On("GetByID", mock.Anything, "sub-1").Return(sub, nil)
+	subs.On("Update", mock.Anything, sub).Return(nil)
+	publisher.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
 	err := svc.PayInvoice(ctx, "inv-1")
 
@@ -259,7 +259,7 @@ func TestPayInvoice_AlreadyPaid(t *testing.T) {
 		UpdatedAt:      time.Now(),
 	}
 
-	invoices.On("GetByID", ctx, "inv-1").Return(inv, nil)
+	invoices.On("GetByID", mock.Anything, "inv-1").Return(inv, nil)
 
 	err := svc.PayInvoice(ctx, "inv-1")
 
@@ -288,11 +288,11 @@ func TestPayInvoice_ActiveSubscription_NoActivation(t *testing.T) {
 		UpdatedAt:      time.Now(),
 	}
 
-	invoices.On("GetByID", ctx, "inv-1").Return(inv, nil)
-	invoices.On("Update", ctx, inv).Return(nil)
-	subs.On("GetByID", ctx, "sub-1").Return(sub, nil)
+	invoices.On("GetByID", mock.Anything, "inv-1").Return(inv, nil)
+	invoices.On("Update", mock.Anything, inv).Return(nil)
+	subs.On("GetByID", mock.Anything, "sub-1").Return(sub, nil)
 	// Only invoice.paid event, no subscription.activated
-	publisher.On("Publish", ctx, mock.MatchedBy(func(e interface{}) bool {
+	publisher.On("Publish", mock.Anything, mock.MatchedBy(func(e interface{}) bool {
 		return true
 	})).Return(nil)
 
@@ -318,11 +318,11 @@ func TestAddFamilyMember_Success(t *testing.T) {
 
 	fg := aggregate.NewFamilyGroup("user-1", 5, time.Now())
 
-	subs.On("GetByID", ctx, "sub-1").Return(sub, nil)
-	plans.On("GetByID", ctx, "plan-premium").Return(plan, nil)
-	families.On("GetByOwnerID", ctx, "user-1").Return(fg, nil)
-	families.On("Update", ctx, fg).Return(nil)
-	publisher.On("Publish", ctx, mock.AnythingOfType("domainevent.Event")).Return(nil)
+	subs.On("GetByID", mock.Anything, "sub-1").Return(sub, nil)
+	plans.On("GetByID", mock.Anything, "plan-premium").Return(plan, nil)
+	families.On("GetByOwnerID", mock.Anything, "user-1").Return(fg, nil)
+	families.On("Update", mock.Anything, fg).Return(nil)
+	publisher.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
 	err := svc.AddFamilyMember(ctx, "sub-1", "member-1", "Alice")
 
@@ -343,8 +343,8 @@ func TestAddFamilyMember_FamilyNotEnabled(t *testing.T) {
 	plan.FamilyEnabled = false
 	sub := activeSubscription("user-1", "plan-premium")
 
-	subs.On("GetByID", ctx, "sub-1").Return(sub, nil)
-	plans.On("GetByID", ctx, "plan-premium").Return(plan, nil)
+	subs.On("GetByID", mock.Anything, "sub-1").Return(sub, nil)
+	plans.On("GetByID", mock.Anything, "plan-premium").Return(plan, nil)
 
 	err := svc.AddFamilyMember(ctx, "sub-1", "member-1", "Alice")
 
@@ -362,18 +362,18 @@ func TestAddFamilyMember_CreatesGroupIfNotExists(t *testing.T) {
 	plan := samplePlan()
 	sub := activeSubscription("user-1", "plan-premium")
 
-	subs.On("GetByID", ctx, "sub-1").Return(sub, nil)
-	plans.On("GetByID", ctx, "plan-premium").Return(plan, nil)
-	families.On("GetByOwnerID", ctx, "user-1").Return(nil, billing.ErrFamilyGroupNotFound)
-	families.On("Create", ctx, mock.AnythingOfType("*aggregate.FamilyGroup")).Return(nil)
-	families.On("Update", ctx, mock.AnythingOfType("*aggregate.FamilyGroup")).Return(nil)
-	publisher.On("Publish", ctx, mock.AnythingOfType("domainevent.Event")).Return(nil)
+	subs.On("GetByID", mock.Anything, "sub-1").Return(sub, nil)
+	plans.On("GetByID", mock.Anything, "plan-premium").Return(plan, nil)
+	families.On("GetByOwnerID", mock.Anything, "user-1").Return(nil, billing.ErrFamilyGroupNotFound)
+	families.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.FamilyGroup")).Return(nil)
+	families.On("Update", mock.Anything, mock.AnythingOfType("*aggregate.FamilyGroup")).Return(nil)
+	publisher.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
 	err := svc.AddFamilyMember(ctx, "sub-1", "member-1", "Alice")
 
 	require.NoError(t, err)
 
-	families.AssertCalled(t, "Create", ctx, mock.AnythingOfType("*aggregate.FamilyGroup"))
+	families.AssertCalled(t, "Create", mock.Anything, mock.AnythingOfType("*aggregate.FamilyGroup"))
 	families.AssertExpectations(t)
 }
 
@@ -387,10 +387,10 @@ func TestRemoveFamilyMember_Success(t *testing.T) {
 	fg := aggregate.NewFamilyGroup("user-1", 5, time.Now())
 	require.NoError(t, fg.AddMember("member-1", "Alice", time.Now()))
 
-	subs.On("GetByID", ctx, "sub-1").Return(sub, nil)
-	families.On("GetByOwnerID", ctx, "user-1").Return(fg, nil)
-	families.On("Update", ctx, fg).Return(nil)
-	publisher.On("Publish", ctx, mock.AnythingOfType("domainevent.Event")).Return(nil)
+	subs.On("GetByID", mock.Anything, "sub-1").Return(sub, nil)
+	families.On("GetByOwnerID", mock.Anything, "user-1").Return(fg, nil)
+	families.On("Update", mock.Anything, fg).Return(nil)
+	publisher.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
 	err := svc.RemoveFamilyMember(ctx, "sub-1", "member-1")
 

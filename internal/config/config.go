@@ -28,8 +28,12 @@ const (
 	DefaultSubscriptionProxyPort  = 4100
 )
 
+// DefaultAppVersion is used when no APP_VERSION environment variable is set.
+const DefaultAppVersion = "dev"
+
 type AppConfig struct {
 	Port      int    `koanf:"port"`
+	Version   string `koanf:"version"`
 	LogLevel  string `koanf:"log_level"`
 	LogFormat string `koanf:"log_format"`
 }
@@ -86,6 +90,11 @@ type InfraConfig struct {
 	SubscriptionProxyPort int           `koanf:"subscription_proxy_port"`
 }
 
+// TracingConfig holds OpenTelemetry tracing configuration.
+type TracingConfig struct {
+	Endpoint string `koanf:"endpoint"` // OTLP HTTP endpoint (e.g., "localhost:4318"); empty disables tracing
+}
+
 // CORSConfig holds the Cross-Origin Resource Sharing configuration.
 type CORSConfig struct {
 	AllowedOrigins []string `koanf:"allowed_origins"`
@@ -103,6 +112,7 @@ type Config struct {
 	Telegram  TelegramConfig  `koanf:"telegram"`
 	Infra     InfraConfig     `koanf:"infra"`
 	CORS      CORSConfig      `koanf:"cors"`
+	Tracing   TracingConfig   `koanf:"tracing"`
 }
 
 // requiredField maps an environment variable name to the koanf key path used
@@ -130,6 +140,7 @@ func Load() (*Config, error) {
 	// Set defaults
 	defaults := map[string]any{
 		"app.port":                   DefaultAppPort,
+		"app.version":               DefaultAppVersion,
 		"app.log_level":             DefaultLogLevel,
 		"app.log_format":            DefaultLogFormat,
 		"database.max_open_conns":   DefaultDBMaxOpenConns,
@@ -151,7 +162,7 @@ func Load() (*Config, error) {
 	}
 
 	// Load each prefix group from environment variables.
-	prefixes := []string{"APP_", "DATABASE_", "VALKEY_", "NATS_", "JWT_", "REMNAWAVE_", "BILLING_", "PLUGIN_", "TELEGRAM_", "INFRA_", "CORS_"}
+	prefixes := []string{"APP_", "DATABASE_", "VALKEY_", "NATS_", "JWT_", "REMNAWAVE_", "BILLING_", "PLUGIN_", "TELEGRAM_", "INFRA_", "CORS_", "TRACING_"}
 	for _, prefix := range prefixes {
 		provider := env.Provider(prefix, ".", func(s string) string {
 			// Strip prefix then lowercase and replace _ with . for nesting

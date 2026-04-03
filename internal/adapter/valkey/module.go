@@ -9,6 +9,6 @@ import (
 var Module = fx.Module("valkey",
 	fx.Provide(NewClient),
 	fx.Provide(func(client *redis.Client) RateLimiter {
-		return NewValkeyRateLimiter(client, DefaultRateLimit, DefaultRateLimitWindow)
+		return NewSlidingWindowRateLimiter(client, DefaultRateLimit, DefaultRateLimitWindow)
 	}),
 )

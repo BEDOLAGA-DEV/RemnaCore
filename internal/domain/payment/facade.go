@@ -10,6 +10,7 @@ import (
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tracing"
 )
 
 // Hook names dispatched by the payment facade. All payment logic is delegated
@@ -47,6 +48,9 @@ func NewPaymentFacade(
 // CreateCharge dispatches a payment creation request to the registered payment
 // plugin and persists the resulting payment record.
 func (f *PaymentFacade) CreateCharge(ctx context.Context, req CreateChargeRequest) (*CreateChargeResult, error) {
+	ctx, span := tracing.StartSpan(ctx, "payment.create_charge")
+	defer span.End()
+
 	if req.InvoiceID == "" {
 		return nil, ErrMissingInvoiceID
 	}

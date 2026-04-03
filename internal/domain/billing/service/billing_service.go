@@ -10,6 +10,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tracing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
@@ -66,6 +67,9 @@ func (s *BillingService) CreateSubscription(
 	ctx context.Context,
 	cmd CreateSubscriptionCmd,
 ) (*aggregate.Subscription, *aggregate.Invoice, error) {
+	ctx, span := tracing.StartSpan(ctx, "billing.create_subscription")
+	defer span.End()
+
 	plan, err := s.plans.GetByID(ctx, cmd.PlanID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("get plan: %w", err)

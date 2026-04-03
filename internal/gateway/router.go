@@ -7,6 +7,7 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/fx"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/remnawave"
@@ -15,6 +16,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/handler"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/telegram"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
@@ -90,6 +92,12 @@ func NewRouter(p RouterParams) http.Handler {
 		AllowCredentials: true,
 		MaxAge:           CORSMaxAge,
 	}))
+
+	// OpenTelemetry HTTP instrumentation — creates spans for every inbound
+	// request with method, path, and status code attributes.
+	r.Use(func(next http.Handler) http.Handler {
+		return otelhttp.NewHandler(next, observability.ServiceName)
+	})
 
 	// Global middleware stack.
 	r.Use(chimiddleware.Recoverer)

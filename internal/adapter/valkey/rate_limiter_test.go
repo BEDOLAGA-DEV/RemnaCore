@@ -62,3 +62,15 @@ func TestRateLimiter_ZeroLimit(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, allowed, "zero limit should block everything")
 }
+
+// TestSlidingWindowRateLimiter_ImplementsInterface verifies at compile time
+// that SlidingWindowRateLimiter satisfies the RateLimiter interface.
+func TestSlidingWindowRateLimiter_ImplementsInterface(t *testing.T) {
+	var _ RateLimiter = (*SlidingWindowRateLimiter)(nil)
+}
+
+// TestValkeyRateLimiter_ImplementsInterface verifies at compile time that the
+// original ValkeyRateLimiter still satisfies the RateLimiter interface.
+func TestValkeyRateLimiter_ImplementsInterface(t *testing.T) {
+	var _ RateLimiter = (*ValkeyRateLimiter)(nil)
+}

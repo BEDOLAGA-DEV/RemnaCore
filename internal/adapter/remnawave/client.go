@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tracing"
 )
 
 const (
@@ -57,6 +58,9 @@ func (c *Client) BaseURL() string {
 // response into dest (when dest is non-nil). It returns an error for non-2xx
 // status codes that includes the response body for debugging.
 func (c *Client) do(ctx context.Context, method, path string, body any, dest any) error {
+	ctx, span := tracing.StartSpan(ctx, "remnawave."+method+"."+path)
+	defer span.End()
+
 	var reqBody io.Reader
 	if body != nil {
 		encoded, err := json.Marshal(body)

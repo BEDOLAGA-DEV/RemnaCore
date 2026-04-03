@@ -9,6 +9,7 @@ import (
 	multisubdomain "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	multisubagg "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tracing"
 )
 
 const (
@@ -68,6 +69,9 @@ func NewProvisioningSaga(
 // calculates the required bindings from the plan, addons, and family members,
 // then provisions each one sequentially with saga compensation.
 func (s *ProvisioningSaga) Provision(ctx context.Context, req ProvisionRequest) ([]ProvisionResult, error) {
+	ctx, span := tracing.StartSpan(ctx, "multisub.provisioning_saga.provision")
+	defer span.End()
+
 	specs := s.calculator.Calculate(req.Plan, req.AddonIDs, req.FamilyMemberIDs)
 
 	results := make([]ProvisionResult, 0, len(specs))
