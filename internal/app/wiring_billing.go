@@ -5,15 +5,22 @@ import (
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/valkey"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	billingservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/service"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 )
 
 // billingWiring provides all billing-domain bindings: repository implementations,
 // the domain rate limiter, and the payment gateway ACL adapter.
 var billingWiring = fx.Options(
-	// Billing domain module
-	billingservice.Module,
+	// Billing domain services
+	fx.Provide(billingservice.NewProrateCalculator),
+	fx.Provide(func(cfg *config.Config, clk clock.Clock) *billingservice.TrialManager {
+		return billingservice.NewTrialManagerWithClock(cfg.Billing.TrialDays, clk)
+	}),
+	fx.Provide(billingservice.NewBillingService),
+	fx.Provide(billingservice.NewCheckoutService),
 
 	// Billing -> Payment ACL: billing.PaymentGateway wraps *payment.PaymentFacade
 	// so that the billing domain never imports the payment domain directly.

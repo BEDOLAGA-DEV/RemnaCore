@@ -10,8 +10,8 @@ import (
 // paymentWiring provides all payment-domain bindings: the payment repository
 // implementation.
 var paymentWiring = fx.Options(
-	// Payment domain module
-	payment.Module,
+	// Payment domain service
+	fx.Provide(payment.NewPaymentFacade),
 
 	// Payment repos -> interface bindings
 	fx.Provide(postgres.NewPaymentRepository),

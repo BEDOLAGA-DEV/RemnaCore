@@ -17,8 +17,14 @@ import (
 // Remnawave gateway, event handler, lookup adapters, and lifecycle hooks for
 // the periodic sync and binding reconciler.
 var multisubWiring = fx.Options(
-	// MultiSub domain module
-	multisubservice.Module,
+	// MultiSub domain services
+	fx.Provide(multisubservice.NewBindingCalculator),
+	fx.Provide(multisubservice.NewProvisioningSaga),
+	fx.Provide(multisubservice.NewDeprovisioningSaga),
+	fx.Provide(multisubservice.NewSyncSaga),
+	fx.Provide(multisubservice.NewSyncService),
+	fx.Provide(multisubservice.NewMultiSubOrchestrator),
+	fx.Provide(multisubservice.NewBindingReconciler),
 
 	// MultiSub repos -> interface bindings
 	fx.Provide(postgres.NewBindingRepository),

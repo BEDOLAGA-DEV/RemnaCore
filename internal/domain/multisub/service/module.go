@@ -9,18 +9,6 @@ import (
 	multisubagg "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
-	"go.uber.org/fx"
-)
-
-// Module provides all multisub domain services to the Fx container.
-var Module = fx.Module("multisub",
-	fx.Provide(NewBindingCalculator),
-	fx.Provide(NewProvisioningSaga),
-	fx.Provide(NewDeprovisioningSaga),
-	fx.Provide(NewSyncSaga),
-	fx.Provide(NewSyncService),
-	fx.Provide(NewMultiSubOrchestrator),
-	fx.Provide(NewBindingReconciler),
 )
 
 // MultiSubOrchestrator is the facade that coordinates billing lifecycle events

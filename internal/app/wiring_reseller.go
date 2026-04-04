@@ -10,8 +10,8 @@ import (
 // resellerWiring provides all reseller-domain bindings: tenant and commission
 // repository implementations.
 var resellerWiring = fx.Options(
-	// Reseller domain module
-	reseller.Module,
+	// Reseller domain service
+	fx.Provide(reseller.NewResellerService),
 
 	// Reseller repos -> interface bindings
 	fx.Provide(postgres.NewResellerRepository),

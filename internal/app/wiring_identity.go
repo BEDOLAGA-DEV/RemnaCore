@@ -18,6 +18,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
 
 // identityWiring provides all identity-domain bindings: JWT issuer, identity
@@ -29,8 +30,10 @@ var identityWiring = fx.Options(
 	// JWT issuer
 	fx.Provide(provideJWTIssuer),
 
-	// Identity domain module
-	identity.Module,
+	// Identity domain service
+	fx.Provide(func(repo identity.Repository, pub domainevent.Publisher, jwt *authutil.JWTIssuer, clk clock.Clock, cfg *config.Config) *identity.Service {
+		return identity.NewService(repo, pub, jwt, clk, cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL)
+	}),
 
 	// Bindings: interface -> implementation (identity)
 	fx.Provide(postgres.NewIdentityRepository),
