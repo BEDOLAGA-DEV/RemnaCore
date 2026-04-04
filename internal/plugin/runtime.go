@@ -111,7 +111,7 @@ func (p *PluginInstancePool) Acquire(ctx context.Context) (WASMRunner, error) {
 	p.mu.Lock()
 	if p.draining {
 		p.mu.Unlock()
-		return nil, fmt.Errorf("plugin %s is draining, cannot acquire instance", p.slug)
+		return nil, fmt.Errorf("%w: plugin %s", ErrPluginDraining, p.slug)
 	}
 	p.mu.Unlock()
 
@@ -137,14 +137,7 @@ func (p *PluginInstancePool) Release(runner WASMRunner) {
 	if isDraining {
 		// Don't return to pool — close the runner.
 		_ = runner.Close()
-		if remaining <= 0 {
-			// Signal drain complete. Use select to avoid double-close.
-			select {
-			case <-p.drained:
-			default:
-				close(p.drained)
-			}
-		}
+		p.signalDrainIfNeeded(remaining)
 		return
 	}
 
@@ -153,6 +146,23 @@ func (p *PluginInstancePool) Release(runner WASMRunner) {
 	default:
 		// Pool full (shouldn't happen), close the extra instance.
 		_ = runner.Close()
+	}
+}
+
+// signalDrainIfNeeded checks if drain should be completed after an active
+// count decrement. It is safe to call multiple times; the drained channel is
+// closed at most once.
+func (p *PluginInstancePool) signalDrainIfNeeded(remaining int32) {
+	p.mu.Lock()
+	isDraining := p.draining
+	p.mu.Unlock()
+
+	if isDraining && remaining <= 0 {
+		select {
+		case <-p.drained:
+		default:
+			close(p.drained)
+		}
 	}
 }
 
@@ -167,13 +177,12 @@ func (p *PluginInstancePool) Drain(ctx context.Context) error {
 	}
 	p.draining = true
 	p.drained = make(chan struct{})
-	currentActive := atomic.LoadInt32(&p.active)
-	p.mu.Unlock()
-
-	// If no active instances, drain immediately.
-	if currentActive <= 0 {
+	// Check-and-signal under the same lock that set draining=true to
+	// eliminate the TOCTOU window between loading active and closing drained.
+	if atomic.LoadInt32(&p.active) <= 0 {
 		close(p.drained)
 	}
+	p.mu.Unlock()
 
 	// Wait for in-flight runners to complete.
 	drainCtx, cancel := context.WithTimeout(ctx, DrainTimeout)
@@ -218,10 +227,19 @@ func (p *PluginInstancePool) Size() int {
 }
 
 // replaceInstance creates a new WASM runner via the factory and attempts to
-// add it to the pool. If the pool is full or creation fails, the attempt is
-// silently abandoned (the pool shrinks by one until traffic drops).
+// add it to the pool. If the pool is draining, full, or creation fails, the
+// attempt is silently abandoned (the pool shrinks by one until traffic drops).
 func (p *PluginInstancePool) replaceInstance() {
 	if p.factory == nil {
+		return
+	}
+
+	// Don't replace if the pool is draining — the channel may already be
+	// closed, and sending on a closed channel would panic.
+	p.mu.Lock()
+	isDraining := p.draining
+	p.mu.Unlock()
+	if isDraining {
 		return
 	}
 
@@ -234,11 +252,32 @@ func (p *PluginInstancePool) replaceInstance() {
 		return
 	}
 
+	// There is an inherent race between this goroutine and Drain closing the
+	// pool channel, even after the draining check above. Recover from the
+	// send-on-closed-channel panic rather than adding lock contention to the
+	// hot path.
+	if !p.trySendToPool(newRunner) {
+		_ = newRunner.Close()
+	}
+}
+
+// trySendToPool attempts a non-blocking send of runner to the pool channel.
+// Returns false if the pool is full or has been closed by Drain.
+func (p *PluginInstancePool) trySendToPool(runner WASMRunner) (sent bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			// Pool channel was closed by Drain — this is expected during
+			// concurrent drain+replace and not a bug.
+			sent = false
+		}
+	}()
+
 	select {
-	case p.pool <- newRunner:
+	case p.pool <- runner:
 		slog.Info("replaced corrupted WASM instance", slog.String("slug", p.slug))
+		return true
 	default:
-		_ = newRunner.Close() // pool full
+		return false
 	}
 }
 
@@ -395,7 +434,10 @@ func (rp *RuntimePool) CallHook(ctx context.Context, slug, funcName string, inpu
 
 	runner, err := pool.Acquire(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrHookTimeout, err)
+		if errors.Is(err, ErrPluginDraining) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("acquire runner: %w", err)
 	}
 
 	output, callErr := runner.Call(ctx, funcName, input)
@@ -404,7 +446,9 @@ func (rp *RuntimePool) CallHook(ctx context.Context, slug, funcName string, inpu
 		if isRunnerCorrupted(callErr) {
 			_ = runner.Close()
 			// Decrement active count manually since we are NOT calling Release.
-			atomic.AddInt32(&pool.active, -1)
+			remaining := atomic.AddInt32(&pool.active, -1)
+			// Signal drain if this was the last active runner.
+			pool.signalDrainIfNeeded(remaining)
 			// Create a replacement runner in the background.
 			go pool.replaceInstance()
 

@@ -514,7 +514,7 @@ func TestPluginInstancePool_DrainRejectsNewAcquire(t *testing.T) {
 	// Try to acquire — should fail because pool is draining.
 	_, err = pool.Acquire(context.Background())
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "draining")
+	assert.ErrorIs(t, err, ErrPluginDraining)
 }
 
 func TestPluginInstancePool_DrainIdempotent(t *testing.T) {
@@ -738,5 +738,175 @@ func TestIsRunnerCorrupted(t *testing.T) {
 			result := isRunnerCorrupted(tt.err)
 			assert.Equal(t, tt.corrupted, result)
 		})
+	}
+}
+
+// --- Corruption-During-Drain Tests ---
+
+func TestPool_DrainCompletesWhenCorruptedRunnerReleased(t *testing.T) {
+	factory := mockFactory(nil)
+	pool, err := newPluginInstancePool("drain-corrupt", factory, []byte("wasm"), nil, nil, 1)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	// Acquire the single instance.
+	runner, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+
+	// Start drain in background — it should block because one runner is active.
+	drainDone := make(chan error, 1)
+	go func() { drainDone <- pool.Drain(context.Background()) }()
+
+	// Verify drain is blocked.
+	select {
+	case <-drainDone:
+		t.Fatal("drain completed before corrupted runner was handled")
+	case <-time.After(50 * time.Millisecond):
+		// Expected: drain is waiting.
+	}
+
+	// Simulate the corruption path: close runner, decrement active, signal drain.
+	_ = runner.Close()
+	remaining := atomic.AddInt32(&pool.active, -1)
+	pool.signalDrainIfNeeded(remaining)
+
+	// Drain should complete promptly.
+	select {
+	case <-drainDone:
+		// Success.
+	case <-time.After(time.Second):
+		t.Fatal("drain should have completed after corrupted runner was handled")
+	}
+}
+
+func TestPool_SignalDrainIfNeeded_NotDraining(t *testing.T) {
+	factory := mockFactory(nil)
+	pool, err := newPluginInstancePool("no-drain", factory, []byte("wasm"), nil, nil, 1)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	// Should not panic when pool is not draining.
+	pool.signalDrainIfNeeded(0)
+}
+
+func TestPool_SignalDrainIfNeeded_AlreadySignaled(t *testing.T) {
+	factory := mockFactory(nil)
+	pool, err := newPluginInstancePool("double-signal", factory, []byte("wasm"), nil, nil, 1)
+	require.NoError(t, err)
+
+	// Drain with no active runners — drained channel already closed.
+	_ = pool.Drain(context.Background())
+
+	// Calling signalDrainIfNeeded again should not panic (double-close guard).
+	pool.signalDrainIfNeeded(0)
+}
+
+func TestCallHook_DrainingReturnsCorrectError(t *testing.T) {
+	factory := mockFactory(nil)
+	rp := NewRuntimePool(testErrorLogger(), factory)
+
+	p := testPluginWithPoolSize("draining-hook", 1)
+	require.NoError(t, rp.LoadPlugin(p))
+
+	// Drain the pool so it rejects new acquires.
+	rp.mu.RLock()
+	pool := rp.plugins["draining-hook"]
+	rp.mu.RUnlock()
+	_ = pool.Drain(context.Background())
+
+	_, err := rp.CallHook(context.Background(), "draining-hook", "hook.test", nil)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrPluginDraining)
+	// Must NOT be wrapped as ErrHookTimeout.
+	assert.False(t, errors.Is(err, ErrHookTimeout), "draining error should not be wrapped as ErrHookTimeout")
+}
+
+func TestCallHook_CorruptionDuringDrainSignalsDrain(t *testing.T) {
+	// Verify that when a runner returns a corruption error while the pool is
+	// being drained, the drain completes (doesn't hang for 30s).
+	corruptionErr := fmt.Errorf("wasm: unreachable instruction")
+
+	factory := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
+		return &mockRunner{
+			callFn: func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+				return nil, corruptionErr
+			},
+		}, nil
+	}
+
+	rp := NewRuntimePool(testErrorLogger(), factory)
+
+	p := testPluginWithPoolSize("corrupt-drain", 1)
+	require.NoError(t, rp.LoadPlugin(p))
+
+	// Acquire the runner manually so we can start drain while CallHook is
+	// doing its work. We use SetRunnerForTest to install a fresh mock, then
+	// trigger drain and CallHook in sequence.
+
+	// Step 1: Get the pool, acquire the runner to block drain.
+	rp.mu.RLock()
+	pool := rp.plugins["corrupt-drain"]
+	rp.mu.RUnlock()
+
+	// We need the CallHook path to exercise corruption. The trick is:
+	// use a runner whose Call blocks until we start drain, then returns corruption.
+	callStarted := make(chan struct{})
+	callProceed := make(chan struct{})
+
+	blockingFactory := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
+		return &mockRunner{
+			callFn: func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+				close(callStarted)
+				<-callProceed
+				return nil, corruptionErr
+			},
+		}, nil
+	}
+
+	// Replace the pool with one using our blocking factory.
+	blockingPool, err := newPluginInstancePool("corrupt-drain", blockingFactory, []byte("wasm"), nil, nil, 1)
+	require.NoError(t, err)
+	rp.mu.Lock()
+	rp.plugins["corrupt-drain"] = blockingPool
+	pool = blockingPool
+	rp.mu.Unlock()
+
+	// Step 2: Start CallHook in background — it will acquire the runner and
+	// block in Call until we signal callProceed.
+	hookDone := make(chan error, 1)
+	go func() {
+		_, err := rp.CallHook(context.Background(), "corrupt-drain", "hook.test", nil)
+		hookDone <- err
+	}()
+
+	// Wait for the runner's Call to start (runner is now acquired/active).
+	<-callStarted
+
+	// Step 3: Start drain — it should block because the runner is active.
+	drainDone := make(chan error, 1)
+	go func() { drainDone <- pool.Drain(context.Background()) }()
+
+	// Give drain a moment to set draining=true.
+	time.Sleep(20 * time.Millisecond)
+
+	// Step 4: Let the Call return corruption error. CallHook should handle
+	// corruption: close runner, decrement active, signal drain.
+	close(callProceed)
+
+	// Step 5: Both CallHook and Drain should complete promptly.
+	select {
+	case err := <-hookDone:
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "corrupted")
+	case <-time.After(2 * time.Second):
+		t.Fatal("CallHook did not complete in time")
+	}
+
+	select {
+	case <-drainDone:
+		// Drain completed — corruption path correctly signaled drain.
+	case <-time.After(2 * time.Second):
+		t.Fatal("Drain should have completed after corruption handling, but it hung")
 	}
 }

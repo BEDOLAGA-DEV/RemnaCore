@@ -147,6 +147,8 @@ func mapServiceError(err error) (status int, message string) {
 		return http.StatusConflict, "plugin is not running"
 	case errors.Is(err, plugin.ErrIncompatibleSDK):
 		return http.StatusConflict, "incompatible plugin SDK version"
+	case errors.Is(err, plugin.ErrPluginDraining):
+		return http.StatusServiceUnavailable, "plugin is draining"
 
 	default:
 		return http.StatusInternalServerError, "internal server error"

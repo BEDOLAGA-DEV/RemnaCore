@@ -20,4 +20,5 @@ var (
 	ErrSlugMismatch          = errors.New("plugin slug mismatch during hot reload")
 	ErrPluginNotRunning      = errors.New("plugin is not running")
 	ErrIncompatibleSDK       = errors.New("incompatible plugin SDK version")
+	ErrPluginDraining        = errors.New("plugin is draining")
 )
