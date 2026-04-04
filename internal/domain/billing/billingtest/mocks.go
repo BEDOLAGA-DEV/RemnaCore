@@ -229,11 +229,6 @@ func (m *MockDomainRateLimiter) AllowCheckout(ctx context.Context, userID string
 	return args.Bool(0), args.Error(1)
 }
 
-func (m *MockDomainRateLimiter) AllowSubscriptionCreate(ctx context.Context, userID string) (bool, error) {
-	args := m.Called(ctx, userID)
-	return args.Bool(0), args.Error(1)
-}
-
 // --- NoopTxRunner ---
 
 // NoopTxRunner implements txmanager.Runner by executing fn directly without a

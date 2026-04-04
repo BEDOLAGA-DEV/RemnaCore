@@ -151,7 +151,7 @@ func (o *MultiSubOrchestrator) OnSubscriptionPaused(ctx context.Context, subscri
 			if updateErr := o.bindings.Update(ctx, binding); updateErr != nil {
 				o.logger.Warn("failed to update binding status",
 					slog.String("binding_id", binding.ID),
-					slog.String("error", updateErr.Error()),
+					slog.Any("error", updateErr),
 				)
 			}
 			continue
@@ -160,7 +160,7 @@ func (o *MultiSubOrchestrator) OnSubscriptionPaused(ctx context.Context, subscri
 		if err := o.bindings.Update(ctx, binding); err != nil {
 			o.logger.Warn("failed to update binding status",
 				slog.String("binding_id", binding.ID),
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 		}
 	}
@@ -206,7 +206,7 @@ func (o *MultiSubOrchestrator) OnSubscriptionResumed(ctx context.Context, subscr
 			if updateErr := o.bindings.Update(ctx, binding); updateErr != nil {
 				o.logger.Warn("failed to update binding status",
 					slog.String("binding_id", binding.ID),
-					slog.String("error", updateErr.Error()),
+					slog.Any("error", updateErr),
 				)
 			}
 			continue
@@ -215,7 +215,7 @@ func (o *MultiSubOrchestrator) OnSubscriptionResumed(ctx context.Context, subscr
 		if err := o.bindings.Update(ctx, binding); err != nil {
 			o.logger.Warn("failed to update binding status",
 				slog.String("binding_id", binding.ID),
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 		}
 	}

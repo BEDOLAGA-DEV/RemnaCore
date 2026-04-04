@@ -80,7 +80,7 @@ func TestStartCheckout_Success(t *testing.T) {
 	// Create checkout service with billing-owned PaymentGateway.
 	checkoutPub := &billingtest.MockEventPublisher{}
 	checkoutPub.On("Publish", mock.Anything, mock.Anything).Return(nil).Maybe()
-	checkoutSvc := NewCheckoutService(billingSvc, paymentGW, dispatcher, checkoutPub, checkoutLogger(), nil)
+	checkoutSvc := NewCheckoutService(billingSvc, paymentGW, dispatcher, checkoutPub, checkoutLogger(), billing.AlwaysAllowRateLimiter{})
 
 	result, err := checkoutSvc.StartCheckout(context.Background(), CheckoutRequest{
 		UserID:    "user-1",
@@ -116,7 +116,7 @@ func TestCompleteCheckout_Success(t *testing.T) {
 	publisher.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
 	// Payment gateway is not needed for CompleteCheckout; only billing service is used.
-	checkoutSvc := NewCheckoutService(svc, nil, nil, publisher, checkoutLogger(), nil)
+	checkoutSvc := NewCheckoutService(svc, nil, nil, publisher, checkoutLogger(), billing.AlwaysAllowRateLimiter{})
 
 	err := checkoutSvc.CompleteCheckout(context.Background(), "inv-1")
 
@@ -128,7 +128,7 @@ func TestCompleteCheckout_Success(t *testing.T) {
 }
 
 func TestStartCheckout_MissingUserID(t *testing.T) {
-	checkoutSvc := NewCheckoutService(nil, nil, nil, nil, checkoutLogger(), nil)
+	checkoutSvc := NewCheckoutService(nil, nil, nil, nil, checkoutLogger(), billing.AlwaysAllowRateLimiter{})
 
 	_, err := checkoutSvc.StartCheckout(context.Background(), CheckoutRequest{
 		PlanID: "plan-premium",
@@ -139,7 +139,7 @@ func TestStartCheckout_MissingUserID(t *testing.T) {
 }
 
 func TestStartCheckout_MissingPlanID(t *testing.T) {
-	checkoutSvc := NewCheckoutService(nil, nil, nil, nil, checkoutLogger(), nil)
+	checkoutSvc := NewCheckoutService(nil, nil, nil, nil, checkoutLogger(), billing.AlwaysAllowRateLimiter{})
 
 	_, err := checkoutSvc.StartCheckout(context.Background(), CheckoutRequest{
 		UserID: "user-1",
@@ -150,7 +150,7 @@ func TestStartCheckout_MissingPlanID(t *testing.T) {
 }
 
 func TestCompleteCheckout_MissingInvoiceID(t *testing.T) {
-	checkoutSvc := NewCheckoutService(nil, nil, nil, nil, checkoutLogger(), nil)
+	checkoutSvc := NewCheckoutService(nil, nil, nil, nil, checkoutLogger(), billing.AlwaysAllowRateLimiter{})
 
 	err := checkoutSvc.CompleteCheckout(context.Background(), "")
 

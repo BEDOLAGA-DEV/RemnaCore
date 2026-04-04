@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
@@ -27,16 +26,15 @@ type CreateSubscriptionCmd struct {
 
 // BillingService implements CQRS command handlers for the billing domain.
 type BillingService struct {
-	plans       billing.PlanRepository
-	subs        billing.SubscriptionRepository
-	invoices    billing.InvoiceRepository
-	families    billing.FamilyRepository
-	publisher   domainevent.Publisher
-	prorate     *ProrateCalculator
-	trial       *TrialManager
-	txRunner    txmanager.Runner
-	clock       clock.Clock
-	rateLimiter billing.DomainRateLimiter
+	plans    billing.PlanRepository
+	subs     billing.SubscriptionRepository
+	invoices billing.InvoiceRepository
+	families billing.FamilyRepository
+	publisher domainevent.Publisher
+	prorate  *ProrateCalculator
+	trial    *TrialManager
+	txRunner txmanager.Runner
+	clock    clock.Clock
 }
 
 // NewBillingService creates a BillingService with the given dependencies.
@@ -50,19 +48,17 @@ func NewBillingService(
 	trial *TrialManager,
 	txRunner txmanager.Runner,
 	clk clock.Clock,
-	rateLimiter billing.DomainRateLimiter,
 ) *BillingService {
 	return &BillingService{
-		plans:       plans,
-		subs:        subs,
-		invoices:    invoices,
-		families:    families,
-		publisher:   publisher,
-		prorate:     prorate,
-		trial:       trial,
-		txRunner:    txRunner,
-		clock:       clk,
-		rateLimiter: rateLimiter,
+		plans:    plans,
+		subs:     subs,
+		invoices: invoices,
+		families: families,
+		publisher: publisher,
+		prorate:  prorate,
+		trial:    trial,
+		txRunner: txRunner,
+		clock:    clk,
 	}
 }
 
@@ -76,20 +72,6 @@ func (s *BillingService) CreateSubscription(
 ) (*aggregate.Subscription, *aggregate.Invoice, error) {
 	ctx, span := tracing.StartSpan(ctx, "billing.create_subscription")
 	defer span.End()
-
-	// Rate limit check BEFORE any business logic. Fail open on errors so that
-	// a transient rate limiter issue does not block legitimate subscriptions.
-	if s.rateLimiter != nil {
-		allowed, err := s.rateLimiter.AllowSubscriptionCreate(ctx, cmd.UserID)
-		if err != nil {
-			slog.Warn("rate limit check failed, allowing",
-				slog.String("user_id", cmd.UserID),
-				slog.String("error", err.Error()),
-			)
-		} else if !allowed {
-			return nil, nil, billing.ErrSubscriptionRateLimited
-		}
-	}
 
 	plan, err := s.plans.GetByID(ctx, cmd.PlanID)
 	if err != nil {

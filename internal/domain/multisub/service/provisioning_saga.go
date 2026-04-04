@@ -128,7 +128,7 @@ func (s *ProvisioningSaga) Provision(ctx context.Context, req ProvisionRequest) 
 			// Log but don't fail — binding is provisioned, event publish is secondary
 			slog.Warn("failed to publish binding.provisioned event",
 				slog.String("binding_id", binding.ID),
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 		}
 
@@ -161,7 +161,7 @@ func (s *ProvisioningSaga) compensateDeleteUser(ctx context.Context, remnawaveUU
 		slog.Warn("compensation: failed to delete remnawave user, retrying",
 			slog.String("remnawave_uuid", remnawaveUUID),
 			slog.String("binding_id", bindingID),
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 			slog.Int("attempt", attempt+1),
 		)
 

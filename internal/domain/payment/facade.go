@@ -95,7 +95,7 @@ func (f *PaymentFacade) CreateCharge(ctx context.Context, req CreateChargeReques
 		if err := f.publisher.Publish(ctx, chargeEvent); err != nil {
 			f.logger.Warn("failed to publish event",
 				slog.String("event_type", string(chargeEvent.Type)),
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 		}
 	}
@@ -141,7 +141,7 @@ func (f *PaymentFacade) VerifyWebhook(ctx context.Context, provider string, head
 		if err := f.publisher.Publish(ctx, webhookEvent); err != nil {
 			f.logger.Warn("failed to publish event",
 				slog.String("event_type", string(webhookEvent.Type)),
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 		}
 	}
@@ -192,7 +192,7 @@ func (f *PaymentFacade) Refund(ctx context.Context, paymentID string, amount int
 		if err := f.publisher.Publish(ctx, refundEvent); err != nil {
 			f.logger.Warn("failed to publish event",
 				slog.String("event_type", string(refundEvent.Type)),
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 		}
 	}
@@ -228,7 +228,7 @@ func (f *PaymentFacade) CompletePayment(ctx context.Context, provider, externalI
 		if err := f.publisher.Publish(ctx, completedEvent); err != nil {
 			f.logger.Warn("failed to publish event",
 				slog.String("event_type", string(completedEvent.Type)),
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 		}
 	}

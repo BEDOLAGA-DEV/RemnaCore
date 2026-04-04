@@ -16,5 +16,4 @@ var (
 	ErrSubscriptionNotActive     = errors.New("subscription is not active")
 	ErrNotTrialStatus            = errors.New("subscription is not in trial status")
 	ErrCheckoutRateLimited       = errors.New("checkout rate limit exceeded, try again later")
-	ErrSubscriptionRateLimited   = errors.New("subscription creation rate limit exceeded, try again later")
 )

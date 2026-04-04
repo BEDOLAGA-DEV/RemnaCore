@@ -68,7 +68,7 @@ func (s *DeprovisioningSaga) deprovisionOne(ctx context.Context, binding *aggreg
 			if updateErr := s.bindings.Update(ctx, binding); updateErr != nil {
 				slog.Warn("failed to update binding after remnawave delete failure",
 					slog.String("binding_id", binding.ID),
-					slog.String("error", updateErr.Error()),
+					slog.Any("error", updateErr),
 				)
 			}
 			return
@@ -80,7 +80,7 @@ func (s *DeprovisioningSaga) deprovisionOne(ctx context.Context, binding *aggreg
 	if err := s.bindings.Update(ctx, binding); err != nil {
 		slog.Warn("failed to update binding after deprovision",
 			slog.String("binding_id", binding.ID),
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 	}
 
@@ -93,7 +93,7 @@ func (s *DeprovisioningSaga) deprovisionOne(ctx context.Context, binding *aggreg
 	if err := s.publisher.Publish(ctx, event); err != nil {
 		slog.Warn("failed to publish event",
 			slog.String("event_type", string(event.Type)),
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 	}
 }

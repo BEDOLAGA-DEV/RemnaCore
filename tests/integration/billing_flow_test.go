@@ -64,7 +64,7 @@ func newBillingTestHarness(t *testing.T) *billingTestHarness {
 	prorate := billingservice.NewProrateCalculator()
 	trial := billingservice.NewTrialManager(billingservice.DefaultTrialDays)
 	txRunner := billingtest.NoopTxRunner{}
-	svc := billingservice.NewBillingService(plans, subs, invoices, families, pub, prorate, trial, txRunner, clock.NewReal(), nil)
+	svc := billingservice.NewBillingService(plans, subs, invoices, families, pub, prorate, trial, txRunner, clock.NewReal())
 
 	bh := handler.NewBillingHandler(svc, plans, subs, invoices)
 

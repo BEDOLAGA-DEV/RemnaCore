@@ -62,7 +62,7 @@ func (s *SyncSaga) SyncBinding(ctx context.Context, bindingID string) error {
 		if pubErr := s.publisher.Publish(ctx, syncFailedEvent); pubErr != nil {
 			slog.Warn("failed to publish event",
 				slog.String("event_type", string(syncFailedEvent.Type)),
-				slog.String("error", pubErr.Error()),
+				slog.Any("error", pubErr),
 			)
 		}
 		return fmt.Errorf("remnawave get user: %w", err)
@@ -86,7 +86,7 @@ func (s *SyncSaga) SyncBinding(ctx context.Context, bindingID string) error {
 	if err := s.publisher.Publish(ctx, syncCompletedEvent); err != nil {
 		slog.Warn("failed to publish event",
 			slog.String("event_type", string(syncCompletedEvent.Type)),
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 	}
 
@@ -138,7 +138,7 @@ func (s *SyncSaga) HandleWebhookEvent(ctx context.Context, remnawaveUUID string,
 	if err := s.publisher.Publish(ctx, webhookEvent); err != nil {
 		slog.Warn("failed to publish event",
 			slog.String("event_type", string(webhookEvent.Type)),
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 	}
 

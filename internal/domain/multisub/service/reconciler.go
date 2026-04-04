@@ -62,7 +62,7 @@ func (r *BindingReconciler) reconcile(ctx context.Context) {
 	bindings, err := r.bindings.GetFailedWithRemnawaveUUID(ctx)
 	if err != nil {
 		r.logger.Error("reconciler: failed to query failed bindings",
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 		return
 	}
@@ -80,7 +80,7 @@ func (r *BindingReconciler) reconcile(ctx context.Context) {
 			r.logger.Warn("reconciler: failed to delete orphaned remnawave user",
 				slog.String("binding_id", binding.ID),
 				slog.String("remnawave_uuid", binding.RemnawaveUUID),
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 			continue
 		}
@@ -92,7 +92,7 @@ func (r *BindingReconciler) reconcile(ctx context.Context) {
 		if err := r.bindings.Update(ctx, binding); err != nil {
 			r.logger.Warn("reconciler: deleted remnawave user but failed to update binding",
 				slog.String("binding_id", binding.ID),
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 			continue
 		}

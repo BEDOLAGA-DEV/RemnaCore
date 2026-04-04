@@ -99,7 +99,7 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (*RegisterR
 	if err := s.publisher.Publish(ctx, NewUserRegisteredEvent(user.ID, user.Email)); err != nil {
 		slog.Warn("failed to publish event",
 			slog.String("event_type", string(EventUserRegistered)),
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 	}
 
@@ -158,7 +158,7 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (*LoginResult, er
 	if err := s.publisher.Publish(ctx, NewUserLoggedInEvent(user.ID)); err != nil {
 		slog.Warn("failed to publish event",
 			slog.String("event_type", string(EventUserLoggedIn)),
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 	}
 
@@ -198,7 +198,7 @@ func (s *Service) VerifyEmail(ctx context.Context, token string) error {
 	if err := s.publisher.Publish(ctx, NewEmailVerifiedEvent(user.ID, user.Email)); err != nil {
 		slog.Warn("failed to publish event",
 			slog.String("event_type", string(EventEmailVerified)),
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 	}
 
@@ -357,7 +357,7 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 	if err := s.publisher.Publish(ctx, NewPasswordResetRequestedEvent(user.ID, user.Email, reset.Token)); err != nil {
 		slog.Warn("failed to publish event",
 			slog.String("event_type", string(EventPasswordResetRequested)),
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 	}
 
@@ -413,7 +413,7 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 	if err := s.publisher.Publish(ctx, NewPasswordResetEvent(user.ID)); err != nil {
 		slog.Warn("failed to publish event",
 			slog.String("event_type", string(EventPasswordReset)),
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 	}
 

@@ -72,16 +72,14 @@ func (cs *CheckoutService) StartCheckout(ctx context.Context, req CheckoutReques
 
 	// Rate limit check BEFORE any business logic. Fail open on errors so that
 	// a transient rate limiter issue does not block legitimate checkouts.
-	if cs.rateLimiter != nil {
-		allowed, err := cs.rateLimiter.AllowCheckout(ctx, req.UserID)
-		if err != nil {
-			cs.logger.Warn("rate limit check failed, allowing",
-				slog.String("user_id", req.UserID),
-				slog.String("error", err.Error()),
-			)
-		} else if !allowed {
-			return nil, billing.ErrCheckoutRateLimited
-		}
+	allowed, err := cs.rateLimiter.AllowCheckout(ctx, req.UserID)
+	if err != nil {
+		cs.logger.Warn("rate limit check failed, allowing",
+			slog.String("user_id", req.UserID),
+			slog.Any("error", err),
+		)
+	} else if !allowed {
+		return nil, billing.ErrCheckoutRateLimited
 	}
 
 	// 1. Create subscription + invoice via billing service.
