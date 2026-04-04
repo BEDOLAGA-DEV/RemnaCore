@@ -12,6 +12,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/multisubtest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/service"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 )
 
 func TestHandleWebhookEvent_TrafficExceeded(t *testing.T) {
@@ -20,7 +21,7 @@ func TestHandleWebhookEvent_TrafficExceeded(t *testing.T) {
 	gw := new(multisubtest.MockRemnawaveGateway)
 	pub := new(multisubtest.MockEventPublisher)
 
-	saga := service.NewSyncSaga(repo, gw, pub)
+	saga := service.NewSyncSaga(repo, gw, pub, clock.NewReal())
 
 	binding := &aggregate.RemnawaveBinding{
 		ID:             "b-1",
@@ -52,7 +53,7 @@ func TestHandleWebhookEvent_UnknownBinding(t *testing.T) {
 	gw := new(multisubtest.MockRemnawaveGateway)
 	pub := new(multisubtest.MockEventPublisher)
 
-	saga := service.NewSyncSaga(repo, gw, pub)
+	saga := service.NewSyncSaga(repo, gw, pub, clock.NewReal())
 
 	repo.On("GetByRemnawaveUUID", ctx, "rw-unknown").
 		Return(nil, multisub.ErrBindingNotFound)
@@ -71,7 +72,7 @@ func TestSyncBinding_Success(t *testing.T) {
 	gw := new(multisubtest.MockRemnawaveGateway)
 	pub := new(multisubtest.MockEventPublisher)
 
-	saga := service.NewSyncSaga(repo, gw, pub)
+	saga := service.NewSyncSaga(repo, gw, pub, clock.NewReal())
 
 	binding := &aggregate.RemnawaveBinding{
 		ID:             "b-1",
@@ -110,7 +111,7 @@ func TestSyncBinding_DisabledRemotely(t *testing.T) {
 	gw := new(multisubtest.MockRemnawaveGateway)
 	pub := new(multisubtest.MockEventPublisher)
 
-	saga := service.NewSyncSaga(repo, gw, pub)
+	saga := service.NewSyncSaga(repo, gw, pub, clock.NewReal())
 
 	binding := &aggregate.RemnawaveBinding{
 		ID:             "b-1",

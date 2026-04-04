@@ -217,6 +217,23 @@ func (m *MockPaymentGateway) CreateCharge(ctx context.Context, req billing.Creat
 	return args.Get(0).(*billing.CreateChargeResult), args.Error(1)
 }
 
+// --- MockDomainRateLimiter ---
+
+// MockDomainRateLimiter is a testify/mock implementation of billing.DomainRateLimiter.
+type MockDomainRateLimiter struct {
+	mock.Mock
+}
+
+func (m *MockDomainRateLimiter) AllowCheckout(ctx context.Context, userID string) (bool, error) {
+	args := m.Called(ctx, userID)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockDomainRateLimiter) AllowSubscriptionCreate(ctx context.Context, userID string) (bool, error) {
+	args := m.Called(ctx, userID)
+	return args.Bool(0), args.Error(1)
+}
+
 // --- NoopTxRunner ---
 
 // NoopTxRunner implements txmanager.Runner by executing fn directly without a

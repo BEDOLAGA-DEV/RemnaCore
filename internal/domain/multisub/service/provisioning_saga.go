@@ -8,6 +8,7 @@ import (
 
 	multisubdomain "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	multisubagg "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tracing"
 )
@@ -48,6 +49,7 @@ type ProvisioningSaga struct {
 	gateway    multisubdomain.RemnawaveGateway
 	publisher  domainevent.Publisher
 	calculator *BindingCalculator
+	clock      clock.Clock
 }
 
 // NewProvisioningSaga creates a ProvisioningSaga with its dependencies.
@@ -56,12 +58,14 @@ func NewProvisioningSaga(
 	gateway multisubdomain.RemnawaveGateway,
 	publisher domainevent.Publisher,
 	calculator *BindingCalculator,
+	clk clock.Clock,
 ) *ProvisioningSaga {
 	return &ProvisioningSaga{
 		bindings:   bindings,
 		gateway:    gateway,
 		publisher:  publisher,
 		calculator: calculator,
+		clock:      clk,
 	}
 }
 
@@ -75,7 +79,7 @@ func (s *ProvisioningSaga) Provision(ctx context.Context, req ProvisionRequest) 
 	specs := s.calculator.Calculate(req.Plan, req.AddonIDs, req.FamilyMemberIDs)
 
 	results := make([]ProvisionResult, 0, len(specs))
-	now := time.Now()
+	now := s.clock.Now()
 
 	for i, spec := range specs {
 		// 1. Create binding in our DB (PENDING)

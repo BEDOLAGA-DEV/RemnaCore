@@ -12,6 +12,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/multisubtest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/service"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 )
 
 func activeBinding(id, subID, rwUUID string, purpose aggregate.BindingPurpose) *aggregate.RemnawaveBinding {
@@ -34,7 +35,7 @@ func TestDeprovision_Success(t *testing.T) {
 	gw := new(multisubtest.MockRemnawaveGateway)
 	pub := new(multisubtest.MockEventPublisher)
 
-	saga := service.NewDeprovisioningSaga(repo, gw, pub)
+	saga := service.NewDeprovisioningSaga(repo, gw, pub, clock.NewReal())
 
 	bindings := []*aggregate.RemnawaveBinding{
 		activeBinding("b-1", "sub-1", "rw-1", aggregate.PurposeBase),
@@ -68,7 +69,7 @@ func TestDeprovision_PartialFailure(t *testing.T) {
 	gw := new(multisubtest.MockRemnawaveGateway)
 	pub := new(multisubtest.MockEventPublisher)
 
-	saga := service.NewDeprovisioningSaga(repo, gw, pub)
+	saga := service.NewDeprovisioningSaga(repo, gw, pub, clock.NewReal())
 
 	bindings := []*aggregate.RemnawaveBinding{
 		activeBinding("b-1", "sub-1", "rw-1", aggregate.PurposeBase),
@@ -117,7 +118,7 @@ func TestDeprovision_NoBindings(t *testing.T) {
 	gw := new(multisubtest.MockRemnawaveGateway)
 	pub := new(multisubtest.MockEventPublisher)
 
-	saga := service.NewDeprovisioningSaga(repo, gw, pub)
+	saga := service.NewDeprovisioningSaga(repo, gw, pub, clock.NewReal())
 
 	repo.On("GetActiveBySubscriptionID", ctx, "sub-empty").
 		Return([]*aggregate.RemnawaveBinding{}, nil)

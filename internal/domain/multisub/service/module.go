@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"time"
 
 	multisubdomain "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	multisubagg "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"go.uber.org/fx"
 )
@@ -38,6 +38,7 @@ type MultiSubOrchestrator struct {
 	gateway        multisubdomain.RemnawaveGateway
 	publisher      domainevent.Publisher
 	logger         *slog.Logger
+	clock          clock.Clock
 }
 
 // NewMultiSubOrchestrator creates a MultiSubOrchestrator with its saga
@@ -50,6 +51,7 @@ func NewMultiSubOrchestrator(
 	gateway multisubdomain.RemnawaveGateway,
 	publisher domainevent.Publisher,
 	logger *slog.Logger,
+	clk clock.Clock,
 ) *MultiSubOrchestrator {
 	return &MultiSubOrchestrator{
 		provisioning:   provisioning,
@@ -59,6 +61,7 @@ func NewMultiSubOrchestrator(
 		gateway:        gateway,
 		publisher:      publisher,
 		logger:         logger,
+		clock:          clk,
 	}
 }
 
@@ -138,7 +141,7 @@ func (o *MultiSubOrchestrator) OnSubscriptionPaused(ctx context.Context, subscri
 		return nil
 	}
 
-	now := time.Now()
+	now := o.clock.Now()
 	for _, binding := range bindings {
 		if binding.RemnawaveUUID == "" {
 			continue
@@ -190,7 +193,7 @@ func (o *MultiSubOrchestrator) OnSubscriptionResumed(ctx context.Context, subscr
 		return nil
 	}
 
-	now := time.Now()
+	now := o.clock.Now()
 	for _, binding := range bindings {
 		if binding.Status != multisubagg.BindingDisabled {
 			continue

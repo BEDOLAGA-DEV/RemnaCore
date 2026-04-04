@@ -14,11 +14,12 @@ import (
 // CheckoutService orchestrates the full checkout flow: subscription creation,
 // invoice generation, and payment charge initiation via the payment gateway.
 type CheckoutService struct {
-	billing    *BillingService
-	payment    billing.PaymentGateway
-	dispatcher hookdispatch.Dispatcher
-	publisher  domainevent.Publisher
-	logger     *slog.Logger
+	billing     *BillingService
+	payment     billing.PaymentGateway
+	dispatcher  hookdispatch.Dispatcher
+	publisher   domainevent.Publisher
+	logger      *slog.Logger
+	rateLimiter billing.DomainRateLimiter
 }
 
 // NewCheckoutService creates a CheckoutService with the given dependencies.
@@ -28,13 +29,15 @@ func NewCheckoutService(
 	dispatcher hookdispatch.Dispatcher,
 	publisher domainevent.Publisher,
 	logger *slog.Logger,
+	rateLimiter billing.DomainRateLimiter,
 ) *CheckoutService {
 	return &CheckoutService{
-		billing:    billingSvc,
-		payment:    paymentGateway,
-		dispatcher: dispatcher,
-		publisher:  publisher,
-		logger:     logger,
+		billing:     billingSvc,
+		payment:     paymentGateway,
+		dispatcher:  dispatcher,
+		publisher:   publisher,
+		logger:      logger,
+		rateLimiter: rateLimiter,
 	}
 }
 
@@ -65,6 +68,20 @@ func (cs *CheckoutService) StartCheckout(ctx context.Context, req CheckoutReques
 	}
 	if req.PlanID == "" {
 		return nil, fmt.Errorf("plan ID is required")
+	}
+
+	// Rate limit check BEFORE any business logic. Fail open on errors so that
+	// a transient rate limiter issue does not block legitimate checkouts.
+	if cs.rateLimiter != nil {
+		allowed, err := cs.rateLimiter.AllowCheckout(ctx, req.UserID)
+		if err != nil {
+			cs.logger.Warn("rate limit check failed, allowing",
+				slog.String("user_id", req.UserID),
+				slog.String("error", err.Error()),
+			)
+		} else if !allowed {
+			return nil, billing.ErrCheckoutRateLimited
+		}
 	}
 
 	// 1. Create subscription + invoice via billing service.

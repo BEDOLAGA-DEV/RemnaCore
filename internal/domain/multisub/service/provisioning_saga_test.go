@@ -12,6 +12,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/multisubtest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/service"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 )
 
 func newPlanSnapshotForSaga() multisub.PlanSnapshot {
@@ -38,7 +39,7 @@ func TestProvision_Success(t *testing.T) {
 	pub := new(multisubtest.MockEventPublisher)
 	calc := service.NewBindingCalculator()
 
-	saga := service.NewProvisioningSaga(repo, gw, pub, calc)
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, clock.NewReal())
 	plan := newPlanSnapshotForSaga()
 
 	// Expect 3 bindings: base + gaming + 1 family member
@@ -98,7 +99,7 @@ func TestProvision_RemnawaveFail(t *testing.T) {
 	pub := new(multisubtest.MockEventPublisher)
 	calc := service.NewBindingCalculator()
 
-	saga := service.NewProvisioningSaga(repo, gw, pub, calc)
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, clock.NewReal())
 	plan := newPlanSnapshotForSaga()
 
 	// First binding: base - succeeds fully
@@ -155,7 +156,7 @@ func TestProvision_CompensationOnDBFail(t *testing.T) {
 	pub := new(multisubtest.MockEventPublisher)
 	calc := service.NewBindingCalculator()
 
-	saga := service.NewProvisioningSaga(repo, gw, pub, calc)
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, clock.NewReal())
 	plan := newPlanSnapshotForSaga()
 
 	// Create binding in DB succeeds
@@ -201,7 +202,7 @@ func TestProvision_CompensationRetryOnDeleteFail(t *testing.T) {
 	pub := new(multisubtest.MockEventPublisher)
 	calc := service.NewBindingCalculator()
 
-	saga := service.NewProvisioningSaga(repo, gw, pub, calc)
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, clock.NewReal())
 	plan := newPlanSnapshotForSaga()
 
 	// Create binding in DB succeeds

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"testing"
@@ -79,7 +80,7 @@ func TestStartCheckout_Success(t *testing.T) {
 	// Create checkout service with billing-owned PaymentGateway.
 	checkoutPub := &billingtest.MockEventPublisher{}
 	checkoutPub.On("Publish", mock.Anything, mock.Anything).Return(nil).Maybe()
-	checkoutSvc := NewCheckoutService(billingSvc, paymentGW, dispatcher, checkoutPub, checkoutLogger())
+	checkoutSvc := NewCheckoutService(billingSvc, paymentGW, dispatcher, checkoutPub, checkoutLogger(), nil)
 
 	result, err := checkoutSvc.StartCheckout(context.Background(), CheckoutRequest{
 		UserID:    "user-1",
@@ -115,7 +116,7 @@ func TestCompleteCheckout_Success(t *testing.T) {
 	publisher.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
 	// Payment gateway is not needed for CompleteCheckout; only billing service is used.
-	checkoutSvc := NewCheckoutService(svc, nil, nil, publisher, checkoutLogger())
+	checkoutSvc := NewCheckoutService(svc, nil, nil, publisher, checkoutLogger(), nil)
 
 	err := checkoutSvc.CompleteCheckout(context.Background(), "inv-1")
 
@@ -127,7 +128,7 @@ func TestCompleteCheckout_Success(t *testing.T) {
 }
 
 func TestStartCheckout_MissingUserID(t *testing.T) {
-	checkoutSvc := NewCheckoutService(nil, nil, nil, nil, checkoutLogger())
+	checkoutSvc := NewCheckoutService(nil, nil, nil, nil, checkoutLogger(), nil)
 
 	_, err := checkoutSvc.StartCheckout(context.Background(), CheckoutRequest{
 		PlanID: "plan-premium",
@@ -138,7 +139,7 @@ func TestStartCheckout_MissingUserID(t *testing.T) {
 }
 
 func TestStartCheckout_MissingPlanID(t *testing.T) {
-	checkoutSvc := NewCheckoutService(nil, nil, nil, nil, checkoutLogger())
+	checkoutSvc := NewCheckoutService(nil, nil, nil, nil, checkoutLogger(), nil)
 
 	_, err := checkoutSvc.StartCheckout(context.Background(), CheckoutRequest{
 		UserID: "user-1",
@@ -149,10 +150,73 @@ func TestStartCheckout_MissingPlanID(t *testing.T) {
 }
 
 func TestCompleteCheckout_MissingInvoiceID(t *testing.T) {
-	checkoutSvc := NewCheckoutService(nil, nil, nil, nil, checkoutLogger())
+	checkoutSvc := NewCheckoutService(nil, nil, nil, nil, checkoutLogger(), nil)
 
 	err := checkoutSvc.CompleteCheckout(context.Background(), "")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invoice ID is required")
+}
+
+func TestStartCheckout_RateLimited(t *testing.T) {
+	rateLimiter := &billingtest.MockDomainRateLimiter{}
+	rateLimiter.On("AllowCheckout", mock.Anything, "user-1").Return(false, nil)
+
+	checkoutSvc := NewCheckoutService(nil, nil, nil, nil, checkoutLogger(), rateLimiter)
+
+	_, err := checkoutSvc.StartCheckout(context.Background(), CheckoutRequest{
+		UserID: "user-1",
+		PlanID: "plan-premium",
+	})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, billing.ErrCheckoutRateLimited)
+
+	rateLimiter.AssertExpectations(t)
+}
+
+func TestStartCheckout_RateLimiterError_FailsOpen(t *testing.T) {
+	billingSvc, plans, subs, invoices, _, billingPub := newTestBillingService()
+
+	plan := samplePlan()
+	plans.On("GetByID", mock.Anything, "plan-premium").Return(plan, nil)
+	subs.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Subscription")).Return(nil)
+	invoices.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Invoice")).Return(nil)
+	billingPub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
+
+	paymentGW := &billingtest.MockPaymentGateway{}
+	paymentGW.On("CreateCharge", mock.Anything, mock.AnythingOfType("billing.CreateChargeRequest")).
+		Return(&billing.CreateChargeResult{
+			Provider:    "stripe",
+			ExternalID:  "pi_789",
+			CheckoutURL: "https://checkout.stripe.com/session/789",
+			Status:      "pending",
+		}, nil)
+
+	dispatcher := &hookdispatchtest.MockDispatcher{}
+	dispatcher.On("DispatchSync", mock.Anything, "pricing.calculate", mock.AnythingOfType("json.RawMessage")).
+		Return(nil, nil)
+
+	rateLimiter := &billingtest.MockDomainRateLimiter{}
+	rateLimiter.On("AllowCheckout", mock.Anything, "user-1").
+		Return(false, errors.New("valkey unavailable"))
+
+	checkoutPub := &billingtest.MockEventPublisher{}
+	checkoutPub.On("Publish", mock.Anything, mock.Anything).Return(nil).Maybe()
+	checkoutSvc := NewCheckoutService(billingSvc, paymentGW, dispatcher, checkoutPub, checkoutLogger(), rateLimiter)
+
+	result, err := checkoutSvc.StartCheckout(context.Background(), CheckoutRequest{
+		UserID:    "user-1",
+		UserEmail: "user@example.com",
+		PlanID:    "plan-premium",
+		ReturnURL: "https://example.com/success",
+		CancelURL: "https://example.com/cancel",
+	})
+
+	// Should succeed because rate limiter errors fail open
+	require.NoError(t, err)
+	assert.NotEmpty(t, result.SubscriptionID)
+	assert.Equal(t, "stripe", result.Provider)
+
+	rateLimiter.AssertExpectations(t)
 }

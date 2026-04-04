@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -33,7 +34,7 @@ func newTestBillingService() (
 	txRunner := billingtest.NoopTxRunner{}
 	clk := clock.NewReal()
 
-	svc := NewBillingService(plans, subs, invoices, families, publisher, prorate, trial, txRunner, clk)
+	svc := NewBillingService(plans, subs, invoices, families, publisher, prorate, trial, txRunner, clk, nil)
 	return svc, plans, subs, invoices, families, publisher
 }
 
@@ -402,4 +403,73 @@ func TestRemoveFamilyMember_Success(t *testing.T) {
 	subs.AssertExpectations(t)
 	families.AssertExpectations(t)
 	publisher.AssertExpectations(t)
+}
+
+// --- CreateSubscription Rate Limiting ---
+
+func TestCreateSubscription_RateLimited(t *testing.T) {
+	plans := &billingtest.MockPlanRepo{}
+	subs := &billingtest.MockSubscriptionRepo{}
+	invoices := &billingtest.MockInvoiceRepo{}
+	families := &billingtest.MockFamilyRepo{}
+	publisher := &billingtest.MockEventPublisher{}
+	prorate := NewProrateCalculator()
+	trial := NewTrialManager(DefaultTrialDays)
+	txRunner := billingtest.NoopTxRunner{}
+	clk := clock.NewReal()
+	rateLimiter := &billingtest.MockDomainRateLimiter{}
+
+	svc := NewBillingService(plans, subs, invoices, families, publisher, prorate, trial, txRunner, clk, rateLimiter)
+
+	rateLimiter.On("AllowSubscriptionCreate", mock.Anything, "user-1").Return(false, nil)
+
+	sub, inv, err := svc.CreateSubscription(context.Background(), CreateSubscriptionCmd{
+		UserID: "user-1",
+		PlanID: "plan-premium",
+	})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, billing.ErrSubscriptionRateLimited)
+	assert.Nil(t, sub)
+	assert.Nil(t, inv)
+
+	rateLimiter.AssertExpectations(t)
+	// No repo calls should have been made
+	plans.AssertNotCalled(t, "GetByID")
+}
+
+func TestCreateSubscription_RateLimiterError_FailsOpen(t *testing.T) {
+	plans := &billingtest.MockPlanRepo{}
+	subs := &billingtest.MockSubscriptionRepo{}
+	invoices := &billingtest.MockInvoiceRepo{}
+	families := &billingtest.MockFamilyRepo{}
+	publisher := &billingtest.MockEventPublisher{}
+	prorate := NewProrateCalculator()
+	trial := NewTrialManager(DefaultTrialDays)
+	txRunner := billingtest.NoopTxRunner{}
+	clk := clock.NewReal()
+	rateLimiter := &billingtest.MockDomainRateLimiter{}
+
+	rateLimiter.On("AllowSubscriptionCreate", mock.Anything, "user-1").
+		Return(false, errors.New("valkey unavailable"))
+
+	svc := NewBillingService(plans, subs, invoices, families, publisher, prorate, trial, txRunner, clk, rateLimiter)
+
+	plan := samplePlan()
+	plans.On("GetByID", mock.Anything, "plan-premium").Return(plan, nil)
+	subs.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Subscription")).Return(nil)
+	invoices.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Invoice")).Return(nil)
+	publisher.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
+
+	sub, inv, err := svc.CreateSubscription(context.Background(), CreateSubscriptionCmd{
+		UserID: "user-1",
+		PlanID: "plan-premium",
+	})
+
+	// Should succeed because rate limiter errors fail open
+	require.NoError(t, err)
+	assert.NotNil(t, sub)
+	assert.NotNil(t, inv)
+
+	rateLimiter.AssertExpectations(t)
 }

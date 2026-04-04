@@ -79,6 +79,10 @@ func mapServiceError(err error) (status int, message string) {
 		return http.StatusBadRequest, "currency mismatch"
 	case errors.Is(err, billing.ErrMaxBindingsExceeded):
 		return http.StatusConflict, "maximum bindings exceeded"
+	case errors.Is(err, billing.ErrCheckoutRateLimited):
+		return http.StatusTooManyRequests, "checkout rate limit exceeded, try again later"
+	case errors.Is(err, billing.ErrSubscriptionRateLimited):
+		return http.StatusTooManyRequests, "subscription creation rate limit exceeded, try again later"
 
 	// MultiSub domain
 	case errors.Is(err, multisub.ErrBindingNotFound):

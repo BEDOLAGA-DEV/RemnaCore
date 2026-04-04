@@ -3,6 +3,7 @@ package reseller
 import (
 	"log/slog"
 
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"go.uber.org/fx"
 )
@@ -14,7 +15,8 @@ var Module = fx.Module("reseller",
 		commissions CommissionRepository,
 		pub domainevent.Publisher,
 		logger *slog.Logger,
+		clk clock.Clock,
 	) *ResellerService {
-		return NewResellerService(tenants, commissions, pub, logger)
+		return NewResellerService(tenants, commissions, pub, logger, clk)
 	}),
 )

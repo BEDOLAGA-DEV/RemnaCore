@@ -92,6 +92,9 @@ func New() *fx.App {
 		}),
 		fx.Provide(natsadapter.NewOutboxRelay),
 
+		// Domain rate limiter: billing.DomainRateLimiter wraps *valkey.DomainRateLimiter
+		fx.Provide(func(r *valkey.DomainRateLimiter) billing.DomainRateLimiter { return r }),
+
 		// Billing domain
 		billingservice.Module,
 

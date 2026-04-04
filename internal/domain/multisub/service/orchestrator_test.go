@@ -15,6 +15,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/multisubtest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/service"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 )
 
 // testLogger returns a slog.Logger that suppresses all output below error
@@ -31,10 +32,11 @@ func newOrchestrator(
 	gw *multisubtest.MockRemnawaveGateway,
 	pub *multisubtest.MockEventPublisher,
 ) *service.MultiSubOrchestrator {
+	clk := clock.NewReal()
 	calc := service.NewBindingCalculator()
-	provisioning := service.NewProvisioningSaga(repo, gw, pub, calc)
-	deprovisioning := service.NewDeprovisioningSaga(repo, gw, pub)
-	syncSaga := service.NewSyncSaga(repo, gw, pub)
+	provisioning := service.NewProvisioningSaga(repo, gw, pub, calc, clk)
+	deprovisioning := service.NewDeprovisioningSaga(repo, gw, pub, clk)
+	syncSaga := service.NewSyncSaga(repo, gw, pub, clk)
 	syncService := service.NewSyncService(repo, syncSaga, pub)
 
 	return service.NewMultiSubOrchestrator(
@@ -45,6 +47,7 @@ func newOrchestrator(
 		gw,
 		pub,
 		testLogger(),
+		clk,
 	)
 }
 

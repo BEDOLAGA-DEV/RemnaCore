@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"time"
 
 	multisubdomain "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
 
@@ -19,6 +19,7 @@ type DeprovisioningSaga struct {
 	bindings  multisubdomain.BindingRepository
 	gateway   multisubdomain.RemnawaveGateway
 	publisher domainevent.Publisher
+	clock     clock.Clock
 }
 
 // NewDeprovisioningSaga creates a DeprovisioningSaga with its dependencies.
@@ -26,11 +27,13 @@ func NewDeprovisioningSaga(
 	bindings multisubdomain.BindingRepository,
 	gateway multisubdomain.RemnawaveGateway,
 	publisher domainevent.Publisher,
+	clk clock.Clock,
 ) *DeprovisioningSaga {
 	return &DeprovisioningSaga{
 		bindings:  bindings,
 		gateway:   gateway,
 		publisher: publisher,
+		clock:     clk,
 	}
 }
 
@@ -56,7 +59,7 @@ func (s *DeprovisioningSaga) Deprovision(ctx context.Context, subscriptionID str
 // are recorded on the binding itself so that the caller can continue with the
 // next binding.
 func (s *DeprovisioningSaga) deprovisionOne(ctx context.Context, binding *aggregate.RemnawaveBinding) {
-	now := time.Now()
+	now := s.clock.Now()
 	// 1. Delete user in Remnawave
 	if binding.RemnawaveUUID != "" {
 		if err := s.gateway.DeleteUser(ctx, binding.RemnawaveUUID); err != nil {

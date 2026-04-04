@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"time"
 
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
 
@@ -17,6 +17,7 @@ type ResellerService struct {
 	commissions CommissionRepository
 	publisher   domainevent.Publisher
 	logger      *slog.Logger
+	clock       clock.Clock
 }
 
 // NewResellerService creates a ResellerService with the given dependencies.
@@ -25,19 +26,21 @@ func NewResellerService(
 	commissions CommissionRepository,
 	publisher domainevent.Publisher,
 	logger *slog.Logger,
+	clk clock.Clock,
 ) *ResellerService {
 	return &ResellerService{
 		tenants:     tenants,
 		commissions: commissions,
 		publisher:   publisher,
 		logger:      logger,
+		clock:       clk,
 	}
 }
 
 // CreateTenant creates a new tenant, generates an API key, and returns both the
 // persisted tenant and the plain-text API key (shown only once).
 func (s *ResellerService) CreateTenant(ctx context.Context, name, domain, ownerUserID string) (*Tenant, string, error) {
-	now := time.Now()
+	now := s.clock.Now()
 	tenant := NewTenant(name, domain, ownerUserID, now)
 
 	plainKey, err := tenant.GenerateAPIKey(now)
@@ -109,7 +112,7 @@ func (s *ResellerService) UpdateBranding(ctx context.Context, tenantID string, b
 
 // CreateResellerAccount creates a new reseller account linked to a tenant.
 func (s *ResellerService) CreateResellerAccount(ctx context.Context, tenantID, userID string, rate int) (*ResellerAccount, error) {
-	account, err := NewResellerAccount(tenantID, userID, rate, time.Now())
+	account, err := NewResellerAccount(tenantID, userID, rate, s.clock.Now())
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +140,7 @@ func (s *ResellerService) CreateResellerAccount(ctx context.Context, tenantID, u
 // RecordCommission creates a commission for a sale and updates the reseller's
 // accumulated balance.
 func (s *ResellerService) RecordCommission(ctx context.Context, resellerID, saleID string, saleAmount int64, rate int, currency string) (*Commission, error) {
-	commission := NewCommission(resellerID, saleID, saleAmount, rate, currency, time.Now())
+	commission := NewCommission(resellerID, saleID, saleAmount, rate, currency, s.clock.Now())
 
 	if err := s.commissions.CreateCommission(ctx, commission); err != nil {
 		return nil, fmt.Errorf("persisting commission: %w", err)

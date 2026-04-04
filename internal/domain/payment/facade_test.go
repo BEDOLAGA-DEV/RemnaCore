@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/payment"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/payment/paymenttest"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch/hookdispatchtest"
 )
@@ -48,7 +49,7 @@ func TestCreateCharge_Success(t *testing.T) {
 
 	repo := &paymenttest.MockPaymentRepo{}
 	pub := &eventCollector{}
-	facade := payment.NewPaymentFacade(dispatcher, repo, pub, testLogger())
+	facade := payment.NewPaymentFacade(dispatcher, repo, pub, testLogger(), clock.NewReal())
 
 	repo.On("CreatePayment", mock.Anything, mock.AnythingOfType("*payment.PaymentRecord")).Return(nil)
 
@@ -84,7 +85,7 @@ func TestCreateCharge_NoHandler(t *testing.T) {
 
 	repo := &paymenttest.MockPaymentRepo{}
 	pub := &eventCollector{}
-	facade := payment.NewPaymentFacade(dispatcher, repo, pub, testLogger())
+	facade := payment.NewPaymentFacade(dispatcher, repo, pub, testLogger(), clock.NewReal())
 
 	_, err := facade.CreateCharge(context.Background(), payment.CreateChargeRequest{
 		InvoiceID: "inv-1",
@@ -102,7 +103,7 @@ func TestCreateCharge_ValidationErrors(t *testing.T) {
 	dispatcher := &hookdispatchtest.MockDispatcher{}
 	repo := &paymenttest.MockPaymentRepo{}
 	pub := &eventCollector{}
-	facade := payment.NewPaymentFacade(dispatcher, repo, pub, testLogger())
+	facade := payment.NewPaymentFacade(dispatcher, repo, pub, testLogger(), clock.NewReal())
 
 	_, err := facade.CreateCharge(context.Background(), payment.CreateChargeRequest{
 		Amount:   999,
@@ -141,7 +142,7 @@ func TestVerifyWebhook_Success(t *testing.T) {
 
 	repo := &paymenttest.MockPaymentRepo{}
 	pub := &eventCollector{}
-	facade := payment.NewPaymentFacade(dispatcher, repo, pub, testLogger())
+	facade := payment.NewPaymentFacade(dispatcher, repo, pub, testLogger(), clock.NewReal())
 
 	result, err := facade.VerifyWebhook(context.Background(), "stripe", map[string]string{
 		"stripe-signature": "sig_abc",
@@ -162,7 +163,7 @@ func TestVerifyWebhook_InvalidProvider(t *testing.T) {
 	dispatcher := &hookdispatchtest.MockDispatcher{}
 	repo := &paymenttest.MockPaymentRepo{}
 	pub := &eventCollector{}
-	facade := payment.NewPaymentFacade(dispatcher, repo, pub, testLogger())
+	facade := payment.NewPaymentFacade(dispatcher, repo, pub, testLogger(), clock.NewReal())
 
 	_, err := facade.VerifyWebhook(context.Background(), "", nil, nil)
 	assert.ErrorIs(t, err, payment.ErrInvalidProvider)
@@ -172,7 +173,7 @@ func TestCheckIdempotency_NewWebhook(t *testing.T) {
 	repo := &paymenttest.MockPaymentRepo{}
 	pub := &eventCollector{}
 	dispatcher := &hookdispatchtest.MockDispatcher{}
-	facade := payment.NewPaymentFacade(dispatcher, repo, pub, testLogger())
+	facade := payment.NewPaymentFacade(dispatcher, repo, pub, testLogger(), clock.NewReal())
 
 	repo.On("CreateWebhookLog", mock.Anything, mock.AnythingOfType("*payment.WebhookLog")).Return(nil)
 
@@ -187,7 +188,7 @@ func TestCheckIdempotency_DuplicateWebhook(t *testing.T) {
 	repo := &paymenttest.MockPaymentRepo{}
 	pub := &eventCollector{}
 	dispatcher := &hookdispatchtest.MockDispatcher{}
-	facade := payment.NewPaymentFacade(dispatcher, repo, pub, testLogger())
+	facade := payment.NewPaymentFacade(dispatcher, repo, pub, testLogger(), clock.NewReal())
 
 	repo.On("CreateWebhookLog", mock.Anything, mock.AnythingOfType("*payment.WebhookLog")).Return(payment.ErrWebhookDuplicate)
 
@@ -218,7 +219,7 @@ func TestRefund_Success(t *testing.T) {
 
 	repo := &paymenttest.MockPaymentRepo{}
 	pub := &eventCollector{}
-	facade := payment.NewPaymentFacade(dispatcher, repo, pub, testLogger())
+	facade := payment.NewPaymentFacade(dispatcher, repo, pub, testLogger(), clock.NewReal())
 
 	repo.On("GetPaymentByID", mock.Anything, "pay-1").Return(record, nil)
 	repo.On("UpdatePayment", mock.Anything, record).Return(nil)

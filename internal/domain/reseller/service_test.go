@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/resellertest"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 )
 
 func newTestService(t *testing.T) (
@@ -27,7 +28,7 @@ func newTestService(t *testing.T) (
 	pub := new(resellertest.MockPublisher)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	svc := reseller.NewResellerService(tenantRepo, commissionRepo, pub, logger)
+	svc := reseller.NewResellerService(tenantRepo, commissionRepo, pub, logger, clock.NewReal())
 	return svc, tenantRepo, commissionRepo, pub
 }
 
