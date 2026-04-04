@@ -9,4 +9,5 @@ var (
 	ErrSyncFailed           = errors.New("sync failed")
 	ErrBindingAlreadyActive = errors.New("binding already active")
 	ErrRemnawaveUnavailable = errors.New("remnawave panel unavailable")
+	ErrMaxBindingsExceeded  = errors.New("maximum remnawave bindings exceeded")
 )

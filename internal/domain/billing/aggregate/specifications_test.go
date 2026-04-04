@@ -37,7 +37,7 @@ func TestCheckoutEligibility_InactivePlan(t *testing.T) {
 	err := (CheckoutEligibility{Plan: plan}).Check()
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not active")
+	assert.ErrorIs(t, err, ErrPlanNotActive)
 }
 
 func TestCheckoutEligibility_ZeroPrice(t *testing.T) {
@@ -50,7 +50,7 @@ func TestCheckoutEligibility_ZeroPrice(t *testing.T) {
 	err := (CheckoutEligibility{Plan: plan}).Check()
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no price")
+	assert.ErrorIs(t, err, ErrNoPriceConfigured)
 }
 
 func TestFamilyEligibility_Enabled_UnderLimit(t *testing.T) {
@@ -101,29 +101,6 @@ func TestFamilyEligibility_OverLimit(t *testing.T) {
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrMaxFamilyExceeded)
-}
-
-func TestBindingEligibility_UnderLimit(t *testing.T) {
-	plan := &Plan{
-		ID:                   "plan-1",
-		MaxRemnawaveBindings: 4,
-	}
-
-	err := (BindingEligibility{Plan: plan, CurrentBindings: 2}).Check()
-
-	require.NoError(t, err)
-}
-
-func TestBindingEligibility_AtLimit(t *testing.T) {
-	plan := &Plan{
-		ID:                   "plan-1",
-		MaxRemnawaveBindings: 4,
-	}
-
-	err := (BindingEligibility{Plan: plan, CurrentBindings: 4}).Check()
-
-	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrMaxBindingsExceeded)
 }
 
 func TestSubscription_EventRecorder_Embedded(t *testing.T) {

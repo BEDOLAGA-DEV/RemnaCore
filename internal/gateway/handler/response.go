@@ -77,8 +77,12 @@ func mapServiceError(err error) (status int, message string) {
 		return http.StatusBadRequest, "addon not available for this plan"
 	case errors.Is(err, billing.ErrCurrencyMismatch):
 		return http.StatusBadRequest, "currency mismatch"
-	case errors.Is(err, billing.ErrMaxBindingsExceeded):
+	case errors.Is(err, multisub.ErrMaxBindingsExceeded):
 		return http.StatusConflict, "maximum bindings exceeded"
+	case errors.Is(err, billing.ErrPlanNotActive):
+		return http.StatusBadRequest, "plan is not active"
+	case errors.Is(err, billing.ErrNoPriceConfigured):
+		return http.StatusBadRequest, "plan has no price configured"
 	case errors.Is(err, billing.ErrCheckoutRateLimited):
 		return http.StatusTooManyRequests, "checkout rate limit exceeded, try again later"
 

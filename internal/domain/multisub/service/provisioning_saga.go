@@ -78,6 +78,11 @@ func (s *ProvisioningSaga) Provision(ctx context.Context, req ProvisionRequest) 
 
 	specs := s.calculator.Calculate(req.Plan, req.AddonIDs, req.FamilyMemberIDs)
 
+	// Validate binding limit before provisioning any bindings.
+	if req.Plan.MaxRemnawaveBindings > 0 && len(specs) > req.Plan.MaxRemnawaveBindings {
+		return nil, multisubdomain.ErrMaxBindingsExceeded
+	}
+
 	results := make([]ProvisionResult, 0, len(specs))
 	now := s.clock.Now()
 

@@ -242,3 +242,89 @@ func TestProvision_CompensationRetryOnDeleteFail(t *testing.T) {
 	gw.AssertCalled(t, "DeleteUser", mock.Anything, "rw-uuid-1")
 	repo.AssertExpectations(t)
 }
+
+func TestProvision_MaxBindingsExceeded(t *testing.T) {
+	ctx := context.Background()
+	repo := new(multisubtest.MockBindingRepo)
+	gw := new(multisubtest.MockRemnawaveGateway)
+	pub := new(multisubtest.MockEventPublisher)
+	calc := service.NewBindingCalculator()
+
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, clock.NewReal())
+
+	// Plan allows only 2 bindings, but base + gaming + 2 family = 4 specs
+	plan := multisub.PlanSnapshot{
+		ID:                   "plan-limited",
+		TrafficLimitBytes:    100_000_000_000,
+		MaxRemnawaveBindings: 2,
+		Addons: []multisub.AddonSnapshot{
+			{
+				ID:                "addon-gaming",
+				Name:              "gaming",
+				Type:              multisub.AddonSnapshotNodes,
+				ExtraTrafficBytes: 50_000_000_000,
+				ExtraNodes:        []string{"node-gaming-us"},
+			},
+		},
+	}
+
+	results, err := saga.Provision(ctx, service.ProvisionRequest{
+		SubscriptionID:  "sub-1",
+		PlatformUserID:  "user-abc12345xyz",
+		Plan:            plan,
+		AddonIDs:        []string{"addon-gaming"},
+		FamilyMemberIDs: []string{"family-1", "family-2"},
+	})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, multisub.ErrMaxBindingsExceeded)
+	assert.Nil(t, results)
+
+	// No repo/gateway calls should have been made
+	repo.AssertNotCalled(t, "Create")
+	gw.AssertNotCalled(t, "CreateUser")
+}
+
+func TestProvision_ZeroMaxBindings_NoLimit(t *testing.T) {
+	ctx := context.Background()
+	repo := new(multisubtest.MockBindingRepo)
+	gw := new(multisubtest.MockRemnawaveGateway)
+	pub := new(multisubtest.MockEventPublisher)
+	calc := service.NewBindingCalculator()
+
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, clock.NewReal())
+
+	// MaxRemnawaveBindings=0 means no limit enforced
+	plan := multisub.PlanSnapshot{
+		ID:                   "plan-unlimited",
+		TrafficLimitBytes:    100_000_000_000,
+		MaxRemnawaveBindings: 0,
+	}
+
+	repo.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.RemnawaveBinding")).Return(nil).Once()
+	repo.On("Update", mock.Anything, mock.AnythingOfType("*aggregate.RemnawaveBinding")).Return(nil).Once()
+
+	gw.On("CreateUser", mock.Anything, mock.MatchedBy(func(req multisub.CreateRemnawaveUserRequest) bool {
+		return true
+	})).Return(&multisub.RemnawaveUserResult{
+		UUID:      "rw-uuid-1",
+		ShortUUID: "rw-short-1",
+	}, nil).Once()
+
+	pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil).Once()
+
+	results, err := saga.Provision(ctx, service.ProvisionRequest{
+		SubscriptionID: "sub-1",
+		PlatformUserID: "user-abc12345xyz",
+		Plan:           plan,
+		AddonIDs:       nil,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Equal(t, aggregate.PurposeBase, results[0].Purpose)
+
+	repo.AssertExpectations(t)
+	gw.AssertExpectations(t)
+	pub.AssertExpectations(t)
+}

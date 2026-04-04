@@ -19,9 +19,13 @@ var (
 	ErrNotTrialStatus        = errors.New("subscription is not in trial status")
 	ErrCheckoutRateLimited   = errors.New("checkout rate limit exceeded, try again later")
 
-	// ErrMaxBindingsExceeded is an alias to the aggregate-level sentinel so
-	// that callers using billing.ErrMaxBindingsExceeded continue to work.
-	ErrMaxBindingsExceeded = aggregate.ErrMaxBindingsExceeded
+	// ErrPlanNotActive is an alias to the aggregate-level sentinel so
+	// that callers using billing.ErrPlanNotActive continue to work.
+	ErrPlanNotActive = aggregate.ErrPlanNotActive
+
+	// ErrNoPriceConfigured is an alias to the aggregate-level sentinel so
+	// that callers using billing.ErrNoPriceConfigured continue to work.
+	ErrNoPriceConfigured = aggregate.ErrNoPriceConfigured
 
 	// ErrFamilyNotEnabled is an alias to the aggregate-level sentinel so
 	// that callers using billing.ErrFamilyNotEnabled continue to work.
