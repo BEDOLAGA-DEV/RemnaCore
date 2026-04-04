@@ -1,14 +1,21 @@
 package multisub
 
-import "github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+import (
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+)
 
-// Multi-subscription event types.
+// Multi-subscription event types re-exported from aggregate for backward
+// compatibility. New code should prefer the aggregate constants directly.
 const (
-	EventBindingProvisioned     domainevent.EventType = "binding.provisioned"
-	EventBindingDeprovisioned   domainevent.EventType = "binding.deprovisioned"
-	EventBindingSyncFailed      domainevent.EventType = "binding.sync_failed"
-	EventBindingSyncCompleted   domainevent.EventType = "binding.sync_completed"
-	EventBindingTrafficExceeded domainevent.EventType = "binding.traffic_exceeded"
+	EventBindingProvisioned     = aggregate.EventBindingProvisioned
+	EventBindingDeprovisioned   = aggregate.EventBindingDeprovisioned
+	EventBindingSyncFailed      = aggregate.EventBindingSyncFailed
+	EventBindingSyncCompleted   = aggregate.EventBindingSyncCompleted
+	EventBindingTrafficExceeded = aggregate.EventBindingTrafficExceeded
+	EventBindingDisabled        = aggregate.EventBindingDisabled
+	EventBindingEnabled         = aggregate.EventBindingEnabled
+	EventBindingFailed          = aggregate.EventBindingFailed
 )
 
 // Event is an alias for the shared domainevent.Event so that callers within the
@@ -18,24 +25,7 @@ type Event = domainevent.Event
 // EventType is an alias for the shared domainevent.EventType.
 type EventType = domainevent.EventType
 
-// NewBindingProvisionedEvent creates an event when a binding is provisioned in Remnawave.
-func NewBindingProvisionedEvent(bindingID, subscriptionID, remnawaveUUID, purpose string) Event {
-	return domainevent.NewWithEntity(EventBindingProvisioned, BindingProvisionedPayload{
-		BindingID:      bindingID,
-		SubscriptionID: subscriptionID,
-		RemnawaveUUID:  remnawaveUUID,
-		Purpose:        purpose,
-	}, bindingID)
-}
-
-// NewBindingDeprovisionedEvent creates an event when a binding is removed from Remnawave.
-func NewBindingDeprovisionedEvent(bindingID, subscriptionID, remnawaveUUID string) Event {
-	return domainevent.NewWithEntity(EventBindingDeprovisioned, BindingDeprovisionedPayload{
-		BindingID:      bindingID,
-		SubscriptionID: subscriptionID,
-		RemnawaveUUID:  remnawaveUUID,
-	}, bindingID)
-}
+// --- Sync event factories (saga-level, not self-recorded by binding) ---
 
 // NewBindingSyncFailedEvent creates an event when binding synchronisation fails.
 func NewBindingSyncFailedEvent(bindingID, subscriptionID, reason string) Event {
@@ -51,14 +41,5 @@ func NewBindingSyncCompletedEvent(bindingID, subscriptionID string) Event {
 	return domainevent.NewWithEntity(EventBindingSyncCompleted, BindingSyncCompletedPayload{
 		BindingID:      bindingID,
 		SubscriptionID: subscriptionID,
-	}, bindingID)
-}
-
-// NewBindingTrafficExceededEvent creates an event when a binding exceeds its traffic limit.
-func NewBindingTrafficExceededEvent(bindingID, subscriptionID, remnawaveUUID string) Event {
-	return domainevent.NewWithEntity(EventBindingTrafficExceeded, BindingTrafficExceededPayload{
-		BindingID:      bindingID,
-		SubscriptionID: subscriptionID,
-		RemnawaveUUID:  remnawaveUUID,
 	}, bindingID)
 }

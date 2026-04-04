@@ -2,6 +2,7 @@ package aggregate
 
 import (
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -101,12 +102,7 @@ func (s *Subscription) CanTransitionTo(target SubscriptionStatus) bool {
 	if !ok {
 		return false
 	}
-	for _, status := range allowed {
-		if status == target {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(allowed, target)
 }
 
 // transitionTo attempts to move the subscription to the target status.

@@ -128,18 +128,15 @@ func (s *ProvisioningSaga) Provision(ctx context.Context, req ProvisionRequest) 
 			return results, fmt.Errorf("update binding: %w", err)
 		}
 
-		// 4. Publish event
-		if err := s.publisher.Publish(ctx, multisubdomain.NewBindingProvisionedEvent(
-			binding.ID,
-			binding.SubscriptionID,
-			rwUser.UUID,
-			string(spec.Purpose),
-		)); err != nil {
-			// Log but don't fail — binding is provisioned, event publish is secondary
-			slog.Warn("failed to publish binding.provisioned event",
-				slog.String("binding_id", binding.ID),
-				slog.Any("error", err),
-			)
+		// 4. Publish binding's self-recorded events
+		for _, evt := range binding.DomainEvents() {
+			if err := s.publisher.Publish(ctx, evt); err != nil {
+				slog.Warn("failed to publish binding event",
+					slog.String("binding_id", binding.ID),
+					slog.String("event_type", string(evt.Type)),
+					slog.Any("error", err),
+				)
+			}
 		}
 
 		results = append(results, ProvisionResult{

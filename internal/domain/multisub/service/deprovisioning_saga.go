@@ -95,16 +95,14 @@ func (s *DeprovisioningSaga) deprovisionOne(ctx context.Context, binding *aggreg
 		)
 	}
 
-	// 3. Publish deprovisioned event
-	event := multisubdomain.NewBindingDeprovisionedEvent(
-		binding.ID,
-		binding.SubscriptionID,
-		binding.RemnawaveUUID,
-	)
-	if err := s.publisher.Publish(ctx, event); err != nil {
-		slog.Warn("failed to publish event",
-			slog.String("event_type", string(event.Type)),
-			slog.Any("error", err),
-		)
+	// 3. Publish binding's self-recorded events
+	for _, evt := range binding.DomainEvents() {
+		if err := s.publisher.Publish(ctx, evt); err != nil {
+			slog.Warn("failed to publish binding event",
+				slog.String("binding_id", binding.ID),
+				slog.String("event_type", string(evt.Type)),
+				slog.Any("error", err),
+			)
+		}
 	}
 }

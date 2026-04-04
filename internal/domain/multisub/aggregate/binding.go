@@ -3,9 +3,11 @@ package aggregate
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/naming"
 )
 
@@ -64,7 +66,12 @@ var validPurposes = map[BindingPurpose]bool{
 // RemnawaveBinding is the aggregate root linking a platform subscription to a
 // Remnawave VPN user. Each subscription can have multiple bindings (base,
 // gaming add-on, streaming add-on, family members).
+// It embeds EventRecorder to accumulate domain events during mutations.
+// Services must call DomainEvents() after persisting the aggregate to
+// retrieve and publish all pending events.
 type RemnawaveBinding struct {
+	domainevent.EventRecorder
+
 	ID                 string
 	SubscriptionID     string
 	PlatformUserID     string
@@ -116,14 +123,12 @@ func (b *RemnawaveBinding) transitionTo(target BindingStatus, now time.Time) err
 	if !ok {
 		return ErrInvalidBindingTransition
 	}
-	for _, s := range allowed {
-		if s == target {
-			b.Status = target
-			b.UpdatedAt = now
-			return nil
-		}
+	if !slices.Contains(allowed, target) {
+		return fmt.Errorf("%w: %s -> %s", ErrInvalidBindingTransition, b.Status, target)
 	}
-	return fmt.Errorf("%w: %s -> %s", ErrInvalidBindingTransition, b.Status, target)
+	b.Status = target
+	b.UpdatedAt = now
+	return nil
 }
 
 // MarkProvisioned transitions the binding from pending to active after the
@@ -135,6 +140,12 @@ func (b *RemnawaveBinding) MarkProvisioned(remnawaveUUID, shortUUID string, now 
 	b.RemnawaveUUID = remnawaveUUID
 	b.RemnawaveShortUUID = shortUUID
 	b.SyncedAt = &now
+	b.RecordEvent(domainevent.NewAtWithEntity(EventBindingProvisioned, BindingProvisionedPayload{
+		BindingID:      b.ID,
+		SubscriptionID: b.SubscriptionID,
+		RemnawaveUUID:  remnawaveUUID,
+		ShortUUID:      shortUUID,
+	}, now, b.ID))
 	return nil
 }
 
@@ -144,12 +155,24 @@ func (b *RemnawaveBinding) MarkFailed(reason string, now time.Time) error {
 		return err
 	}
 	b.FailReason = reason
+	b.RecordEvent(domainevent.NewAtWithEntity(EventBindingFailed, BindingFailedPayload{
+		BindingID:      b.ID,
+		SubscriptionID: b.SubscriptionID,
+		Reason:         reason,
+	}, now, b.ID))
 	return nil
 }
 
 // Disable transitions the binding from active to disabled.
 func (b *RemnawaveBinding) Disable(now time.Time) error {
-	return b.transitionTo(BindingDisabled, now)
+	if err := b.transitionTo(BindingDisabled, now); err != nil {
+		return err
+	}
+	b.RecordEvent(domainevent.NewAtWithEntity(EventBindingDisabled, BindingDisabledPayload{
+		BindingID:      b.ID,
+		SubscriptionID: b.SubscriptionID,
+	}, now, b.ID))
+	return nil
 }
 
 // Enable transitions the binding from disabled to active. Only disabled
@@ -158,10 +181,25 @@ func (b *RemnawaveBinding) Enable(now time.Time) error {
 	if b.Status != BindingDisabled {
 		return fmt.Errorf("%w: Enable requires disabled, got %s", ErrInvalidBindingTransition, b.Status)
 	}
-	return b.transitionTo(BindingActive, now)
+	if err := b.transitionTo(BindingActive, now); err != nil {
+		return err
+	}
+	b.RecordEvent(domainevent.NewAtWithEntity(EventBindingEnabled, BindingEnabledPayload{
+		BindingID:      b.ID,
+		SubscriptionID: b.SubscriptionID,
+	}, now, b.ID))
+	return nil
 }
 
 // Deprovision transitions the binding to deprovisioned.
 func (b *RemnawaveBinding) Deprovision(now time.Time) error {
-	return b.transitionTo(BindingDeprovisioned, now)
+	if err := b.transitionTo(BindingDeprovisioned, now); err != nil {
+		return err
+	}
+	b.RecordEvent(domainevent.NewAtWithEntity(EventBindingDeprovisioned, BindingDeprovisionedPayload{
+		BindingID:      b.ID,
+		SubscriptionID: b.SubscriptionID,
+		RemnawaveUUID:  b.RemnawaveUUID,
+	}, now, b.ID))
+	return nil
 }

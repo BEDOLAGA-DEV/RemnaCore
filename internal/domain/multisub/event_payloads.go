@@ -1,19 +1,15 @@
 package multisub
 
-// BindingProvisionedPayload is the typed payload for EventBindingProvisioned.
-type BindingProvisionedPayload struct {
-	BindingID      string `json:"binding_id"`
-	SubscriptionID string `json:"subscription_id"`
-	RemnawaveUUID  string `json:"remnawave_uuid"`
-	Purpose        string `json:"purpose"`
-}
+import "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
 
-// BindingDeprovisionedPayload is the typed payload for EventBindingDeprovisioned.
-type BindingDeprovisionedPayload struct {
-	BindingID      string `json:"binding_id"`
-	SubscriptionID string `json:"subscription_id"`
-	RemnawaveUUID  string `json:"remnawave_uuid"`
-}
+// Payload type aliases re-exported from aggregate for backward compatibility.
+type (
+	BindingProvisionedPayload   = aggregate.BindingProvisionedPayload
+	BindingDeprovisionedPayload = aggregate.BindingDeprovisionedPayload
+	BindingFailedPayload        = aggregate.BindingFailedPayload
+	BindingDisabledPayload      = aggregate.BindingDisabledPayload
+	BindingEnabledPayload       = aggregate.BindingEnabledPayload
+)
 
 // BindingSyncFailedPayload is the typed payload for EventBindingSyncFailed.
 type BindingSyncFailedPayload struct {
