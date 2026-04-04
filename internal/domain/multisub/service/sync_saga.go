@@ -58,6 +58,7 @@ func (s *SyncSaga) SyncBinding(ctx context.Context, bindingID string) error {
 			binding.ID,
 			binding.SubscriptionID,
 			err.Error(),
+			s.clock.Now(),
 		)
 		if pubErr := s.publisher.Publish(ctx, syncFailedEvent); pubErr != nil {
 			slog.Warn("failed to publish event",
@@ -82,6 +83,7 @@ func (s *SyncSaga) SyncBinding(ctx context.Context, bindingID string) error {
 	syncCompletedEvent := multisubdomain.NewBindingSyncCompletedEvent(
 		binding.ID,
 		binding.SubscriptionID,
+		s.clock.Now(),
 	)
 	if err := s.publisher.Publish(ctx, syncCompletedEvent); err != nil {
 		slog.Warn("failed to publish event",
@@ -155,11 +157,11 @@ func (s *SyncSaga) HandleWebhookEvent(ctx context.Context, remnawaveUUID string,
 		return fmt.Errorf("update binding: %w", err)
 	}
 
-	webhookEvent := domainevent.New(domainEventType, multisubdomain.BindingWebhookPayload{
+	webhookEvent := domainevent.NewAt(domainEventType, multisubdomain.BindingWebhookPayload{
 		BindingID:      binding.ID,
 		SubscriptionID: binding.SubscriptionID,
 		RemnawaveUUID:  binding.RemnawaveUUID,
-	})
+	}, s.clock.Now())
 	if err := s.publisher.Publish(ctx, webhookEvent); err != nil {
 		slog.Warn("failed to publish event",
 			slog.String("event_type", string(webhookEvent.Type)),

@@ -1,6 +1,10 @@
 package identity
 
-import "github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+import (
+	"time"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+)
 
 // Identity-specific event types.
 const (
@@ -22,42 +26,42 @@ type Event = domainevent.Event
 type EventType = domainevent.EventType
 
 // NewUserRegisteredEvent creates an event for a newly registered user.
-func NewUserRegisteredEvent(userID, email string) Event {
-	return domainevent.NewWithEntity(EventUserRegistered, UserRegisteredPayload{
+func NewUserRegisteredEvent(userID, email string, now time.Time) Event {
+	return domainevent.NewAtWithEntity(EventUserRegistered, UserRegisteredPayload{
 		UserID: userID,
 		Email:  email,
-	}, userID)
+	}, now, userID)
 }
 
 // NewEmailVerifiedEvent creates an event for a successful email verification.
-func NewEmailVerifiedEvent(userID, email string) Event {
-	return domainevent.NewWithEntity(EventEmailVerified, EmailVerifiedPayload{
+func NewEmailVerifiedEvent(userID, email string, now time.Time) Event {
+	return domainevent.NewAtWithEntity(EventEmailVerified, EmailVerifiedPayload{
 		UserID: userID,
 		Email:  email,
-	}, userID)
+	}, now, userID)
 }
 
 // NewUserLoggedInEvent creates an event for a successful login.
-func NewUserLoggedInEvent(userID string) Event {
-	return domainevent.NewWithEntity(EventUserLoggedIn, UserLoggedInPayload{
+func NewUserLoggedInEvent(userID string, now time.Time) Event {
+	return domainevent.NewAtWithEntity(EventUserLoggedIn, UserLoggedInPayload{
 		UserID: userID,
-	}, userID)
+	}, now, userID)
 }
 
 // NewPasswordResetRequestedEvent creates an event when a user requests a
 // password reset. Notification plugins listen for this to send the reset email.
-func NewPasswordResetRequestedEvent(userID, email, token string) Event {
-	return domainevent.NewWithEntity(EventPasswordResetRequested, PasswordResetRequestedPayload{
+func NewPasswordResetRequestedEvent(userID, email, token string, now time.Time) Event {
+	return domainevent.NewAtWithEntity(EventPasswordResetRequested, PasswordResetRequestedPayload{
 		UserID: userID,
 		Email:  email,
 		Token:  token,
-	}, userID)
+	}, now, userID)
 }
 
 // NewPasswordResetEvent creates an event when a password has been successfully
 // reset.
-func NewPasswordResetEvent(userID string) Event {
-	return domainevent.NewWithEntity(EventPasswordReset, PasswordResetPayload{
+func NewPasswordResetEvent(userID string, now time.Time) Event {
+	return domainevent.NewAtWithEntity(EventPasswordReset, PasswordResetPayload{
 		UserID: userID,
-	}, userID)
+	}, now, userID)
 }

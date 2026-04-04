@@ -96,7 +96,7 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (*RegisterR
 		return nil, fmt.Errorf("persisting email verification: %w", err)
 	}
 
-	if err := s.publisher.Publish(ctx, NewUserRegisteredEvent(user.ID, user.Email)); err != nil {
+	if err := s.publisher.Publish(ctx, NewUserRegisteredEvent(user.ID, user.Email, s.clock.Now())); err != nil {
 		slog.Warn("failed to publish event",
 			slog.String("event_type", string(EventUserRegistered)),
 			slog.Any("error", err),
@@ -155,7 +155,7 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (*LoginResult, er
 		return nil, fmt.Errorf("persisting session: %w", err)
 	}
 
-	if err := s.publisher.Publish(ctx, NewUserLoggedInEvent(user.ID)); err != nil {
+	if err := s.publisher.Publish(ctx, NewUserLoggedInEvent(user.ID, s.clock.Now())); err != nil {
 		slog.Warn("failed to publish event",
 			slog.String("event_type", string(EventUserLoggedIn)),
 			slog.Any("error", err),
@@ -195,7 +195,7 @@ func (s *Service) VerifyEmail(ctx context.Context, token string) error {
 		return fmt.Errorf("deleting verification: %w", err)
 	}
 
-	if err := s.publisher.Publish(ctx, NewEmailVerifiedEvent(user.ID, user.Email)); err != nil {
+	if err := s.publisher.Publish(ctx, NewEmailVerifiedEvent(user.ID, user.Email, s.clock.Now())); err != nil {
 		slog.Warn("failed to publish event",
 			slog.String("event_type", string(EventEmailVerified)),
 			slog.Any("error", err),
@@ -354,7 +354,7 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 	}
 
 	// Notification plugins listen for this event to send the actual email.
-	if err := s.publisher.Publish(ctx, NewPasswordResetRequestedEvent(user.ID, user.Email, reset.Token)); err != nil {
+	if err := s.publisher.Publish(ctx, NewPasswordResetRequestedEvent(user.ID, user.Email, reset.Token, s.clock.Now())); err != nil {
 		slog.Warn("failed to publish event",
 			slog.String("event_type", string(EventPasswordResetRequested)),
 			slog.Any("error", err),
@@ -410,7 +410,7 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 		return fmt.Errorf("deleting password reset: %w", err)
 	}
 
-	if err := s.publisher.Publish(ctx, NewPasswordResetEvent(user.ID)); err != nil {
+	if err := s.publisher.Publish(ctx, NewPasswordResetEvent(user.ID, s.clock.Now())); err != nil {
 		slog.Warn("failed to publish event",
 			slog.String("event_type", string(EventPasswordReset)),
 			slog.Any("error", err),

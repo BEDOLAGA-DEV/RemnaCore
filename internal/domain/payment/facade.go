@@ -90,7 +90,7 @@ func (f *PaymentFacade) CreateCharge(ctx context.Context, req CreateChargeReques
 
 	if f.publisher != nil {
 		chargeEvent := NewChargeCreatedEvent(
-			record.ID, record.InvoiceID, record.Provider, record.ExternalID, record.Amount,
+			record.ID, record.InvoiceID, record.Provider, record.ExternalID, record.Amount, f.clock.Now(),
 		)
 		if err := f.publisher.Publish(ctx, chargeEvent); err != nil {
 			f.logger.Warn("failed to publish event",
@@ -137,7 +137,7 @@ func (f *PaymentFacade) VerifyWebhook(ctx context.Context, provider string, head
 	}
 
 	if f.publisher != nil {
-		webhookEvent := NewWebhookReceivedEvent(provider, verified.ExternalID, verified.Status)
+		webhookEvent := NewWebhookReceivedEvent(provider, verified.ExternalID, verified.Status, f.clock.Now())
 		if err := f.publisher.Publish(ctx, webhookEvent); err != nil {
 			f.logger.Warn("failed to publish event",
 				slog.String("event_type", string(webhookEvent.Type)),
@@ -187,7 +187,7 @@ func (f *PaymentFacade) Refund(ctx context.Context, paymentID string, amount int
 
 	if f.publisher != nil {
 		refundEvent := NewRefundCompletedEvent(
-			record.ID, record.InvoiceID, record.Provider, amount,
+			record.ID, record.InvoiceID, record.Provider, amount, f.clock.Now(),
 		)
 		if err := f.publisher.Publish(ctx, refundEvent); err != nil {
 			f.logger.Warn("failed to publish event",
@@ -223,7 +223,7 @@ func (f *PaymentFacade) CompletePayment(ctx context.Context, provider, externalI
 
 	if f.publisher != nil {
 		completedEvent := NewChargeCompletedEvent(
-			record.ID, record.InvoiceID, record.Provider, record.Amount,
+			record.ID, record.InvoiceID, record.Provider, record.Amount, f.clock.Now(),
 		)
 		if err := f.publisher.Publish(ctx, completedEvent); err != nil {
 			f.logger.Warn("failed to publish event",

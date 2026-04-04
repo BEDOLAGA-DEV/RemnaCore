@@ -1,6 +1,8 @@
 package multisub
 
 import (
+	"time"
+
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
@@ -28,18 +30,18 @@ type EventType = domainevent.EventType
 // --- Sync event factories (saga-level, not self-recorded by binding) ---
 
 // NewBindingSyncFailedEvent creates an event when binding synchronisation fails.
-func NewBindingSyncFailedEvent(bindingID, subscriptionID, reason string) Event {
-	return domainevent.NewWithEntity(EventBindingSyncFailed, BindingSyncFailedPayload{
+func NewBindingSyncFailedEvent(bindingID, subscriptionID, reason string, now time.Time) Event {
+	return domainevent.NewAtWithEntity(EventBindingSyncFailed, BindingSyncFailedPayload{
 		BindingID:      bindingID,
 		SubscriptionID: subscriptionID,
 		Reason:         reason,
-	}, bindingID)
+	}, now, bindingID)
 }
 
 // NewBindingSyncCompletedEvent creates an event when a binding sync succeeds.
-func NewBindingSyncCompletedEvent(bindingID, subscriptionID string) Event {
-	return domainevent.NewWithEntity(EventBindingSyncCompleted, BindingSyncCompletedPayload{
+func NewBindingSyncCompletedEvent(bindingID, subscriptionID string, now time.Time) Event {
+	return domainevent.NewAtWithEntity(EventBindingSyncCompleted, BindingSyncCompletedPayload{
 		BindingID:      bindingID,
 		SubscriptionID: subscriptionID,
-	}, bindingID)
+	}, now, bindingID)
 }
