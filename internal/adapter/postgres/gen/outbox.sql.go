@@ -22,19 +22,20 @@ func (q *Queries) DeleteOldPublishedOutboxEvents(ctx context.Context, publishedA
 }
 
 const getUnpublishedOutboxEvents = `-- name: GetUnpublishedOutboxEvents :many
-SELECT id, event_type, payload, created_at
+SELECT id, event_type, payload, created_at, sequence_number
 FROM public.outbox
 WHERE published = false
-ORDER BY created_at
+ORDER BY sequence_number
 LIMIT $1
 FOR UPDATE SKIP LOCKED
 `
 
 type GetUnpublishedOutboxEventsRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	EventType string             `json:"event_type"`
-	Payload   []byte             `json:"payload"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ID             pgtype.UUID        `json:"id"`
+	EventType      string             `json:"event_type"`
+	Payload        []byte             `json:"payload"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	SequenceNumber *int64             `json:"sequence_number"`
 }
 
 func (q *Queries) GetUnpublishedOutboxEvents(ctx context.Context, limit int32) ([]GetUnpublishedOutboxEventsRow, error) {
@@ -51,6 +52,7 @@ func (q *Queries) GetUnpublishedOutboxEvents(ctx context.Context, limit int32) (
 			&i.EventType,
 			&i.Payload,
 			&i.CreatedAt,
+			&i.SequenceNumber,
 		); err != nil {
 			return nil, err
 		}

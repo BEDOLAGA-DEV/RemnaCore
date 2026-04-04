@@ -9,8 +9,12 @@ import (
 )
 
 func TestOutboxRelayConstants(t *testing.T) {
-	t.Run("relay interval is positive", func(t *testing.T) {
-		assert.Greater(t, natsadapter.OutboxRelayInterval, time.Duration(0))
+	t.Run("relay base interval is positive", func(t *testing.T) {
+		assert.Greater(t, natsadapter.OutboxRelayBaseInterval, time.Duration(0))
+	})
+
+	t.Run("relay max interval >= base interval", func(t *testing.T) {
+		assert.GreaterOrEqual(t, natsadapter.OutboxRelayMaxInterval, natsadapter.OutboxRelayBaseInterval)
 	})
 
 	t.Run("batch size is positive", func(t *testing.T) {

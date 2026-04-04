@@ -10,16 +10,26 @@ import (
 // EventType identifies the kind of domain event.
 type EventType string
 
+// DefaultEventVersion is the schema version assigned to all events unless
+// explicitly overridden. Increment when a payload schema changes in a
+// backward-incompatible way.
+const DefaultEventVersion = 1
+
 // Event represents a domain event emitted by any bounded context.
 // Data accepts any JSON-serialisable value: typed payload structs are preferred
 // for compile-time safety, but map[string]any is still accepted for backward
 // compatibility and dynamic event sources (webhooks, plugins, infra).
+//
+// Version tracks the schema version of the payload, enabling backward-compatible
+// evolution of the 45+ event types. Consumers can branch on Version to handle
+// old and new payload shapes gracefully.
 //
 // EntityID identifies the aggregate instance that produced the event. Consumers
 // use it for business-level idempotency ({event_type}:{entity_id}) and
 // per-entity serial processing to guarantee ordering.
 type Event struct {
 	Type      EventType `json:"type"`
+	Version   int       `json:"version"`
 	Timestamp time.Time `json:"timestamp"`
 	Data      any       `json:"data"`
 	EntityID  string    `json:"entity_id,omitempty"`
@@ -35,6 +45,7 @@ func New(eventType EventType, data any) Event {
 func NewAt(eventType EventType, data any, ts time.Time) Event {
 	return Event{
 		Type:      eventType,
+		Version:   DefaultEventVersion,
 		Timestamp: ts,
 		Data:      data,
 	}
@@ -46,6 +57,7 @@ func NewAt(eventType EventType, data any, ts time.Time) Event {
 func NewWithEntity(eventType EventType, data any, entityID string) Event {
 	return Event{
 		Type:      eventType,
+		Version:   DefaultEventVersion,
 		Timestamp: time.Now(),
 		Data:      data,
 		EntityID:  entityID,
@@ -56,6 +68,7 @@ func NewWithEntity(eventType EventType, data any, entityID string) Event {
 func NewAtWithEntity(eventType EventType, data any, ts time.Time, entityID string) Event {
 	return Event{
 		Type:      eventType,
+		Version:   DefaultEventVersion,
 		Timestamp: ts,
 		Data:      data,
 		EntityID:  entityID,
@@ -70,6 +83,25 @@ func (e Event) DataAsMap() map[string]any {
 		return m
 	}
 	return nil
+}
+
+// EventPayload is an optional interface that typed payload structs can implement
+// for compile-time safety. Payloads that implement this interface can be used
+// with NewTyped/NewTypedAt constructors, which set the event type automatically.
+type EventPayload interface {
+	EventType() EventType
+}
+
+// NewTyped creates an Event from a typed payload that knows its own event type.
+// This is the preferred constructor for aggregate-level event recording.
+func NewTyped(payload EventPayload, ts time.Time, entityID string) Event {
+	return Event{
+		Type:      payload.EventType(),
+		Version:   DefaultEventVersion,
+		Timestamp: ts,
+		Data:      payload,
+		EntityID:  entityID,
+	}
 }
 
 // Publisher abstracts event dispatching so domain services are not coupled to

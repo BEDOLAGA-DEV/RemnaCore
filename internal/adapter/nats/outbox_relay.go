@@ -12,8 +12,17 @@ import (
 
 // Outbox relay constants control polling frequency, batch size, and retention.
 const (
-	// OutboxRelayInterval is how often the relay polls for unpublished events.
-	OutboxRelayInterval = 1 * time.Second
+	// OutboxRelayBaseInterval is the starting poll interval. The relay
+	// doubles this on each empty batch up to OutboxRelayMaxInterval, and
+	// resets to base on any non-empty batch.
+	OutboxRelayBaseInterval = 1 * time.Second
+
+	// OutboxRelayMaxInterval caps exponential backoff so idle polling never
+	// exceeds this frequency.
+	OutboxRelayMaxInterval = 30 * time.Second
+
+	// OutboxRelayBackoffMultiplier doubles the interval on each empty poll.
+	OutboxRelayBackoffMultiplier = 2
 
 	// OutboxRelayBatchSize is the maximum number of events fetched per tick.
 	OutboxRelayBatchSize = 100
@@ -72,17 +81,29 @@ func (r *OutboxRelay) Run(ctx context.Context) {
 	// Immediate catch-up for events stuck from a prior crash.
 	r.relay(ctx)
 
-	relayTicker := time.NewTicker(OutboxRelayInterval)
+	currentInterval := OutboxRelayBaseInterval
+	relayTimer := time.NewTimer(currentInterval)
 	cleanupTicker := time.NewTicker(OutboxCleanupInterval)
-	defer relayTicker.Stop()
+	defer relayTimer.Stop()
 	defer cleanupTicker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-relayTicker.C:
-			r.relay(ctx)
+		case <-relayTimer.C:
+			published := r.relay(ctx)
+			if published > 0 {
+				// Reset to base interval when events were found.
+				currentInterval = OutboxRelayBaseInterval
+			} else {
+				// Exponential backoff on empty batch, capped.
+				currentInterval *= OutboxRelayBackoffMultiplier
+				if currentInterval > OutboxRelayMaxInterval {
+					currentInterval = OutboxRelayMaxInterval
+				}
+			}
+			relayTimer.Reset(currentInterval)
 		case <-cleanupTicker.C:
 			r.cleanup(ctx)
 		}
@@ -98,7 +119,9 @@ func (r *OutboxRelay) Run(ctx context.Context) {
 // will be retried on the next tick (the row lock is released on commit).
 // If MarkPublished fails, the entire transaction is rolled back; events that
 // were already published to NATS will be re-delivered (at-least-once).
-func (r *OutboxRelay) relay(ctx context.Context) {
+func (r *OutboxRelay) relay(ctx context.Context) int {
+	var published int
+
 	err := r.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		events, err := r.outbox.GetUnpublished(txCtx, OutboxRelayBatchSize)
 		if err != nil {
@@ -109,7 +132,6 @@ func (r *OutboxRelay) relay(ctx context.Context) {
 			return nil
 		}
 
-		published := 0
 		for _, event := range events {
 			if err := r.publisher.Publish(ctx, event.EventType, event.Payload); err != nil {
 				r.logger.Warn("outbox relay: failed to publish event, will retry",
@@ -143,6 +165,8 @@ func (r *OutboxRelay) relay(ctx context.Context) {
 			slog.Any("error", err),
 		)
 	}
+
+	return published
 }
 
 // cleanup removes published events older than the retention period to prevent

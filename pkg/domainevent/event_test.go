@@ -13,6 +13,7 @@ func TestNew_WithMapData(t *testing.T) {
 	e := New("user.registered", map[string]any{"user_id": "u-1"})
 
 	assert.Equal(t, EventType("user.registered"), e.Type)
+	assert.Equal(t, DefaultEventVersion, e.Version)
 	assert.False(t, e.Timestamp.IsZero())
 
 	m := e.DataAsMap()
@@ -55,6 +56,7 @@ func TestNewAt_UsesExplicitTimestamp(t *testing.T) {
 	e := NewAt("test.event", map[string]any{"key": "val"}, ts)
 
 	assert.Equal(t, ts, e.Timestamp)
+	assert.Equal(t, DefaultEventVersion, e.Version)
 	assert.Empty(t, e.EntityID) // no entity for plain NewAt
 }
 
