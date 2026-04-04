@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/sdk"
 )
@@ -29,7 +30,7 @@ func dispatcherWithMock(t *testing.T, slugCallFns map[string]func(ctx context.Co
 		rp.SetRunnerForTest(slug, &mockRunner{callFn: callFn})
 	}
 
-	d := NewHookDispatcher(rp, pub, logger)
+	d := NewHookDispatcher(rp, pub, logger, clock.NewReal())
 	return d, pub
 }
 
@@ -139,7 +140,7 @@ func TestDispatchSync_TwoPlugins_PriorityOrdering(t *testing.T) {
 
 func TestDispatchSync_NoHandlers(t *testing.T) {
 	rp := NewRuntimePool(testErrorLogger(), nil)
-	d := NewHookDispatcher(rp, &testPublisher{}, testErrorLogger())
+	d := NewHookDispatcher(rp, &testPublisher{}, testErrorLogger(), clock.NewReal())
 
 	payload := json.RawMessage(`{"amount":100}`)
 	result, err := d.DispatchSync(context.Background(), "nonexistent.hook", payload)
@@ -151,7 +152,7 @@ func TestDispatchSync_NoHandlers(t *testing.T) {
 
 func TestRegisterHooks_And_UnregisterHooks(t *testing.T) {
 	rp := NewRuntimePool(testErrorLogger(), nil)
-	d := NewHookDispatcher(rp, &testPublisher{}, testErrorLogger())
+	d := NewHookDispatcher(rp, &testPublisher{}, testErrorLogger(), clock.NewReal())
 
 	regs := []HookRegistration{
 		{PluginID: "id-a", PluginSlug: "plugin-a", HookName: "invoice.created", HookType: HookSync, Priority: 10, FuncName: "invoice.created"},
@@ -170,7 +171,7 @@ func TestRegisterHooks_And_UnregisterHooks(t *testing.T) {
 func TestDispatchAsync_PublishesEvent(t *testing.T) {
 	rp := NewRuntimePool(testErrorLogger(), nil)
 	pub := &testPublisher{}
-	d := NewHookDispatcher(rp, pub, testErrorLogger())
+	d := NewHookDispatcher(rp, pub, testErrorLogger(), clock.NewReal())
 
 	payload := json.RawMessage(`{"user_id":"u-1"}`)
 	err := d.DispatchAsync(context.Background(), "subscription.renewed", payload)
@@ -183,7 +184,7 @@ func TestDispatchAsync_PublishesEvent(t *testing.T) {
 
 func TestDispatchAsync_NilPublisher(t *testing.T) {
 	rp := NewRuntimePool(testErrorLogger(), nil)
-	d := NewHookDispatcher(rp, nil, testErrorLogger())
+	d := NewHookDispatcher(rp, nil, testErrorLogger(), clock.NewReal())
 
 	err := d.DispatchAsync(context.Background(), "hook.name", json.RawMessage(`{}`))
 	require.Error(t, err)
@@ -257,7 +258,7 @@ func TestDispatchSync_Timeout_CustomManifest(t *testing.T) {
 		},
 	})
 
-	d := NewHookDispatcher(rp, pub, logger)
+	d := NewHookDispatcher(rp, pub, logger, clock.NewReal())
 	d.RegisterHooks([]HookRegistration{
 		{PluginID: p.ID, PluginSlug: "fast-timeout", HookName: "hook.test", HookType: HookSync, Priority: 10, FuncName: "hook.test"},
 	})
@@ -270,7 +271,7 @@ func TestDispatchSync_Timeout_CustomManifest(t *testing.T) {
 
 func TestUnregisterHooks_DoesNotAffectOtherPlugins(t *testing.T) {
 	rp := NewRuntimePool(testErrorLogger(), nil)
-	d := NewHookDispatcher(rp, &testPublisher{}, testErrorLogger())
+	d := NewHookDispatcher(rp, &testPublisher{}, testErrorLogger(), clock.NewReal())
 
 	d.RegisterHooks([]HookRegistration{
 		{PluginID: "id-a", PluginSlug: "plugin-a", HookName: "invoice.created", HookType: HookSync, Priority: 10, FuncName: "invoice.created"},
@@ -352,7 +353,7 @@ func TestDispatchSyncVersioned_UsesHighestAvailable(t *testing.T) {
 
 func TestDispatchSyncVersioned_NoHandlersPassesThrough(t *testing.T) {
 	rp := NewRuntimePool(testErrorLogger(), nil)
-	d := NewHookDispatcher(rp, &testPublisher{}, testErrorLogger())
+	d := NewHookDispatcher(rp, &testPublisher{}, testErrorLogger(), clock.NewReal())
 
 	// No handlers registered at all.
 	payload := json.RawMessage(`{"amount":100}`)
@@ -384,7 +385,7 @@ func TestDispatchSyncVersioned_Version1DispatchesToBase(t *testing.T) {
 
 func TestHasHandlers(t *testing.T) {
 	rp := NewRuntimePool(testErrorLogger(), nil)
-	d := NewHookDispatcher(rp, &testPublisher{}, testErrorLogger())
+	d := NewHookDispatcher(rp, &testPublisher{}, testErrorLogger(), clock.NewReal())
 
 	assert.False(t, d.hasHandlers("nonexistent.hook"))
 

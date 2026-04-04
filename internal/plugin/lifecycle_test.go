@@ -175,7 +175,7 @@ func newTestLifecycleManager() (*LifecycleManager, *mockRepo, *mockStorage, *tes
 	}
 
 	runtime := NewRuntimePool(logger, factory)
-	dispatcher := NewHookDispatcher(runtime, pub, logger)
+	dispatcher := NewHookDispatcher(runtime, pub, logger, clock.NewReal())
 
 	lm := NewLifecycleManager(repo, storage, runtime, dispatcher, pub, logger, clock.NewReal())
 	return lm, repo, storage, pub
@@ -347,7 +347,7 @@ func TestLoadAllEnabled_Success(t *testing.T) {
 		return &mockRunner{}, nil
 	}
 	freshRuntime := NewRuntimePool(logger, factory)
-	freshDispatcher := NewHookDispatcher(freshRuntime, &testPublisher{}, logger)
+	freshDispatcher := NewHookDispatcher(freshRuntime, &testPublisher{}, logger, clock.NewReal())
 
 	lm.runtime = freshRuntime
 	lm.dispatcher = freshDispatcher

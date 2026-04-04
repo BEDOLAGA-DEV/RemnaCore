@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/sdk"
 )
@@ -39,6 +40,7 @@ type HostFunctions struct {
 	Logger      *slog.Logger
 	Permissions *PermissionChecker
 	HTTPClient  *http.Client
+	Clock       clock.Clock
 	// pluginRegistry is used to look up a plugin instance for permission
 	// checks. Populated during Fx wiring.
 	pluginRegistry func(slug string) (*Plugin, error)
@@ -52,7 +54,7 @@ type HostFunctions struct {
 // to private/internal network addresses after DNS resolution. Fields that depend
 // on Fx-provided services (Storage, Publisher) can be nil and are expected to be
 // set before the runtime starts.
-func NewHostFunctions(logger *slog.Logger) *HostFunctions {
+func NewHostFunctions(logger *slog.Logger, clk clock.Clock) *HostFunctions {
 	dialer := &net.Dialer{Timeout: SSRFSafeDialTimeout}
 	transport := &http.Transport{
 		DialContext: ssrfSafeDialContext(dialer),
@@ -64,6 +66,7 @@ func NewHostFunctions(logger *slog.Logger) *HostFunctions {
 			Timeout:   DefaultPluginHTTPTimeout,
 			Transport: transport,
 		},
+		Clock:      clk,
 		urlChecker: isBlockedHostname,
 	}
 }
@@ -181,10 +184,10 @@ func (hf *HostFunctions) EmitEvent(ctx context.Context, pluginSlug string, event
 		return fmt.Errorf("event publisher not configured")
 	}
 
-	event := domainevent.New(domainevent.EventType(eventType), map[string]any{
+	event := domainevent.NewAt(domainevent.EventType(eventType), map[string]any{
 		"plugin_slug": pluginSlug,
 		"payload":     string(payload),
-	})
+	}, hf.Clock.Now())
 	return hf.Publisher.Publish(ctx, event)
 }
 

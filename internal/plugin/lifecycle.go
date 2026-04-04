@@ -74,7 +74,7 @@ func (lm *LifecycleManager) Install(ctx context.Context, manifestBytes, wasmByte
 	}
 
 	if lm.publisher != nil {
-		if err := lm.publisher.Publish(ctx, NewPluginInstalledEvent(p.ID, p.Slug, p.Version)); err != nil {
+		if err := lm.publisher.Publish(ctx, NewPluginInstalledEvent(p.ID, p.Slug, p.Version, lm.clock.Now())); err != nil {
 			lm.logger.Warn("failed to publish event",
 				"event_type", string(EventPluginInstalled),
 				"error", err.Error(),
@@ -123,7 +123,7 @@ func (lm *LifecycleManager) Enable(ctx context.Context, pluginID string) error {
 	}
 
 	if lm.publisher != nil {
-		if err := lm.publisher.Publish(ctx, NewPluginEnabledEvent(p.ID, p.Slug)); err != nil {
+		if err := lm.publisher.Publish(ctx, NewPluginEnabledEvent(p.ID, p.Slug, lm.clock.Now())); err != nil {
 			lm.logger.Warn("failed to publish event",
 				"event_type", string(EventPluginEnabled),
 				"error", err.Error(),
@@ -158,7 +158,7 @@ func (lm *LifecycleManager) Disable(ctx context.Context, pluginID string) error 
 	}
 
 	if lm.publisher != nil {
-		if err := lm.publisher.Publish(ctx, NewPluginDisabledEvent(p.ID, p.Slug)); err != nil {
+		if err := lm.publisher.Publish(ctx, NewPluginDisabledEvent(p.ID, p.Slug, lm.clock.Now())); err != nil {
 			lm.logger.Warn("failed to publish event",
 				"event_type", string(EventPluginDisabled),
 				"error", err.Error(),
@@ -199,7 +199,7 @@ func (lm *LifecycleManager) Uninstall(ctx context.Context, pluginID string) erro
 	}
 
 	if lm.publisher != nil {
-		if err := lm.publisher.Publish(ctx, NewPluginUninstalledEvent(p.ID, p.Slug)); err != nil {
+		if err := lm.publisher.Publish(ctx, NewPluginUninstalledEvent(p.ID, p.Slug, lm.clock.Now())); err != nil {
 			lm.logger.Warn("failed to publish event",
 				"event_type", string(EventPluginUninstalled),
 				"error", err.Error(),
@@ -340,7 +340,7 @@ func (lm *LifecycleManager) HotReload(ctx context.Context, pluginID string, mani
 
 	// 8. Publish event.
 	if lm.publisher != nil {
-		if err := lm.publisher.Publish(ctx, NewPluginHotReloadedEvent(updated.ID, updated.Slug, oldVersion, updated.Version)); err != nil {
+		if err := lm.publisher.Publish(ctx, NewPluginHotReloadedEvent(updated.ID, updated.Slug, oldVersion, updated.Version, lm.clock.Now())); err != nil {
 			lm.logger.Warn("failed to publish event",
 				"event_type", string(EventPluginHotReloaded),
 				"error", err.Error(),

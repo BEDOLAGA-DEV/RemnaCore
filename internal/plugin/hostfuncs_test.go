@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/sdk"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,7 +21,7 @@ import (
 func newTestHostFunctions(t *testing.T, p *Plugin, httpClient *http.Client) *HostFunctions {
 	t.Helper()
 	logger := slog.Default()
-	hf := NewHostFunctions(logger)
+	hf := NewHostFunctions(logger, clock.NewReal())
 	hf.SetPluginRegistry(func(slug string) (*Plugin, error) {
 		if slug == p.Slug {
 			return p, nil
@@ -188,7 +189,7 @@ func TestHTTPRequest_NilManifest(t *testing.T) {
 }
 
 func TestHTTPRequest_RegistryNotConfigured(t *testing.T) {
-	hf := NewHostFunctions(slog.Default())
+	hf := NewHostFunctions(slog.Default(), clock.NewReal())
 
 	_, err := hf.HTTPRequest(context.Background(), "any-slug", sdk.HTTPRequest{
 		Method: http.MethodGet,

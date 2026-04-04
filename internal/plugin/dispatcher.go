@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/sdk"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tracing"
@@ -38,16 +39,18 @@ type HookDispatcher struct {
 	runtime       *RuntimePool
 	publisher     domainevent.Publisher
 	logger        *slog.Logger
+	clock         clock.Clock
 }
 
 // NewHookDispatcher creates a dispatcher wired to the given runtime pool and
 // event publisher.
-func NewHookDispatcher(runtime *RuntimePool, publisher domainevent.Publisher, logger *slog.Logger) *HookDispatcher {
+func NewHookDispatcher(runtime *RuntimePool, publisher domainevent.Publisher, logger *slog.Logger, clk clock.Clock) *HookDispatcher {
 	return &HookDispatcher{
 		registrations: make(map[string][]HookRegistration),
 		runtime:       runtime,
 		publisher:     publisher,
 		logger:        logger,
+		clock:         clk,
 	}
 }
 
@@ -161,7 +164,7 @@ func (d *HookDispatcher) DispatchSync(ctx context.Context, hookName string, payl
 		hookCtx := sdk.HookContext{
 			HookName:  hookName,
 			RequestID: uuid.New().String(),
-			Timestamp: time.Now().Unix(),
+			Timestamp: d.clock.Now().Unix(),
 			PluginID:  reg.PluginSlug,
 			Payload:   currentPayload,
 		}
@@ -178,9 +181,9 @@ func (d *HookDispatcher) DispatchSync(ctx context.Context, hookName string, payl
 		timeout := d.syncTimeoutForPlugin(reg.PluginSlug)
 		callCtx, callCancel := context.WithTimeout(ctx, timeout)
 
-		start := time.Now()
+		start := d.clock.Now()
 		output, err := d.runtime.CallHook(callCtx, reg.PluginSlug, reg.FuncName, inputBytes)
-		durationMs := time.Since(start).Milliseconds()
+		durationMs := d.clock.Now().Sub(start).Milliseconds()
 		callCancel()
 
 		if err != nil {
@@ -188,7 +191,7 @@ func (d *HookDispatcher) DispatchSync(ctx context.Context, hookName string, payl
 				d.logger.Error("hook execution timed out",
 					"hook", hookName, "plugin", reg.PluginSlug, "timeout", timeout, "duration_ms", durationMs)
 				if d.publisher != nil {
-					if pubErr := d.publisher.Publish(ctx, NewHookFailedEvent(reg.PluginID, reg.PluginSlug, hookName, "timed out")); pubErr != nil {
+					if pubErr := d.publisher.Publish(ctx, NewHookFailedEvent(reg.PluginID, reg.PluginSlug, hookName, "timed out", d.clock.Now())); pubErr != nil {
 						d.logger.Warn("failed to publish event",
 							"event_type", string(EventHookFailed),
 							"error", pubErr.Error(),
@@ -200,7 +203,7 @@ func (d *HookDispatcher) DispatchSync(ctx context.Context, hookName string, payl
 			d.logger.Error("hook execution failed",
 				"hook", hookName, "plugin", reg.PluginSlug, "error", err, "duration_ms", durationMs)
 			if d.publisher != nil {
-				if pubErr := d.publisher.Publish(ctx, NewHookFailedEvent(reg.PluginID, reg.PluginSlug, hookName, err.Error())); pubErr != nil {
+				if pubErr := d.publisher.Publish(ctx, NewHookFailedEvent(reg.PluginID, reg.PluginSlug, hookName, err.Error(), d.clock.Now())); pubErr != nil {
 					d.logger.Warn("failed to publish event",
 						"event_type", string(EventHookFailed),
 						"error", pubErr.Error(),
@@ -218,7 +221,7 @@ func (d *HookDispatcher) DispatchSync(ctx context.Context, hookName string, payl
 		}
 
 		if d.publisher != nil {
-			if pubErr := d.publisher.Publish(ctx, NewHookExecutedEvent(reg.PluginID, reg.PluginSlug, hookName, durationMs)); pubErr != nil {
+			if pubErr := d.publisher.Publish(ctx, NewHookExecutedEvent(reg.PluginID, reg.PluginSlug, hookName, durationMs, d.clock.Now())); pubErr != nil {
 				d.logger.Warn("failed to publish event",
 					"event_type", string(EventHookExecuted),
 					"error", pubErr.Error(),
@@ -279,10 +282,10 @@ func (d *HookDispatcher) DispatchAsync(ctx context.Context, hookName string, pay
 		return fmt.Errorf("event publisher not configured")
 	}
 
-	event := domainevent.New(domainevent.EventType(asyncHookSubjectPrefix+hookName), map[string]any{
+	event := domainevent.NewAt(domainevent.EventType(asyncHookSubjectPrefix+hookName), map[string]any{
 		"hook_name": hookName,
 		"payload":   string(payload),
-	})
+	}, d.clock.Now())
 
 	return d.publisher.Publish(ctx, event)
 }
