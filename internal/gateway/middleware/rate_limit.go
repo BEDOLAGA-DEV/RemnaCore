@@ -19,6 +19,11 @@ const (
 	// RateLimitedMessage is the JSON body returned when a client exceeds the
 	// rate limit.
 	RateLimitedMessage = `{"error":"rate limit exceeded"}`
+
+	// RateLimitKeyPrefixUser is the key prefix for authenticated rate limit entries.
+	RateLimitKeyPrefixUser = "user:"
+	// RateLimitKeyPrefixIP is the key prefix for unauthenticated rate limit entries.
+	RateLimitKeyPrefixIP = "ip:"
 )
 
 // RateLimit returns middleware that applies per-key rate limiting. Authenticated
@@ -53,9 +58,9 @@ func RateLimit(limiter RateLimiter) func(http.Handler) http.Handler {
 // falls back to the client IP address.
 func rateLimitKey(r *http.Request) string {
 	if claims := GetClaims(r.Context()); claims != nil {
-		return "user:" + claims.UserID
+		return RateLimitKeyPrefixUser + claims.UserID
 	}
-	return "ip:" + clientIP(r)
+	return RateLimitKeyPrefixIP + clientIP(r)
 }
 
 // clientIP extracts the client IP from X-Forwarded-For (first entry) or falls

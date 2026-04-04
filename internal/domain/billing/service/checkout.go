@@ -11,6 +11,9 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
 )
 
+// HookPricingCalculate is the plugin hook dispatched to modify invoice pricing.
+const HookPricingCalculate = "pricing.calculate"
+
 // CheckoutService orchestrates the full checkout flow: subscription creation,
 // invoice generation, and payment charge initiation via the payment gateway.
 type CheckoutService struct {
@@ -102,7 +105,7 @@ func (cs *CheckoutService) StartCheckout(ctx context.Context, req CheckoutReques
 			"subtotal":   inv.Subtotal.Amount,
 			"currency":   string(inv.Total.Currency),
 		})
-		if _, dispatchErr := cs.dispatcher.DispatchSync(ctx, "pricing.calculate", pricingPayload); dispatchErr != nil {
+		if _, dispatchErr := cs.dispatcher.DispatchSync(ctx, HookPricingCalculate, pricingPayload); dispatchErr != nil {
 			cs.logger.Warn("pricing.calculate hook failed, using original price",
 				slog.String("invoice_id", inv.ID),
 				slog.Any("error", dispatchErr),

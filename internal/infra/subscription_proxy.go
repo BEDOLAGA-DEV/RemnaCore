@@ -31,6 +31,11 @@ const (
 	// ProxyHTTPTimeout is the timeout for outbound HTTP requests to Remnawave
 	// when fetching subscription configs.
 	ProxyHTTPTimeout = 10 * time.Second
+
+	// L2CacheKeyPrefix is the Valkey key prefix for L2-cached subscription configs.
+	L2CacheKeyPrefix = "sub:"
+	// RemnawaveSubPath is the URL path segment for Remnawave subscription endpoints.
+	RemnawaveSubPath = "/sub/"
 )
 
 // l1Entry holds a cached subscription response with its expiration time.
@@ -86,7 +91,7 @@ func (sp *SubscriptionProxy) ServeSubscription(w http.ResponseWriter, r *http.Re
 	}
 
 	// L2: Valkey cache.
-	l2Key := "sub:" + shortUUID
+	l2Key := L2CacheKeyPrefix + shortUUID
 	l2Data, err := sp.valkeyClient.Get(r.Context(), l2Key).Bytes()
 	if err == nil {
 		// Populate L1 from L2.
@@ -123,7 +128,7 @@ func (sp *SubscriptionProxy) ServeSubscription(w http.ResponseWriter, r *http.Re
 // calling the subscription URL endpoint directly.
 func (sp *SubscriptionProxy) fetchFromRemnawave(ctx context.Context, shortUUID string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		sp.remnawaveClient.BaseURL()+"/sub/"+shortUUID, nil)
+		sp.remnawaveClient.BaseURL()+RemnawaveSubPath+shortUUID, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}

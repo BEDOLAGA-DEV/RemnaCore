@@ -41,6 +41,33 @@ const (
 	PremiumTierBonus = 15.0
 )
 
+// Geo proximity scores returned by geoProximityScore().
+const (
+	// GeoScoreSameCountry is the geo proximity score when user and node share a country.
+	GeoScoreSameCountry = 100.0
+	// GeoScoreDifferentCountry is the fallback geo proximity score.
+	GeoScoreDifferentCountry = 30.0
+)
+
+// Latency scores returned by estimatedLatencyScore().
+const (
+	// LatencyScoreSameCountry is the latency score for same-country nodes.
+	LatencyScoreSameCountry = 90.0
+	// LatencyScoreDifferentCountry is the fallback latency score.
+	LatencyScoreDifferentCountry = 50.0
+)
+
+// Load scores returned by loadScore().
+const (
+	// LoadScoreZeroTraffic is the load score when a node has zero traffic.
+	LoadScoreZeroTraffic = 100.0
+	// LoadScoreHighLoad is the minimum load score for heavily loaded nodes.
+	LoadScoreHighLoad = 10.0
+)
+
+// ScoreRoundingFactor is used to round composite scores to 2 decimal places.
+const ScoreRoundingFactor = 100.0
+
 // Purpose constants identify the intended use of a VPN connection.
 const (
 	PurposeBrowsing  = "browsing"
@@ -53,6 +80,9 @@ const (
 	TierPremium = "premium"
 	TierUltra   = "ultra"
 )
+
+// HookRoutingScoreModifier is the plugin hook name dispatched after initial scoring.
+const HookRoutingScoreModifier = "routing.score_modifier"
 
 // Maximum fallback nodes returned in a response.
 const maxFallbackNodes = 3
@@ -149,7 +179,7 @@ func (r *SmartRouter) SelectNode(ctx context.Context, req RouteRequest) (*RouteR
 			NodeID:  node.NodeID,
 			Name:    node.Name,
 			Country: node.CountryCode,
-			Score:   math.Round(composite*100) / 100,
+			Score:   math.Round(composite*ScoreRoundingFactor) / ScoreRoundingFactor,
 			Reason:  fmt.Sprintf("geo=%.1f lat=%.1f load=%.1f", geoScore, latencyScore, loadScore),
 		})
 	}
@@ -198,17 +228,17 @@ func weightsForPurpose(purpose string) (geo, latency, load float64) {
 // would require lat/lng data; for now same-country = 100, different = 30.
 func geoProximityScore(userCountry, nodeCountry string) float64 {
 	if userCountry == nodeCountry {
-		return 100.0
+		return GeoScoreSameCountry
 	}
-	return 30.0
+	return GeoScoreDifferentCountry
 }
 
 // estimatedLatencyScore returns a 0–100 score. Same region = high score.
 func estimatedLatencyScore(nodeCountry, userCountry string) float64 {
 	if nodeCountry == userCountry {
-		return 90.0
+		return LatencyScoreSameCountry
 	}
-	return 50.0
+	return LatencyScoreDifferentCountry
 }
 
 // loadScore returns a 0–100 score inversely proportional to traffic load.
@@ -216,13 +246,13 @@ func estimatedLatencyScore(nodeCountry, userCountry string) float64 {
 func loadScore(trafficUsedBytes int64) float64 {
 	const highLoadThreshold int64 = 100 * 1 << 30 // 100 GB
 	if trafficUsedBytes <= 0 {
-		return 100.0
+		return LoadScoreZeroTraffic
 	}
 	if trafficUsedBytes >= highLoadThreshold {
-		return 10.0
+		return LoadScoreHighLoad
 	}
 	ratio := float64(trafficUsedBytes) / float64(highLoadThreshold)
-	return 100.0 * (1.0 - ratio)
+	return LoadScoreZeroTraffic * (1.0 - ratio)
 }
 
 // scoreModifierPayload is the JSON payload sent to the routing.score_modifier hook.
@@ -249,7 +279,7 @@ func (r *SmartRouter) applyPluginModifiers(ctx context.Context, req RouteRequest
 		return scores
 	}
 
-	modified, err := r.dispatcher.DispatchSync(ctx, "routing.score_modifier", data)
+	modified, err := r.dispatcher.DispatchSync(ctx, HookRoutingScoreModifier, data)
 	if err != nil {
 		r.logger.Warn("score modifier hook failed, using original scores", slog.Any("error", err))
 		return scores

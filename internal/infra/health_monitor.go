@@ -22,6 +22,22 @@ const (
 	EventNodeHealthChanged domainevent.EventType = "node.health.changed"
 )
 
+// Node status values used in health-change events.
+const (
+	NodeStatusOnline  = "online"
+	NodeStatusOffline = "offline"
+)
+
+// Country code extraction constants.
+const (
+	// FallbackCountryCode is returned when a node name does not contain a valid country prefix.
+	FallbackCountryCode = "XX"
+	// CountryCodeLength is the expected length of ISO 3166-1 alpha-2 country codes.
+	CountryCodeLength = 2
+	// CountryCodeSeparator is the delimiter between country code and node name.
+	CountryCodeSeparator = '-'
+)
+
 // HealthMonitor periodically polls Remnawave for node status and updates the
 // shared in-memory NodeHealthCache. State transitions are published as domain
 // events.
@@ -126,9 +142,9 @@ func (hm *HealthMonitor) checkAll(ctx context.Context) {
 
 // publishTransition emits a node.health.changed event for a single node.
 func (hm *HealthMonitor) publishTransition(ctx context.Context, node NodeHealth) {
-	status := "offline"
+	status := NodeStatusOffline
 	if node.IsOnline {
-		status = "online"
+		status = NodeStatusOnline
 	}
 
 	event := domainevent.New(EventNodeHealthChanged, map[string]any{
@@ -150,8 +166,8 @@ func (hm *HealthMonitor) publishTransition(ctx context.Context, node NodeHealth)
 // convention is that the node name starts with "CC-" (e.g., "US-NewYork-01").
 // If the prefix is absent the function returns "XX".
 func extractCountryCode(name string) string {
-	if len(name) >= 3 && name[2] == '-' {
-		return name[:2]
+	if len(name) >= CountryCodeLength+1 && name[CountryCodeLength] == byte(CountryCodeSeparator) {
+		return name[:CountryCodeLength]
 	}
-	return "XX"
+	return FallbackCountryCode
 }

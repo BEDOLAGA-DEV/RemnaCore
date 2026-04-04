@@ -25,6 +25,14 @@ const (
 	ForwardedLoopbackIP = "127.0.0.1"
 )
 
+// Remnawave API path constants.
+const (
+	APIPathUsers   = "/api/users/"
+	APIPathNodes   = "/api/nodes/"
+	APIPathEnable  = "/enable"
+	APIPathDisable = "/disable"
+)
+
 // isHTTPSuccess reports whether the given HTTP status code is in the 2xx range.
 func isHTTPSuccess(statusCode int) bool {
 	const (
@@ -112,7 +120,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any, dest any
 // CreateUser provisions a new VPN user in Remnawave.
 func (c *Client) CreateUser(ctx context.Context, req CreateUserRequest) (*RemnawaveUser, error) {
 	var resp APIResponse[RemnawaveUser]
-	if err := c.do(ctx, http.MethodPost, "/api/users/", req, &resp); err != nil {
+	if err := c.do(ctx, http.MethodPost, APIPathUsers, req, &resp); err != nil {
 		return nil, err
 	}
 	return &resp.Data, nil
@@ -121,7 +129,7 @@ func (c *Client) CreateUser(ctx context.Context, req CreateUserRequest) (*Remnaw
 // GetUserByUUID retrieves a single VPN user with traffic stats.
 func (c *Client) GetUserByUUID(ctx context.Context, uuid string) (*RemnawaveUserWithTraffic, error) {
 	var resp APIResponse[RemnawaveUserWithTraffic]
-	if err := c.do(ctx, http.MethodGet, "/api/users/"+uuid, nil, &resp); err != nil {
+	if err := c.do(ctx, http.MethodGet, APIPathUsers+uuid, nil, &resp); err != nil {
 		return nil, err
 	}
 	return &resp.Data, nil
@@ -130,7 +138,7 @@ func (c *Client) GetUserByUUID(ctx context.Context, uuid string) (*RemnawaveUser
 // UpdateUser modifies an existing VPN user in Remnawave.
 func (c *Client) UpdateUser(ctx context.Context, req UpdateUserRequest) (*RemnawaveUser, error) {
 	var resp APIResponse[RemnawaveUser]
-	if err := c.do(ctx, http.MethodPut, "/api/users/", req, &resp); err != nil {
+	if err := c.do(ctx, http.MethodPut, APIPathUsers, req, &resp); err != nil {
 		return nil, err
 	}
 	return &resp.Data, nil
@@ -138,23 +146,23 @@ func (c *Client) UpdateUser(ctx context.Context, req UpdateUserRequest) (*Remnaw
 
 // DeleteUser removes a VPN user from Remnawave.
 func (c *Client) DeleteUser(ctx context.Context, uuid string) error {
-	return c.do(ctx, http.MethodDelete, "/api/users/"+uuid, nil, nil)
+	return c.do(ctx, http.MethodDelete, APIPathUsers+uuid, nil, nil)
 }
 
 // EnableUser activates a VPN user in Remnawave.
 func (c *Client) EnableUser(ctx context.Context, uuid string) error {
-	return c.do(ctx, http.MethodPost, "/api/users/"+uuid+"/enable", nil, nil)
+	return c.do(ctx, http.MethodPost, APIPathUsers+uuid+APIPathEnable, nil, nil)
 }
 
 // DisableUser deactivates a VPN user in Remnawave.
 func (c *Client) DisableUser(ctx context.Context, uuid string) error {
-	return c.do(ctx, http.MethodPost, "/api/users/"+uuid+"/disable", nil, nil)
+	return c.do(ctx, http.MethodPost, APIPathUsers+uuid+APIPathDisable, nil, nil)
 }
 
 // GetNodes returns all proxy nodes registered in Remnawave.
 func (c *Client) GetNodes(ctx context.Context) ([]RemnawaveNode, error) {
 	var resp APIResponse[[]RemnawaveNode]
-	if err := c.do(ctx, http.MethodGet, "/api/nodes/", nil, &resp); err != nil {
+	if err := c.do(ctx, http.MethodGet, APIPathNodes, nil, &resp); err != nil {
 		return nil, err
 	}
 	return resp.Data, nil
