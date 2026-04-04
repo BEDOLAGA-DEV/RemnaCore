@@ -5,8 +5,11 @@ import (
 
 	"github.com/stretchr/testify/mock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
-	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent/domaineventtest"
 )
+
+// MockPublisher is an alias for the shared domaineventtest.MockPublisher.
+type MockPublisher = domaineventtest.MockPublisher
 
 // MockRepository is a testify mock implementation of identity.Repository.
 // It is exported so both in-package and external test files can share it.
@@ -120,15 +123,3 @@ func (m *MockRepository) DeleteUserPasswordResets(ctx context.Context, userID st
 	return args.Error(0)
 }
 
-// MockPublisher is a testify mock implementation of domainevent.Publisher.
-type MockPublisher struct {
-	mock.Mock
-}
-
-func (m *MockPublisher) Publish(ctx context.Context, event domainevent.Event) error {
-	args := m.Called(ctx, event)
-	return args.Error(0)
-}
-
-// Ensure MockPublisher satisfies domainevent.Publisher at compile time.
-var _ domainevent.Publisher = (*MockPublisher)(nil)

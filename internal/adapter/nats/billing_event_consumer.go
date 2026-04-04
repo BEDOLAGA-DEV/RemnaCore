@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ThreeDotsLabs/watermill"
@@ -81,7 +82,7 @@ const entityLockTTL = 10 * time.Minute
 // subjects concurrently for the same aggregate.
 type entityLock struct {
 	mu       sync.Mutex
-	lastUsed time.Time
+	lastUsed atomic.Int64 // UnixNano timestamp; atomic to avoid data races with evictor
 }
 
 // BillingEventConsumer subscribes to billing domain events on NATS and routes
@@ -135,7 +136,7 @@ func NewBillingEventConsumer(
 func (c *BillingEventConsumer) getEntityLock(entityID string) *entityLock {
 	val, _ := c.entityLocks.LoadOrStore(entityID, &entityLock{})
 	lock := val.(*entityLock)
-	lock.lastUsed = time.Now()
+	lock.lastUsed.Store(time.Now().UnixNano())
 	return lock
 }
 
@@ -151,10 +152,10 @@ func (c *BillingEventConsumer) evictStaleLocks(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			cutoff := time.Now().Add(-entityLockTTL)
+			cutoff := time.Now().Add(-entityLockTTL).UnixNano()
 			c.entityLocks.Range(func(key, value any) bool {
 				lock := value.(*entityLock)
-				if lock.lastUsed.Before(cutoff) {
+				if lock.lastUsed.Load() < cutoff {
 					c.entityLocks.Delete(key)
 				}
 				return true

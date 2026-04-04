@@ -5,8 +5,12 @@ import (
 
 	"github.com/stretchr/testify/mock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller"
-	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent/domaineventtest"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager/txmanagertest"
 )
+
+// MockPublisher is an alias for the shared domaineventtest.MockPublisher.
+type MockPublisher = domaineventtest.MockPublisher
 
 // MockTenantRepository is a testify mock implementation of reseller.TenantRepository.
 type MockTenantRepository struct {
@@ -110,26 +114,5 @@ func (m *MockCommissionRepository) UpdateResellerBalance(ctx context.Context, re
 // Ensure MockCommissionRepository satisfies reseller.CommissionRepository at compile time.
 var _ reseller.CommissionRepository = (*MockCommissionRepository)(nil)
 
-// MockPublisher is a testify mock implementation of domainevent.Publisher.
-type MockPublisher struct {
-	mock.Mock
-}
-
-func (m *MockPublisher) Publish(ctx context.Context, event domainevent.Event) error {
-	args := m.Called(ctx, event)
-	return args.Error(0)
-}
-
-// Ensure MockPublisher satisfies domainevent.Publisher at compile time.
-var _ domainevent.Publisher = (*MockPublisher)(nil)
-
-// --- NoopTxRunner ---
-
-// NoopTxRunner implements txmanager.Runner by executing fn directly without a
-// real database transaction. This is suitable for unit tests.
-type NoopTxRunner struct{}
-
-// RunInTx executes fn with the original context.
-func (NoopTxRunner) RunInTx(ctx context.Context, fn func(ctx context.Context) error) error {
-	return fn(ctx)
-}
+// NoopTxRunner is an alias for the shared txmanagertest.NoopTxRunner.
+type NoopTxRunner = txmanagertest.NoopTxRunner

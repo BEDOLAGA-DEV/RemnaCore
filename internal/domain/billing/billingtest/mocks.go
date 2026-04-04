@@ -9,6 +9,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent/domaineventtest"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager/txmanagertest"
 )
 
 // MockEventPublisher is an alias for the shared domaineventtest.MockPublisher
@@ -222,15 +223,5 @@ func (m *MockDomainRateLimiter) AllowCheckout(ctx context.Context, userID string
 	return args.Bool(0), args.Error(1)
 }
 
-// --- NoopTxRunner ---
-
-// NoopTxRunner implements txmanager.Runner by executing fn directly without a
-// real database transaction. This is suitable for unit tests where repositories
-// and publishers are mocked.
-type NoopTxRunner struct{}
-
-// RunInTx executes fn with the original context, providing pass-through
-// semantics for tests.
-func (NoopTxRunner) RunInTx(ctx context.Context, fn func(ctx context.Context) error) error {
-	return fn(ctx)
-}
+// NoopTxRunner is an alias for the shared txmanagertest.NoopTxRunner.
+type NoopTxRunner = txmanagertest.NoopTxRunner

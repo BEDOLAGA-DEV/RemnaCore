@@ -16,10 +16,6 @@ type RateLimiter interface {
 }
 
 const (
-	// ForwardedForHeader is the standard header for identifying client IPs
-	// behind proxies.
-	ForwardedForHeader = "X-Forwarded-For"
-
 	// RateLimitedMessage is the JSON body returned when a client exceeds the
 	// rate limit.
 	RateLimitedMessage = `{"error":"rate limit exceeded"}`
@@ -65,7 +61,7 @@ func rateLimitKey(r *http.Request) string {
 // clientIP extracts the client IP from X-Forwarded-For (first entry) or falls
 // back to RemoteAddr.
 func clientIP(r *http.Request) string {
-	if xff := r.Header.Get(ForwardedForHeader); xff != "" {
+	if xff := r.Header.Get(httpconst.HeaderForwardedFor); xff != "" {
 		// X-Forwarded-For may contain a comma-separated list; take the first.
 		if idx := strings.IndexByte(xff, ','); idx != -1 {
 			return strings.TrimSpace(xff[:idx])

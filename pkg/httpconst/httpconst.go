@@ -36,6 +36,14 @@ const (
 	// HeaderAPIKey is the HTTP header used to carry the tenant API key.
 	HeaderAPIKey = "X-API-Key"
 
+	// HeaderForwardedFor is the standard header for identifying client IPs
+	// behind proxies.
+	HeaderForwardedFor = "X-Forwarded-For"
+
+	// HeaderForwardedProto is the standard header for forwarding the original
+	// protocol (HTTP/HTTPS) through a reverse proxy.
+	HeaderForwardedProto = "X-Forwarded-Proto"
+
 	// MaxWebhookBodySize is the maximum allowed size for incoming webhook
 	// request bodies (1 MiB).
 	MaxWebhookBodySize = 1 << 20
