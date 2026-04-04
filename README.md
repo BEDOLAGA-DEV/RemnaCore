@@ -18,7 +18,7 @@ Modular VPN subscription sales platform built on Go, wrapping [Remnawave](https:
 | HTTP | chi v5 |
 | DI | Uber Fx |
 | Database | PostgreSQL 18 (sqlc + Atlas migrations) |
-| Cache | Valkey 8.1 (Redis-compatible) |
+| Cache | Valkey 9 (Redis-compatible) |
 | Events | NATS JetStream 2.12 + Watermill |
 | Plugins | Extism/wazero (WASM) |
 | Frontend | React 19, TypeScript, Vite, TanStack Query/Router, Zustand, Tailwind CSS |

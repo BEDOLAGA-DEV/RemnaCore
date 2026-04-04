@@ -52,7 +52,7 @@ services:
 
   # ── Valkey (Redis-compatible) ───────────────────────────────────────────────
   valkey:
-    image: valkey/valkey:8.1-alpine
+    image: valkey/valkey:9-alpine
     ports:
       - "${VALKEY_PORT:-6379}:6379"
     command: --maxmemory 256mb --maxmemory-policy allkeys-lru
