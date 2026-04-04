@@ -2,10 +2,33 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 )
+
+// Drain configuration.
+const (
+	// DrainTimeout is the maximum time to wait for in-flight requests to
+	// complete before force-closing a draining pool.
+	DrainTimeout = 30 * time.Second
+)
+
+// WASM runner corruption indicators. If a runner error contains any of these
+// substrings (case-insensitive), the runner is considered corrupted and must
+// not be returned to the pool.
+var wasmCorruptionIndicators = []string{
+	"wasm",
+	"memory",
+	"unreachable",
+	"out of fuel",
+	"panic",
+	"trap",
+}
 
 // WASMRunner abstracts the execution of WASM functions so the runtime pool and
 // dispatcher can be tested without a real Extism/wazero runtime.
@@ -25,6 +48,11 @@ type WASMRunnerFactory func(wasmBytes []byte, config map[string]string) (WASMRun
 // PluginInstancePool manages a pool of WASMRunner instances for a single
 // plugin. It uses a buffered channel as a semaphore-style pool, allowing
 // concurrent callers to each acquire their own instance.
+//
+// The pool supports graceful drain: when replaced during a hot reload, the old
+// pool stops accepting new acquires while in-flight requests finish on their
+// existing runners. Once all in-flight runners are released, the pool closes
+// them and terminates.
 type PluginInstancePool struct {
 	slug     string
 	factory  WASMRunnerFactory
@@ -33,6 +61,12 @@ type PluginInstancePool struct {
 	manifest *Manifest
 	pool     chan WASMRunner
 	poolSize int
+
+	// Drain state.
+	mu       sync.Mutex
+	draining bool
+	active   int32        // count of currently acquired (in-flight) runners
+	drained  chan struct{} // closed when active reaches 0 after drain starts
 }
 
 // newPluginInstancePool pre-creates size WASM instances and returns a pool.
@@ -54,6 +88,7 @@ func newPluginInstancePool(slug string, factory WASMRunnerFactory, wasm []byte, 
 		manifest: manifest,
 		pool:     make(chan WASMRunner, size),
 		poolSize: size,
+		drained:  make(chan struct{}),
 	}
 
 	// Pre-create all instances.
@@ -70,20 +105,49 @@ func newPluginInstancePool(slug string, factory WASMRunnerFactory, wasm []byte, 
 }
 
 // Acquire gets an instance from the pool, blocking until one is available or
-// the context is cancelled/timed out.
+// the context is cancelled/timed out. Returns an error if the pool is
+// draining.
 func (p *PluginInstancePool) Acquire(ctx context.Context) (WASMRunner, error) {
+	p.mu.Lock()
+	if p.draining {
+		p.mu.Unlock()
+		return nil, fmt.Errorf("plugin %s is draining, cannot acquire instance", p.slug)
+	}
+	p.mu.Unlock()
+
 	select {
 	case runner := <-p.pool:
+		atomic.AddInt32(&p.active, 1)
 		return runner, nil
 	case <-ctx.Done():
 		return nil, fmt.Errorf("acquire instance for %s: %w", p.slug, ctx.Err())
 	}
 }
 
-// Release returns an instance to the pool. If the pool channel is
-// unexpectedly full (which should not happen during normal operation), the
-// extra instance is closed instead.
+// Release returns an instance to the pool. If the pool is draining, the
+// runner is closed immediately instead, and when all in-flight runners have
+// been released the drain-complete signal is sent.
 func (p *PluginInstancePool) Release(runner WASMRunner) {
+	remaining := atomic.AddInt32(&p.active, -1)
+
+	p.mu.Lock()
+	isDraining := p.draining
+	p.mu.Unlock()
+
+	if isDraining {
+		// Don't return to pool — close the runner.
+		_ = runner.Close()
+		if remaining <= 0 {
+			// Signal drain complete. Use select to avoid double-close.
+			select {
+			case <-p.drained:
+			default:
+				close(p.drained)
+			}
+		}
+		return
+	}
+
 	select {
 	case p.pool <- runner:
 	default:
@@ -92,8 +156,56 @@ func (p *PluginInstancePool) Release(runner WASMRunner) {
 	}
 }
 
-// Close drains and shuts down all instances in the pool.
+// Drain stops accepting new acquires, waits for all in-flight runners to be
+// released, then closes all remaining idle instances. Returns when fully
+// drained or the timeout is exceeded.
+func (p *PluginInstancePool) Drain(ctx context.Context) error {
+	p.mu.Lock()
+	if p.draining {
+		p.mu.Unlock()
+		return nil
+	}
+	p.draining = true
+	p.drained = make(chan struct{})
+	currentActive := atomic.LoadInt32(&p.active)
+	p.mu.Unlock()
+
+	// If no active instances, drain immediately.
+	if currentActive <= 0 {
+		close(p.drained)
+	}
+
+	// Wait for in-flight runners to complete.
+	drainCtx, cancel := context.WithTimeout(ctx, DrainTimeout)
+	defer cancel()
+
+	select {
+	case <-p.drained:
+		// All in-flight runners completed gracefully.
+	case <-drainCtx.Done():
+		// Timeout — force close remaining.
+		slog.Warn("drain timeout exceeded, force closing remaining runners",
+			slog.String("slug", p.slug),
+			slog.Int("active", int(atomic.LoadInt32(&p.active))),
+		)
+	}
+
+	// Close all remaining idle instances in the pool channel.
+	close(p.pool)
+	for runner := range p.pool {
+		_ = runner.Close()
+	}
+
+	return nil
+}
+
+// Close immediately closes all idle instances without waiting for in-flight
+// runners. Use Drain for graceful shutdown during hot reloads.
 func (p *PluginInstancePool) Close() {
+	p.mu.Lock()
+	p.draining = true
+	p.mu.Unlock()
+
 	close(p.pool)
 	for runner := range p.pool {
 		_ = runner.Close()
@@ -103,6 +215,31 @@ func (p *PluginInstancePool) Close() {
 // Size returns the configured pool size.
 func (p *PluginInstancePool) Size() int {
 	return p.poolSize
+}
+
+// replaceInstance creates a new WASM runner via the factory and attempts to
+// add it to the pool. If the pool is full or creation fails, the attempt is
+// silently abandoned (the pool shrinks by one until traffic drops).
+func (p *PluginInstancePool) replaceInstance() {
+	if p.factory == nil {
+		return
+	}
+
+	newRunner, err := p.factory(p.wasm, p.config)
+	if err != nil {
+		slog.Warn("failed to replace corrupted WASM instance",
+			slog.String("slug", p.slug),
+			slog.String("error", err.Error()),
+		)
+		return
+	}
+
+	select {
+	case p.pool <- newRunner:
+		slog.Info("replaced corrupted WASM instance", slog.String("slug", p.slug))
+	default:
+		_ = newRunner.Close() // pool full
+	}
 }
 
 // PluginInstance holds metadata for a loaded plugin. It is used by
@@ -138,8 +275,9 @@ func NewRuntimePool(logger *slog.Logger, factory WASMRunnerFactory) *RuntimePool
 }
 
 // LoadPlugin creates a pool of WASM instances for the plugin and stores
-// metadata. If a plugin with the same slug is already loaded it is unloaded
-// first.
+// metadata. If a plugin with the same slug is already loaded, the old pool is
+// drained gracefully in the background while the new pool starts serving
+// immediately.
 func (rp *RuntimePool) LoadPlugin(p *Plugin) error {
 	if p == nil {
 		return fmt.Errorf("cannot load nil plugin")
@@ -148,9 +286,10 @@ func (rp *RuntimePool) LoadPlugin(p *Plugin) error {
 	rp.mu.Lock()
 	defer rp.mu.Unlock()
 
-	// Unload existing pool for this slug if present.
+	// Drain existing pool gracefully in the background. The new pool is
+	// installed immediately so new requests are never blocked by the drain.
 	if existing, ok := rp.plugins[p.Slug]; ok {
-		existing.Close()
+		go existing.Drain(context.Background())
 		delete(rp.plugins, p.Slug)
 		delete(rp.metadata, p.Slug)
 	}
@@ -195,8 +334,8 @@ func (rp *RuntimePool) poolSizeForSlug(slug string) int {
 	return 0
 }
 
-// UnloadPlugin removes a plugin instance pool from the runtime and closes all
-// its runners.
+// UnloadPlugin removes a plugin instance pool from the runtime and drains all
+// its runners gracefully.
 func (rp *RuntimePool) UnloadPlugin(slug string) error {
 	rp.mu.Lock()
 	defer rp.mu.Unlock()
@@ -206,7 +345,7 @@ func (rp *RuntimePool) UnloadPlugin(slug string) error {
 	}
 
 	if pool, ok := rp.plugins[slug]; ok {
-		pool.Close()
+		go pool.Drain(context.Background())
 		delete(rp.plugins, slug)
 	}
 
@@ -229,7 +368,9 @@ func (rp *RuntimePool) GetInstance(slug string) (*PluginInstance, error) {
 }
 
 // CallHook acquires a WASM runner from the plugin's pool, invokes the named
-// function, and returns the runner to the pool. The context controls
+// function, and returns the runner to the pool. If the runner returns an error
+// indicating WASM corruption (memory fault, trap, etc.), the runner is
+// discarded and a replacement is created asynchronously. The context controls
 // both pool acquisition timeout and function execution timeout.
 func (rp *RuntimePool) CallHook(ctx context.Context, slug, funcName string, input []byte) ([]byte, error) {
 	rp.mu.RLock()
@@ -256,17 +397,55 @@ func (rp *RuntimePool) CallHook(ctx context.Context, slug, funcName string, inpu
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrHookTimeout, err)
 	}
-	defer pool.Release(runner)
 
-	output, err := runner.Call(ctx, funcName, input)
-	if err != nil {
+	output, callErr := runner.Call(ctx, funcName, input)
+	if callErr != nil {
+		// Check if the runner is corrupted — if so, discard it and replace.
+		if isRunnerCorrupted(callErr) {
+			_ = runner.Close()
+			// Decrement active count manually since we are NOT calling Release.
+			atomic.AddInt32(&pool.active, -1)
+			// Create a replacement runner in the background.
+			go pool.replaceInstance()
+
+			rp.logger.Warn("corrupted WASM runner discarded",
+				slog.String("slug", slug),
+				slog.String("func", funcName),
+				slog.String("error", callErr.Error()),
+			)
+			return nil, fmt.Errorf("plugin %s runner corrupted: %w", slug, callErr)
+		}
+
+		// Non-corruption error — return runner to pool normally.
+		pool.Release(runner)
+
 		// Check if the context was cancelled while executing.
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("%w: %v", ErrHookTimeout, ctx.Err())
 		}
-		return nil, err
+		return nil, callErr
 	}
+
+	pool.Release(runner)
 	return output, nil
+}
+
+// isRunnerCorrupted inspects an error from a WASM runner call and returns true
+// if the error indicates the runner is in a corrupted state and must not be
+// reused. Context cancellation/timeout errors are NOT treated as corruption
+// since the runner itself may still be healthy.
+func isRunnerCorrupted(err error) bool {
+	// Context errors are not corruption — the runner may still be fine.
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return false
+	}
+	errMsg := strings.ToLower(err.Error())
+	for _, indicator := range wasmCorruptionIndicators {
+		if strings.Contains(errMsg, indicator) {
+			return true
+		}
+	}
+	return false
 }
 
 // SetRunnerForTest replaces the entire pool for the given plugin slug with a
@@ -292,6 +471,7 @@ func (rp *RuntimePool) SetRunnerForTest(slug string, runner WASMRunner) {
 		slug:     slug,
 		pool:     pool,
 		poolSize: 1,
+		drained:  make(chan struct{}),
 	}
 }
 

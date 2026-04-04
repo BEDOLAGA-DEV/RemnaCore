@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -53,6 +54,22 @@ func testPluginWithPoolSize(slug string, poolSize int) *Plugin {
 	}
 	p, _ := NewPlugin(m, []byte("fake-wasm"), time.Now())
 	return p
+}
+
+// trackingMockRunner is a mock runner that calls onClose when Close is called.
+type trackingMockRunner struct {
+	onClose func()
+}
+
+func (m *trackingMockRunner) Call(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+	return nil, nil
+}
+
+func (m *trackingMockRunner) Close() error {
+	if m.onClose != nil {
+		m.onClose()
+	}
+	return nil
 }
 
 func TestRuntimePool_LoadPlugin(t *testing.T) {
@@ -125,57 +142,23 @@ func TestRuntimePool_LoadPlugin_NilPlugin(t *testing.T) {
 
 func TestRuntimePool_LoadPlugin_ReplacesExisting(t *testing.T) {
 	var closedCount atomic.Int32
-	factory := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
-		return &mockRunner{
-			callFn: func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
-				return nil, nil
-			},
-			// Track closes via the atomic counter instead of the struct field
-			// since we create multiple instances.
-		}, nil
-	}
 
-	// We'll track closes by wrapping. Use a simpler approach: count instances
-	// created for each Load call.
-	var firstBatchCount, secondBatchCount atomic.Int32
-	loadCount := 0
 	factoryWithTracking := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
-		runner := &trackingMockRunner{onClose: func() { closedCount.Add(1) }}
-		if loadCount == 0 {
-			firstBatchCount.Add(1)
-		} else {
-			secondBatchCount.Add(1)
-		}
-		_ = factory // suppress unused
-		return runner, nil
+		return &trackingMockRunner{onClose: func() { closedCount.Add(1) }}, nil
 	}
 
 	rp := NewRuntimePool(testErrorLogger(), factoryWithTracking)
 
 	p := testPlugin("test-plugin")
 	require.NoError(t, rp.LoadPlugin(p))
-	loadCount = 1
 	require.NoError(t, rp.LoadPlugin(p))
 
-	// All first-batch runners should have been closed.
-	assert.Equal(t, firstBatchCount.Load(), closedCount.Load())
+	// Drain runs in the background. Wait briefly for it to complete.
+	assert.Eventually(t, func() bool {
+		return closedCount.Load() == int32(DefaultPoolSize)
+	}, time.Second, 5*time.Millisecond,
+		"first-batch runners should be closed via drain")
 	assert.Len(t, rp.LoadedSlugs(), 1)
-}
-
-// trackingMockRunner is a mock runner that calls onClose when Close is called.
-type trackingMockRunner struct {
-	onClose func()
-}
-
-func (m *trackingMockRunner) Call(ctx context.Context, funcName string, input []byte) ([]byte, error) {
-	return nil, nil
-}
-
-func (m *trackingMockRunner) Close() error {
-	if m.onClose != nil {
-		m.onClose()
-	}
-	return nil
 }
 
 func TestRuntimePool_UnloadPlugin(t *testing.T) {
@@ -190,8 +173,11 @@ func TestRuntimePool_UnloadPlugin(t *testing.T) {
 	require.NoError(t, rp.LoadPlugin(p))
 	require.NoError(t, rp.UnloadPlugin("test-plugin"))
 
-	// All pool instances should have been closed.
-	assert.Equal(t, int32(DefaultPoolSize), closedCount.Load())
+	// Drain runs in the background. Wait briefly for it to complete.
+	assert.Eventually(t, func() bool {
+		return closedCount.Load() == int32(DefaultPoolSize)
+	}, time.Second, 5*time.Millisecond,
+		"all pool instances should be closed via drain")
 	assert.Empty(t, rp.LoadedSlugs())
 }
 
@@ -259,9 +245,10 @@ func TestRuntimePool_CallHook_ContextCancelled(t *testing.T) {
 	assert.ErrorIs(t, err, ErrHookTimeout)
 }
 
-func TestRuntimePool_CallHook_RunnerError(t *testing.T) {
+func TestRuntimePool_CallHook_RunnerError_NonCorruption(t *testing.T) {
+	// A normal (non-WASM-corruption) error returns the runner to the pool.
 	factory := mockFactory(func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
-		return nil, errors.New("wasm trap")
+		return nil, errors.New("business logic error")
 	})
 
 	rp := NewRuntimePool(testErrorLogger(), factory)
@@ -271,7 +258,12 @@ func TestRuntimePool_CallHook_RunnerError(t *testing.T) {
 
 	_, err := rp.CallHook(context.Background(), "test-plugin", "hook.test", nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "wasm trap")
+	assert.Contains(t, err.Error(), "business logic error")
+
+	// Runner should still be usable (returned to pool).
+	_, err = rp.CallHook(context.Background(), "test-plugin", "hook.test", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "business logic error")
 }
 
 func TestRuntimePool_LoadPlugin_NilFactory(t *testing.T) {
@@ -470,4 +462,281 @@ func TestRuntimePool_SetRunnerForTest(t *testing.T) {
 	output, err := rp.CallHook(context.Background(), "test-plugin", "hook.test", nil)
 	require.NoError(t, err)
 	assert.Equal(t, expected, output)
+}
+
+// --- Drain Tests ---
+
+func TestPluginInstancePool_DrainWaitsForActive(t *testing.T) {
+	factory := mockFactory(nil)
+	pool, err := newPluginInstancePool("drain-test", factory, []byte("wasm"), nil, nil, 2)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	// Acquire an instance (simulate an in-flight request).
+	runner, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+
+	// Start drain in background.
+	drainDone := make(chan struct{})
+	go func() {
+		_ = pool.Drain(context.Background())
+		close(drainDone)
+	}()
+
+	// Verify drain is blocking (not completed yet).
+	select {
+	case <-drainDone:
+		t.Fatal("drain completed before in-flight runner was released")
+	case <-time.After(50 * time.Millisecond):
+		// Expected: drain should be waiting.
+	}
+
+	// Release the runner — drain should complete.
+	pool.Release(runner)
+
+	select {
+	case <-drainDone:
+		// Expected: drain completed.
+	case <-time.After(time.Second):
+		t.Fatal("drain did not complete after all runners were released")
+	}
+}
+
+func TestPluginInstancePool_DrainRejectsNewAcquire(t *testing.T) {
+	factory := mockFactory(nil)
+	pool, err := newPluginInstancePool("drain-reject", factory, []byte("wasm"), nil, nil, 2)
+	require.NoError(t, err)
+
+	// Start drain (no active runners, so it completes quickly but marks as draining).
+	_ = pool.Drain(context.Background())
+
+	// Try to acquire — should fail because pool is draining.
+	_, err = pool.Acquire(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "draining")
+}
+
+func TestPluginInstancePool_DrainIdempotent(t *testing.T) {
+	factory := mockFactory(nil)
+	pool, err := newPluginInstancePool("drain-idempotent", factory, []byte("wasm"), nil, nil, 2)
+	require.NoError(t, err)
+
+	// Drain twice should not panic.
+	err = pool.Drain(context.Background())
+	require.NoError(t, err)
+
+	err = pool.Drain(context.Background())
+	require.NoError(t, err)
+}
+
+func TestPluginInstancePool_DrainClosesIdleRunners(t *testing.T) {
+	var closedCount atomic.Int32
+	factory := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
+		return &trackingMockRunner{onClose: func() { closedCount.Add(1) }}, nil
+	}
+
+	const poolSize = 3
+	pool, err := newPluginInstancePool("drain-idle", factory, []byte("wasm"), nil, nil, poolSize)
+	require.NoError(t, err)
+
+	// Drain without any active runners — all idle runners should be closed.
+	err = pool.Drain(context.Background())
+	require.NoError(t, err)
+
+	assert.Equal(t, int32(poolSize), closedCount.Load())
+}
+
+func TestLoadPlugin_GracefulDrainOnReplace(t *testing.T) {
+	// When a plugin is replaced, in-flight requests on the old pool should
+	// complete normally while the new pool starts serving immediately.
+	var oldClosedCount atomic.Int32
+
+	factory := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
+		return &trackingMockRunner{onClose: func() { oldClosedCount.Add(1) }}, nil
+	}
+
+	rp := NewRuntimePool(testErrorLogger(), factory)
+
+	p := testPlugin("drain-replace")
+	require.NoError(t, rp.LoadPlugin(p))
+
+	// Acquire a runner from the first pool (simulate in-flight request).
+	rp.mu.RLock()
+	oldPool := rp.plugins["drain-replace"]
+	rp.mu.RUnlock()
+
+	runner, err := oldPool.Acquire(context.Background())
+	require.NoError(t, err)
+
+	// Load the plugin again — replaces pool, old pool drains in background.
+	require.NoError(t, rp.LoadPlugin(p))
+
+	// Old pool drain is blocked waiting for the in-flight runner. No runners
+	// should be closed yet because Drain waits for all in-flight runners
+	// before closing idle ones.
+	time.Sleep(20 * time.Millisecond)
+	assert.Less(t, oldClosedCount.Load(), int32(DefaultPoolSize),
+		"drain should not have closed all runners while one is still in-flight")
+
+	// Release the in-flight runner — drain should now complete and close all.
+	oldPool.Release(runner)
+
+	assert.Eventually(t, func() bool {
+		return oldClosedCount.Load() == int32(DefaultPoolSize)
+	}, time.Second, 5*time.Millisecond,
+		"all old runners should be closed after in-flight release")
+
+	// New pool should be fully operational.
+	output, err := rp.CallHook(context.Background(), "drain-replace", "hook.test", nil)
+	require.NoError(t, err)
+	assert.Nil(t, output) // trackingMockRunner returns nil
+}
+
+// --- WASM Health Check Tests ---
+
+func TestCallHook_CorruptedRunnerDiscarded(t *testing.T) {
+	callCount := 0
+	var replacedCount atomic.Int32
+
+	factory := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
+		callCount++
+		return &mockRunner{
+			callFn: func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+				// First call returns a corruption error.
+				return nil, fmt.Errorf("wasm: unreachable instruction")
+			},
+		}, nil
+	}
+
+	rp := NewRuntimePool(testErrorLogger(), factory)
+
+	p := testPluginWithPoolSize("corrupt-test", 1)
+	require.NoError(t, rp.LoadPlugin(p))
+
+	// Patch factory to track replacements after initial load.
+	rp.mu.Lock()
+	pool := rp.plugins["corrupt-test"]
+	originalFactory := pool.factory
+	pool.factory = func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
+		replacedCount.Add(1)
+		return originalFactory(wasmBytes, config)
+	}
+	rp.mu.Unlock()
+
+	_, err := rp.CallHook(context.Background(), "corrupt-test", "hook.test", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "corrupted")
+
+	// Replacement should be created asynchronously.
+	assert.Eventually(t, func() bool {
+		return replacedCount.Load() >= 1
+	}, time.Second, 5*time.Millisecond,
+		"a replacement runner should be created after corruption")
+}
+
+func TestCallHook_NonCorruptionErrorReturnsRunner(t *testing.T) {
+	var closedCount atomic.Int32
+	callAttempts := atomic.Int32{}
+
+	factory := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
+		return &mockRunner{
+			callFn: func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+				callAttempts.Add(1)
+				return nil, errors.New("validation failed")
+			},
+		}, nil
+	}
+
+	rp := NewRuntimePool(testErrorLogger(), factory)
+
+	p := testPluginWithPoolSize("non-corrupt", 1)
+	require.NoError(t, rp.LoadPlugin(p))
+
+	// First call — error but not corruption.
+	_, err := rp.CallHook(context.Background(), "non-corrupt", "hook.test", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "validation failed")
+
+	// Second call — runner should still be available (was returned to pool).
+	_, err = rp.CallHook(context.Background(), "non-corrupt", "hook.test", nil)
+	require.Error(t, err)
+	assert.Equal(t, int32(2), callAttempts.Load(), "runner should be reused")
+	assert.Equal(t, int32(0), closedCount.Load(), "runner should not have been closed")
+}
+
+func TestIsRunnerCorrupted(t *testing.T) {
+	tests := []struct {
+		name      string
+		err       error
+		corrupted bool
+	}{
+		{
+			name:      "wasm unreachable",
+			err:       fmt.Errorf("wasm: unreachable"),
+			corrupted: true,
+		},
+		{
+			name:      "out of fuel",
+			err:       fmt.Errorf("out of fuel"),
+			corrupted: true,
+		},
+		{
+			name:      "memory limit exceeded",
+			err:       fmt.Errorf("memory limit exceeded"),
+			corrupted: true,
+		},
+		{
+			name:      "wasm trap",
+			err:       fmt.Errorf("wasm trap: integer overflow"),
+			corrupted: true,
+		},
+		{
+			name:      "panic in wasm",
+			err:       fmt.Errorf("panic: runtime error"),
+			corrupted: true,
+		},
+		{
+			name:      "trap instruction",
+			err:       fmt.Errorf("trap: call stack exhausted"),
+			corrupted: true,
+		},
+		{
+			name:      "context deadline exceeded",
+			err:       context.DeadlineExceeded,
+			corrupted: false,
+		},
+		{
+			name:      "context canceled",
+			err:       context.Canceled,
+			corrupted: false,
+		},
+		{
+			name:      "wrapped context deadline",
+			err:       fmt.Errorf("call failed: %w", context.DeadlineExceeded),
+			corrupted: false,
+		},
+		{
+			name:      "wrapped context canceled",
+			err:       fmt.Errorf("call failed: %w", context.Canceled),
+			corrupted: false,
+		},
+		{
+			name:      "normal business error",
+			err:       fmt.Errorf("validation failed"),
+			corrupted: false,
+		},
+		{
+			name:      "network error",
+			err:       fmt.Errorf("connection refused"),
+			corrupted: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isRunnerCorrupted(tt.err)
+			assert.Equal(t, tt.corrupted, result)
+		})
+	}
 }
