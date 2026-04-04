@@ -5,13 +5,11 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
 )
 
 const (
-	// CheckoutRateLimitMax is the maximum number of checkout attempts per user
-	// within the checkout rate limit window.
-	CheckoutRateLimitMax = 10
-
 	// CheckoutRateLimitWindow is the sliding window duration for checkout rate
 	// limiting.
 	CheckoutRateLimitWindow = 1 * time.Hour
@@ -29,10 +27,16 @@ type DomainRateLimiter struct {
 }
 
 // NewDomainRateLimiter creates a DomainRateLimiter backed by the given Valkey
-// client with predefined limits for checkout.
-func NewDomainRateLimiter(client *redis.Client) *DomainRateLimiter {
+// client. The checkout rate limit threshold is read from cfg; if zero, the
+// platform default is used.
+func NewDomainRateLimiter(client *redis.Client, cfg *config.Config) *DomainRateLimiter {
+	checkoutMax := cfg.RateLimit.CheckoutMaxPerHour
+	if checkoutMax == 0 {
+		checkoutMax = config.DefaultCheckoutMaxPerHour
+	}
+
 	return &DomainRateLimiter{
-		checkoutLimiter: NewSlidingWindowRateLimiter(client, CheckoutRateLimitMax, CheckoutRateLimitWindow),
+		checkoutLimiter: NewSlidingWindowRateLimiter(client, checkoutMax, CheckoutRateLimitWindow),
 	}
 }
 

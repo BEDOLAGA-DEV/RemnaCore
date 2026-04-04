@@ -26,6 +26,8 @@ const (
 	DefaultMaxConcurrentChecks    = 50
 	DefaultSpeedTestPort          = 4203
 	DefaultSubscriptionProxyPort  = 4100
+	DefaultCheckoutMaxPerHour     = 10
+	DefaultSubscriptionMaxPerDay  = 5
 )
 
 // DefaultAppVersion is used when no APP_VERSION environment variable is set.
@@ -95,6 +97,12 @@ type TracingConfig struct {
 	Endpoint string `koanf:"endpoint"` // OTLP HTTP endpoint (e.g., "localhost:4318"); empty disables tracing
 }
 
+// RateLimitConfig holds domain-level rate limit thresholds.
+type RateLimitConfig struct {
+	CheckoutMaxPerHour    int `koanf:"checkout_max_per_hour"`
+	SubscriptionMaxPerDay int `koanf:"subscription_max_per_day"`
+}
+
 // CORSConfig holds the Cross-Origin Resource Sharing configuration.
 type CORSConfig struct {
 	AllowedOrigins []string `koanf:"allowed_origins"`
@@ -113,6 +121,7 @@ type Config struct {
 	Infra     InfraConfig     `koanf:"infra"`
 	CORS      CORSConfig      `koanf:"cors"`
 	Tracing   TracingConfig   `koanf:"tracing"`
+	RateLimit RateLimitConfig `koanf:"ratelimit"`
 }
 
 // requiredField maps an environment variable name to the koanf key path used
@@ -156,13 +165,15 @@ func Load() (*Config, error) {
 		"infra.max_concurrent_checks":    DefaultMaxConcurrentChecks,
 		"infra.speed_test_port":          DefaultSpeedTestPort,
 		"infra.subscription_proxy_port":  DefaultSubscriptionProxyPort,
+		"ratelimit.checkout_max_per_hour":    DefaultCheckoutMaxPerHour,
+		"ratelimit.subscription_max_per_day": DefaultSubscriptionMaxPerDay,
 	}
 	for key, val := range defaults {
 		k.Set(key, val) //nolint:errcheck // Set on a fresh koanf instance cannot fail
 	}
 
 	// Load each prefix group from environment variables.
-	prefixes := []string{"APP_", "DATABASE_", "VALKEY_", "NATS_", "JWT_", "REMNAWAVE_", "BILLING_", "PLUGIN_", "TELEGRAM_", "INFRA_", "CORS_", "TRACING_"}
+	prefixes := []string{"APP_", "DATABASE_", "VALKEY_", "NATS_", "JWT_", "REMNAWAVE_", "BILLING_", "PLUGIN_", "TELEGRAM_", "INFRA_", "CORS_", "TRACING_", "RATELIMIT_"}
 	for _, prefix := range prefixes {
 		provider := env.Provider(prefix, ".", func(s string) string {
 			// Strip prefix then lowercase and replace _ with . for nesting
