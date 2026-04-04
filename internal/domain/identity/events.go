@@ -23,41 +23,41 @@ type EventType = domainevent.EventType
 
 // NewUserRegisteredEvent creates an event for a newly registered user.
 func NewUserRegisteredEvent(userID, email string) Event {
-	return domainevent.New(EventUserRegistered, UserRegisteredPayload{
+	return domainevent.NewWithEntity(EventUserRegistered, UserRegisteredPayload{
 		UserID: userID,
 		Email:  email,
-	})
+	}, userID)
 }
 
 // NewEmailVerifiedEvent creates an event for a successful email verification.
 func NewEmailVerifiedEvent(userID, email string) Event {
-	return domainevent.New(EventEmailVerified, EmailVerifiedPayload{
+	return domainevent.NewWithEntity(EventEmailVerified, EmailVerifiedPayload{
 		UserID: userID,
 		Email:  email,
-	})
+	}, userID)
 }
 
 // NewUserLoggedInEvent creates an event for a successful login.
 func NewUserLoggedInEvent(userID string) Event {
-	return domainevent.New(EventUserLoggedIn, UserLoggedInPayload{
+	return domainevent.NewWithEntity(EventUserLoggedIn, UserLoggedInPayload{
 		UserID: userID,
-	})
+	}, userID)
 }
 
 // NewPasswordResetRequestedEvent creates an event when a user requests a
 // password reset. Notification plugins listen for this to send the reset email.
 func NewPasswordResetRequestedEvent(userID, email, token string) Event {
-	return domainevent.New(EventPasswordResetRequested, PasswordResetRequestedPayload{
+	return domainevent.NewWithEntity(EventPasswordResetRequested, PasswordResetRequestedPayload{
 		UserID: userID,
 		Email:  email,
 		Token:  token,
-	})
+	}, userID)
 }
 
 // NewPasswordResetEvent creates an event when a password has been successfully
 // reset.
 func NewPasswordResetEvent(userID string) Event {
-	return domainevent.New(EventPasswordReset, PasswordResetPayload{
+	return domainevent.NewWithEntity(EventPasswordReset, PasswordResetPayload{
 		UserID: userID,
-	})
+	}, userID)
 }

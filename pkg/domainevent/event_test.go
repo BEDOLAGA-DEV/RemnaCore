@@ -55,6 +55,24 @@ func TestNewAt_UsesExplicitTimestamp(t *testing.T) {
 	e := NewAt("test.event", map[string]any{"key": "val"}, ts)
 
 	assert.Equal(t, ts, e.Timestamp)
+	assert.Empty(t, e.EntityID) // no entity for plain NewAt
+}
+
+func TestNewWithEntity_SetsEntityID(t *testing.T) {
+	e := NewWithEntity("subscription.activated", map[string]any{"sub": "s-1"}, "sub-123")
+
+	assert.Equal(t, EventType("subscription.activated"), e.Type)
+	assert.Equal(t, "sub-123", e.EntityID)
+	assert.False(t, e.Timestamp.IsZero())
+}
+
+func TestNewAtWithEntity_SetsTimestampAndEntityID(t *testing.T) {
+	ts := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	e := NewAtWithEntity("invoice.paid", map[string]any{"inv": "i-1"}, ts, "inv-456")
+
+	assert.Equal(t, EventType("invoice.paid"), e.Type)
+	assert.Equal(t, ts, e.Timestamp)
+	assert.Equal(t, "inv-456", e.EntityID)
 }
 
 func TestEvent_JSONRoundTrip_TypedPayload(t *testing.T) {
@@ -96,4 +114,37 @@ func TestEvent_JSONRoundTrip_MapPayload(t *testing.T) {
 	require.NotNil(t, m)
 	assert.Equal(t, "inv-1", m["invoice_id"])
 	assert.Equal(t, float64(1000), m["amount"])
+}
+
+func TestEvent_JSONRoundTrip_WithEntityID(t *testing.T) {
+	original := NewWithEntity("subscription.activated", testPayload{
+		UserID: "u-1",
+		Email:  "test@example.com",
+	}, "sub-789")
+
+	data, err := json.Marshal(original)
+	require.NoError(t, err)
+
+	var decoded Event
+	err = json.Unmarshal(data, &decoded)
+	require.NoError(t, err)
+
+	assert.Equal(t, original.Type, decoded.Type)
+	assert.Equal(t, "sub-789", decoded.EntityID)
+}
+
+func TestEvent_JSONRoundTrip_EmptyEntityID_OmittedFromJSON(t *testing.T) {
+	original := New("test.event", map[string]any{"key": "val"})
+
+	data, err := json.Marshal(original)
+	require.NoError(t, err)
+
+	// entity_id should be omitted from JSON when empty.
+	assert.NotContains(t, string(data), "entity_id")
+
+	var decoded Event
+	err = json.Unmarshal(data, &decoded)
+	require.NoError(t, err)
+
+	assert.Empty(t, decoded.EntityID)
 }

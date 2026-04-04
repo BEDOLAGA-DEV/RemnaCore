@@ -215,7 +215,8 @@ MultiSubOrchestrator for Remnawave provisioning.
   "data": {
     "subscription_id": "uuid",
     "user_id": "uuid"
-  }
+  },
+  "entity_id": "uuid"
 }
 ```
 
@@ -820,6 +821,47 @@ Emitted when a VPN node transitions between online and offline states.
   }
 }
 ```
+
+---
+
+## Event Envelope
+
+Every domain event includes an optional `entity_id` field that identifies the
+source aggregate instance (e.g. subscription ID, invoice ID). Producers set this
+via the `domainevent.NewWithEntity` / `NewAtWithEntity` constructors. Events
+created with the plain `New` / `NewAt` constructors omit `entity_id` from JSON.
+
+```json
+{
+  "type": "subscription.activated",
+  "timestamp": "2026-04-04T12:00:00Z",
+  "data": { "subscription_id": "uuid", "user_id": "uuid" },
+  "entity_id": "uuid"
+}
+```
+
+---
+
+## Ordering Guarantees
+
+Events for the same entity (identified by `entity_id`) are processed serially
+by the `BillingEventConsumer` using per-entity locking. This prevents race
+conditions where `subscription.activated` and `subscription.cancelled` for the
+same subscription could be processed out of order when arriving on different
+NATS subjects concurrently.
+
+Events for **different** entities are processed concurrently for maximum
+throughput.
+
+### Idempotency
+
+Each event is deduplicated by a business-level key: `{event_type}:{entity_id}`,
+stored in `multisub.idempotency_keys` with a 24-hour TTL. This catches outbox
+relay re-publishes where the same business event gets a new Watermill transport
+UUID. Redelivered events are silently skipped.
+
+For backward compatibility, if `entity_id` is empty (pre-migration events), the
+consumer falls back to extracting `subscription_id` from the event data payload.
 
 ---
 

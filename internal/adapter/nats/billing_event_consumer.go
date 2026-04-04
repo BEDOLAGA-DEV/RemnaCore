@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/ThreeDotsLabs/watermill"
@@ -60,26 +61,44 @@ type SubscriptionEventHandler interface {
 // domain as multisub.PlanProvider and multisub.SubscriptionProvider. The NATS
 // adapter (BillingSubscriptionLookup) implements those domain ports.
 
-// IdempotencyChecker provides message-level deduplication. The adapter layer
+// IdempotencyChecker provides event-level deduplication. The adapter layer
 // owns this interface; the postgres.IdempotencyRepository satisfies it.
+//
+// Keys are composed as "{event_type}:{entity_id}" to deduplicate at the
+// business level rather than the transport level (Watermill message UUID).
 type IdempotencyChecker interface {
 	// TryAcquire returns true if the key is new, false if it was already seen.
 	TryAcquire(ctx context.Context, key string) (bool, error)
 }
 
+// entityLock serialises event processing for a single entity (e.g. one
+// subscription). This prevents race conditions when events like
+// subscription.activated and subscription.cancelled arrive on different NATS
+// subjects concurrently for the same aggregate.
+type entityLock struct {
+	mu sync.Mutex
+}
+
 // BillingEventConsumer subscribes to billing domain events on NATS and routes
 // them to the SubscriptionEventHandler (MultiSubOrchestrator) for Remnawave
-// provisioning and deprovisioning. Failed messages are retried up to
-// MaxMessageRetries times; permanently failing messages are sent to the
-// dead-letter queue.
+// provisioning and deprovisioning.
+//
+// Correctness guarantees:
+//   - Business-level idempotency: events are deduplicated by
+//     {event_type}:{entity_id}, not Watermill message UUID.
+//   - Per-entity ordering: events for the same entity are processed serially
+//     via entityLocks, while different entities run concurrently.
+//   - Retry + DLQ: failed messages are retried up to MaxMessageRetries times;
+//     permanently failing messages are sent to the dead-letter queue.
 type BillingEventConsumer struct {
-	subscriber *EventSubscriber
-	handler    SubscriptionEventHandler
-	plans      multisub.PlanProvider
-	subs       multisub.SubscriptionProvider
+	subscriber  *EventSubscriber
+	handler     SubscriptionEventHandler
+	plans       multisub.PlanProvider
+	subs        multisub.SubscriptionProvider
 	idempotency IdempotencyChecker
 	publisher   *EventPublisher
 	logger      *slog.Logger
+	entityLocks sync.Map // map[string]*entityLock — per-entity serialisation
 }
 
 // NewBillingEventConsumer creates a BillingEventConsumer with the given
@@ -104,6 +123,13 @@ func NewBillingEventConsumer(
 		publisher:   publisher,
 		logger:      logger,
 	}
+}
+
+// getEntityLock returns (or creates) the mutex for the given entity ID. This
+// ensures that concurrent events targeting the same aggregate are serialised.
+func (c *BillingEventConsumer) getEntityLock(entityID string) *entityLock {
+	val, _ := c.entityLocks.LoadOrStore(entityID, &entityLock{})
+	return val.(*entityLock)
 }
 
 // billingSubscriptionSubjects returns the NATS subjects this consumer listens to.
@@ -160,30 +186,20 @@ func (c *BillingEventConsumer) consumeLoop(ctx context.Context, subject string, 
 	}
 }
 
-// handleMessage parses and routes a single billing event message. It performs
-// message-level deduplication via the idempotency checker before dispatching
-// to the handler. On processing failure, messages are Nack'd for retry up to
-// MaxMessageRetries times. Messages that exceed the retry limit are sent to
-// the dead-letter queue and Ack'd to prevent infinite redelivery.
+// handleMessage parses and routes a single billing event message.
+//
+// Idempotency: deduplicates by {event_type}:{entity_id} (business-level key),
+// not by Watermill message UUID. This catches outbox relay re-publishes where
+// the same business event gets a new transport UUID.
+//
+// Ordering: acquires a per-entity lock so that concurrent events for the same
+// subscription (arriving on different NATS subjects) are processed serially.
+//
+// On processing failure, messages are Nack'd for retry up to MaxMessageRetries
+// times. Messages that exceed the retry limit are sent to the dead-letter queue
+// and Ack'd to prevent infinite redelivery.
 func (c *BillingEventConsumer) handleMessage(ctx context.Context, subject string, msg *message.Message) {
-	// Dedup by Watermill message UUID. If the idempotency check fails (DB
-	// error), we fail open — at-least-once delivery is safer than dropping.
-	isNew, err := c.idempotency.TryAcquire(ctx, msg.UUID)
-	if err != nil {
-		c.logger.Warn("idempotency check failed, processing message anyway",
-			slog.String("msg_id", msg.UUID),
-			slog.String("subject", subject),
-			slog.Any("error", err),
-		)
-	} else if !isNew {
-		c.logger.Debug("duplicate message, skipping",
-			slog.String("msg_id", msg.UUID),
-			slog.String("subject", subject),
-		)
-		msg.Ack()
-		return
-	}
-
+	// Parse the event first so we can extract EntityID for idempotency.
 	var event domainevent.Event
 	if err := json.Unmarshal(msg.Payload, &event); err != nil {
 		c.logger.Error("failed to unmarshal billing event, sending to DLQ",
@@ -193,6 +209,44 @@ func (c *BillingEventConsumer) handleMessage(ctx context.Context, subject string
 		c.sendToDLQ(subject, msg, err)
 		msg.Ack()
 		return
+	}
+
+	// Resolve entity ID: prefer the top-level EntityID field; fall back to
+	// extracting subscription_id from the data payload for backward compat
+	// with events published before the EntityID migration.
+	entityID := event.EntityID
+	if entityID == "" {
+		entityID = extractString(event.Data, "subscription_id")
+	}
+
+	// Business-level idempotency key: {event_type}:{entity_id}. If the
+	// idempotency check fails (DB error), we fail open — at-least-once
+	// delivery is safer than silently dropping.
+	idempotencyKey := fmt.Sprintf("%s:%s", event.Type, entityID)
+	isNew, err := c.idempotency.TryAcquire(ctx, idempotencyKey)
+	if err != nil {
+		c.logger.Warn("idempotency check failed, processing message anyway",
+			slog.String("msg_id", msg.UUID),
+			slog.String("subject", subject),
+			slog.String("idempotency_key", idempotencyKey),
+			slog.Any("error", err),
+		)
+	} else if !isNew {
+		c.logger.Debug("duplicate event, skipping",
+			slog.String("msg_id", msg.UUID),
+			slog.String("subject", subject),
+			slog.String("idempotency_key", idempotencyKey),
+		)
+		msg.Ack()
+		return
+	}
+
+	// Serialise processing for the same entity to guarantee ordering.
+	// Events for different entities run concurrently.
+	if entityID != "" {
+		lock := c.getEntityLock(entityID)
+		lock.mu.Lock()
+		defer lock.mu.Unlock()
 	}
 
 	handleErr := c.processEvent(ctx, subject, event)

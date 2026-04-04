@@ -14,10 +14,15 @@ type EventType string
 // Data accepts any JSON-serialisable value: typed payload structs are preferred
 // for compile-time safety, but map[string]any is still accepted for backward
 // compatibility and dynamic event sources (webhooks, plugins, infra).
+//
+// EntityID identifies the aggregate instance that produced the event. Consumers
+// use it for business-level idempotency ({event_type}:{entity_id}) and
+// per-entity serial processing to guarantee ordering.
 type Event struct {
 	Type      EventType `json:"type"`
 	Timestamp time.Time `json:"timestamp"`
 	Data      any       `json:"data"`
+	EntityID  string    `json:"entity_id,omitempty"`
 }
 
 // New creates an Event with the given type, data, and the current timestamp.
@@ -32,6 +37,28 @@ func NewAt(eventType EventType, data any, ts time.Time) Event {
 		Type:      eventType,
 		Timestamp: ts,
 		Data:      data,
+	}
+}
+
+// NewWithEntity creates an Event tagged with the source aggregate's entity ID.
+// Consumers use EntityID for business-level idempotency and per-entity serial
+// processing to guarantee ordering within a single aggregate.
+func NewWithEntity(eventType EventType, data any, entityID string) Event {
+	return Event{
+		Type:      eventType,
+		Timestamp: time.Now(),
+		Data:      data,
+		EntityID:  entityID,
+	}
+}
+
+// NewAtWithEntity creates an Event with an explicit timestamp and entity ID.
+func NewAtWithEntity(eventType EventType, data any, ts time.Time, entityID string) Event {
+	return Event{
+		Type:      eventType,
+		Timestamp: ts,
+		Data:      data,
+		EntityID:  entityID,
 	}
 }
 

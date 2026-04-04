@@ -15,26 +15,26 @@ const (
 
 // NewTenantCreatedEvent creates an event for a newly created tenant.
 func NewTenantCreatedEvent(tenantID, ownerUserID string) domainevent.Event {
-	return domainevent.New(EventTenantCreated, TenantCreatedPayload{
+	return domainevent.NewWithEntity(EventTenantCreated, TenantCreatedPayload{
 		TenantID:    tenantID,
 		OwnerUserID: ownerUserID,
-	})
+	}, tenantID)
 }
 
 // NewResellerCreatedEvent creates an event for a newly created reseller account.
 func NewResellerCreatedEvent(resellerID, tenantID, userID string) domainevent.Event {
-	return domainevent.New(EventResellerCreated, ResellerCreatedPayload{
+	return domainevent.NewWithEntity(EventResellerCreated, ResellerCreatedPayload{
 		ResellerID: resellerID,
 		TenantID:   tenantID,
 		UserID:     userID,
-	})
+	}, resellerID)
 }
 
 // NewCommissionCreatedEvent creates an event for a newly recorded commission.
 func NewCommissionCreatedEvent(commissionID, resellerID string, amount int64) domainevent.Event {
-	return domainevent.New(EventCommissionCreated, CommissionCreatedPayload{
+	return domainevent.NewWithEntity(EventCommissionCreated, CommissionCreatedPayload{
 		CommissionID: commissionID,
 		ResellerID:   resellerID,
 		Amount:       amount,
-	})
+	}, commissionID)
 }

@@ -20,45 +20,45 @@ type EventType = domainevent.EventType
 
 // NewBindingProvisionedEvent creates an event when a binding is provisioned in Remnawave.
 func NewBindingProvisionedEvent(bindingID, subscriptionID, remnawaveUUID, purpose string) Event {
-	return domainevent.New(EventBindingProvisioned, BindingProvisionedPayload{
+	return domainevent.NewWithEntity(EventBindingProvisioned, BindingProvisionedPayload{
 		BindingID:      bindingID,
 		SubscriptionID: subscriptionID,
 		RemnawaveUUID:  remnawaveUUID,
 		Purpose:        purpose,
-	})
+	}, bindingID)
 }
 
 // NewBindingDeprovisionedEvent creates an event when a binding is removed from Remnawave.
 func NewBindingDeprovisionedEvent(bindingID, subscriptionID, remnawaveUUID string) Event {
-	return domainevent.New(EventBindingDeprovisioned, BindingDeprovisionedPayload{
+	return domainevent.NewWithEntity(EventBindingDeprovisioned, BindingDeprovisionedPayload{
 		BindingID:      bindingID,
 		SubscriptionID: subscriptionID,
 		RemnawaveUUID:  remnawaveUUID,
-	})
+	}, bindingID)
 }
 
 // NewBindingSyncFailedEvent creates an event when binding synchronisation fails.
 func NewBindingSyncFailedEvent(bindingID, subscriptionID, reason string) Event {
-	return domainevent.New(EventBindingSyncFailed, BindingSyncFailedPayload{
+	return domainevent.NewWithEntity(EventBindingSyncFailed, BindingSyncFailedPayload{
 		BindingID:      bindingID,
 		SubscriptionID: subscriptionID,
 		Reason:         reason,
-	})
+	}, bindingID)
 }
 
 // NewBindingSyncCompletedEvent creates an event when a binding sync succeeds.
 func NewBindingSyncCompletedEvent(bindingID, subscriptionID string) Event {
-	return domainevent.New(EventBindingSyncCompleted, BindingSyncCompletedPayload{
+	return domainevent.NewWithEntity(EventBindingSyncCompleted, BindingSyncCompletedPayload{
 		BindingID:      bindingID,
 		SubscriptionID: subscriptionID,
-	})
+	}, bindingID)
 }
 
 // NewBindingTrafficExceededEvent creates an event when a binding exceeds its traffic limit.
 func NewBindingTrafficExceededEvent(bindingID, subscriptionID, remnawaveUUID string) Event {
-	return domainevent.New(EventBindingTrafficExceeded, BindingTrafficExceededPayload{
+	return domainevent.NewWithEntity(EventBindingTrafficExceeded, BindingTrafficExceededPayload{
 		BindingID:      bindingID,
 		SubscriptionID: subscriptionID,
 		RemnawaveUUID:  remnawaveUUID,
-	})
+	}, bindingID)
 }
