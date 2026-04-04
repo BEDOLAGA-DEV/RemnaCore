@@ -1,10 +1,26 @@
 package aggregate
 
 import (
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/naming"
+)
+
+var (
+	// ErrEmptySubscriptionID indicates that a required subscription ID was not provided.
+	ErrEmptySubscriptionID = errors.New("subscription ID is required")
+
+	// ErrEmptyPlatformUserID indicates that a required platform user ID was not provided.
+	ErrEmptyPlatformUserID = errors.New("platform user ID is required")
+
+	// ErrInvalidPurpose indicates an unrecognized binding purpose.
+	ErrInvalidPurpose = errors.New("invalid binding purpose")
+
+	// ErrInvalidBindingTransition indicates an invalid binding state transition.
+	ErrInvalidBindingTransition = errors.New("invalid binding state transition")
 )
 
 // BindingStatus represents the lifecycle state of a Remnawave binding.
@@ -18,6 +34,15 @@ const (
 	BindingDeprovisioned BindingStatus = "deprovisioned"
 )
 
+// bindingTransitions defines the state machine for binding status.
+// Terminal state (deprovisioned) has no valid outbound transitions.
+var bindingTransitions = map[BindingStatus][]BindingStatus{
+	BindingPending:  {BindingActive, BindingFailed},
+	BindingActive:   {BindingDisabled, BindingDeprovisioned, BindingFailed},
+	BindingDisabled: {BindingActive, BindingDeprovisioned},
+	BindingFailed:   {BindingPending, BindingDeprovisioned},
+}
+
 // BindingPurpose describes why a Remnawave user was created.
 type BindingPurpose string
 
@@ -27,6 +52,14 @@ const (
 	PurposeStreaming    BindingPurpose = "streaming"
 	PurposeFamilyMember BindingPurpose = "family_member"
 )
+
+// validPurposes enumerates the recognized binding purposes.
+var validPurposes = map[BindingPurpose]bool{
+	PurposeBase:         true,
+	PurposeGaming:       true,
+	PurposeStreaming:    true,
+	PurposeFamilyMember: true,
+}
 
 // RemnawaveBinding is the aggregate root linking a platform subscription to a
 // Remnawave VPN user. Each subscription can have multiple bindings (base,
@@ -51,50 +84,84 @@ type RemnawaveBinding struct {
 
 // NewBinding creates a new RemnawaveBinding in the pending state.
 // It uses naming.BuildRemnawaveUsername to generate a deterministic username.
-func NewBinding(subID, platformUserID, purpose string, index int, trafficLimit int64, now time.Time) *RemnawaveBinding {
+// Returns an error if required fields are missing or purpose is invalid.
+func NewBinding(subID, platformUserID string, purpose BindingPurpose, index int, trafficLimit int64, now time.Time) (*RemnawaveBinding, error) {
+	if subID == "" {
+		return nil, ErrEmptySubscriptionID
+	}
+	if platformUserID == "" {
+		return nil, ErrEmptyPlatformUserID
+	}
+	if !validPurposes[purpose] {
+		return nil, ErrInvalidPurpose
+	}
+
 	return &RemnawaveBinding{
 		ID:                uuid.New().String(),
 		SubscriptionID:    subID,
 		PlatformUserID:    platformUserID,
-		RemnawaveUsername: naming.BuildRemnawaveUsername(platformUserID, purpose, index),
-		Purpose:           BindingPurpose(purpose),
+		RemnawaveUsername: naming.BuildRemnawaveUsername(platformUserID, string(purpose), index),
+		Purpose:           purpose,
 		Status:            BindingPending,
 		TrafficLimitBytes: trafficLimit,
 		CreatedAt:         now,
 		UpdatedAt:         now,
+	}, nil
+}
+
+// transitionTo attempts to move the binding to the target status using the
+// data-driven state machine.
+func (b *RemnawaveBinding) transitionTo(target BindingStatus, now time.Time) error {
+	allowed, ok := bindingTransitions[b.Status]
+	if !ok {
+		return ErrInvalidBindingTransition
 	}
+	for _, s := range allowed {
+		if s == target {
+			b.Status = target
+			b.UpdatedAt = now
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: %s -> %s", ErrInvalidBindingTransition, b.Status, target)
 }
 
 // MarkProvisioned transitions the binding from pending to active after the
 // Remnawave user has been created successfully.
-func (b *RemnawaveBinding) MarkProvisioned(remnawaveUUID, shortUUID string, now time.Time) {
+func (b *RemnawaveBinding) MarkProvisioned(remnawaveUUID, shortUUID string, now time.Time) error {
+	if err := b.transitionTo(BindingActive, now); err != nil {
+		return err
+	}
 	b.RemnawaveUUID = remnawaveUUID
 	b.RemnawaveShortUUID = shortUUID
-	b.Status = BindingActive
-	b.UpdatedAt = now
+	b.SyncedAt = &now
+	return nil
 }
 
 // MarkFailed transitions the binding to the failed state with a reason.
-func (b *RemnawaveBinding) MarkFailed(reason string, now time.Time) {
-	b.Status = BindingFailed
+func (b *RemnawaveBinding) MarkFailed(reason string, now time.Time) error {
+	if err := b.transitionTo(BindingFailed, now); err != nil {
+		return err
+	}
 	b.FailReason = reason
-	b.UpdatedAt = now
+	return nil
 }
 
 // Disable transitions the binding from active to disabled.
-func (b *RemnawaveBinding) Disable(now time.Time) {
-	b.Status = BindingDisabled
-	b.UpdatedAt = now
+func (b *RemnawaveBinding) Disable(now time.Time) error {
+	return b.transitionTo(BindingDisabled, now)
 }
 
-// Enable transitions the binding from disabled to active.
-func (b *RemnawaveBinding) Enable(now time.Time) {
-	b.Status = BindingActive
-	b.UpdatedAt = now
+// Enable transitions the binding from disabled to active. Only disabled
+// bindings can be re-enabled; use MarkProvisioned for pending -> active.
+func (b *RemnawaveBinding) Enable(now time.Time) error {
+	if b.Status != BindingDisabled {
+		return fmt.Errorf("%w: Enable requires disabled, got %s", ErrInvalidBindingTransition, b.Status)
+	}
+	return b.transitionTo(BindingActive, now)
 }
 
 // Deprovision transitions the binding to deprovisioned.
-func (b *RemnawaveBinding) Deprovision(now time.Time) {
-	b.Status = BindingDeprovisioned
-	b.UpdatedAt = now
+func (b *RemnawaveBinding) Deprovision(now time.Time) error {
+	return b.transitionTo(BindingDeprovisioned, now)
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
 
 // PlanTier categorises a plan into a pricing tier.
@@ -38,7 +39,10 @@ type Addon struct {
 }
 
 // Plan is the aggregate root for a VPN subscription plan.
+// It embeds EventRecorder to accumulate domain events during mutations.
 type Plan struct {
+	domainevent.EventRecorder
+
 	ID                   string
 	Name                 string
 	Description          string
@@ -88,7 +92,7 @@ func NewPlan(
 		return nil, errors.New("family is disabled but maxFamilyMembers is set")
 	}
 
-	return &Plan{
+	plan := &Plan{
 		ID:                   uuid.New().String(),
 		Name:                 name,
 		Description:          description,
@@ -106,7 +110,23 @@ func NewPlan(
 		IsActive:             true,
 		CreatedAt:            now,
 		UpdatedAt:            now,
-	}, nil
+	}
+	plan.RecordEvent(domainevent.NewAtWithEntity(EventPlanCreated, PlanCreatedPayload{
+		PlanID: plan.ID,
+		Name:   plan.Name,
+		Tier:   string(plan.Tier),
+	}, now, plan.ID))
+	return plan, nil
+}
+
+// Deactivate marks the plan as inactive. Inactive plans cannot be used for
+// new checkouts.
+func (p *Plan) Deactivate(now time.Time) {
+	p.IsActive = false
+	p.UpdatedAt = now
+	p.RecordEvent(domainevent.NewAtWithEntity(EventPlanDeactivated, PlanDeactivatedPayload{
+		PlanID: p.ID,
+	}, now, p.ID))
 }
 
 // AddAddon adds an addon to the plan. Returns an error if an addon with the
@@ -117,6 +137,10 @@ func (p *Plan) AddAddon(addon Addon, now time.Time) error {
 	}
 	p.AvailableAddons = append(p.AvailableAddons, addon)
 	p.UpdatedAt = now
+	p.RecordEvent(domainevent.NewAtWithEntity(EventPlanUpdated, PlanUpdatedPayload{
+		PlanID: p.ID,
+		Name:   p.Name,
+	}, now, p.ID))
 	return nil
 }
 
@@ -159,4 +183,3 @@ func (p *Plan) addonMap() map[string]Addon {
 	}
 	return m
 }
-

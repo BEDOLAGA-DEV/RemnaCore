@@ -16,6 +16,12 @@ var (
 	// ErrSubscriptionNotActiveForRenewal indicates an attempt to renew a
 	// subscription that is not in the active state.
 	ErrSubscriptionNotActiveForRenewal = errors.New("subscription must be active to renew")
+
+	// ErrEmptyUserID indicates that a required user ID was not provided.
+	ErrEmptyUserID = errors.New("user ID is required")
+
+	// ErrEmptyPlanID indicates that a required plan ID was not provided.
+	ErrEmptyPlanID = errors.New("plan ID is required")
 )
 
 // SubscriptionStatus represents the current state of a subscription.
@@ -60,17 +66,32 @@ type Subscription struct {
 }
 
 // NewSubscription creates a new subscription in the trial state.
-func NewSubscription(userID, planID string, interval vo.BillingInterval, addonIDs []string, now time.Time) *Subscription {
-	return &Subscription{
+// Returns an error if required fields are missing.
+func NewSubscription(userID, planID string, interval vo.BillingInterval, addonIDs []string, now time.Time) (*Subscription, error) {
+	if userID == "" {
+		return nil, ErrEmptyUserID
+	}
+	if planID == "" {
+		return nil, ErrEmptyPlanID
+	}
+
+	period := vo.NewBillingPeriod(now, interval)
+	sub := &Subscription{
 		ID:        uuid.New().String(),
 		UserID:    userID,
 		PlanID:    planID,
 		Status:    StatusTrial,
-		Period:    vo.NewBillingPeriod(now, interval),
+		Period:    period,
 		AddonIDs:  addonIDs,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
+	sub.RecordEvent(domainevent.NewAtWithEntity(EventSubCreated, SubCreatedPayload{
+		SubscriptionID: sub.ID,
+		UserID:         sub.UserID,
+		PlanID:         sub.PlanID,
+	}, now, sub.ID))
+	return sub, nil
 }
 
 // CanTransitionTo reports whether the subscription can move from its current
@@ -100,12 +121,26 @@ func (s *Subscription) transitionTo(target SubscriptionStatus, now time.Time) er
 
 // Activate moves the subscription from trial or past_due to active.
 func (s *Subscription) Activate(now time.Time) error {
-	return s.transitionTo(StatusActive, now)
+	if err := s.transitionTo(StatusActive, now); err != nil {
+		return err
+	}
+	s.RecordEvent(domainevent.NewAtWithEntity(EventSubActivated, SubActivatedPayload{
+		SubscriptionID: s.ID,
+		UserID:         s.UserID,
+	}, now, s.ID))
+	return nil
 }
 
 // MarkPastDue moves the subscription from active to past_due.
 func (s *Subscription) MarkPastDue(now time.Time) error {
-	return s.transitionTo(StatusPastDue, now)
+	if err := s.transitionTo(StatusPastDue, now); err != nil {
+		return err
+	}
+	s.RecordEvent(domainevent.NewAtWithEntity(EventSubPastDue, SubPastDuePayload{
+		SubscriptionID: s.ID,
+		UserID:         s.UserID,
+	}, now, s.ID))
+	return nil
 }
 
 // Cancel moves the subscription to cancelled from any non-terminal state.
@@ -114,6 +149,10 @@ func (s *Subscription) Cancel(now time.Time) error {
 		return err
 	}
 	s.CancelledAt = &now
+	s.RecordEvent(domainevent.NewAtWithEntity(EventSubCancelled, SubCancelledPayload{
+		SubscriptionID: s.ID,
+		UserID:         s.UserID,
+	}, now, s.ID))
 	return nil
 }
 
@@ -123,6 +162,10 @@ func (s *Subscription) Pause(now time.Time) error {
 		return err
 	}
 	s.PausedAt = &now
+	s.RecordEvent(domainevent.NewAtWithEntity(EventSubPaused, SubPausedPayload{
+		SubscriptionID: s.ID,
+		UserID:         s.UserID,
+	}, now, s.ID))
 	return nil
 }
 
@@ -132,12 +175,23 @@ func (s *Subscription) Resume(now time.Time) error {
 		return err
 	}
 	s.PausedAt = nil
+	s.RecordEvent(domainevent.NewAtWithEntity(EventSubResumed, SubResumedPayload{
+		SubscriptionID: s.ID,
+		UserID:         s.UserID,
+	}, now, s.ID))
 	return nil
 }
 
 // Expire moves the subscription to expired from any non-terminal state.
 func (s *Subscription) Expire(now time.Time) error {
-	return s.transitionTo(StatusExpired, now)
+	if err := s.transitionTo(StatusExpired, now); err != nil {
+		return err
+	}
+	s.RecordEvent(domainevent.NewAtWithEntity(EventSubExpired, SubExpiredPayload{
+		SubscriptionID: s.ID,
+		UserID:         s.UserID,
+	}, now, s.ID))
+	return nil
 }
 
 // Renew advances the subscription to its next billing period. The next period
@@ -149,5 +203,9 @@ func (s *Subscription) Renew(now time.Time) error {
 	}
 	s.Period = s.Period.Next()
 	s.UpdatedAt = now
+	s.RecordEvent(domainevent.NewAtWithEntity(EventSubRenewed, SubRenewedPayload{
+		SubscriptionID: s.ID,
+		UserID:         s.UserID,
+	}, now, s.ID))
 	return nil
 }

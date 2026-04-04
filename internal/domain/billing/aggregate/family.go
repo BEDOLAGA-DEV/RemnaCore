@@ -8,6 +8,9 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
 
+// compile-time check that FamilyGroup embeds EventRecorder
+var _ interface{ HasEvents() bool } = (*FamilyGroup)(nil)
+
 // ErrMaxFamilyExceeded indicates the family group has reached its maximum member count.
 var ErrMaxFamilyExceeded = errors.New("maximum family members exceeded")
 
@@ -76,6 +79,11 @@ func (fg *FamilyGroup) AddMember(userID, nickname string, now time.Time) error {
 		JoinedAt: now,
 	})
 	fg.UpdatedAt = now
+	fg.RecordEvent(domainevent.NewAtWithEntity(EventFamilyMemberAdded, FamilyMemberAddedPayload{
+		FamilyGroupID: fg.ID,
+		OwnerID:       fg.OwnerID,
+		MemberID:      userID,
+	}, now, fg.ID))
 	return nil
 }
 
@@ -90,6 +98,11 @@ func (fg *FamilyGroup) RemoveMember(userID string, now time.Time) error {
 		if m.UserID == userID {
 			fg.Members = append(fg.Members[:i], fg.Members[i+1:]...)
 			fg.UpdatedAt = now
+			fg.RecordEvent(domainevent.NewAtWithEntity(EventFamilyMemberRemoved, FamilyMemberRemovedPayload{
+				FamilyGroupID: fg.ID,
+				OwnerID:       fg.OwnerID,
+				MemberID:      userID,
+			}, now, fg.ID))
 			return nil
 		}
 	}

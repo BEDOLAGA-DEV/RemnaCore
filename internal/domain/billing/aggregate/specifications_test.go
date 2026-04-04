@@ -7,13 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
-	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
-
-// dummyEvent creates a minimal event for testing the EventRecorder embedding.
-func dummyEvent(eventType string) domainevent.Event {
-	return domainevent.NewAt(domainevent.EventType(eventType), nil, time.Now())
-}
 
 func TestCheckoutEligibility_ActivePlanWithPrice(t *testing.T) {
 	plan := &Plan{
@@ -105,17 +99,24 @@ func TestFamilyEligibility_OverLimit(t *testing.T) {
 
 func TestSubscription_EventRecorder_Embedded(t *testing.T) {
 	now := time.Now()
-	sub := NewSubscription("user-1", "plan-1", vo.IntervalMonth, nil, now)
+	sub, err := NewSubscription("user-1", "plan-1", vo.IntervalMonth, nil, now)
+	require.NoError(t, err)
 
-	assert.False(t, sub.HasEvents())
-
-	// Simulate what the service does: record an event on the aggregate.
-	sub.RecordEvent(dummyEvent("subscription.created"))
-
+	// NewSubscription now records its own creation event.
 	assert.True(t, sub.HasEvents())
 
 	events := sub.DomainEvents()
 	require.Len(t, events, 1)
+	assert.Equal(t, EventSubCreated, events[0].Type)
+	assert.False(t, sub.HasEvents())
+
+	// Subsequent mutations also record events.
+	require.NoError(t, sub.Activate(time.Now()))
+	assert.True(t, sub.HasEvents())
+
+	events = sub.DomainEvents()
+	require.Len(t, events, 1)
+	assert.Equal(t, EventSubActivated, events[0].Type)
 	assert.False(t, sub.HasEvents())
 }
 
@@ -124,6 +125,11 @@ func TestFamilyGroup_EventRecorder_Embedded(t *testing.T) {
 
 	assert.False(t, fg.HasEvents())
 
-	fg.RecordEvent(dummyEvent("family.member_added"))
+	// AddMember now records its own event.
+	require.NoError(t, fg.AddMember("user-2", "Alice", time.Now()))
 	assert.True(t, fg.HasEvents())
+
+	events := fg.DomainEvents()
+	require.Len(t, events, 1)
+	assert.Equal(t, EventFamilyMemberAdded, events[0].Type)
 }

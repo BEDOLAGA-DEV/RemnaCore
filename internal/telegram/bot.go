@@ -17,6 +17,11 @@ import (
 
 // Bot wraps the Telegram bot instance and all domain services needed to handle
 // commands and callback queries.
+//
+// Architecture: The bot uses domain services for all write operations (checkout,
+// cancel subscription) and repositories directly for read-only queries (plans,
+// subscriptions, bindings). This follows the CQRS read path pattern -- reads
+// bypass the write-side services for performance and simplicity.
 type Bot struct {
 	bot        *tgbot.Bot
 	token      string

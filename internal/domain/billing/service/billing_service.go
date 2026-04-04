@@ -84,7 +84,10 @@ func (s *BillingService) CreateSubscription(
 
 	// Create subscription (defaults to trial)
 	now := s.clock.Now()
-	sub := aggregate.NewSubscription(cmd.UserID, plan.ID, plan.Interval, cmd.AddonIDs, now)
+	sub, err := aggregate.NewSubscription(cmd.UserID, plan.ID, plan.Interval, cmd.AddonIDs, now)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create subscription: %w", err)
+	}
 
 	// Build line items for the invoice
 	lineItems := buildLineItems(plan, cmd.AddonIDs)
@@ -94,8 +97,7 @@ func (s *BillingService) CreateSubscription(
 		return nil, nil, fmt.Errorf("create invoice: %w", err)
 	}
 
-	// Record event on the aggregate so it is discoverable and auditable.
-	sub.RecordEvent(billing.NewSubCreatedEvent(sub.ID, sub.UserID, sub.PlanID))
+	// Aggregate already recorded its own creation event in NewSubscription.
 
 	err = s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		if err := s.subs.Create(txCtx, sub); err != nil {
@@ -131,7 +133,7 @@ func (s *BillingService) CancelSubscription(ctx context.Context, subID string) e
 		return fmt.Errorf("cancel subscription: %w", err)
 	}
 
-	sub.RecordEvent(billing.NewSubCancelledEvent(sub.ID, sub.UserID, "user_requested"))
+	// Aggregate already recorded its own cancelled event in Cancel().
 
 	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		if err := s.subs.Update(txCtx, sub); err != nil {
@@ -172,7 +174,7 @@ func (s *BillingService) PayInvoice(ctx context.Context, invoiceID string) error
 		return fmt.Errorf("mark paid: %w", err)
 	}
 
-	inv.RecordEvent(billing.NewInvoicePaidEvent(inv.ID, inv.SubscriptionID, inv.UserID, inv.Total.Amount))
+	// Aggregate already recorded its own paid event in MarkPaid().
 
 	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		if err := s.invoices.Update(txCtx, inv); err != nil {
@@ -194,7 +196,7 @@ func (s *BillingService) PayInvoice(ctx context.Context, invoiceID string) error
 				return fmt.Errorf("activate subscription: %w", err)
 			}
 
-			sub.RecordEvent(billing.NewSubActivatedEvent(sub.ID, sub.UserID))
+			// Aggregate already recorded its own activated event in Activate().
 
 			if err := s.subs.Update(txCtx, sub); err != nil {
 				return fmt.Errorf("update subscription: %w", err)
@@ -254,7 +256,7 @@ func (s *BillingService) AddFamilyMember(
 			return fmt.Errorf("add family member: %w", err)
 		}
 
-		fg.RecordEvent(billing.NewFamilyMemberAddedEvent(fg.ID, fg.OwnerID, memberUserID))
+		// Aggregate already recorded its own member_added event in AddMember().
 
 		if err := s.families.Update(txCtx, fg); err != nil {
 			return fmt.Errorf("update family group: %w", err)
@@ -289,7 +291,7 @@ func (s *BillingService) RemoveFamilyMember(
 		return fmt.Errorf("remove family member: %w", err)
 	}
 
-	fg.RecordEvent(billing.NewFamilyMemberRemovedEvent(fg.ID, fg.OwnerID, memberUserID))
+	// Aggregate already recorded its own member_removed event in RemoveMember().
 
 	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		if err := s.families.Update(txCtx, fg); err != nil {

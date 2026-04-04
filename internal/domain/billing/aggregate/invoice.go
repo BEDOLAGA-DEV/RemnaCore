@@ -73,7 +73,7 @@ func NewInvoice(subID, userID string, lineItems []vo.LineItem, discounts []vo.Di
 		return nil, err
 	}
 
-	return &Invoice{
+	inv := &Invoice{
 		ID:             uuid.New().String(),
 		SubscriptionID: subID,
 		UserID:         userID,
@@ -85,7 +85,14 @@ func NewInvoice(subID, userID string, lineItems []vo.LineItem, discounts []vo.Di
 		Status:         InvoiceDraft,
 		CreatedAt:      now,
 		UpdatedAt:      now,
-	}, nil
+	}
+	inv.RecordEvent(domainevent.NewAtWithEntity(EventInvCreated, InvCreatedPayload{
+		InvoiceID:      inv.ID,
+		SubscriptionID: inv.SubscriptionID,
+		UserID:         inv.UserID,
+		AmountCents:    inv.Total.Amount,
+	}, now, inv.ID))
+	return inv, nil
 }
 
 // MarkPending transitions the invoice from draft to pending.
@@ -106,6 +113,12 @@ func (inv *Invoice) MarkPaid(now time.Time) error {
 	inv.Status = InvoicePaid
 	inv.PaidAt = &now
 	inv.UpdatedAt = now
+	inv.RecordEvent(domainevent.NewAtWithEntity(EventInvPaid, InvPaidPayload{
+		InvoiceID:      inv.ID,
+		SubscriptionID: inv.SubscriptionID,
+		UserID:         inv.UserID,
+		AmountCents:    inv.Total.Amount,
+	}, now, inv.ID))
 	return nil
 }
 
@@ -116,6 +129,11 @@ func (inv *Invoice) MarkFailed(now time.Time) error {
 	}
 	inv.Status = InvoiceFailed
 	inv.UpdatedAt = now
+	inv.RecordEvent(domainevent.NewAtWithEntity(EventInvFailed, InvFailedPayload{
+		InvoiceID:      inv.ID,
+		SubscriptionID: inv.SubscriptionID,
+		UserID:         inv.UserID,
+	}, now, inv.ID))
 	return nil
 }
 
@@ -126,6 +144,12 @@ func (inv *Invoice) Refund(now time.Time) error {
 	}
 	inv.Status = InvoiceRefunded
 	inv.UpdatedAt = now
+	inv.RecordEvent(domainevent.NewAtWithEntity(EventInvRefunded, InvRefundedPayload{
+		InvoiceID:      inv.ID,
+		SubscriptionID: inv.SubscriptionID,
+		UserID:         inv.UserID,
+		AmountCents:    inv.Total.Amount,
+	}, now, inv.ID))
 	return nil
 }
 

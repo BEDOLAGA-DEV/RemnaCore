@@ -9,9 +9,19 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
 )
 
-func TestNewSubscription(t *testing.T) {
-	sub := NewSubscription("user-1", "plan-1", vo.IntervalMonth, []string{"addon-1"}, time.Now())
+// mustNewSubscription is a test helper that creates a valid subscription or
+// fails the test immediately. It keeps existing test code concise.
+func mustNewSubscription(t *testing.T, userID, planID string, interval vo.BillingInterval, addonIDs []string, now time.Time) *Subscription {
+	t.Helper()
+	sub, err := NewSubscription(userID, planID, interval, addonIDs, now)
+	require.NoError(t, err)
+	return sub
+}
 
+func TestNewSubscription(t *testing.T) {
+	sub, err := NewSubscription("user-1", "plan-1", vo.IntervalMonth, []string{"addon-1"}, time.Now())
+
+	require.NoError(t, err)
 	assert.NotEmpty(t, sub.ID)
 	assert.Equal(t, "user-1", sub.UserID)
 	assert.Equal(t, "plan-1", sub.PlanID)
@@ -24,8 +34,24 @@ func TestNewSubscription(t *testing.T) {
 	assert.False(t, sub.UpdatedAt.IsZero())
 }
 
+func TestNewSubscription_EmptyUserID(t *testing.T) {
+	sub, err := NewSubscription("", "plan-1", vo.IntervalMonth, nil, time.Now())
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrEmptyUserID)
+	assert.Nil(t, sub)
+}
+
+func TestNewSubscription_EmptyPlanID(t *testing.T) {
+	sub, err := NewSubscription("user-1", "", vo.IntervalMonth, nil, time.Now())
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrEmptyPlanID)
+	assert.Nil(t, sub)
+}
+
 func TestSubscription_TrialToActive(t *testing.T) {
-	sub := NewSubscription("user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
+	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
 	assert.Equal(t, StatusTrial, sub.Status)
 
 	err := sub.Activate(time.Now())
@@ -35,7 +61,7 @@ func TestSubscription_TrialToActive(t *testing.T) {
 }
 
 func TestSubscription_TrialToPaused_Invalid(t *testing.T) {
-	sub := NewSubscription("user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
+	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
 
 	err := sub.Pause(time.Now())
 
@@ -45,7 +71,7 @@ func TestSubscription_TrialToPaused_Invalid(t *testing.T) {
 }
 
 func TestSubscription_TrialToCancelled(t *testing.T) {
-	sub := NewSubscription("user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
+	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
 
 	err := sub.Cancel(time.Now())
 
@@ -55,7 +81,7 @@ func TestSubscription_TrialToCancelled(t *testing.T) {
 }
 
 func TestSubscription_TrialToExpired(t *testing.T) {
-	sub := NewSubscription("user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
+	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
 
 	err := sub.Expire(time.Now())
 
@@ -64,7 +90,7 @@ func TestSubscription_TrialToExpired(t *testing.T) {
 }
 
 func TestSubscription_ActiveToPastDue(t *testing.T) {
-	sub := NewSubscription("user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
+	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
 	require.NoError(t, sub.Activate(time.Now()))
 
 	err := sub.MarkPastDue(time.Now())
@@ -74,7 +100,7 @@ func TestSubscription_ActiveToPastDue(t *testing.T) {
 }
 
 func TestSubscription_ActiveToPaused(t *testing.T) {
-	sub := NewSubscription("user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
+	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
 	require.NoError(t, sub.Activate(time.Now()))
 
 	err := sub.Pause(time.Now())
@@ -85,7 +111,7 @@ func TestSubscription_ActiveToPaused(t *testing.T) {
 }
 
 func TestSubscription_ActiveToCancelled(t *testing.T) {
-	sub := NewSubscription("user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
+	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
 	require.NoError(t, sub.Activate(time.Now()))
 
 	err := sub.Cancel(time.Now())
@@ -96,7 +122,7 @@ func TestSubscription_ActiveToCancelled(t *testing.T) {
 }
 
 func TestSubscription_ActiveToExpired(t *testing.T) {
-	sub := NewSubscription("user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
+	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
 	require.NoError(t, sub.Activate(time.Now()))
 
 	err := sub.Expire(time.Now())
@@ -106,7 +132,7 @@ func TestSubscription_ActiveToExpired(t *testing.T) {
 }
 
 func TestSubscription_PastDueToActive(t *testing.T) {
-	sub := NewSubscription("user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
+	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
 	require.NoError(t, sub.Activate(time.Now()))
 	require.NoError(t, sub.MarkPastDue(time.Now()))
 
@@ -117,7 +143,7 @@ func TestSubscription_PastDueToActive(t *testing.T) {
 }
 
 func TestSubscription_PastDueToCancelled(t *testing.T) {
-	sub := NewSubscription("user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
+	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
 	require.NoError(t, sub.Activate(time.Now()))
 	require.NoError(t, sub.MarkPastDue(time.Now()))
 
@@ -128,7 +154,7 @@ func TestSubscription_PastDueToCancelled(t *testing.T) {
 }
 
 func TestSubscription_PastDueToExpired(t *testing.T) {
-	sub := NewSubscription("user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
+	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
 	require.NoError(t, sub.Activate(time.Now()))
 	require.NoError(t, sub.MarkPastDue(time.Now()))
 
@@ -139,7 +165,7 @@ func TestSubscription_PastDueToExpired(t *testing.T) {
 }
 
 func TestSubscription_PausedToActive_Resume(t *testing.T) {
-	sub := NewSubscription("user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
+	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
 	require.NoError(t, sub.Activate(time.Now()))
 	require.NoError(t, sub.Pause(time.Now()))
 
@@ -151,7 +177,7 @@ func TestSubscription_PausedToActive_Resume(t *testing.T) {
 }
 
 func TestSubscription_PausedToCancelled(t *testing.T) {
-	sub := NewSubscription("user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
+	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
 	require.NoError(t, sub.Activate(time.Now()))
 	require.NoError(t, sub.Pause(time.Now()))
 
@@ -162,7 +188,7 @@ func TestSubscription_PausedToCancelled(t *testing.T) {
 }
 
 func TestSubscription_PausedToExpired(t *testing.T) {
-	sub := NewSubscription("user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
+	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
 	require.NoError(t, sub.Activate(time.Now()))
 	require.NoError(t, sub.Pause(time.Now()))
 
@@ -173,7 +199,7 @@ func TestSubscription_PausedToExpired(t *testing.T) {
 }
 
 func TestSubscription_CancelledToActive_Invalid(t *testing.T) {
-	sub := NewSubscription("user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
+	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
 	require.NoError(t, sub.Cancel(time.Now()))
 
 	err := sub.Activate(time.Now())
@@ -197,7 +223,7 @@ func TestSubscription_CancelledToAny_Terminal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sub := NewSubscription("user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
+			sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
 			require.NoError(t, sub.Cancel(time.Now()))
 
 			err := tt.fn(sub)
@@ -222,7 +248,7 @@ func TestSubscription_ExpiredToAny_Terminal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sub := NewSubscription("user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
+			sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
 			require.NoError(t, sub.Expire(time.Now()))
 
 			err := tt.fn(sub)
@@ -234,7 +260,7 @@ func TestSubscription_ExpiredToAny_Terminal(t *testing.T) {
 }
 
 func TestSubscription_Renew(t *testing.T) {
-	sub := NewSubscription("user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
+	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
 	require.NoError(t, sub.Activate(time.Now()))
 
 	oldEnd := sub.Period.End
@@ -249,7 +275,7 @@ func TestSubscription_Renew(t *testing.T) {
 }
 
 func TestSubscription_Renew_NotActive(t *testing.T) {
-	sub := NewSubscription("user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
+	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
 	// Still in trial
 
 	err := sub.Renew(time.Now())
@@ -270,7 +296,7 @@ func TestSubscription_Renew_PreservesInterval(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sub := NewSubscription("user-1", "plan-1", tt.interval, nil, time.Now())
+			sub := mustNewSubscription(t, "user-1", "plan-1", tt.interval, nil, time.Now())
 			require.NoError(t, sub.Activate(time.Now()))
 
 			originalEnd := sub.Period.End
@@ -285,7 +311,7 @@ func TestSubscription_Renew_PreservesInterval(t *testing.T) {
 }
 
 func TestSubscription_CanTransitionTo(t *testing.T) {
-	sub := NewSubscription("user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
+	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
 
 	assert.True(t, sub.CanTransitionTo(StatusActive))
 	assert.True(t, sub.CanTransitionTo(StatusCancelled))
@@ -295,7 +321,7 @@ func TestSubscription_CanTransitionTo(t *testing.T) {
 }
 
 func TestSubscription_Cancel_SetsCancelledAt(t *testing.T) {
-	sub := NewSubscription("user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
+	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
 	require.NoError(t, sub.Activate(time.Now()))
 
 	before := time.Now()
@@ -307,7 +333,7 @@ func TestSubscription_Cancel_SetsCancelledAt(t *testing.T) {
 }
 
 func TestSubscription_Pause_SetsPausedAt(t *testing.T) {
-	sub := NewSubscription("user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
+	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
 	require.NoError(t, sub.Activate(time.Now()))
 
 	before := time.Now()
@@ -319,7 +345,7 @@ func TestSubscription_Pause_SetsPausedAt(t *testing.T) {
 }
 
 func TestSubscription_Resume_ClearsPausedAt(t *testing.T) {
-	sub := NewSubscription("user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
+	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
 	require.NoError(t, sub.Activate(time.Now()))
 	require.NoError(t, sub.Pause(time.Now()))
 	assert.NotNil(t, sub.PausedAt)

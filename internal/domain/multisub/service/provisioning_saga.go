@@ -88,16 +88,19 @@ func (s *ProvisioningSaga) Provision(ctx context.Context, req ProvisionRequest) 
 
 	for i, spec := range specs {
 		// 1. Create binding in our DB (PENDING)
-		binding := multisubagg.NewBinding(
+		binding, err := multisubagg.NewBinding(
 			req.SubscriptionID,
 			req.PlatformUserID,
-			string(spec.Purpose),
+			spec.Purpose,
 			i,
 			spec.TrafficLimit,
 			now,
 		)
+		if err != nil {
+			return results, fmt.Errorf("create binding aggregate: %w", err)
+		}
 		if err := s.bindings.Create(ctx, binding); err != nil {
-			return results, fmt.Errorf("create binding: %w", err)
+			return results, fmt.Errorf("persist binding: %w", err)
 		}
 
 		// 2. Create user in Remnawave
@@ -109,13 +112,15 @@ func (s *ProvisioningSaga) Provision(ctx context.Context, req ProvisionRequest) 
 		})
 		if err != nil {
 			// COMPENSATION: mark binding as failed
-			binding.MarkFailed(err.Error(), now)
+			_ = binding.MarkFailed(err.Error(), now)
 			_ = s.bindings.Update(ctx, binding)
 			return results, fmt.Errorf("remnawave create user: %w", err)
 		}
 
 		// 3. Mark binding as provisioned
-		binding.MarkProvisioned(rwUser.UUID, rwUser.ShortUUID, now)
+		if err := binding.MarkProvisioned(rwUser.UUID, rwUser.ShortUUID, now); err != nil {
+			return results, fmt.Errorf("mark provisioned: %w", err)
+		}
 		if err := s.bindings.Update(ctx, binding); err != nil {
 			// COMPENSATION: delete Remnawave user since our DB update failed.
 			// Uses exponential backoff to avoid leaving ghost users in Remnawave.

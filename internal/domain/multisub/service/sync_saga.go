@@ -97,11 +97,26 @@ func (s *SyncSaga) SyncBinding(ctx context.Context, bindingID string) error {
 func (s *SyncSaga) reconcileStatus(binding *aggregate.RemnawaveBinding, status *multisubdomain.RemnawaveUserStatus, now time.Time) {
 	switch {
 	case status.Expired:
-		binding.Disable(now)
+		if err := binding.Disable(now); err != nil {
+			slog.Warn("sync reconcile: disable transition failed",
+				slog.String("binding_id", binding.ID),
+				slog.Any("error", err),
+			)
+		}
 	case !status.Enabled && binding.Status == aggregate.BindingActive:
-		binding.Disable(now)
+		if err := binding.Disable(now); err != nil {
+			slog.Warn("sync reconcile: disable transition failed",
+				slog.String("binding_id", binding.ID),
+				slog.Any("error", err),
+			)
+		}
 	case status.Enabled && binding.Status == aggregate.BindingDisabled:
-		binding.Enable(now)
+		if err := binding.Enable(now); err != nil {
+			slog.Warn("sync reconcile: enable transition failed",
+				slog.String("binding_id", binding.ID),
+				slog.Any("error", err),
+			)
+		}
 	}
 }
 
@@ -117,9 +132,19 @@ func (s *SyncSaga) HandleWebhookEvent(ctx context.Context, remnawaveUUID string,
 	now := s.clock.Now()
 	switch domainEventType {
 	case multisubdomain.EventBindingTrafficExceeded:
-		binding.Disable(now)
+		if err := binding.Disable(now); err != nil {
+			slog.Warn("webhook: disable transition failed",
+				slog.String("binding_id", binding.ID),
+				slog.Any("error", err),
+			)
+		}
 	case multisubdomain.EventBindingSyncFailed:
-		binding.MarkFailed("webhook: sync failed", now)
+		if err := binding.MarkFailed("webhook: sync failed", now); err != nil {
+			slog.Warn("webhook: mark failed transition failed",
+				slog.String("binding_id", binding.ID),
+				slog.Any("error", err),
+			)
+		}
 	default:
 		// Unknown event type — update sync timestamp only.
 	}

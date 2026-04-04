@@ -147,7 +147,12 @@ func (o *MultiSubOrchestrator) OnSubscriptionPaused(ctx context.Context, subscri
 			continue
 		}
 		if err := o.gateway.DisableUser(ctx, binding.RemnawaveUUID); err != nil {
-			binding.MarkFailed(fmt.Sprintf("remnawave disable: %s", err.Error()), now)
+			if failErr := binding.MarkFailed(fmt.Sprintf("remnawave disable: %s", err.Error()), now); failErr != nil {
+				o.logger.Warn("failed to transition binding to failed",
+					slog.String("binding_id", binding.ID),
+					slog.Any("error", failErr),
+				)
+			}
 			if updateErr := o.bindings.Update(ctx, binding); updateErr != nil {
 				o.logger.Warn("failed to update binding status",
 					slog.String("binding_id", binding.ID),
@@ -156,7 +161,12 @@ func (o *MultiSubOrchestrator) OnSubscriptionPaused(ctx context.Context, subscri
 			}
 			continue
 		}
-		binding.Disable(now)
+		if disableErr := binding.Disable(now); disableErr != nil {
+			o.logger.Warn("failed to transition binding to disabled",
+				slog.String("binding_id", binding.ID),
+				slog.Any("error", disableErr),
+			)
+		}
 		if err := o.bindings.Update(ctx, binding); err != nil {
 			o.logger.Warn("failed to update binding status",
 				slog.String("binding_id", binding.ID),
@@ -202,7 +212,12 @@ func (o *MultiSubOrchestrator) OnSubscriptionResumed(ctx context.Context, subscr
 			continue
 		}
 		if err := o.gateway.EnableUser(ctx, binding.RemnawaveUUID); err != nil {
-			binding.MarkFailed(fmt.Sprintf("remnawave enable: %s", err.Error()), now)
+			if failErr := binding.MarkFailed(fmt.Sprintf("remnawave enable: %s", err.Error()), now); failErr != nil {
+				o.logger.Warn("failed to transition binding to failed",
+					slog.String("binding_id", binding.ID),
+					slog.Any("error", failErr),
+				)
+			}
 			if updateErr := o.bindings.Update(ctx, binding); updateErr != nil {
 				o.logger.Warn("failed to update binding status",
 					slog.String("binding_id", binding.ID),
@@ -211,7 +226,12 @@ func (o *MultiSubOrchestrator) OnSubscriptionResumed(ctx context.Context, subscr
 			}
 			continue
 		}
-		binding.Enable(now)
+		if enableErr := binding.Enable(now); enableErr != nil {
+			o.logger.Warn("failed to transition binding to active",
+				slog.String("binding_id", binding.ID),
+				slog.Any("error", enableErr),
+			)
+		}
 		if err := o.bindings.Update(ctx, binding); err != nil {
 			o.logger.Warn("failed to update binding status",
 				slog.String("binding_id", binding.ID),

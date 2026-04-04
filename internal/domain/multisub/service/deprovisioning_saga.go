@@ -64,7 +64,12 @@ func (s *DeprovisioningSaga) deprovisionOne(ctx context.Context, binding *aggreg
 	if binding.RemnawaveUUID != "" {
 		if err := s.gateway.DeleteUser(ctx, binding.RemnawaveUUID); err != nil {
 			// Mark binding as failed and persist — do not stop the saga.
-			binding.MarkFailed(fmt.Sprintf("remnawave delete: %s", err.Error()), now)
+			if failErr := binding.MarkFailed(fmt.Sprintf("remnawave delete: %s", err.Error()), now); failErr != nil {
+				slog.Warn("failed to transition binding to failed",
+					slog.String("binding_id", binding.ID),
+					slog.Any("error", failErr),
+				)
+			}
 			if updateErr := s.bindings.Update(ctx, binding); updateErr != nil {
 				slog.Warn("failed to update binding after remnawave delete failure",
 					slog.String("binding_id", binding.ID),
@@ -76,7 +81,13 @@ func (s *DeprovisioningSaga) deprovisionOne(ctx context.Context, binding *aggreg
 	}
 
 	// 2. Mark binding as deprovisioned
-	binding.Deprovision(now)
+	if err := binding.Deprovision(now); err != nil {
+		slog.Warn("failed to transition binding to deprovisioned",
+			slog.String("binding_id", binding.ID),
+			slog.Any("error", err),
+		)
+		return
+	}
 	if err := s.bindings.Update(ctx, binding); err != nil {
 		slog.Warn("failed to update binding after deprovision",
 			slog.String("binding_id", binding.ID),
