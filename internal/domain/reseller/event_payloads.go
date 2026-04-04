@@ -28,5 +28,9 @@ func (TenantCreatedPayload) EventType() domainevent.EventType     { return Event
 func (ResellerCreatedPayload) EventType() domainevent.EventType   { return EventResellerCreated }
 func (CommissionCreatedPayload) EventType() domainevent.EventType { return EventCommissionCreated }
 
-// Compile-time interface check.
-var _ domainevent.EventPayload = TenantCreatedPayload{}
+// Compile-time interface checks.
+var (
+	_ domainevent.EventPayload = TenantCreatedPayload{}
+	_ domainevent.EventPayload = ResellerCreatedPayload{}
+	_ domainevent.EventPayload = CommissionCreatedPayload{}
+)

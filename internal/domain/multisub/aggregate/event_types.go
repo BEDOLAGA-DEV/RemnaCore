@@ -59,5 +59,11 @@ func (BindingFailedPayload) EventType() domainevent.EventType        { return Ev
 func (BindingDisabledPayload) EventType() domainevent.EventType      { return EventBindingDisabled }
 func (BindingEnabledPayload) EventType() domainevent.EventType       { return EventBindingEnabled }
 
-// Compile-time interface check.
-var _ domainevent.EventPayload = BindingProvisionedPayload{}
+// Compile-time interface checks.
+var (
+	_ domainevent.EventPayload = BindingProvisionedPayload{}
+	_ domainevent.EventPayload = BindingDeprovisionedPayload{}
+	_ domainevent.EventPayload = BindingFailedPayload{}
+	_ domainevent.EventPayload = BindingDisabledPayload{}
+	_ domainevent.EventPayload = BindingEnabledPayload{}
+)

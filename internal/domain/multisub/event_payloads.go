@@ -51,5 +51,9 @@ func (BindingTrafficExceededPayload) EventType() domainevent.EventType {
 	return EventBindingTrafficExceeded
 }
 
-// Compile-time interface check.
-var _ domainevent.EventPayload = BindingSyncFailedPayload{}
+// Compile-time interface checks.
+var (
+	_ domainevent.EventPayload = BindingSyncFailedPayload{}
+	_ domainevent.EventPayload = BindingSyncCompletedPayload{}
+	_ domainevent.EventPayload = BindingTrafficExceededPayload{}
+)

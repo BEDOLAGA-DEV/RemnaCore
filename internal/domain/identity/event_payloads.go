@@ -41,5 +41,11 @@ func (PasswordResetRequestedPayload) EventType() domainevent.EventType {
 }
 func (PasswordResetPayload) EventType() domainevent.EventType { return EventPasswordReset }
 
-// Compile-time interface check.
-var _ domainevent.EventPayload = UserRegisteredPayload{}
+// Compile-time interface checks.
+var (
+	_ domainevent.EventPayload = UserRegisteredPayload{}
+	_ domainevent.EventPayload = EmailVerifiedPayload{}
+	_ domainevent.EventPayload = UserLoggedInPayload{}
+	_ domainevent.EventPayload = PasswordResetRequestedPayload{}
+	_ domainevent.EventPayload = PasswordResetPayload{}
+)

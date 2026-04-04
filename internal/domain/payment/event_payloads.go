@@ -50,5 +50,11 @@ func (ChargeFailedPayload) EventType() domainevent.EventType    { return EventCh
 func (RefundCompletedPayload) EventType() domainevent.EventType { return EventRefundCompleted }
 func (WebhookReceivedPayload) EventType() domainevent.EventType { return EventWebhookReceived }
 
-// Compile-time interface check.
-var _ domainevent.EventPayload = ChargeCreatedPayload{}
+// Compile-time interface checks.
+var (
+	_ domainevent.EventPayload = ChargeCreatedPayload{}
+	_ domainevent.EventPayload = ChargeCompletedPayload{}
+	_ domainevent.EventPayload = ChargeFailedPayload{}
+	_ domainevent.EventPayload = RefundCompletedPayload{}
+	_ domainevent.EventPayload = WebhookReceivedPayload{}
+)

@@ -220,7 +220,25 @@ func (PlanDeactivatedPayload) EventType() domainevent.EventType { return EventPl
 // Compile-time interface checks.
 var (
 	_ domainevent.EventPayload = SubCreatedPayload{}
+	_ domainevent.EventPayload = SubActivatedPayload{}
+	_ domainevent.EventPayload = SubCancelledPayload{}
+	_ domainevent.EventPayload = SubRenewedPayload{}
+	_ domainevent.EventPayload = SubPausedPayload{}
+	_ domainevent.EventPayload = SubResumedPayload{}
+	_ domainevent.EventPayload = SubExpiredPayload{}
+	_ domainevent.EventPayload = SubPastDuePayload{}
+	_ domainevent.EventPayload = SubUpgradedPayload{}
+	_ domainevent.EventPayload = SubDowngradedPayload{}
+	_ domainevent.EventPayload = SubTrialStartedPayload{}
+	_ domainevent.EventPayload = SubTrialEndingPayload{}
+	_ domainevent.EventPayload = SubUpdatedPayload{}
 	_ domainevent.EventPayload = InvCreatedPayload{}
+	_ domainevent.EventPayload = InvPaidPayload{}
+	_ domainevent.EventPayload = InvFailedPayload{}
+	_ domainevent.EventPayload = InvRefundedPayload{}
 	_ domainevent.EventPayload = FamilyMemberAddedPayload{}
+	_ domainevent.EventPayload = FamilyMemberRemovedPayload{}
 	_ domainevent.EventPayload = PlanCreatedPayload{}
+	_ domainevent.EventPayload = PlanUpdatedPayload{}
+	_ domainevent.EventPayload = PlanDeactivatedPayload{}
 )
