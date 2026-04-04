@@ -2,6 +2,7 @@ package aggregate
 
 import (
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -41,6 +42,16 @@ const (
 	InvoiceFailed   InvoiceStatus = "failed"
 	InvoiceRefunded InvoiceStatus = "refunded"
 )
+
+// validInvoiceTransitions defines the state machine for invoice status.
+// Terminal states (failed, refunded) have no valid outbound transitions.
+var validInvoiceTransitions = map[InvoiceStatus][]InvoiceStatus{
+	InvoiceDraft:    {InvoicePending},
+	InvoicePending:  {InvoicePaid, InvoiceFailed},
+	InvoicePaid:     {InvoiceRefunded},
+	InvoiceFailed:   {},
+	InvoiceRefunded: {},
+}
 
 // Invoice is the aggregate root for a billing invoice.
 // It embeds EventRecorder to accumulate domain events during mutations.
@@ -95,9 +106,19 @@ func NewInvoice(subID, userID string, lineItems []vo.LineItem, discounts []vo.Di
 	return inv, nil
 }
 
+// CanTransitionTo reports whether the invoice can move from its current
+// status to the target status.
+func (inv *Invoice) CanTransitionTo(target InvoiceStatus) bool {
+	allowed, ok := validInvoiceTransitions[inv.Status]
+	if !ok {
+		return false
+	}
+	return slices.Contains(allowed, target)
+}
+
 // MarkPending transitions the invoice from draft to pending.
 func (inv *Invoice) MarkPending(now time.Time) error {
-	if inv.Status != InvoiceDraft {
+	if !inv.CanTransitionTo(InvoicePending) {
 		return ErrInvoiceMustBeDraftForPending
 	}
 	inv.Status = InvoicePending
@@ -107,7 +128,7 @@ func (inv *Invoice) MarkPending(now time.Time) error {
 
 // MarkPaid transitions the invoice from pending to paid.
 func (inv *Invoice) MarkPaid(now time.Time) error {
-	if inv.Status != InvoicePending {
+	if !inv.CanTransitionTo(InvoicePaid) {
 		return ErrInvoiceMustBePendingForPaid
 	}
 	inv.Status = InvoicePaid
@@ -124,7 +145,7 @@ func (inv *Invoice) MarkPaid(now time.Time) error {
 
 // MarkFailed transitions the invoice from pending to failed.
 func (inv *Invoice) MarkFailed(now time.Time) error {
-	if inv.Status != InvoicePending {
+	if !inv.CanTransitionTo(InvoiceFailed) {
 		return ErrInvoiceMustBePendingForFailed
 	}
 	inv.Status = InvoiceFailed
@@ -139,7 +160,7 @@ func (inv *Invoice) MarkFailed(now time.Time) error {
 
 // Refund transitions the invoice from paid to refunded.
 func (inv *Invoice) Refund(now time.Time) error {
-	if inv.Status != InvoicePaid {
+	if !inv.CanTransitionTo(InvoiceRefunded) {
 		return ErrInvoiceMustBePaidForRefund
 	}
 	inv.Status = InvoiceRefunded

@@ -235,6 +235,7 @@ func (h *BillingHandler) AddSubscriptionAddon(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Verify ownership.
 	sub, err := h.subs.GetByID(r.Context(), subID)
 	if err != nil {
 		status, message := mapServiceError(err)
@@ -246,16 +247,7 @@ func (h *BillingHandler) AddSubscriptionAddon(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Check addon not already added.
-	for _, id := range sub.AddonIDs {
-		if id == req.AddonID {
-			writeError(w, http.StatusConflict, "addon already added")
-			return
-		}
-	}
-
-	sub.AddonIDs = append(sub.AddonIDs, req.AddonID)
-	if err := h.subs.Update(r.Context(), sub); err != nil {
+	if err := h.service.AddSubscriptionAddon(r.Context(), subID, req.AddonID); err != nil {
 		status, message := mapServiceError(err)
 		writeError(w, status, message)
 		return
@@ -279,6 +271,7 @@ func (h *BillingHandler) RemoveSubscriptionAddon(w http.ResponseWriter, r *http.
 		return
 	}
 
+	// Verify ownership.
 	sub, err := h.subs.GetByID(r.Context(), subID)
 	if err != nil {
 		status, message := mapServiceError(err)
@@ -290,22 +283,7 @@ func (h *BillingHandler) RemoveSubscriptionAddon(w http.ResponseWriter, r *http.
 		return
 	}
 
-	found := false
-	newAddons := make([]string, 0, len(sub.AddonIDs))
-	for _, id := range sub.AddonIDs {
-		if id == addonID {
-			found = true
-			continue
-		}
-		newAddons = append(newAddons, id)
-	}
-	if !found {
-		writeError(w, http.StatusNotFound, "addon not found on subscription")
-		return
-	}
-
-	sub.AddonIDs = newAddons
-	if err := h.subs.Update(r.Context(), sub); err != nil {
+	if err := h.service.RemoveSubscriptionAddon(r.Context(), subID, addonID); err != nil {
 		status, message := mapServiceError(err)
 		writeError(w, status, message)
 		return

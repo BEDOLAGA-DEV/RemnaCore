@@ -17,7 +17,9 @@ var (
 	ErrAddonNotAvailable     = errors.New("addon not available for this plan")
 	ErrSubscriptionNotActive = errors.New("subscription is not active")
 	ErrNotTrialStatus        = errors.New("subscription is not in trial status")
-	ErrCheckoutRateLimited   = errors.New("checkout rate limit exceeded, try again later")
+	ErrCheckoutRateLimited       = errors.New("checkout rate limit exceeded, try again later")
+	ErrAddonAlreadyOnSubscription = errors.New("addon already added to subscription")
+	ErrAddonNotOnSubscription     = errors.New("addon not found on subscription")
 
 	// ErrPlanNotActive is an alias to the aggregate-level sentinel so
 	// that callers using billing.ErrPlanNotActive continue to work.

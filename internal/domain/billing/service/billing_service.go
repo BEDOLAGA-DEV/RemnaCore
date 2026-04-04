@@ -306,6 +306,73 @@ func (s *BillingService) RemoveFamilyMember(
 	})
 }
 
+// AddSubscriptionAddon adds an addon to a subscription. The update and outbox
+// event are persisted in a single database transaction.
+func (s *BillingService) AddSubscriptionAddon(ctx context.Context, subID, addonID string) error {
+	sub, err := s.subs.GetByID(ctx, subID)
+	if err != nil {
+		return fmt.Errorf("get subscription: %w", err)
+	}
+
+	for _, id := range sub.AddonIDs {
+		if id == addonID {
+			return billing.ErrAddonAlreadyOnSubscription
+		}
+	}
+
+	now := s.clock.Now()
+	sub.AddonIDs = append(sub.AddonIDs, addonID)
+	sub.UpdatedAt = now
+	sub.RecordEvent(domainevent.NewAtWithEntity(aggregate.EventSubUpdated, aggregate.SubUpdatedPayload{
+		SubscriptionID: sub.ID,
+		UserID:         sub.UserID,
+	}, now, sub.ID))
+
+	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		if err := s.subs.Update(txCtx, sub); err != nil {
+			return fmt.Errorf("update subscription: %w", err)
+		}
+		return s.publishAggregateEvents(txCtx, sub)
+	})
+}
+
+// RemoveSubscriptionAddon removes an addon from a subscription. The update and
+// outbox event are persisted in a single database transaction.
+func (s *BillingService) RemoveSubscriptionAddon(ctx context.Context, subID, addonID string) error {
+	sub, err := s.subs.GetByID(ctx, subID)
+	if err != nil {
+		return fmt.Errorf("get subscription: %w", err)
+	}
+
+	found := false
+	newAddons := make([]string, 0, len(sub.AddonIDs))
+	for _, id := range sub.AddonIDs {
+		if id == addonID {
+			found = true
+			continue
+		}
+		newAddons = append(newAddons, id)
+	}
+	if !found {
+		return billing.ErrAddonNotOnSubscription
+	}
+
+	now := s.clock.Now()
+	sub.AddonIDs = newAddons
+	sub.UpdatedAt = now
+	sub.RecordEvent(domainevent.NewAtWithEntity(aggregate.EventSubUpdated, aggregate.SubUpdatedPayload{
+		SubscriptionID: sub.ID,
+		UserID:         sub.UserID,
+	}, now, sub.ID))
+
+	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		if err := s.subs.Update(txCtx, sub); err != nil {
+			return fmt.Errorf("update subscription: %w", err)
+		}
+		return s.publishAggregateEvents(txCtx, sub)
+	})
+}
+
 // eventSource is implemented by aggregates that embed domainevent.EventRecorder.
 type eventSource interface {
 	DomainEvents() []domainevent.Event

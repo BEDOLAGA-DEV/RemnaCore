@@ -8,7 +8,7 @@ import (
 // Module provides the Valkey client and rate limiters to the Fx dependency graph.
 var Module = fx.Module("valkey",
 	fx.Provide(NewClient),
-	fx.Provide(func(client *redis.Client) RateLimiter {
+	fx.Provide(func(client *redis.Client) *SlidingWindowRateLimiter {
 		return NewSlidingWindowRateLimiter(client, DefaultRateLimit, DefaultRateLimitWindow)
 	}),
 	fx.Provide(NewDomainRateLimiter),

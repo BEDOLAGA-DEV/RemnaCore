@@ -122,3 +122,14 @@ func (m *MockPublisher) Publish(ctx context.Context, event domainevent.Event) er
 
 // Ensure MockPublisher satisfies domainevent.Publisher at compile time.
 var _ domainevent.Publisher = (*MockPublisher)(nil)
+
+// --- NoopTxRunner ---
+
+// NoopTxRunner implements txmanager.Runner by executing fn directly without a
+// real database transaction. This is suitable for unit tests.
+type NoopTxRunner struct{}
+
+// RunInTx executes fn with the original context.
+func (NoopTxRunner) RunInTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	return fn(ctx)
+}

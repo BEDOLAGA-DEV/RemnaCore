@@ -71,12 +71,17 @@ type IdempotencyChecker interface {
 	TryAcquire(ctx context.Context, key string) (bool, error)
 }
 
+// entityLockTTL is the duration after which an idle entity lock is eligible for
+// eviction. This prevents unbounded growth of the entityLocks map.
+const entityLockTTL = 10 * time.Minute
+
 // entityLock serialises event processing for a single entity (e.g. one
 // subscription). This prevents race conditions when events like
 // subscription.activated and subscription.cancelled arrive on different NATS
 // subjects concurrently for the same aggregate.
 type entityLock struct {
-	mu sync.Mutex
+	mu       sync.Mutex
+	lastUsed time.Time
 }
 
 // BillingEventConsumer subscribes to billing domain events on NATS and routes
@@ -129,7 +134,33 @@ func NewBillingEventConsumer(
 // ensures that concurrent events targeting the same aggregate are serialised.
 func (c *BillingEventConsumer) getEntityLock(entityID string) *entityLock {
 	val, _ := c.entityLocks.LoadOrStore(entityID, &entityLock{})
-	return val.(*entityLock)
+	lock := val.(*entityLock)
+	lock.lastUsed = time.Now()
+	return lock
+}
+
+// evictStaleLocks periodically removes entity locks that have not been used
+// within entityLockTTL. This prevents unbounded memory growth in long-running
+// processes.
+func (c *BillingEventConsumer) evictStaleLocks(ctx context.Context) {
+	ticker := time.NewTicker(entityLockTTL)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			cutoff := time.Now().Add(-entityLockTTL)
+			c.entityLocks.Range(func(key, value any) bool {
+				lock := value.(*entityLock)
+				if lock.lastUsed.Before(cutoff) {
+					c.entityLocks.Delete(key)
+				}
+				return true
+			})
+		}
+	}
 }
 
 // billingSubscriptionSubjects returns the NATS subjects this consumer listens to.
@@ -160,6 +191,9 @@ func (c *BillingEventConsumer) Start(ctx context.Context) error {
 		go c.consumeLoop(ctx, subject, ch)
 		subscribed++
 	}
+
+	// Start background goroutine to evict stale entity locks.
+	go c.evictStaleLocks(ctx)
 
 	c.logger.Info("billing event consumer started",
 		slog.Int("subscribed", subscribed),

@@ -28,7 +28,7 @@ func newTestService(t *testing.T) (
 	pub := new(resellertest.MockPublisher)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	svc := reseller.NewResellerService(tenantRepo, commissionRepo, pub, logger, clock.NewReal())
+	svc := reseller.NewResellerService(tenantRepo, commissionRepo, pub, logger, clock.NewReal(), resellertest.NoopTxRunner{})
 	return svc, tenantRepo, commissionRepo, pub
 }
 

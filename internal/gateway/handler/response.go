@@ -85,6 +85,10 @@ func mapServiceError(err error) (status int, message string) {
 		return http.StatusBadRequest, "plan has no price configured"
 	case errors.Is(err, billing.ErrCheckoutRateLimited):
 		return http.StatusTooManyRequests, "checkout rate limit exceeded, try again later"
+	case errors.Is(err, billing.ErrAddonAlreadyOnSubscription):
+		return http.StatusConflict, "addon already added"
+	case errors.Is(err, billing.ErrAddonNotOnSubscription):
+		return http.StatusNotFound, "addon not found on subscription"
 
 	// MultiSub domain
 	case errors.Is(err, multisub.ErrBindingNotFound):

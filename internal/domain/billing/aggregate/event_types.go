@@ -17,6 +17,7 @@ const (
 	EventSubDowngraded   domainevent.EventType = "subscription.downgraded"
 	EventSubTrialStarted domainevent.EventType = "subscription.trial_started"
 	EventSubTrialEnding  domainevent.EventType = "subscription.trial_ending"
+	EventSubUpdated      domainevent.EventType = "subscription.updated"
 
 	EventInvCreated  domainevent.EventType = "invoice.created"
 	EventInvPaid     domainevent.EventType = "invoice.paid"
@@ -111,6 +112,12 @@ type SubTrialEndingPayload struct {
 	SubscriptionID string `json:"subscription_id"`
 	UserID         string `json:"user_id"`
 	DaysRemaining  int    `json:"days_remaining"`
+}
+
+// SubUpdatedPayload is the typed payload for EventSubUpdated.
+type SubUpdatedPayload struct {
+	SubscriptionID string `json:"subscription_id"`
+	UserID         string `json:"user_id"`
 }
 
 // --- Invoice event payloads ---

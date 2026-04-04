@@ -8,8 +8,13 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
-	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent/domaineventtest"
 )
+
+// MockEventPublisher is an alias for the shared domaineventtest.MockPublisher
+// so that existing test code referencing billingtest.MockEventPublisher
+// continues to compile.
+type MockEventPublisher = domaineventtest.MockPublisher
 
 // --- MockPlanRepo ---
 
@@ -185,18 +190,6 @@ func (m *MockFamilyRepo) Update(ctx context.Context, fg *aggregate.FamilyGroup) 
 
 func (m *MockFamilyRepo) Delete(ctx context.Context, id string) error {
 	args := m.Called(ctx, id)
-	return args.Error(0)
-}
-
-// --- MockEventPublisher ---
-
-// MockEventPublisher is a testify/mock implementation of domainevent.Publisher.
-type MockEventPublisher struct {
-	mock.Mock
-}
-
-func (m *MockEventPublisher) Publish(ctx context.Context, event domainevent.Event) error {
-	args := m.Called(ctx, event)
 	return args.Error(0)
 }
 

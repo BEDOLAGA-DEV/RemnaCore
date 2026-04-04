@@ -8,8 +8,11 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
-	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent/domaineventtest"
 )
+
+// MockEventPublisher is an alias for the shared domaineventtest.MockPublisher.
+type MockEventPublisher = domaineventtest.MockPublisher
 
 // --- MockBindingRepo ---
 
@@ -132,14 +135,3 @@ func (m *MockRemnawaveGateway) AssignToSquad(ctx context.Context, remnawaveUUID,
 	return args.Error(0)
 }
 
-// --- MockEventPublisher ---
-
-// MockEventPublisher is a testify/mock implementation of domainevent.Publisher.
-type MockEventPublisher struct {
-	mock.Mock
-}
-
-func (m *MockEventPublisher) Publish(ctx context.Context, event domainevent.Event) error {
-	args := m.Called(ctx, event)
-	return args.Error(0)
-}

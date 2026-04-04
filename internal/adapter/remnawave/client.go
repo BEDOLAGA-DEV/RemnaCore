@@ -13,8 +13,25 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tracing"
 )
 
-// DefaultHTTPTimeout is the default timeout for HTTP requests to Remnawave.
-const DefaultHTTPTimeout = 30 * time.Second
+const (
+	// DefaultHTTPTimeout is the default timeout for HTTP requests to Remnawave.
+	DefaultHTTPTimeout = 30 * time.Second
+
+	// HeaderForwardedProto is the standard header for forwarding the original
+	// protocol (HTTP/HTTPS) through a reverse proxy.
+	HeaderForwardedProto = "X-Forwarded-Proto"
+
+	// HeaderForwardedFor is the standard header for forwarding the original
+	// client IP address through a reverse proxy.
+	HeaderForwardedFor = "X-Forwarded-For"
+
+	// ForwardedProtoHTTPS is the value indicating HTTPS protocol.
+	ForwardedProtoHTTPS = "https"
+
+	// ForwardedLoopbackIP is the loopback IP used when RemnaCore calls
+	// Remnawave directly (same host / Docker network).
+	ForwardedLoopbackIP = "127.0.0.1"
+)
 
 // isHTTPSuccess reports whether the given HTTP status code is in the 2xx range.
 func isHTTPSuccess(statusCode int) bool {
@@ -73,8 +90,8 @@ func (c *Client) do(ctx context.Context, method, path string, body any, dest any
 	req.Header.Set(httpconst.HeaderAuthorization, httpconst.BearerPrefix+c.apiToken)
 	req.Header.Set(httpconst.HeaderContentType, httpconst.ContentTypeJSON)
 	// Remnawave v2.7+ requires reverse proxy headers to bypass ProxyCheckMiddleware
-	req.Header.Set("X-Forwarded-Proto", "https")
-	req.Header.Set("X-Forwarded-For", "127.0.0.1")
+	req.Header.Set(HeaderForwardedProto, ForwardedProtoHTTPS)
+	req.Header.Set(HeaderForwardedFor, ForwardedLoopbackIP)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

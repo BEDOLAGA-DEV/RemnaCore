@@ -11,8 +11,10 @@ import (
 
 	"go.uber.org/fx"
 
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/valkey"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
 )
 
 // httpShutdownTimeout is the maximum time allowed for the HTTP server to
@@ -24,6 +26,9 @@ const httpShutdownTimeout = 10 * time.Second
 var httpWiring = fx.Options(
 	// Gateway module
 	gateway.Module,
+
+	// Rate limiter: middleware.RateLimiter wraps *valkey.SlidingWindowRateLimiter
+	fx.Provide(func(r *valkey.SlidingWindowRateLimiter) middleware.RateLimiter { return r }),
 
 	// HTTP server lifecycle
 	fx.Invoke(startHTTPServer),

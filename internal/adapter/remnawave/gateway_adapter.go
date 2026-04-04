@@ -3,22 +3,27 @@ package remnawave
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 )
+
+// DefaultBindingExpiryMonths is the number of months added to the current time
+// when no explicit expiry is provided for a Remnawave user.
+const DefaultBindingExpiryMonths = 1
 
 // GatewayAdapter implements multisub.RemnawaveGateway, translating between
 // domain port types and Remnawave client types. This is the Anti-Corruption
 // Layer boundary; no remnawave client types leak into the domain.
 type GatewayAdapter struct {
 	client *ResilientClient
+	clock  clock.Clock
 }
 
 // NewGatewayAdapter creates a GatewayAdapter backed by the given resilient
 // client.
-func NewGatewayAdapter(client *ResilientClient) *GatewayAdapter {
-	return &GatewayAdapter{client: client}
+func NewGatewayAdapter(client *ResilientClient, clk clock.Clock) *GatewayAdapter {
+	return &GatewayAdapter{client: client, clock: clk}
 }
 
 // CreateUser provisions a VPN user in Remnawave, translating the domain
@@ -31,8 +36,8 @@ func (a *GatewayAdapter) CreateUser(ctx context.Context, req multisub.CreateRemn
 	if req.ExpireAt != nil {
 		rwReq.ExpireAt = *req.ExpireAt
 	} else {
-		// Default: 30 days from now if no expiry specified.
-		rwReq.ExpireAt = time.Now().AddDate(0, 1, 0)
+		// Default: 1 month from now if no expiry specified.
+		rwReq.ExpireAt = a.clock.Now().AddDate(0, DefaultBindingExpiryMonths, 0)
 	}
 
 	user, err := a.client.CreateUser(ctx, rwReq)

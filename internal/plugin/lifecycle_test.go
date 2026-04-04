@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 )
 
 // --- Mock PluginRepository ---
@@ -175,7 +177,7 @@ func newTestLifecycleManager() (*LifecycleManager, *mockRepo, *mockStorage, *tes
 	runtime := NewRuntimePool(logger, factory)
 	dispatcher := NewHookDispatcher(runtime, pub, logger)
 
-	lm := NewLifecycleManager(repo, storage, runtime, dispatcher, pub, logger)
+	lm := NewLifecycleManager(repo, storage, runtime, dispatcher, pub, logger, clock.NewReal())
 	return lm, repo, storage, pub
 }
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
 // ResellerService implements the core reseller and white-label use-cases:
@@ -18,6 +19,7 @@ type ResellerService struct {
 	publisher   domainevent.Publisher
 	logger      *slog.Logger
 	clock       clock.Clock
+	txRunner    txmanager.Runner
 }
 
 // NewResellerService creates a ResellerService with the given dependencies.
@@ -27,6 +29,7 @@ func NewResellerService(
 	publisher domainevent.Publisher,
 	logger *slog.Logger,
 	clk clock.Clock,
+	txRunner txmanager.Runner,
 ) *ResellerService {
 	return &ResellerService{
 		tenants:     tenants,
@@ -34,6 +37,7 @@ func NewResellerService(
 		publisher:   publisher,
 		logger:      logger,
 		clock:       clk,
+		txRunner:    txRunner,
 	}
 }
 
@@ -138,23 +142,30 @@ func (s *ResellerService) CreateResellerAccount(ctx context.Context, tenantID, u
 }
 
 // RecordCommission creates a commission for a sale and updates the reseller's
-// accumulated balance.
+// accumulated balance. The commission creation and balance update are wrapped
+// in a database transaction to prevent race conditions on concurrent writes.
 func (s *ResellerService) RecordCommission(ctx context.Context, resellerID, saleID string, saleAmount int64, rate int, currency string) (*Commission, error) {
 	commission := NewCommission(resellerID, saleID, saleAmount, rate, currency, s.clock.Now())
 
-	if err := s.commissions.CreateCommission(ctx, commission); err != nil {
-		return nil, fmt.Errorf("persisting commission: %w", err)
-	}
+	err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		if err := s.commissions.CreateCommission(txCtx, commission); err != nil {
+			return fmt.Errorf("persisting commission: %w", err)
+		}
 
-	// Update accumulated balance.
-	account, err := s.commissions.GetResellerAccountByID(ctx, resellerID)
+		account, err := s.commissions.GetResellerAccountByID(txCtx, resellerID)
+		if err != nil {
+			return fmt.Errorf("finding reseller account: %w", err)
+		}
+
+		newBalance := account.Balance + commission.Amount
+		if err := s.commissions.UpdateResellerBalance(txCtx, resellerID, newBalance); err != nil {
+			return fmt.Errorf("updating reseller balance: %w", err)
+		}
+
+		return nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("finding reseller account: %w", err)
-	}
-
-	newBalance := account.Balance + commission.Amount
-	if err := s.commissions.UpdateResellerBalance(ctx, resellerID, newBalance); err != nil {
-		return nil, fmt.Errorf("updating reseller balance: %w", err)
+		return nil, fmt.Errorf("record commission tx: %w", err)
 	}
 
 	if err := s.publisher.Publish(ctx, NewCommissionCreatedEvent(commission.ID, resellerID, commission.Amount)); err != nil {

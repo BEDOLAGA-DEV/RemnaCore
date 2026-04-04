@@ -11,7 +11,6 @@ import (
 	"go.uber.org/fx"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/remnawave"
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/valkey"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/handler"
@@ -45,7 +44,7 @@ type RouterParams struct {
 
 	Config                *config.Config
 	JWT                   *authutil.JWTIssuer
-	RateLimiter           valkey.RateLimiter
+	RateLimiter           middleware.RateLimiter
 	IdentityHandler       *handler.IdentityHandler
 	HealthHandler         *handler.HealthHandler
 	WebhookHandler        *remnawave.WebhookHandler

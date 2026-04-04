@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"time"
 
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
 
@@ -19,6 +19,7 @@ type LifecycleManager struct {
 	dispatcher *HookDispatcher
 	publisher  domainevent.Publisher
 	logger     *slog.Logger
+	clock      clock.Clock
 }
 
 // NewLifecycleManager creates a LifecycleManager with all required
@@ -30,6 +31,7 @@ func NewLifecycleManager(
 	dispatcher *HookDispatcher,
 	publisher domainevent.Publisher,
 	logger *slog.Logger,
+	clk clock.Clock,
 ) *LifecycleManager {
 	return &LifecycleManager{
 		repo:       repo,
@@ -38,6 +40,7 @@ func NewLifecycleManager(
 		dispatcher: dispatcher,
 		publisher:  publisher,
 		logger:     logger,
+		clock:      clk,
 	}
 }
 
@@ -61,7 +64,7 @@ func (lm *LifecycleManager) Install(ctx context.Context, manifestBytes, wasmByte
 		return nil, fmt.Errorf("%w: slug %q", ErrPluginAlreadyExists, manifest.Plugin.ID)
 	}
 
-	p, err := NewPlugin(manifest, wasmBytes, time.Now())
+	p, err := NewPlugin(manifest, wasmBytes, lm.clock.Now())
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +102,7 @@ func (lm *LifecycleManager) Enable(ctx context.Context, pluginID string) error {
 		}
 	}
 
-	if err := p.Enable(time.Now()); err != nil {
+	if err := p.Enable(lm.clock.Now()); err != nil {
 		return fmt.Errorf("transition plugin to enabled: %w", err)
 	}
 
@@ -148,7 +151,7 @@ func (lm *LifecycleManager) Disable(ctx context.Context, pluginID string) error 
 		return fmt.Errorf("unloading plugin from runtime: %w", unloadErr)
 	}
 
-	p.Disable(time.Now())
+	p.Disable(lm.clock.Now())
 
 	if err := lm.repo.UpdateStatus(ctx, p.ID, p.Status, "", nil); err != nil {
 		return fmt.Errorf("persisting disabled status: %w", err)
@@ -279,7 +282,7 @@ func (lm *LifecycleManager) HotReload(ctx context.Context, pluginID string, mani
 	oldVersion := old.Version
 
 	// 4. Build updated plugin (preserving ID, config, enabled state).
-	now := time.Now()
+	now := lm.clock.Now()
 	updated := &Plugin{
 		ID:          old.ID,
 		Slug:        old.Slug,

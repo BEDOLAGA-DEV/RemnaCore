@@ -1,13 +1,19 @@
 package middleware
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"strings"
 
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/valkey"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
 )
+
+// RateLimiter determines whether a request identified by key should be allowed.
+// Implementations live in the adapter layer (e.g. valkey.SlidingWindowRateLimiter).
+type RateLimiter interface {
+	Allow(ctx context.Context, key string) (bool, error)
+}
 
 const (
 	// ForwardedForHeader is the standard header for identifying client IPs
@@ -23,7 +29,7 @@ const (
 // requests are keyed by user ID; unauthenticated requests are keyed by client
 // IP. The limiter follows a fail-open policy: if the rate limiter itself returns
 // an error, the request is allowed through.
-func RateLimit(limiter valkey.RateLimiter) func(http.Handler) http.Handler {
+func RateLimit(limiter RateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			key := rateLimitKey(r)
