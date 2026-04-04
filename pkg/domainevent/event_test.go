@@ -150,3 +150,38 @@ func TestEvent_JSONRoundTrip_EmptyEntityID_OmittedFromJSON(t *testing.T) {
 
 	assert.Empty(t, decoded.EntityID)
 }
+
+// typedTestPayload implements EventPayload for testing NewTyped.
+type typedTestPayload struct {
+	UserID string `json:"user_id"`
+}
+
+func (typedTestPayload) EventType() EventType { return "test.typed" }
+
+func TestNewTyped_SetsTypeFromPayload(t *testing.T) {
+	ts := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	payload := typedTestPayload{UserID: "u-1"}
+	e := NewTyped(payload, ts, "entity-1")
+
+	assert.Equal(t, EventType("test.typed"), e.Type)
+	assert.Equal(t, DefaultEventVersion, e.Version)
+	assert.Equal(t, ts, e.Timestamp)
+	assert.Equal(t, "entity-1", e.EntityID)
+
+	typed, ok := e.Data.(typedTestPayload)
+	require.True(t, ok)
+	assert.Equal(t, "u-1", typed.UserID)
+}
+
+func TestEvent_JSONRoundTrip_IncludesVersion(t *testing.T) {
+	e := New("test.version", map[string]any{"key": "val"})
+
+	data, err := json.Marshal(e)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"version":1`)
+
+	var decoded Event
+	err = json.Unmarshal(data, &decoded)
+	require.NoError(t, err)
+	assert.Equal(t, DefaultEventVersion, decoded.Version)
+}

@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
 )
 
 const (
@@ -54,9 +56,9 @@ func (c *apiClient) do(method, path string, body any) ([]byte, int, error) {
 		return nil, 0, fmt.Errorf("creating request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(httpconst.HeaderContentType, httpconst.ContentTypeJSON)
 	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
+		req.Header.Set(httpconst.HeaderAuthorization, httpconst.BearerPrefix+c.token)
 	}
 
 	resp, err := c.httpClient.Do(req)
