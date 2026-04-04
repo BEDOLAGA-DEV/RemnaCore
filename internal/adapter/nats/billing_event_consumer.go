@@ -56,23 +56,9 @@ type SubscriptionEventHandler interface {
 	OnSubscriptionResumed(ctx context.Context, subscriptionID string) error
 }
 
-// SubscriptionLookup provides read access to billing data so the consumer can
-// enrich sparse domain events with the full context the orchestrator requires.
-// Plan data is returned as multisub.PlanSnapshot, translated at the adapter
-// boundary (Anti-Corruption Layer).
-type SubscriptionLookup interface {
-	GetSubscriptionByID(ctx context.Context, id string) (SubscriptionInfo, error)
-	GetPlanSnapshot(ctx context.Context, id string) (multisub.PlanSnapshot, error)
-	GetFamilyMemberIDs(ctx context.Context, ownerID string) ([]string, error)
-}
-
-// SubscriptionInfo holds the minimal subscription data the consumer needs.
-type SubscriptionInfo struct {
-	ID       string
-	UserID   string
-	PlanID   string
-	AddonIDs []string
-}
+// NOTE: Subscription and plan lookup interfaces are defined in the multisub
+// domain as multisub.PlanProvider and multisub.SubscriptionProvider. The NATS
+// adapter (BillingSubscriptionLookup) implements those domain ports.
 
 // IdempotencyChecker provides message-level deduplication. The adapter layer
 // owns this interface; the postgres.IdempotencyRepository satisfies it.
@@ -87,9 +73,10 @@ type IdempotencyChecker interface {
 // MaxMessageRetries times; permanently failing messages are sent to the
 // dead-letter queue.
 type BillingEventConsumer struct {
-	subscriber  *EventSubscriber
-	handler     SubscriptionEventHandler
-	lookup      SubscriptionLookup
+	subscriber *EventSubscriber
+	handler    SubscriptionEventHandler
+	plans      multisub.PlanProvider
+	subs       multisub.SubscriptionProvider
 	idempotency IdempotencyChecker
 	publisher   *EventPublisher
 	logger      *slog.Logger
@@ -97,11 +84,13 @@ type BillingEventConsumer struct {
 
 // NewBillingEventConsumer creates a BillingEventConsumer with the given
 // dependencies. The publisher is used to route permanently failed messages to
-// the dead-letter queue.
+// the dead-letter queue. Plan and subscription data are resolved through
+// multisub domain ports (PlanProvider + SubscriptionProvider).
 func NewBillingEventConsumer(
 	subscriber *EventSubscriber,
 	handler SubscriptionEventHandler,
-	lookup SubscriptionLookup,
+	plans multisub.PlanProvider,
+	subs multisub.SubscriptionProvider,
 	idempotency IdempotencyChecker,
 	publisher *EventPublisher,
 	logger *slog.Logger,
@@ -109,7 +98,8 @@ func NewBillingEventConsumer(
 	return &BillingEventConsumer{
 		subscriber:  subscriber,
 		handler:     handler,
-		lookup:      lookup,
+		plans:       plans,
+		subs:        subs,
 		idempotency: idempotency,
 		publisher:   publisher,
 		logger:      logger,
@@ -315,17 +305,17 @@ func (c *BillingEventConsumer) handleActivated(ctx context.Context, event domain
 		return errMissingSubscriptionID
 	}
 
-	subInfo, err := c.lookup.GetSubscriptionByID(ctx, subscriptionID)
+	subInfo, err := c.subs.GetSubscriptionInfo(ctx, subscriptionID)
 	if err != nil {
 		return fmt.Errorf("lookup subscription %s: %w", subscriptionID, err)
 	}
 
-	plan, err := c.lookup.GetPlanSnapshot(ctx, subInfo.PlanID)
+	plan, err := c.plans.GetPlanSnapshot(ctx, subInfo.PlanID)
 	if err != nil {
 		return fmt.Errorf("lookup plan %s: %w", subInfo.PlanID, err)
 	}
 
-	familyMemberIDs, err := c.lookup.GetFamilyMemberIDs(ctx, subInfo.UserID)
+	familyMemberIDs, err := c.subs.GetFamilyMemberIDs(ctx, subInfo.UserID)
 	if err != nil {
 		c.logger.Warn("failed to lookup family members, proceeding without",
 			slog.String("user_id", subInfo.UserID),

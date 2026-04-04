@@ -136,11 +136,11 @@ func New() *fx.App {
 			return r
 		}),
 
-		// Billing event consumer dependencies
+		// Billing event consumer dependencies — lookup adapter satisfies multisub
+		// domain ports (PlanProvider + SubscriptionProvider).
 		fx.Provide(natsadapter.NewBillingSubscriptionLookup),
-		fx.Provide(func(l *natsadapter.BillingSubscriptionLookup) natsadapter.SubscriptionLookup {
-			return l
-		}),
+		fx.Provide(func(l *natsadapter.BillingSubscriptionLookup) multisub.PlanProvider { return l }),
+		fx.Provide(func(l *natsadapter.BillingSubscriptionLookup) multisub.SubscriptionProvider { return l }),
 		fx.Provide(natsadapter.NewBillingEventConsumer),
 		fx.Provide(natsadapter.NewPluginAsyncConsumer),
 

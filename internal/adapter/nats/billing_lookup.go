@@ -9,10 +9,11 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 )
 
-// BillingSubscriptionLookup implements SubscriptionLookup by delegating to the
-// billing domain repositories. It bridges the NATS consumer's enrichment needs
-// with the billing bounded context and serves as the Anti-Corruption Layer that
-// translates billing types into multisub PlanSnapshot values.
+// BillingSubscriptionLookup implements the multisub domain ports
+// (PlanProvider + SubscriptionProvider) by delegating to billing domain
+// repositories. It bridges the NATS consumer's enrichment needs with the
+// billing bounded context and serves as the Anti-Corruption Layer that
+// translates billing types into multisub-local types.
 type BillingSubscriptionLookup struct {
 	subs     billing.SubscriptionRepository
 	plans    billing.PlanRepository
@@ -33,14 +34,15 @@ func NewBillingSubscriptionLookup(
 	}
 }
 
-// GetSubscriptionByID fetches minimal subscription data for event enrichment.
-func (l *BillingSubscriptionLookup) GetSubscriptionByID(ctx context.Context, id string) (SubscriptionInfo, error) {
+// GetSubscriptionInfo fetches minimal subscription data for event enrichment.
+// It satisfies multisub.SubscriptionProvider.
+func (l *BillingSubscriptionLookup) GetSubscriptionInfo(ctx context.Context, id string) (multisub.SubscriptionInfo, error) {
 	sub, err := l.subs.GetByID(ctx, id)
 	if err != nil {
-		return SubscriptionInfo{}, fmt.Errorf("get subscription: %w", err)
+		return multisub.SubscriptionInfo{}, fmt.Errorf("get subscription: %w", err)
 	}
 
-	return SubscriptionInfo{
+	return multisub.SubscriptionInfo{
 		ID:       sub.ID,
 		UserID:   sub.UserID,
 		PlanID:   sub.PlanID,
@@ -121,5 +123,9 @@ func addonTypeToSnapshot(t billingaggregate.AddonType) multisub.AddonSnapshotTyp
 	return multisub.AddonSnapshotType(t)
 }
 
-// compile-time interface check
-var _ SubscriptionLookup = (*BillingSubscriptionLookup)(nil)
+// compile-time interface checks — BillingSubscriptionLookup satisfies both
+// multisub domain ports.
+var (
+	_ multisub.PlanProvider         = (*BillingSubscriptionLookup)(nil)
+	_ multisub.SubscriptionProvider = (*BillingSubscriptionLookup)(nil)
+)
