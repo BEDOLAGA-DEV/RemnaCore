@@ -338,15 +338,18 @@ func TestAddFamilyMember_Success(t *testing.T) {
 }
 
 func TestAddFamilyMember_FamilyNotEnabled(t *testing.T) {
-	svc, plans, subs, _, _, _ := newTestBillingService()
+	svc, plans, subs, _, families, _ := newTestBillingService()
 	ctx := context.Background()
 
 	plan := samplePlan()
 	plan.FamilyEnabled = false
 	sub := activeSubscription("user-1", "plan-premium")
 
+	fg := aggregate.NewFamilyGroup("user-1", 5, time.Now())
+
 	subs.On("GetByID", mock.Anything, "sub-1").Return(sub, nil)
 	plans.On("GetByID", mock.Anything, "plan-premium").Return(plan, nil)
+	families.On("GetByOwnerID", mock.Anything, "user-1").Return(fg, nil)
 
 	err := svc.AddFamilyMember(ctx, "sub-1", "member-1", "Alice")
 
@@ -355,6 +358,7 @@ func TestAddFamilyMember_FamilyNotEnabled(t *testing.T) {
 
 	subs.AssertExpectations(t)
 	plans.AssertExpectations(t)
+	families.AssertExpectations(t)
 }
 
 func TestAddFamilyMember_CreatesGroupIfNotExists(t *testing.T) {

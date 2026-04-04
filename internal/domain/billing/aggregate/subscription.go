@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
 
 var (
@@ -39,7 +40,12 @@ var validTransitions = map[SubscriptionStatus][]SubscriptionStatus{
 }
 
 // Subscription is the aggregate root for a user's subscription.
+// It embeds EventRecorder to accumulate domain events during mutations.
+// Services must call DomainEvents() after persisting the aggregate to
+// retrieve and publish all pending events.
 type Subscription struct {
+	domainevent.EventRecorder
+
 	ID          string
 	UserID      string
 	PlanID      string
@@ -134,12 +140,14 @@ func (s *Subscription) Expire(now time.Time) error {
 	return s.transitionTo(StatusExpired, now)
 }
 
-// Renew updates the subscription's billing period. Only allowed when active.
-func (s *Subscription) Renew(newPeriod vo.BillingPeriod, now time.Time) error {
+// Renew advances the subscription to its next billing period. The next period
+// is calculated from the current period's end date and interval, so the caller
+// does not need to construct the new period manually. Only allowed when active.
+func (s *Subscription) Renew(now time.Time) error {
 	if s.Status != StatusActive {
 		return ErrSubscriptionNotActiveForRenewal
 	}
-	s.Period = newPeriod
+	s.Period = s.Period.Next()
 	s.UpdatedAt = now
 	return nil
 }

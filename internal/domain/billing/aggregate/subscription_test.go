@@ -238,25 +238,50 @@ func TestSubscription_Renew(t *testing.T) {
 	require.NoError(t, sub.Activate(time.Now()))
 
 	oldEnd := sub.Period.End
-	newPeriod := vo.NewBillingPeriod(oldEnd, vo.IntervalMonth)
+	expectedNext := vo.NewBillingPeriod(oldEnd, vo.IntervalMonth)
 
-	err := sub.Renew(newPeriod, time.Now())
+	err := sub.Renew(time.Now())
 
 	require.NoError(t, err)
 	assert.Equal(t, StatusActive, sub.Status)
-	assert.Equal(t, newPeriod.Start, sub.Period.Start)
-	assert.Equal(t, newPeriod.End, sub.Period.End)
+	assert.Equal(t, expectedNext.Start, sub.Period.Start)
+	assert.Equal(t, expectedNext.End, sub.Period.End)
 }
 
 func TestSubscription_Renew_NotActive(t *testing.T) {
 	sub := NewSubscription("user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
 	// Still in trial
-	newPeriod := vo.NewBillingPeriod(time.Now(), vo.IntervalMonth)
 
-	err := sub.Renew(newPeriod, time.Now())
+	err := sub.Renew(time.Now())
 
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "active")
+}
+
+func TestSubscription_Renew_PreservesInterval(t *testing.T) {
+	tests := []struct {
+		name     string
+		interval vo.BillingInterval
+	}{
+		{"monthly", vo.IntervalMonth},
+		{"quarterly", vo.IntervalQuarter},
+		{"yearly", vo.IntervalYear},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sub := NewSubscription("user-1", "plan-1", tt.interval, nil, time.Now())
+			require.NoError(t, sub.Activate(time.Now()))
+
+			originalEnd := sub.Period.End
+
+			err := sub.Renew(time.Now())
+
+			require.NoError(t, err)
+			assert.Equal(t, originalEnd, sub.Period.Start)
+			assert.Equal(t, tt.interval, sub.Period.Interval)
+		})
+	}
 }
 
 func TestSubscription_CanTransitionTo(t *testing.T) {

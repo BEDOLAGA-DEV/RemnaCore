@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
 
 var (
@@ -42,7 +43,10 @@ const (
 )
 
 // Invoice is the aggregate root for a billing invoice.
+// It embeds EventRecorder to accumulate domain events during mutations.
 type Invoice struct {
+	domainevent.EventRecorder
+
 	ID             string
 	SubscriptionID string
 	UserID         string

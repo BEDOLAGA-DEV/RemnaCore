@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
 
 // ErrMaxFamilyExceeded indicates the family group has reached its maximum member count.
@@ -27,7 +28,10 @@ type FamilyMember struct {
 }
 
 // FamilyGroup is the aggregate root for a family sharing group.
+// It embeds EventRecorder to accumulate domain events during mutations.
 type FamilyGroup struct {
+	domainevent.EventRecorder
+
 	ID         string
 	OwnerID    string
 	MaxMembers int

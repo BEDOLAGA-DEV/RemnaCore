@@ -78,6 +78,10 @@ func (s *BillingService) CreateSubscription(
 		return nil, nil, fmt.Errorf("get plan: %w", err)
 	}
 
+	if err := (aggregate.CheckoutEligibility{Plan: plan}).Check(); err != nil {
+		return nil, nil, fmt.Errorf("checkout eligibility: %w", err)
+	}
+
 	// Create subscription (defaults to trial)
 	now := s.clock.Now()
 	sub := aggregate.NewSubscription(cmd.UserID, plan.ID, plan.Interval, cmd.AddonIDs, now)
@@ -90,6 +94,9 @@ func (s *BillingService) CreateSubscription(
 		return nil, nil, fmt.Errorf("create invoice: %w", err)
 	}
 
+	// Record event on the aggregate so it is discoverable and auditable.
+	sub.RecordEvent(billing.NewSubCreatedEvent(sub.ID, sub.UserID, sub.PlanID))
+
 	err = s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		if err := s.subs.Create(txCtx, sub); err != nil {
 			return fmt.Errorf("persist subscription: %w", err)
@@ -99,9 +106,8 @@ func (s *BillingService) CreateSubscription(
 			return fmt.Errorf("persist invoice: %w", err)
 		}
 
-		event := billing.NewSubCreatedEvent(sub.ID, sub.UserID, sub.PlanID)
-		if err := s.publisher.Publish(txCtx, event); err != nil {
-			return fmt.Errorf("publish subscription.created: %w", err)
+		if err := s.publishAggregateEvents(txCtx, sub); err != nil {
+			return err
 		}
 
 		return nil
@@ -125,14 +131,15 @@ func (s *BillingService) CancelSubscription(ctx context.Context, subID string) e
 		return fmt.Errorf("cancel subscription: %w", err)
 	}
 
+	sub.RecordEvent(billing.NewSubCancelledEvent(sub.ID, sub.UserID, "user_requested"))
+
 	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		if err := s.subs.Update(txCtx, sub); err != nil {
 			return fmt.Errorf("update subscription: %w", err)
 		}
 
-		event := billing.NewSubCancelledEvent(sub.ID, sub.UserID, "user_requested")
-		if err := s.publisher.Publish(txCtx, event); err != nil {
-			return fmt.Errorf("publish subscription.cancelled: %w", err)
+		if err := s.publishAggregateEvents(txCtx, sub); err != nil {
+			return err
 		}
 
 		return nil
@@ -165,14 +172,15 @@ func (s *BillingService) PayInvoice(ctx context.Context, invoiceID string) error
 		return fmt.Errorf("mark paid: %w", err)
 	}
 
+	inv.RecordEvent(billing.NewInvoicePaidEvent(inv.ID, inv.SubscriptionID, inv.UserID, inv.Total.Amount))
+
 	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		if err := s.invoices.Update(txCtx, inv); err != nil {
 			return fmt.Errorf("update invoice: %w", err)
 		}
 
-		paidEvent := billing.NewInvoicePaidEvent(inv.ID, inv.SubscriptionID, inv.UserID, inv.Total.Amount)
-		if err := s.publisher.Publish(txCtx, paidEvent); err != nil {
-			return fmt.Errorf("publish invoice.paid: %w", err)
+		if err := s.publishAggregateEvents(txCtx, inv); err != nil {
+			return err
 		}
 
 		// Activate subscription if it is in trial or past_due
@@ -186,13 +194,14 @@ func (s *BillingService) PayInvoice(ctx context.Context, invoiceID string) error
 				return fmt.Errorf("activate subscription: %w", err)
 			}
 
+			sub.RecordEvent(billing.NewSubActivatedEvent(sub.ID, sub.UserID))
+
 			if err := s.subs.Update(txCtx, sub); err != nil {
 				return fmt.Errorf("update subscription: %w", err)
 			}
 
-			activatedEvent := billing.NewSubActivatedEvent(sub.ID, sub.UserID)
-			if err := s.publisher.Publish(txCtx, activatedEvent); err != nil {
-				return fmt.Errorf("publish subscription.activated: %w", err)
+			if err := s.publishAggregateEvents(txCtx, sub); err != nil {
+				return err
 			}
 		}
 
@@ -217,10 +226,6 @@ func (s *BillingService) AddFamilyMember(
 		return fmt.Errorf("get plan: %w", err)
 	}
 
-	if !plan.FamilyEnabled {
-		return billing.ErrFamilyNotEnabled
-	}
-
 	now := s.clock.Now()
 	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		// Get or create family group
@@ -236,17 +241,27 @@ func (s *BillingService) AddFamilyMember(
 			}
 		}
 
+		// Validate family eligibility before adding the member.
+		eligibility := aggregate.FamilyEligibility{
+			Plan:        plan,
+			MemberCount: fg.MemberCount(),
+		}
+		if err := eligibility.Check(); err != nil {
+			return fmt.Errorf("family eligibility: %w", err)
+		}
+
 		if err := fg.AddMember(memberUserID, nickname, now); err != nil {
 			return fmt.Errorf("add family member: %w", err)
 		}
+
+		fg.RecordEvent(billing.NewFamilyMemberAddedEvent(fg.ID, fg.OwnerID, memberUserID))
 
 		if err := s.families.Update(txCtx, fg); err != nil {
 			return fmt.Errorf("update family group: %w", err)
 		}
 
-		event := billing.NewFamilyMemberAddedEvent(fg.ID, fg.OwnerID, memberUserID)
-		if err := s.publisher.Publish(txCtx, event); err != nil {
-			return fmt.Errorf("publish family.member_added: %w", err)
+		if err := s.publishAggregateEvents(txCtx, fg); err != nil {
+			return err
 		}
 
 		return nil
@@ -274,18 +289,36 @@ func (s *BillingService) RemoveFamilyMember(
 		return fmt.Errorf("remove family member: %w", err)
 	}
 
+	fg.RecordEvent(billing.NewFamilyMemberRemovedEvent(fg.ID, fg.OwnerID, memberUserID))
+
 	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		if err := s.families.Update(txCtx, fg); err != nil {
 			return fmt.Errorf("update family group: %w", err)
 		}
 
-		event := billing.NewFamilyMemberRemovedEvent(fg.ID, fg.OwnerID, memberUserID)
-		if err := s.publisher.Publish(txCtx, event); err != nil {
-			return fmt.Errorf("publish family.member_removed: %w", err)
+		if err := s.publishAggregateEvents(txCtx, fg); err != nil {
+			return err
 		}
 
 		return nil
 	})
+}
+
+// eventSource is implemented by aggregates that embed domainevent.EventRecorder.
+type eventSource interface {
+	DomainEvents() []domainevent.Event
+}
+
+// publishAggregateEvents flushes all pending events from the aggregate and
+// publishes them through the publisher. This centralises the flush-and-publish
+// pattern so individual service methods cannot forget to publish.
+func (s *BillingService) publishAggregateEvents(ctx context.Context, src eventSource) error {
+	for _, event := range src.DomainEvents() {
+		if err := s.publisher.Publish(ctx, event); err != nil {
+			return fmt.Errorf("publish %s: %w", event.Type, err)
+		}
+	}
+	return nil
 }
 
 // buildLineItems creates invoice line items from a plan and selected addon IDs.
