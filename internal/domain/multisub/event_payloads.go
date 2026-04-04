@@ -1,6 +1,9 @@
 package multisub
 
-import "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
+import (
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+)
 
 // Payload type aliases re-exported from aggregate for backward compatibility.
 type (
@@ -39,3 +42,14 @@ type BindingWebhookPayload struct {
 	SubscriptionID string `json:"subscription_id"`
 	RemnawaveUUID  string `json:"remnawave_uuid"`
 }
+
+// --- EventPayload interface implementations ---
+
+func (BindingSyncFailedPayload) EventType() domainevent.EventType    { return EventBindingSyncFailed }
+func (BindingSyncCompletedPayload) EventType() domainevent.EventType { return EventBindingSyncCompleted }
+func (BindingTrafficExceededPayload) EventType() domainevent.EventType {
+	return EventBindingTrafficExceeded
+}
+
+// Compile-time interface check.
+var _ domainevent.EventPayload = BindingSyncFailedPayload{}

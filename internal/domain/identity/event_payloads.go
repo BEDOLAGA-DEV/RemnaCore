@@ -1,5 +1,7 @@
 package identity
 
+import "github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+
 // UserRegisteredPayload is the typed payload for EventUserRegistered.
 type UserRegisteredPayload struct {
 	UserID string `json:"user_id"`
@@ -28,3 +30,16 @@ type PasswordResetRequestedPayload struct {
 type PasswordResetPayload struct {
 	UserID string `json:"user_id"`
 }
+
+// --- EventPayload interface implementations ---
+
+func (UserRegisteredPayload) EventType() domainevent.EventType { return EventUserRegistered }
+func (EmailVerifiedPayload) EventType() domainevent.EventType  { return EventEmailVerified }
+func (UserLoggedInPayload) EventType() domainevent.EventType   { return EventUserLoggedIn }
+func (PasswordResetRequestedPayload) EventType() domainevent.EventType {
+	return EventPasswordResetRequested
+}
+func (PasswordResetPayload) EventType() domainevent.EventType { return EventPasswordReset }
+
+// Compile-time interface check.
+var _ domainevent.EventPayload = UserRegisteredPayload{}

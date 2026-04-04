@@ -50,3 +50,14 @@ type BindingEnabledPayload struct {
 	BindingID      string `json:"binding_id"`
 	SubscriptionID string `json:"subscription_id"`
 }
+
+// --- EventPayload interface implementations ---
+
+func (BindingProvisionedPayload) EventType() domainevent.EventType   { return EventBindingProvisioned }
+func (BindingDeprovisionedPayload) EventType() domainevent.EventType { return EventBindingDeprovisioned }
+func (BindingFailedPayload) EventType() domainevent.EventType        { return EventBindingFailed }
+func (BindingDisabledPayload) EventType() domainevent.EventType      { return EventBindingDisabled }
+func (BindingEnabledPayload) EventType() domainevent.EventType       { return EventBindingEnabled }
+
+// Compile-time interface check.
+var _ domainevent.EventPayload = BindingProvisionedPayload{}

@@ -189,3 +189,38 @@ type PlanUpdatedPayload struct {
 type PlanDeactivatedPayload struct {
 	PlanID string `json:"plan_id"`
 }
+
+// --- EventPayload interface implementations ---
+
+func (SubCreatedPayload) EventType() domainevent.EventType        { return EventSubCreated }
+func (SubActivatedPayload) EventType() domainevent.EventType      { return EventSubActivated }
+func (SubCancelledPayload) EventType() domainevent.EventType      { return EventSubCancelled }
+func (SubRenewedPayload) EventType() domainevent.EventType        { return EventSubRenewed }
+func (SubPausedPayload) EventType() domainevent.EventType         { return EventSubPaused }
+func (SubResumedPayload) EventType() domainevent.EventType        { return EventSubResumed }
+func (SubExpiredPayload) EventType() domainevent.EventType        { return EventSubExpired }
+func (SubPastDuePayload) EventType() domainevent.EventType        { return EventSubPastDue }
+func (SubUpgradedPayload) EventType() domainevent.EventType       { return EventSubUpgraded }
+func (SubDowngradedPayload) EventType() domainevent.EventType     { return EventSubDowngraded }
+func (SubTrialStartedPayload) EventType() domainevent.EventType   { return EventSubTrialStarted }
+func (SubTrialEndingPayload) EventType() domainevent.EventType    { return EventSubTrialEnding }
+func (SubUpdatedPayload) EventType() domainevent.EventType        { return EventSubUpdated }
+func (InvCreatedPayload) EventType() domainevent.EventType        { return EventInvCreated }
+func (InvPaidPayload) EventType() domainevent.EventType           { return EventInvPaid }
+func (InvFailedPayload) EventType() domainevent.EventType         { return EventInvFailed }
+func (InvRefundedPayload) EventType() domainevent.EventType       { return EventInvRefunded }
+func (FamilyMemberAddedPayload) EventType() domainevent.EventType { return EventFamilyMemberAdded }
+func (FamilyMemberRemovedPayload) EventType() domainevent.EventType {
+	return EventFamilyMemberRemoved
+}
+func (PlanCreatedPayload) EventType() domainevent.EventType     { return EventPlanCreated }
+func (PlanUpdatedPayload) EventType() domainevent.EventType     { return EventPlanUpdated }
+func (PlanDeactivatedPayload) EventType() domainevent.EventType { return EventPlanDeactivated }
+
+// Compile-time interface checks.
+var (
+	_ domainevent.EventPayload = SubCreatedPayload{}
+	_ domainevent.EventPayload = InvCreatedPayload{}
+	_ domainevent.EventPayload = FamilyMemberAddedPayload{}
+	_ domainevent.EventPayload = PlanCreatedPayload{}
+)
