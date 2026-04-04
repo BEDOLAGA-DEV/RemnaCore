@@ -2,11 +2,21 @@ package aggregate
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+)
+
+var (
+	ErrEmptyPlanName             = errors.New("plan name must not be empty")
+	ErrBasePriceNotPositive      = errors.New("base price must be positive")
+	ErrNoCountriesAllowed        = errors.New("at least one country must be allowed")
+	ErrFamilyDisabledWithMembers = errors.New("family is disabled but maxFamilyMembers is set")
+	ErrAddonAlreadyExists        = errors.New("addon already exists on this plan")
+	ErrAddonNotFound             = errors.New("addon not found")
 )
 
 // PlanTier categorises a plan into a pricing tier.
@@ -80,16 +90,16 @@ func NewPlan(
 	now time.Time,
 ) (*Plan, error) {
 	if name == "" {
-		return nil, errors.New("plan name must not be empty")
+		return nil, ErrEmptyPlanName
 	}
 	if !basePrice.IsPositive() {
-		return nil, errors.New("base price must be positive")
+		return nil, ErrBasePriceNotPositive
 	}
 	if len(allowedCountries) == 0 {
-		return nil, errors.New("at least one country must be allowed")
+		return nil, ErrNoCountriesAllowed
 	}
 	if !familyEnabled && maxFamilyMembers > 0 {
-		return nil, errors.New("family is disabled but maxFamilyMembers is set")
+		return nil, ErrFamilyDisabledWithMembers
 	}
 
 	plan := &Plan{
@@ -133,7 +143,7 @@ func (p *Plan) Deactivate(now time.Time) {
 // same ID already exists.
 func (p *Plan) AddAddon(addon Addon, now time.Time) error {
 	if p.HasAddon(addon.ID) {
-		return errors.New("addon already exists on this plan")
+		return ErrAddonAlreadyExists
 	}
 	p.AvailableAddons = append(p.AvailableAddons, addon)
 	p.UpdatedAt = now
@@ -163,7 +173,7 @@ func (p *Plan) CalculateTotal(addonIDs []string) (vo.Money, error) {
 	for _, id := range addonIDs {
 		addon, ok := addonMap[id]
 		if !ok {
-			return vo.Money{}, errors.New("addon not found: " + id)
+			return vo.Money{}, fmt.Errorf("%w: %s", ErrAddonNotFound, id)
 		}
 		sum, err := total.Add(addon.Price)
 		if err != nil {

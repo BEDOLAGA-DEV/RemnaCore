@@ -11,8 +11,16 @@ import (
 // compile-time check that FamilyGroup embeds EventRecorder
 var _ interface{ HasEvents() bool } = (*FamilyGroup)(nil)
 
-// ErrMaxFamilyExceeded indicates the family group has reached its maximum member count.
-var ErrMaxFamilyExceeded = errors.New("maximum family members exceeded")
+var (
+	// ErrMaxFamilyExceeded indicates the family group has reached its maximum member count.
+	ErrMaxFamilyExceeded = errors.New("maximum family members exceeded")
+	// ErrAlreadyMember indicates the user is already part of this family group.
+	ErrAlreadyMember = errors.New("user is already a member of this family group")
+	// ErrCannotRemoveOwner indicates an attempt to remove the group owner.
+	ErrCannotRemoveOwner = errors.New("cannot remove the owner from the family group")
+	// ErrMemberNotFound indicates the user is not a member of this family group.
+	ErrMemberNotFound = errors.New("member not found in family group")
+)
 
 // MemberRole distinguishes between the owner and regular members.
 type MemberRole string
@@ -66,7 +74,7 @@ func NewFamilyGroup(ownerID string, maxMembers int, now time.Time) *FamilyGroup 
 // Returns an error if the group is full or the user is already a member.
 func (fg *FamilyGroup) AddMember(userID, nickname string, now time.Time) error {
 	if fg.HasMember(userID) {
-		return errors.New("user is already a member of this family group")
+		return ErrAlreadyMember
 	}
 	if fg.IsFull() {
 		return ErrMaxFamilyExceeded
@@ -91,7 +99,7 @@ func (fg *FamilyGroup) AddMember(userID, nickname string, now time.Time) error {
 // The owner cannot be removed.
 func (fg *FamilyGroup) RemoveMember(userID string, now time.Time) error {
 	if userID == fg.OwnerID {
-		return errors.New("cannot remove the owner from the family group")
+		return ErrCannotRemoveOwner
 	}
 
 	for i, m := range fg.Members {
@@ -106,7 +114,7 @@ func (fg *FamilyGroup) RemoveMember(userID string, now time.Time) error {
 			return nil
 		}
 	}
-	return errors.New("member not found in family group")
+	return ErrMemberNotFound
 }
 
 // IsFull reports whether the family group has reached its maximum member count.
