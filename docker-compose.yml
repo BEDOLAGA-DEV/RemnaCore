@@ -11,8 +11,8 @@ services:
       - no-new-privileges:true
     tmpfs:
       - /tmp
-    ports:
-      - "${APP_PORT:-4000}:4000"
+    volumes:
+      - ./keys:/etc/remnacore/keys:ro
     environment:
       APP_PORT: "4000"
       APP_LOG_LEVEL: "${LOG_LEVEL:-info}"
@@ -46,8 +46,6 @@ services:
   # ── Platform PostgreSQL ─────────────────────────────────────────────────────
   platform-db:
     image: postgres:18
-    ports:
-      - "${PLATFORM_DB_PORT:-5432}:5432"
     # PG18 async I/O and performance tuning (sized for 1GB container, SSD storage).
     # Data checksums are enabled by default in PG18 (initdb --data-checksums).
     # Use SHOW data_checksums; to verify at runtime.
@@ -82,16 +80,11 @@ services:
   # ── Valkey (Redis-compatible) ───────────────────────────────────────────────
   valkey:
     image: valkey/valkey:9-alpine
-    ports:
-      - "${VALKEY_PORT:-6379}:6379"
     command: --maxmemory 256mb --maxmemory-policy allkeys-lru
 
   # ── NATS with JetStream ────────────────────────────────────────────────────
   nats:
     image: nats:2.12-alpine
-    ports:
-      - "${NATS_PORT:-4222}:4222"
-      - "${NATS_HTTP_PORT:-8222}:8222"
     command: --jetstream --store_dir /data --http_port 8222
     volumes:
       - nats_data:/data
@@ -99,9 +92,6 @@ services:
   # ── Remnawave Backend ──────────────────────────────────────────────────────
   remnawave-backend:
     image: remnawave/backend:2
-    ports:
-      - "${REMNAWAVE_PORT:-3000}:3000"
-      - "${REMNAWAVE_METRICS_PORT:-3001}:3001"
     environment:
       APP_PORT: "3000"
       METRICS_PORT: "3001"
@@ -145,6 +135,22 @@ services:
   # ── Remnawave Valkey ───────────────────────────────────────────────────────
   remnawave-valkey:
     image: valkey/valkey:9-alpine
+
+  # ── Caddy Reverse Proxy ─────────────────────────────────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "8080:8080"
+      - "8081:8081"
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./web/cabinet/dist:/srv/cabinet:ro
+      - ./web/admin/dist:/srv/admin:ro
+    depends_on:
+      - remnacore
+      - remnawave-backend
+    restart: unless-stopped
 
 volumes:
   platform_pgdata:
