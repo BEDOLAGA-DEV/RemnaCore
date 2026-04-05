@@ -61,8 +61,6 @@ services:
       - "shared_buffers=${PG_SHARED_BUFFERS:-256MB}"
       - "-c"
       - "work_mem=${PG_WORK_MEM:-16MB}"
-      - "-c"
-      - "log_checksum_failures=on"
     environment:
       POSTGRES_DB: "${PLATFORM_DB_NAME:-remnacore}"
       POSTGRES_USER: "${PLATFORM_DB_USER:-platform}"
