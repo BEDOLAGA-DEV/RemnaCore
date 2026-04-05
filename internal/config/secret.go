@@ -1,6 +1,9 @@
 package config
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"log/slog"
+)
 
 // SecretString wraps a string that should not be accidentally logged or
 // serialized. String(), MarshalJSON(), and MarshalText() all return a
@@ -36,6 +39,16 @@ func (s SecretString) MarshalJSON() ([]byte, error) {
 // MarshalText returns "***" for text-based serialization (e.g., YAML, slog).
 func (s SecretString) MarshalText() ([]byte, error) {
 	return []byte(secretMask), nil
+}
+
+// GoString implements fmt.GoStringer to prevent secret leakage via %#v.
+func (s SecretString) GoString() string {
+	return "config.SecretString{***}"
+}
+
+// LogValue implements slog.LogValuer to mask the secret in structured logs.
+func (s SecretString) LogValue() slog.Value {
+	return slog.StringValue(secretMask)
 }
 
 // UnmarshalText implements encoding.TextUnmarshaler so koanf can populate

@@ -70,9 +70,12 @@ func (c *apiClient) do(method, path string, body any) ([]byte, int, error) {
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxCLIResponseBytes))
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxCLIResponseBytes+1))
 	if err != nil {
 		return nil, resp.StatusCode, fmt.Errorf("reading response body: %w", err)
+	}
+	if int64(len(respBody)) > maxCLIResponseBytes {
+		return nil, resp.StatusCode, fmt.Errorf("response body exceeds %d bytes", maxCLIResponseBytes)
 	}
 
 	return respBody, resp.StatusCode, nil

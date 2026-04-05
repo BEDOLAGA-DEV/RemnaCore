@@ -151,9 +151,12 @@ func (sp *SubscriptionProxy) fetchFromRemnawave(ctx context.Context, shortUUID s
 		return nil, fmt.Errorf("upstream returned status %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxSubscriptionConfigBytes))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxSubscriptionConfigBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read body: %w", err)
+	}
+	if int64(len(body)) > MaxSubscriptionConfigBytes {
+		return nil, fmt.Errorf("subscription config exceeds %d bytes", MaxSubscriptionConfigBytes)
 	}
 
 	return body, nil

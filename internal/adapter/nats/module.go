@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -42,7 +43,7 @@ func NewConnection(lc fx.Lifecycle, cfg *config.Config, logger *slog.Logger) (*n
 		nc.MaxReconnects(MaxReconnects),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("connecting to NATS at %s: %w", cfg.NATS.URL, err)
+		return nil, fmt.Errorf("connecting to NATS: %w", err)
 	}
 
 	lc.Append(fx.Hook{
@@ -52,7 +53,7 @@ func NewConnection(lc fx.Lifecycle, cfg *config.Config, logger *slog.Logger) (*n
 		},
 	})
 
-	logger.Info("nats connection established", slog.String("url", cfg.NATS.URL))
+	logger.Info("nats connection established", slog.String("url", redactURL(cfg.NATS.URL)))
 
 	return conn, nil
 }
@@ -74,4 +75,17 @@ func EnsureStreams(conn *nc.Conn, logger *slog.Logger) error {
 	}
 
 	return nil
+}
+
+// redactURL strips credentials from a URL for safe logging.
+// "nats://user:pass@host:4222" → "nats://***@host:4222"
+func redactURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "***"
+	}
+	if u.User != nil {
+		u.User = url.User("***")
+	}
+	return u.String()
 }

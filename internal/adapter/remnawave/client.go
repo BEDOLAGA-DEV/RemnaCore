@@ -27,6 +27,10 @@ const (
 	// MaxResponseBytes is the maximum allowed size for Remnawave API responses.
 	// Prevents OOM if the upstream returns an unexpectedly large body.
 	MaxResponseBytes = 10 << 20 // 10 MB
+
+	// maxErrorBodyPreview is the maximum number of bytes from an error response
+	// body included in error messages to prevent log bloat.
+	maxErrorBodyPreview = 512
 )
 
 // Remnawave API path constants.
@@ -103,13 +107,20 @@ func (c *Client) do(ctx context.Context, method, path string, body any, dest any
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, MaxResponseBytes))
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, MaxResponseBytes+1))
 	if err != nil {
 		return fmt.Errorf("read response body: %w", err)
 	}
+	if int64(len(respBody)) > MaxResponseBytes {
+		return fmt.Errorf("response body exceeds %d bytes", MaxResponseBytes)
+	}
 
 	if !isHTTPSuccess(resp.StatusCode) {
-		return fmt.Errorf("remnawave API error (status %d): %s", resp.StatusCode, string(respBody))
+		detail := string(respBody)
+		if len(detail) > maxErrorBodyPreview {
+			detail = detail[:maxErrorBodyPreview] + "...(truncated)"
+		}
+		return fmt.Errorf("remnawave API error (status %d): %s", resp.StatusCode, detail)
 	}
 
 	if dest != nil {
