@@ -20,7 +20,8 @@ func NewProrateCalculator() *ProrateCalculator {
 }
 
 // CalculateUpgradeCredit returns the unused-portion credit for the current plan.
-// credit = currentPrice * daysRemaining / totalDays
+// Uses (amount * daysRemaining) / totalDays — multiply before divide to
+// minimise integer truncation on small amounts.
 func (pc *ProrateCalculator) CalculateUpgradeCredit(
 	currentPlan *aggregate.Plan,
 	currentPeriod vo.BillingPeriod,
@@ -32,13 +33,14 @@ func (pc *ProrateCalculator) CalculateUpgradeCredit(
 	}
 
 	daysRemaining := daysRemainingFrom(currentPeriod, now)
-	creditAmount := currentPlan.BasePrice.Amount * int64(daysRemaining) / int64(totalDays)
+	// Multiply first, divide last — preserves precision for small amounts.
+	creditAmount := (currentPlan.BasePrice.Amount * int64(daysRemaining)) / int64(totalDays)
 
 	return vo.NewMoney(creditAmount, currentPlan.BasePrice.Currency)
 }
 
 // CalculateUpgradeCost returns the prorated cost of the new plan minus any credit.
-// cost = newPrice * daysRemaining / totalDays - credit, floored at 0.
+// cost = (newPrice * daysRemaining) / totalDays - credit, floored at 0.
 // Returns ErrCurrencyMismatch if currencies differ.
 func (pc *ProrateCalculator) CalculateUpgradeCost(
 	newPlan *aggregate.Plan,
@@ -56,7 +58,8 @@ func (pc *ProrateCalculator) CalculateUpgradeCost(
 	}
 
 	daysRemaining := daysRemainingFrom(currentPeriod, now)
-	proratedAmount := newPlan.BasePrice.Amount * int64(daysRemaining) / int64(totalDays)
+	// Multiply first, divide last — preserves precision for small amounts.
+	proratedAmount := (newPlan.BasePrice.Amount * int64(daysRemaining)) / int64(totalDays)
 
 	cost := max(proratedAmount-credit.Amount, 0)
 

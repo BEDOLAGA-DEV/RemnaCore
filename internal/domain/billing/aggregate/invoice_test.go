@@ -47,7 +47,7 @@ func TestNewInvoice_WithPercentDiscount(t *testing.T) {
 	items := []vo.LineItem{
 		vo.NewLineItem("Premium Plan", vo.LineItemPlan, vo.NewMoney(10000, vo.CurrencyUSD), 1),
 	}
-	discount, err := vo.NewPercentDiscount(20, "SAVE20", nil)
+	discount, err := vo.NewPercentDiscount(2000, "SAVE20", nil) // 20% in basis points
 	require.NoError(t, err)
 
 	inv, err := NewInvoice("sub-1", "user-1", items, []vo.Discount{discount}, vo.CurrencyUSD, time.Now())

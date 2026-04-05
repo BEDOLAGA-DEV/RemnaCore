@@ -13,13 +13,14 @@ const (
 	DiscountFixed   DiscountType = "fixed"
 )
 
-// PercentBase is the divisor used when converting integer percentages (1-100)
-// to fractional multipliers.
-const PercentBase = 100
+// PercentBase is the divisor for percentage calculations. Using 10000 (basis
+// points) allows fractional percentages like 12.5% (represented as 1250).
+// 10000 = 100.00%, 5000 = 50%, 1250 = 12.5%, 100 = 1%, 1 = 0.01%.
+const PercentBase = 10000
 
 const (
-	minPercent = 1
-	maxPercent = PercentBase
+	minPercent = 1          // 0.01%
+	maxPercent = PercentBase // 100%
 )
 
 // Discount represents a promo-code or coupon that can be applied to a price.
@@ -31,10 +32,11 @@ type Discount struct {
 	ExpiresAt *time.Time
 }
 
-// NewPercentDiscount creates a percentage discount. percent must be in [1, 100].
+// NewPercentDiscount creates a percentage discount in basis points.
+// 10000 = 100%, 5000 = 50%, 1250 = 12.5%, 100 = 1%.
 func NewPercentDiscount(percent int64, code string, expiresAt *time.Time) (Discount, error) {
 	if percent < minPercent || percent > maxPercent {
-		return Discount{}, errors.New("percent must be between 1 and 100")
+		return Discount{}, errors.New("percent must be between 1 and 10000 (basis points)")
 	}
 	return Discount{
 		Type:      DiscountPercent,
