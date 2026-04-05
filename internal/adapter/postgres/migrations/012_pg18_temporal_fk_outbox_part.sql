@@ -129,6 +129,6 @@ DROP TABLE outbox_legacy;
 -- Step 7: Reassign sequence ownership to the new partitioned table.
 ALTER SEQUENCE outbox_sequence_number_seq OWNED BY public.outbox.sequence_number;
 
--- Step 6: Recreate partial index for relay query on the partitioned table.
+-- Step 8: Recreate partial index for relay query on the partitioned table.
 CREATE INDEX idx_outbox_unpublished ON public.outbox (sequence_number)
     WHERE published = false;

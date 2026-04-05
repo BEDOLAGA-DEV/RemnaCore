@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -102,11 +103,19 @@ func (r *OutboxRepository) DeleteOld(ctx context.Context, olderThan time.Duratio
 	return nil
 }
 
+// outboxPartitionPattern validates partition names to prevent SQL injection.
+// Only allows names like outbox_2026_q1, outbox_2027_q3, outbox_default.
+var outboxPartitionPattern = regexp.MustCompile(`^outbox_(\d{4}_q[1-4]|default)$`)
+
 // DetachAndDropPartition detaches and drops an old outbox partition by name.
 // This is the PG18 partition-based cleanup path — instant, no vacuum bloat.
 // Example: DetachAndDropPartition(ctx, "outbox_2026_q1") after the quarter ends
 // and all events in it are published and past the retention period.
+// The partition name is validated against a strict pattern to prevent SQL injection.
 func (r *OutboxRepository) DetachAndDropPartition(ctx context.Context, partitionName string) error {
+	if !outboxPartitionPattern.MatchString(partitionName) {
+		return fmt.Errorf("invalid partition name: %s", partitionName)
+	}
 	// CONCURRENTLY avoids blocking concurrent DML on the parent table.
 	detachSQL := fmt.Sprintf("ALTER TABLE public.outbox DETACH PARTITION %s CONCURRENTLY", partitionName)
 	if _, err := r.pool.Exec(ctx, detachSQL); err != nil {
