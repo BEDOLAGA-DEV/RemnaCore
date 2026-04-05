@@ -171,12 +171,13 @@ type MultisubRemnawaveBinding struct {
 }
 
 type Outbox struct {
-	ID          pgtype.UUID        `json:"id"`
-	EventType   string             `json:"event_type"`
-	Payload     []byte             `json:"payload"`
-	Published   bool               `json:"published"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	PublishedAt pgtype.Timestamptz `json:"published_at"`
+	ID             pgtype.UUID        `json:"id"`
+	EventType      string             `json:"event_type"`
+	Payload        []byte             `json:"payload"`
+	Published      bool               `json:"published"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	PublishedAt    pgtype.Timestamptz `json:"published_at"`
+	SequenceNumber *int64             `json:"sequence_number"`
 }
 
 type PaymentPaymentRecord struct {
@@ -220,6 +221,7 @@ type PluginsPluginRegistry struct {
 	InstalledAt pgtype.Timestamptz `json:"installed_at"`
 	EnabledAt   pgtype.Timestamptz `json:"enabled_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	WasmHash    *string            `json:"wasm_hash"`
 }
 
 type PluginsPluginStorage struct {
@@ -229,6 +231,13 @@ type PluginsPluginStorage struct {
 	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+type PluginsWasmStore struct {
+	Hash      string             `json:"hash"`
+	Data      []byte             `json:"data"`
+	SizeBytes int64              `json:"size_bytes"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 type ResellerCommission struct {

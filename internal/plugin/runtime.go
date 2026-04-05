@@ -40,10 +40,10 @@ type WASMRunner interface {
 	Close() error
 }
 
-// WASMRunnerFactory creates a WASMRunner from compiled WASM bytes and
-// configuration. The real implementation uses the Extism Go SDK; tests supply a
-// mock factory.
-type WASMRunnerFactory func(wasmBytes []byte, config map[string]string) (WASMRunner, error)
+// WASMRunnerFactory creates a WASMRunner from compiled WASM bytes,
+// configuration, and resource limits. The real implementation uses the Extism
+// Go SDK; tests supply a mock factory.
+type WASMRunnerFactory func(wasmBytes []byte, config map[string]string, limits ManifestLimits) (WASMRunner, error)
 
 // PluginInstancePool manages a pool of WASMRunner instances for a single
 // plugin. It uses a buffered channel as a semaphore-style pool, allowing
@@ -59,6 +59,7 @@ type PluginInstancePool struct {
 	wasm     []byte
 	config   map[string]string
 	manifest *Manifest
+	limits   ManifestLimits
 	pool     chan WASMRunner
 	poolSize int
 
@@ -80,12 +81,18 @@ func newPluginInstancePool(slug string, factory WASMRunnerFactory, wasm []byte, 
 		size = MaxPoolSize
 	}
 
+	var limits ManifestLimits
+	if manifest != nil {
+		limits = manifest.EffectiveLimits()
+	}
+
 	p := &PluginInstancePool{
 		slug:     slug,
 		factory:  factory,
 		wasm:     wasm,
 		config:   config,
 		manifest: manifest,
+		limits:   limits,
 		pool:     make(chan WASMRunner, size),
 		poolSize: size,
 		drained:  make(chan struct{}),
@@ -93,7 +100,7 @@ func newPluginInstancePool(slug string, factory WASMRunnerFactory, wasm []byte, 
 
 	// Pre-create all instances.
 	for i := range size {
-		runner, err := factory(wasm, config)
+		runner, err := factory(wasm, config, limits)
 		if err != nil {
 			p.Close() // cleanup already created
 			return nil, fmt.Errorf("create instance %d for %s: %w", i, slug, err)
@@ -243,7 +250,7 @@ func (p *PluginInstancePool) replaceInstance() {
 		return
 	}
 
-	newRunner, err := p.factory(p.wasm, p.config)
+	newRunner, err := p.factory(p.wasm, p.config, p.limits)
 	if err != nil {
 		slog.Warn("failed to replace corrupted WASM instance",
 			slog.String("slug", p.slug),
@@ -517,6 +524,23 @@ func (rp *RuntimePool) SetRunnerForTest(slug string, runner WASMRunner) {
 		poolSize: 1,
 		drained:  make(chan struct{}),
 	}
+}
+
+// DetachPool removes and returns the PluginInstancePool for the given slug
+// without draining it. The caller is responsible for draining or closing the
+// returned pool. Returns nil if no pool exists for the slug. This is used by
+// HotReload to capture the old pool reference before LoadPlugin replaces it,
+// enabling a synchronous drain of in-flight calls after the swap completes.
+func (rp *RuntimePool) DetachPool(slug string) *PluginInstancePool {
+	rp.mu.Lock()
+	defer rp.mu.Unlock()
+
+	pool, ok := rp.plugins[slug]
+	if !ok {
+		return nil
+	}
+	delete(rp.plugins, slug)
+	return pool
 }
 
 // LoadedSlugs returns the slugs of all currently loaded plugins.

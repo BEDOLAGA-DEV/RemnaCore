@@ -21,4 +21,6 @@ var (
 	ErrPluginNotRunning      = errors.New("plugin is not running")
 	ErrIncompatibleSDK       = errors.New("incompatible plugin SDK version")
 	ErrPluginDraining        = errors.New("plugin is draining")
+	ErrWASMNotFound          = errors.New("WASM binary not found in content store")
+	ErrMissingConfig         = errors.New("plugin missing required configuration")
 )

@@ -72,6 +72,7 @@ func pluginRowToDomain(row gen.PluginsPluginRegistry) (*plugin.Plugin, error) {
 		SDKVersion:  pgutil.DerefStr(row.SdkVersion),
 		Lang:        pgutil.DerefStr(row.Lang),
 		WASMBytes:   row.WasmBytes,
+		WASMHash:    pgutil.DerefStr(row.WasmHash),
 		Manifest:    &manifest,
 		Status:      plugin.PluginStatus(row.Status),
 		Config:      cfg,
@@ -105,6 +106,7 @@ func (r *PluginRepository) Create(ctx context.Context, p *plugin.Plugin) error {
 		SdkVersion:  pgutil.StrPtrOrNil(p.SDKVersion),
 		Lang:        pgutil.StrPtrOrNil(p.Lang),
 		WasmBytes:   p.WASMBytes,
+		WasmHash:    pgutil.StrPtrOrNil(p.WASMHash),
 		Manifest:    manifestJSON,
 		Status:      string(p.Status),
 		Config:      configJSON,
@@ -202,6 +204,7 @@ func (r *PluginRepository) UpdatePlugin(ctx context.Context, p *plugin.Plugin) e
 		SdkVersion:  pgutil.StrPtrOrNil(p.SDKVersion),
 		Lang:        pgutil.StrPtrOrNil(p.Lang),
 		WasmBytes:   p.WASMBytes,
+		WasmHash:    pgutil.StrPtrOrNil(p.WASMHash),
 		Manifest:    manifestJSON,
 		Permissions: permissionsToStrings(p.Permissions),
 		UpdatedAt:   pgutil.TimeToPgtype(p.UpdatedAt),
@@ -212,6 +215,23 @@ func (r *PluginRepository) UpdatePlugin(ctx context.Context, p *plugin.Plugin) e
 func (r *PluginRepository) Delete(ctx context.Context, id string) error {
 	err := r.queries.DeletePlugin(ctx, pgutil.UUIDToPgtype(id))
 	return pgutil.MapErr(err, "delete plugin", plugin.ErrPluginNotFound)
+}
+
+func (r *PluginRepository) GetWASMByHash(ctx context.Context, hash string) ([]byte, error) {
+	data, err := r.queries.GetWASMByHash(ctx, hash)
+	if err != nil {
+		return nil, pgutil.MapErr(err, "get WASM by hash", plugin.ErrWASMNotFound)
+	}
+	return data, nil
+}
+
+func (r *PluginRepository) StoreWASM(ctx context.Context, hash string, data []byte) error {
+	err := r.queries.StoreWASM(ctx, gen.StoreWASMParams{
+		Hash:      hash,
+		Data:      data,
+		SizeBytes: int64(len(data)),
+	})
+	return pgutil.MapErr(err, "store WASM", plugin.ErrPluginNotFound)
 }
 
 // compile-time interface check

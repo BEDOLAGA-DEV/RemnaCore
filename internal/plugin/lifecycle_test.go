@@ -15,14 +15,16 @@ import (
 // --- Mock PluginRepository ---
 
 type mockRepo struct {
-	plugins map[string]*Plugin // keyed by ID
-	slugIdx map[string]string  // slug -> ID
+	plugins   map[string]*Plugin // keyed by ID
+	slugIdx   map[string]string  // slug -> ID
+	wasmStore map[string][]byte  // hash -> WASM bytes (content-addressable store)
 }
 
 func newMockRepo() *mockRepo {
 	return &mockRepo{
-		plugins: make(map[string]*Plugin),
-		slugIdx: make(map[string]string),
+		plugins:   make(map[string]*Plugin),
+		slugIdx:   make(map[string]string),
+		wasmStore: make(map[string][]byte),
 	}
 }
 
@@ -117,6 +119,19 @@ func (r *mockRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
+func (r *mockRepo) GetWASMByHash(_ context.Context, hash string) ([]byte, error) {
+	data, ok := r.wasmStore[hash]
+	if !ok {
+		return nil, ErrWASMNotFound
+	}
+	return data, nil
+}
+
+func (r *mockRepo) StoreWASM(_ context.Context, hash string, data []byte) error {
+	r.wasmStore[hash] = data
+	return nil
+}
+
 // --- Mock StorageService ---
 
 type mockStorage struct {
@@ -168,7 +183,7 @@ func newTestLifecycleManager() (*LifecycleManager, *mockRepo, *mockStorage, *tes
 	pub := &testPublisher{}
 	logger := testErrorLogger()
 
-	factory := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
+	factory := func(wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
 		return &mockRunner{callFn: func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
 			return []byte(`{"action":"continue"}`), nil
 		}}, nil
@@ -343,7 +358,7 @@ func TestLoadAllEnabled_Success(t *testing.T) {
 
 	// Create a fresh runtime pool (simulating restart).
 	logger := testErrorLogger()
-	factory := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
+	factory := func(wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
 		return &mockRunner{}, nil
 	}
 	freshRuntime := NewRuntimePool(logger, factory)

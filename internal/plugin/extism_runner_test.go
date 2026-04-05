@@ -22,7 +22,7 @@ func TestExtismRunnerFactoryWithTimeout_ReturnsFactory(t *testing.T) {
 func TestExtismRunnerFactory_InvalidWASM(t *testing.T) {
 	factory := ExtismRunnerFactory()
 
-	_, err := factory([]byte("not-valid-wasm"), nil)
+	_, err := factory([]byte("not-valid-wasm"), nil, ManifestLimits{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "create extism plugin")
 }
@@ -30,7 +30,7 @@ func TestExtismRunnerFactory_InvalidWASM(t *testing.T) {
 func TestExtismRunnerFactory_EmptyWASM(t *testing.T) {
 	factory := ExtismRunnerFactory()
 
-	_, err := factory([]byte{}, nil)
+	_, err := factory([]byte{}, nil, ManifestLimits{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "create extism plugin")
 }
@@ -38,7 +38,7 @@ func TestExtismRunnerFactory_EmptyWASM(t *testing.T) {
 func TestExtismRunnerFactory_NilWASM(t *testing.T) {
 	factory := ExtismRunnerFactory()
 
-	_, err := factory(nil, nil)
+	_, err := factory(nil, nil, ManifestLimits{})
 	require.Error(t, err)
 }
 
@@ -52,7 +52,7 @@ func TestExtismRunnerFactory_ConfigPassthrough(t *testing.T) {
 		"api_key": "sk_test_123",
 		"mode":    "sandbox",
 	}
-	_, err := factory([]byte("not-valid-wasm"), config)
+	_, err := factory([]byte("not-valid-wasm"), config, ManifestLimits{})
 	require.Error(t, err, "invalid WASM should still fail")
 }
 
@@ -64,7 +64,7 @@ func TestNoopWASMFactory_StillWorks(t *testing.T) {
 		return []byte(`{"action":"continue"}`), nil
 	})
 
-	runner, err := factory([]byte("fake"), nil)
+	runner, err := factory([]byte("fake"), nil, ManifestLimits{})
 	require.NoError(t, err)
 	defer runner.Close()
 

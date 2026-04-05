@@ -1,6 +1,8 @@
 package plugin
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,6 +21,7 @@ type Plugin struct {
 	SDKVersion  string
 	Lang        string
 	WASMBytes   []byte            // stored WASM binary
+	WASMHash    string            // SHA-256 hex digest of WASMBytes for content-addressable storage
 	Manifest    *Manifest         // parsed plugin.toml
 	Status      PluginStatus
 	Config      map[string]string // runtime config values (filled by admin)
@@ -51,6 +54,12 @@ func NewPlugin(manifest *Manifest, wasmBytes []byte, now time.Time) (*Plugin, er
 		return nil, err
 	}
 
+	var wasmHash string
+	if len(wasmBytes) > 0 {
+		h := sha256.Sum256(wasmBytes)
+		wasmHash = hex.EncodeToString(h[:])
+	}
+
 	return &Plugin{
 		ID:          uuid.New().String(),
 		Slug:        manifest.Plugin.ID,
@@ -62,6 +71,7 @@ func NewPlugin(manifest *Manifest, wasmBytes []byte, now time.Time) (*Plugin, er
 		SDKVersion:  manifest.Plugin.SDKVersion,
 		Lang:        manifest.Plugin.Lang,
 		WASMBytes:   wasmBytes,
+		WASMHash:    wasmHash,
 		Manifest:    manifest,
 		Status:      StatusInstalled,
 		Config:      make(map[string]string),

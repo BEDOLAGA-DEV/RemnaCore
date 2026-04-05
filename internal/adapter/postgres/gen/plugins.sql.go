@@ -12,8 +12,8 @@ import (
 )
 
 const createPlugin = `-- name: CreatePlugin :exec
-INSERT INTO plugins.plugin_registry (id, slug, name, version, description, author, license, sdk_version, lang, wasm_bytes, manifest, status, config, permissions, installed_at, enabled_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+INSERT INTO plugins.plugin_registry (id, slug, name, version, description, author, license, sdk_version, lang, wasm_bytes, wasm_hash, manifest, status, config, permissions, installed_at, enabled_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 `
 
 type CreatePluginParams struct {
@@ -27,6 +27,7 @@ type CreatePluginParams struct {
 	SdkVersion  *string            `json:"sdk_version"`
 	Lang        *string            `json:"lang"`
 	WasmBytes   []byte             `json:"wasm_bytes"`
+	WasmHash    *string            `json:"wasm_hash"`
 	Manifest    []byte             `json:"manifest"`
 	Status      string             `json:"status"`
 	Config      []byte             `json:"config"`
@@ -48,6 +49,7 @@ func (q *Queries) CreatePlugin(ctx context.Context, arg CreatePluginParams) erro
 		arg.SdkVersion,
 		arg.Lang,
 		arg.WasmBytes,
+		arg.WasmHash,
 		arg.Manifest,
 		arg.Status,
 		arg.Config,
@@ -69,7 +71,7 @@ func (q *Queries) DeletePlugin(ctx context.Context, id pgtype.UUID) error {
 }
 
 const getAllPlugins = `-- name: GetAllPlugins :many
-SELECT id, slug, name, version, description, author, license, sdk_version, lang, wasm_bytes, manifest, status, config, permissions, error_log, installed_at, enabled_at, updated_at FROM plugins.plugin_registry ORDER BY installed_at DESC
+SELECT id, slug, name, version, description, author, license, sdk_version, lang, wasm_bytes, manifest, status, config, permissions, error_log, installed_at, enabled_at, updated_at, wasm_hash FROM plugins.plugin_registry ORDER BY installed_at DESC
 `
 
 func (q *Queries) GetAllPlugins(ctx context.Context) ([]PluginsPluginRegistry, error) {
@@ -100,6 +102,7 @@ func (q *Queries) GetAllPlugins(ctx context.Context) ([]PluginsPluginRegistry, e
 			&i.InstalledAt,
 			&i.EnabledAt,
 			&i.UpdatedAt,
+			&i.WasmHash,
 		); err != nil {
 			return nil, err
 		}
@@ -112,7 +115,7 @@ func (q *Queries) GetAllPlugins(ctx context.Context) ([]PluginsPluginRegistry, e
 }
 
 const getEnabledPlugins = `-- name: GetEnabledPlugins :many
-SELECT id, slug, name, version, description, author, license, sdk_version, lang, wasm_bytes, manifest, status, config, permissions, error_log, installed_at, enabled_at, updated_at FROM plugins.plugin_registry WHERE status = 'enabled' ORDER BY installed_at DESC
+SELECT id, slug, name, version, description, author, license, sdk_version, lang, wasm_bytes, manifest, status, config, permissions, error_log, installed_at, enabled_at, updated_at, wasm_hash FROM plugins.plugin_registry WHERE status = 'enabled' ORDER BY installed_at DESC
 `
 
 func (q *Queries) GetEnabledPlugins(ctx context.Context) ([]PluginsPluginRegistry, error) {
@@ -143,6 +146,7 @@ func (q *Queries) GetEnabledPlugins(ctx context.Context) ([]PluginsPluginRegistr
 			&i.InstalledAt,
 			&i.EnabledAt,
 			&i.UpdatedAt,
+			&i.WasmHash,
 		); err != nil {
 			return nil, err
 		}
@@ -155,7 +159,7 @@ func (q *Queries) GetEnabledPlugins(ctx context.Context) ([]PluginsPluginRegistr
 }
 
 const getPluginByID = `-- name: GetPluginByID :one
-SELECT id, slug, name, version, description, author, license, sdk_version, lang, wasm_bytes, manifest, status, config, permissions, error_log, installed_at, enabled_at, updated_at FROM plugins.plugin_registry WHERE id = $1
+SELECT id, slug, name, version, description, author, license, sdk_version, lang, wasm_bytes, manifest, status, config, permissions, error_log, installed_at, enabled_at, updated_at, wasm_hash FROM plugins.plugin_registry WHERE id = $1
 `
 
 func (q *Queries) GetPluginByID(ctx context.Context, id pgtype.UUID) (PluginsPluginRegistry, error) {
@@ -180,12 +184,13 @@ func (q *Queries) GetPluginByID(ctx context.Context, id pgtype.UUID) (PluginsPlu
 		&i.InstalledAt,
 		&i.EnabledAt,
 		&i.UpdatedAt,
+		&i.WasmHash,
 	)
 	return i, err
 }
 
 const getPluginBySlug = `-- name: GetPluginBySlug :one
-SELECT id, slug, name, version, description, author, license, sdk_version, lang, wasm_bytes, manifest, status, config, permissions, error_log, installed_at, enabled_at, updated_at FROM plugins.plugin_registry WHERE slug = $1
+SELECT id, slug, name, version, description, author, license, sdk_version, lang, wasm_bytes, manifest, status, config, permissions, error_log, installed_at, enabled_at, updated_at, wasm_hash FROM plugins.plugin_registry WHERE slug = $1
 `
 
 func (q *Queries) GetPluginBySlug(ctx context.Context, slug string) (PluginsPluginRegistry, error) {
@@ -210,8 +215,29 @@ func (q *Queries) GetPluginBySlug(ctx context.Context, slug string) (PluginsPlug
 		&i.InstalledAt,
 		&i.EnabledAt,
 		&i.UpdatedAt,
+		&i.WasmHash,
 	)
 	return i, err
+}
+
+const getWASMByHash = `-- name: GetWASMByHash :one
+SELECT data FROM plugins.wasm_store WHERE hash = $1
+`
+
+func (q *Queries) GetWASMByHash(ctx context.Context, hash string) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getWASMByHash, hash)
+	var data []byte
+	err := row.Scan(&data)
+	return data, err
+}
+
+const storageAdvisoryLock = `-- name: StorageAdvisoryLock :exec
+SELECT pg_advisory_xact_lock(hashtext($1))
+`
+
+func (q *Queries) StorageAdvisoryLock(ctx context.Context, hashtext string) error {
+	_, err := q.db.Exec(ctx, storageAdvisoryLock, hashtext)
+	return err
 }
 
 const storageDelete = `-- name: StorageDelete :exec
@@ -304,11 +330,30 @@ func (q *Queries) StorageSet(ctx context.Context, arg StorageSetParams) error {
 	return err
 }
 
+const storeWASM = `-- name: StoreWASM :exec
+
+INSERT INTO plugins.wasm_store (hash, data, size_bytes)
+VALUES ($1, $2, $3)
+ON CONFLICT (hash) DO NOTHING
+`
+
+type StoreWASMParams struct {
+	Hash      string `json:"hash"`
+	Data      []byte `json:"data"`
+	SizeBytes int64  `json:"size_bytes"`
+}
+
+// WASM content-addressable storage queries
+func (q *Queries) StoreWASM(ctx context.Context, arg StoreWASMParams) error {
+	_, err := q.db.Exec(ctx, storeWASM, arg.Hash, arg.Data, arg.SizeBytes)
+	return err
+}
+
 const updatePlugin = `-- name: UpdatePlugin :exec
 UPDATE plugins.plugin_registry
 SET name = $2, version = $3, description = $4, author = $5, license = $6,
-    sdk_version = $7, lang = $8, wasm_bytes = $9, manifest = $10,
-    permissions = $11, updated_at = $12
+    sdk_version = $7, lang = $8, wasm_bytes = $9, wasm_hash = $10, manifest = $11,
+    permissions = $12, updated_at = $13
 WHERE id = $1
 `
 
@@ -322,6 +367,7 @@ type UpdatePluginParams struct {
 	SdkVersion  *string            `json:"sdk_version"`
 	Lang        *string            `json:"lang"`
 	WasmBytes   []byte             `json:"wasm_bytes"`
+	WasmHash    *string            `json:"wasm_hash"`
 	Manifest    []byte             `json:"manifest"`
 	Permissions []string           `json:"permissions"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
@@ -338,6 +384,7 @@ func (q *Queries) UpdatePlugin(ctx context.Context, arg UpdatePluginParams) erro
 		arg.SdkVersion,
 		arg.Lang,
 		arg.WasmBytes,
+		arg.WasmHash,
 		arg.Manifest,
 		arg.Permissions,
 		arg.UpdatedAt,

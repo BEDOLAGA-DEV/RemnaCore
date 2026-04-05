@@ -8,6 +8,9 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
@@ -77,11 +80,34 @@ func (hf *HostFunctions) SetPluginRegistry(fn func(slug string) (*Plugin, error)
 	hf.pluginRegistry = fn
 }
 
+// normalizeURL parses a raw URL, applies path.Clean to collapse path traversal
+// sequences (e.g. "/../"), and returns the cleaned URL string. If the URL
+// cannot be parsed, the original string is returned unchanged.
+func normalizeURL(rawURL string) (string, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL, nil
+	}
+
+	// Reject explicit path traversal sequences before normalizing, since
+	// path.Clean silently resolves them.
+	if strings.Contains(u.Path, "..") {
+		return "", fmt.Errorf("%w: path traversal detected in URL %s", ErrPermissionDenied, rawURL)
+	}
+
+	u.Path = path.Clean(u.Path)
+	if u.Path == "." || u.Path == "" {
+		u.Path = "/"
+	}
+	return u.String(), nil
+}
+
 // HTTPRequest performs an outbound HTTP request on behalf of a plugin after
 // validating the target URL against the plugin's HTTP allowlist and blocking
 // access to internal/private network addresses (SSRF protection).
 //
 // Security layers (applied in order):
+//  0. URL path normalization and traversal rejection.
 //  1. URL allowlist check from the plugin manifest.
 //  2. Pre-flight hostname check for known loopback/local names.
 //  3. Transport-level dial guard that rejects resolved private IPs (DNS rebinding).
@@ -91,26 +117,32 @@ func (hf *HostFunctions) HTTPRequest(ctx context.Context, pluginSlug string, req
 		return nil, err
 	}
 
-	// Layer 1: URL allowlist.
-	if !hf.Permissions.ValidateHTTPRequest(p, req.URL) {
+	// Layer 0: Normalize URL path and reject traversal sequences.
+	normalizedURL, err := normalizeURL(req.URL)
+	if err != nil {
+		return nil, err
+	}
+
+	// Layer 1: URL allowlist (using normalized URL).
+	if !hf.Permissions.ValidateHTTPRequest(p, normalizedURL) {
 		return nil, fmt.Errorf("%w: HTTP request to %s not in allowlist for plugin %s",
-			ErrPermissionDenied, req.URL, pluginSlug)
+			ErrPermissionDenied, normalizedURL, pluginSlug)
 	}
 
 	// Layer 2: pre-flight hostname check (fast, no DNS).
-	blocked, err := hf.urlChecker(req.URL)
+	blocked, err := hf.urlChecker(normalizedURL)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInternalNetworkAccess, err)
 	}
 	if blocked {
 		return nil, fmt.Errorf("%w: plugin %s cannot access internal address in URL %s",
-			ErrInternalNetworkAccess, pluginSlug, req.URL)
+			ErrInternalNetworkAccess, pluginSlug, normalizedURL)
 	}
 
 	// Layer 3: DNS-rebinding protection is handled by the SSRF-safe transport
 	// on hf.HTTPClient, which validates resolved IPs in DialContext.
 
-	httpReq, err := http.NewRequestWithContext(ctx, req.Method, req.URL, nil)
+	httpReq, err := http.NewRequestWithContext(ctx, req.Method, normalizedURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("invalid HTTP request: %w", err)
 	}

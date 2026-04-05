@@ -32,7 +32,7 @@ func (m *mockRunner) Close() error {
 }
 
 func mockFactory(callFn func(ctx context.Context, funcName string, input []byte) ([]byte, error)) WASMRunnerFactory {
-	return func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
+	return func(wasmBytes []byte, config map[string]string, limits ManifestLimits) (WASMRunner, error) {
 		return &mockRunner{callFn: callFn}, nil
 	}
 }
@@ -85,7 +85,7 @@ func TestRuntimePool_LoadPlugin(t *testing.T) {
 
 func TestRuntimePool_LoadPlugin_CreatesPool(t *testing.T) {
 	var instanceCount atomic.Int32
-	factory := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
+	factory := func(wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
 		instanceCount.Add(1)
 		return &mockRunner{}, nil
 	}
@@ -102,7 +102,7 @@ func TestRuntimePool_LoadPlugin_CreatesPool(t *testing.T) {
 
 func TestRuntimePool_LoadPlugin_CustomPoolSize(t *testing.T) {
 	var instanceCount atomic.Int32
-	factory := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
+	factory := func(wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
 		instanceCount.Add(1)
 		return &mockRunner{}, nil
 	}
@@ -118,7 +118,7 @@ func TestRuntimePool_LoadPlugin_CustomPoolSize(t *testing.T) {
 
 func TestRuntimePool_LoadPlugin_PoolSizeCappedAtMax(t *testing.T) {
 	var instanceCount atomic.Int32
-	factory := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
+	factory := func(wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
 		instanceCount.Add(1)
 		return &mockRunner{}, nil
 	}
@@ -143,7 +143,7 @@ func TestRuntimePool_LoadPlugin_NilPlugin(t *testing.T) {
 func TestRuntimePool_LoadPlugin_ReplacesExisting(t *testing.T) {
 	var closedCount atomic.Int32
 
-	factoryWithTracking := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
+	factoryWithTracking := func(wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
 		return &trackingMockRunner{onClose: func() { closedCount.Add(1) }}, nil
 	}
 
@@ -163,7 +163,7 @@ func TestRuntimePool_LoadPlugin_ReplacesExisting(t *testing.T) {
 
 func TestRuntimePool_UnloadPlugin(t *testing.T) {
 	var closedCount atomic.Int32
-	factory := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
+	factory := func(wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
 		return &trackingMockRunner{onClose: func() { closedCount.Add(1) }}, nil
 	}
 
@@ -280,7 +280,7 @@ func TestRuntimePool_LoadPlugin_NilFactory(t *testing.T) {
 }
 
 func TestRuntimePool_LoadPlugin_FactoryError(t *testing.T) {
-	factory := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
+	factory := func(wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
 		return nil, errors.New("compilation error")
 	}
 
@@ -303,7 +303,7 @@ func TestRuntimePool_ConcurrentCalls(t *testing.T) {
 	var activeCount atomic.Int32
 	var maxActive atomic.Int32
 
-	factory := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
+	factory := func(wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
 		return &mockRunner{
 			callFn: func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
 				current := activeCount.Add(1)
@@ -361,7 +361,7 @@ func TestRuntimePool_ConcurrentCalls_PoolExhaustion(t *testing.T) {
 
 	var callsCompleted atomic.Int32
 
-	factory := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
+	factory := func(wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
 		return &mockRunner{
 			callFn: func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
 				time.Sleep(20 * time.Millisecond)
@@ -430,7 +430,7 @@ func TestPluginInstancePool_FactoryError_CleansUp(t *testing.T) {
 	var closedCount atomic.Int32
 	callCount := 0
 
-	factory := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
+	factory := func(wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
 		callCount++
 		if callCount == 3 {
 			return nil, errors.New("factory error on 3rd instance")
@@ -532,7 +532,7 @@ func TestPluginInstancePool_DrainIdempotent(t *testing.T) {
 
 func TestPluginInstancePool_DrainClosesIdleRunners(t *testing.T) {
 	var closedCount atomic.Int32
-	factory := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
+	factory := func(wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
 		return &trackingMockRunner{onClose: func() { closedCount.Add(1) }}, nil
 	}
 
@@ -552,7 +552,7 @@ func TestLoadPlugin_GracefulDrainOnReplace(t *testing.T) {
 	// complete normally while the new pool starts serving immediately.
 	var oldClosedCount atomic.Int32
 
-	factory := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
+	factory := func(wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
 		return &trackingMockRunner{onClose: func() { oldClosedCount.Add(1) }}, nil
 	}
 
@@ -599,7 +599,7 @@ func TestCallHook_CorruptedRunnerDiscarded(t *testing.T) {
 	callCount := 0
 	var replacedCount atomic.Int32
 
-	factory := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
+	factory := func(wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
 		callCount++
 		return &mockRunner{
 			callFn: func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
@@ -618,9 +618,9 @@ func TestCallHook_CorruptedRunnerDiscarded(t *testing.T) {
 	rp.mu.Lock()
 	pool := rp.plugins["corrupt-test"]
 	originalFactory := pool.factory
-	pool.factory = func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
+	pool.factory = func(wasmBytes []byte, config map[string]string, limits ManifestLimits) (WASMRunner, error) {
 		replacedCount.Add(1)
-		return originalFactory(wasmBytes, config)
+		return originalFactory(wasmBytes, config, limits)
 	}
 	rp.mu.Unlock()
 
@@ -639,7 +639,7 @@ func TestCallHook_NonCorruptionErrorReturnsRunner(t *testing.T) {
 	var closedCount atomic.Int32
 	callAttempts := atomic.Int32{}
 
-	factory := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
+	factory := func(wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
 		return &mockRunner{
 			callFn: func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
 				callAttempts.Add(1)
@@ -827,7 +827,7 @@ func TestCallHook_CorruptionDuringDrainSignalsDrain(t *testing.T) {
 	// being drained, the drain completes (doesn't hang for 30s).
 	corruptionErr := fmt.Errorf("wasm: unreachable instruction")
 
-	factory := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
+	factory := func(wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
 		return &mockRunner{
 			callFn: func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
 				return nil, corruptionErr
@@ -854,7 +854,7 @@ func TestCallHook_CorruptionDuringDrainSignalsDrain(t *testing.T) {
 	callStarted := make(chan struct{})
 	callProceed := make(chan struct{})
 
-	blockingFactory := func(wasmBytes []byte, config map[string]string) (WASMRunner, error) {
+	blockingFactory := func(wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
 		return &mockRunner{
 			callFn: func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
 				close(callStarted)

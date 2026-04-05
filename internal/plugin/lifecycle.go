@@ -2,12 +2,24 @@ package plugin
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
+
+// computeWASMHash returns the SHA-256 hex digest of the given WASM bytes, or
+// an empty string if the input is nil/empty.
+func computeWASMHash(data []byte) string {
+	if len(data) == 0 {
+		return ""
+	}
+	h := sha256.Sum256(data)
+	return hex.EncodeToString(h[:])
+}
 
 // LifecycleManager orchestrates all plugin state transitions: install, enable,
 // disable, uninstall, and configuration updates. It is the single source of
@@ -69,6 +81,15 @@ func (lm *LifecycleManager) Install(ctx context.Context, manifestBytes, wasmByte
 		return nil, err
 	}
 
+	// Content-addressable WASM storage: store binary once, reference by hash.
+	if p.WASMHash != "" {
+		if err := lm.repo.StoreWASM(ctx, p.WASMHash, wasmBytes); err != nil {
+			return nil, fmt.Errorf("storing WASM binary: %w", err)
+		}
+		// Clear inline bytes — the repo stores the hash reference only.
+		p.WASMBytes = nil
+	}
+
 	if err := lm.repo.Create(ctx, p); err != nil {
 		return nil, fmt.Errorf("persisting plugin: %w", err)
 	}
@@ -100,6 +121,22 @@ func (lm *LifecycleManager) Enable(ctx context.Context, pluginID string) error {
 		if err := checkSDKCompatibility(p.Manifest.Plugin.SDKVersion); err != nil {
 			return fmt.Errorf("sdk version check: %w", err)
 		}
+	}
+
+	// Validate required config keys before enabling.
+	if p.Manifest != nil {
+		if err := validateRequiredConfig(p.Manifest.Config, p.Config); err != nil {
+			return fmt.Errorf("config validation: %w", err)
+		}
+	}
+
+	// Resolve WASM bytes from content-addressable store if not inline.
+	if p.WASMBytes == nil && p.WASMHash != "" {
+		wasm, err := lm.repo.GetWASMByHash(ctx, p.WASMHash)
+		if err != nil {
+			return fmt.Errorf("loading WASM from content store: %w", err)
+		}
+		p.WASMBytes = wasm
 	}
 
 	if err := p.Enable(lm.clock.Now()); err != nil {
@@ -279,7 +316,20 @@ func (lm *LifecycleManager) HotReload(ctx context.Context, pluginID string, mani
 		return fmt.Errorf("%w: expected %q, got %q", ErrSlugMismatch, old.Slug, newManifest.Plugin.ID)
 	}
 
+	// Validate required config keys from the NEW manifest against existing config.
+	if err := validateRequiredConfig(newManifest.Config, old.Config); err != nil {
+		return fmt.Errorf("config validation: %w", err)
+	}
+
 	oldVersion := old.Version
+
+	// Content-addressable WASM storage for the new version.
+	wasmHash := computeWASMHash(wasmBytes)
+	if wasmHash != "" {
+		if err := lm.repo.StoreWASM(ctx, wasmHash, wasmBytes); err != nil {
+			return fmt.Errorf("storing WASM binary for hot reload: %w", err)
+		}
+	}
 
 	// 4. Build updated plugin (preserving ID, config, enabled state).
 	now := lm.clock.Now()
@@ -294,6 +344,7 @@ func (lm *LifecycleManager) HotReload(ctx context.Context, pluginID string, mani
 		SDKVersion:  newManifest.Plugin.SDKVersion,
 		Lang:        newManifest.Plugin.Lang,
 		WASMBytes:   wasmBytes,
+		WASMHash:    wasmHash,
 		Manifest:    newManifest,
 		Status:      StatusEnabled,
 		Config:      old.Config,
@@ -303,16 +354,29 @@ func (lm *LifecycleManager) HotReload(ctx context.Context, pluginID string, mani
 		UpdatedAt:   now,
 	}
 
-	// 5. Pre-compile new WASM while old version is still serving.
+	// 5. Detach the old pool before loading the new version so we can drain
+	// it explicitly after the swap (rather than fire-and-forget).
+	oldPool := lm.runtime.DetachPool(old.Slug)
+
+	// 6. Pre-compile new WASM and install as the active pool.
 	if err := lm.runtime.LoadPlugin(updated); err != nil {
+		// Rollback: re-install old plugin if the old pool was detached.
+		if oldPool != nil {
+			if loadErr := lm.runtime.LoadPlugin(old); loadErr != nil {
+				lm.logger.Error("failed to restore old pool after load failure",
+					slog.String("slug", old.Slug),
+					slog.String("error", loadErr.Error()),
+				)
+			}
+		}
 		return fmt.Errorf("load new plugin version: %w", err)
 	}
 
-	// 6. Atomic hook swap: replace old hooks with new hooks under a single lock.
+	// 7. Atomic hook swap: replace old hooks with new hooks under a single lock.
 	newRegs := newManifest.HookRegistrations(old.ID)
 	lm.dispatcher.SwapHooks(old.Slug, newRegs)
 
-	// 7. Persist the updated plugin to database.
+	// 8. Persist the updated plugin to database.
 	if err := lm.repo.UpdatePlugin(ctx, updated); err != nil {
 		// Rollback: atomically swap back to old hooks and reload old WASM.
 		var oldRegs []HookRegistration
@@ -338,7 +402,18 @@ func (lm *LifecycleManager) HotReload(ctx context.Context, pluginID string, mani
 		return fmt.Errorf("persist hot reload: %w", err)
 	}
 
-	// 8. Publish event.
+	// 9. Drain old pool: block new acquires, wait for in-flight runners to
+	// complete, then close them. This ensures zero dropped requests.
+	if oldPool != nil {
+		if drainErr := oldPool.Drain(ctx); drainErr != nil {
+			lm.logger.Warn("old pool drain returned error during hot reload",
+				slog.String("slug", old.Slug),
+				slog.String("error", drainErr.Error()),
+			)
+		}
+	}
+
+	// 10. Publish event.
 	if lm.publisher != nil {
 		if err := lm.publisher.Publish(ctx, NewPluginHotReloadedEvent(updated.ID, updated.Slug, oldVersion, updated.Version, lm.clock.Now())); err != nil {
 			lm.logger.Warn("failed to publish event",
@@ -378,6 +453,20 @@ func (lm *LifecycleManager) LoadAllEnabled(ctx context.Context) error {
 			}
 		}
 
+		// Resolve WASM bytes from content-addressable store if not inline.
+		if p.WASMBytes == nil && p.WASMHash != "" {
+			wasm, err := lm.repo.GetWASMByHash(ctx, p.WASMHash)
+			if err != nil {
+				lm.logger.Warn("skipping plugin: WASM not found in content store",
+					slog.String("slug", p.Slug),
+					slog.String("wasm_hash", p.WASMHash),
+					slog.String("error", err.Error()),
+				)
+				continue
+			}
+			p.WASMBytes = wasm
+		}
+
 		if err := lm.runtime.LoadPlugin(p); err != nil {
 			lm.logger.Error("failed to load enabled plugin on startup",
 				"slug", p.Slug, "id", p.ID, "error", err)
@@ -393,5 +482,19 @@ func (lm *LifecycleManager) LoadAllEnabled(ctx context.Context) error {
 	}
 
 	lm.logger.Info("all enabled plugins loaded", "count", len(plugins))
+	return nil
+}
+
+// validateRequiredConfig checks that all required config fields from the
+// manifest schema are present and non-empty in the provided config map.
+func validateRequiredConfig(schema map[string]ManifestConfigField, config map[string]string) error {
+	for key, field := range schema {
+		if field.Required {
+			val, ok := config[key]
+			if !ok || val == "" {
+				return fmt.Errorf("%w: missing required config key %q", ErrMissingConfig, key)
+			}
+		}
+	}
 	return nil
 }

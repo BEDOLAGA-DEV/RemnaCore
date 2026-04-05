@@ -16,4 +16,11 @@ type PluginRepository interface {
 	UpdateConfig(ctx context.Context, id string, config map[string]string) error
 	UpdatePlugin(ctx context.Context, p *Plugin) error
 	Delete(ctx context.Context, id string) error
+
+	// GetWASMByHash returns stored WASM bytes by content hash, or
+	// ErrWASMNotFound if the hash does not exist.
+	GetWASMByHash(ctx context.Context, hash string) ([]byte, error)
+	// StoreWASM stores WASM bytes keyed by content hash. Idempotent — if hash
+	// already exists, it is a no-op.
+	StoreWASM(ctx context.Context, hash string, data []byte) error
 }

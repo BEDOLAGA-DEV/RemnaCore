@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -10,6 +11,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres/gen"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pgutil"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
 // BytesPerMB is the number of bytes in one megabyte, used for storage quota conversion.
@@ -18,20 +20,22 @@ const BytesPerMB = 1024 * 1024
 // PluginStorageRepository implements plugin.StorageService using a shared
 // plugins.plugin_storage table with composite key (plugin_slug, key).
 type PluginStorageRepository struct {
-	pool          *pgxpool.Pool
-	queries       *gen.Queries
-	maxStorageMB  int // default quota per plugin in MB
+	pool         *pgxpool.Pool
+	queries      *gen.Queries
+	txRunner     txmanager.Runner
+	maxStorageMB int // default quota per plugin in MB
 }
 
 // NewPluginStorageRepository returns a new PluginStorageRepository.
 // maxStorageMB sets the default storage quota per plugin in megabytes.
-func NewPluginStorageRepository(pool *pgxpool.Pool, maxStorageMB int) *PluginStorageRepository {
+func NewPluginStorageRepository(pool *pgxpool.Pool, txRunner txmanager.Runner, maxStorageMB int) *PluginStorageRepository {
 	if maxStorageMB <= 0 {
 		maxStorageMB = plugin.DefaultMaxStorageMB
 	}
 	return &PluginStorageRepository{
 		pool:         pool,
 		queries:      gen.New(pool),
+		txRunner:     txRunner,
 		maxStorageMB: maxStorageMB,
 	}
 }
@@ -59,30 +63,39 @@ func (r *PluginStorageRepository) Get(ctx context.Context, pluginSlug, key strin
 }
 
 func (r *PluginStorageRepository) Set(ctx context.Context, pluginSlug, key string, value []byte, ttlSeconds int64) error {
-	// Quota enforcement: check current usage before writing.
-	usedBytes, err := r.queries.StorageGetSize(ctx, pluginSlug)
-	if err != nil {
-		return pgutil.MapErr(err, "storage get size", plugin.ErrPluginNotFound)
-	}
+	return r.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		q := gen.New(DBFromContext(txCtx, r.pool))
 
-	maxBytes := int64(r.maxStorageMB) * BytesPerMB
-	if usedBytes+int64(len(value)) > maxBytes {
-		return plugin.ErrStorageQuotaExceeded
-	}
+		// Advisory lock per plugin slug prevents concurrent quota bypass.
+		if err := q.StorageAdvisoryLock(txCtx, pluginSlug); err != nil {
+			return fmt.Errorf("advisory lock: %w", err)
+		}
 
-	var expiresAt pgtype.Timestamptz
-	if ttlSeconds > 0 {
-		t := time.Now().Add(time.Duration(ttlSeconds) * time.Second)
-		expiresAt = pgutil.TimeToPgtype(t)
-	}
+		// Quota enforcement: check current usage within the transaction.
+		usedBytes, err := q.StorageGetSize(txCtx, pluginSlug)
+		if err != nil {
+			return pgutil.MapErr(err, "storage get size", plugin.ErrPluginNotFound)
+		}
 
-	err = r.queries.StorageSet(ctx, gen.StorageSetParams{
-		PluginSlug: pluginSlug,
-		Key:        key,
-		Value:      value,
-		ExpiresAt:  expiresAt,
+		maxBytes := int64(r.maxStorageMB) * BytesPerMB
+		if usedBytes+int64(len(value)) > maxBytes {
+			return plugin.ErrStorageQuotaExceeded
+		}
+
+		var expiresAt pgtype.Timestamptz
+		if ttlSeconds > 0 {
+			t := time.Now().Add(time.Duration(ttlSeconds) * time.Second)
+			expiresAt = pgutil.TimeToPgtype(t)
+		}
+
+		err = q.StorageSet(txCtx, gen.StorageSetParams{
+			PluginSlug: pluginSlug,
+			Key:        key,
+			Value:      value,
+			ExpiresAt:  expiresAt,
+		})
+		return pgutil.MapErr(err, "storage set", plugin.ErrPluginNotFound)
 	})
-	return pgutil.MapErr(err, "storage set", plugin.ErrPluginNotFound)
 }
 
 func (r *PluginStorageRepository) Delete(ctx context.Context, pluginSlug, key string) error {

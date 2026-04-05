@@ -55,6 +55,10 @@ const (
 	MaxPoolSize        = 16 // hard cap
 )
 
+// WASMHashAlgorithm identifies the hash algorithm used for content-addressable
+// WASM binary storage.
+const WASMHashAlgorithm = "sha256"
+
 // CurrentSDKVersion is the platform's current plugin SDK version.
 // Plugins must declare a compatible sdk_version in their manifest.
 const CurrentSDKVersion = "1.0.0"
