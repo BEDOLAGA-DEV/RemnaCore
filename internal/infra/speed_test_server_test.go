@@ -12,12 +12,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newTestSpeedTestServer() *SpeedTestServer {
-	return NewSpeedTestServer(slog.Default())
+func newTestSpeedTestServer(t *testing.T) *SpeedTestServer {
+	t.Helper()
+	srv, err := NewSpeedTestServer(slog.Default())
+	require.NoError(t, err)
+	return srv
 }
 
 func TestSpeedTestServer_Ping(t *testing.T) {
-	srv := newTestSpeedTestServer()
+	srv := newTestSpeedTestServer(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
 	w := httptest.NewRecorder()
@@ -30,7 +33,7 @@ func TestSpeedTestServer_Ping(t *testing.T) {
 }
 
 func TestSpeedTestServer_Download_DefaultSize(t *testing.T) {
-	srv := newTestSpeedTestServer()
+	srv := newTestSpeedTestServer(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/download", nil)
 	w := httptest.NewRecorder()
@@ -43,7 +46,7 @@ func TestSpeedTestServer_Download_DefaultSize(t *testing.T) {
 }
 
 func TestSpeedTestServer_Download_CustomSize(t *testing.T) {
-	srv := newTestSpeedTestServer()
+	srv := newTestSpeedTestServer(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/download?size=512", nil)
 	w := httptest.NewRecorder()
@@ -55,7 +58,7 @@ func TestSpeedTestServer_Download_CustomSize(t *testing.T) {
 }
 
 func TestSpeedTestServer_Download_InvalidSize(t *testing.T) {
-	srv := newTestSpeedTestServer()
+	srv := newTestSpeedTestServer(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/download?size=invalid", nil)
 	w := httptest.NewRecorder()
@@ -66,7 +69,7 @@ func TestSpeedTestServer_Download_InvalidSize(t *testing.T) {
 }
 
 func TestSpeedTestServer_Download_ExceedsMax(t *testing.T) {
-	srv := newTestSpeedTestServer()
+	srv := newTestSpeedTestServer(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/download?size=999999999", nil)
 	w := httptest.NewRecorder()
@@ -78,7 +81,7 @@ func TestSpeedTestServer_Download_ExceedsMax(t *testing.T) {
 }
 
 func TestSpeedTestServer_Upload(t *testing.T) {
-	srv := newTestSpeedTestServer()
+	srv := newTestSpeedTestServer(t)
 
 	body := strings.NewReader("hello upload test data")
 	req := httptest.NewRequest(http.MethodPost, "/upload", body)
@@ -91,7 +94,7 @@ func TestSpeedTestServer_Upload(t *testing.T) {
 }
 
 func TestSpeedTestServer_Upload_WrongMethod(t *testing.T) {
-	srv := newTestSpeedTestServer()
+	srv := newTestSpeedTestServer(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/upload", nil)
 	w := httptest.NewRecorder()
@@ -102,7 +105,7 @@ func TestSpeedTestServer_Upload_WrongMethod(t *testing.T) {
 }
 
 func TestSpeedTestServer_RandomBufPreAllocated(t *testing.T) {
-	srv := newTestSpeedTestServer()
+	srv := newTestSpeedTestServer(t)
 
 	require.Len(t, srv.randomBuf, SpeedTestRandomBufSize)
 
@@ -118,7 +121,7 @@ func TestSpeedTestServer_RandomBufPreAllocated(t *testing.T) {
 }
 
 func TestSpeedTestServer_Integration(t *testing.T) {
-	srv := newTestSpeedTestServer()
+	srv := newTestSpeedTestServer(t)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/download", srv.Download)

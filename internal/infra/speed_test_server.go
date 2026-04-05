@@ -40,16 +40,15 @@ type SpeedTestServer struct {
 }
 
 // NewSpeedTestServer creates a SpeedTestServer with a pre-allocated random buffer.
-func NewSpeedTestServer(logger *slog.Logger) *SpeedTestServer {
+func NewSpeedTestServer(logger *slog.Logger) (*SpeedTestServer, error) {
 	buf := make([]byte, SpeedTestRandomBufSize)
 	if _, err := rand.Read(buf); err != nil {
-		// crypto/rand.Read should never fail on supported platforms.
-		panic(fmt.Sprintf("infra: failed to fill random buffer: %v", err))
+		return nil, fmt.Errorf("filling random buffer: %w", err)
 	}
 	return &SpeedTestServer{
 		randomBuf: buf,
 		logger:    logger,
-	}
+	}, nil
 }
 
 // Download serves random bytes for download speed testing. The client may

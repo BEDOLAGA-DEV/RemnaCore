@@ -91,7 +91,10 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (*RegisterR
 		return nil, fmt.Errorf("persisting user: %w", err)
 	}
 
-	verification := NewEmailVerification(user.ID, user.Email, now)
+	verification, err := NewEmailVerification(user.ID, user.Email, now)
+	if err != nil {
+		return nil, fmt.Errorf("creating email verification: %w", err)
+	}
 	if err := s.repo.CreateEmailVerification(ctx, verification); err != nil {
 		return nil, fmt.Errorf("persisting email verification: %w", err)
 	}
@@ -348,7 +351,10 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 		return fmt.Errorf("clearing existing resets: %w", err)
 	}
 
-	reset := NewPasswordReset(user.ID, user.Email, s.clock.Now())
+	reset, err := NewPasswordReset(user.ID, user.Email, s.clock.Now())
+	if err != nil {
+		return fmt.Errorf("creating password reset: %w", err)
+	}
 	if err := s.repo.CreatePasswordReset(ctx, reset); err != nil {
 		return fmt.Errorf("persisting password reset: %w", err)
 	}

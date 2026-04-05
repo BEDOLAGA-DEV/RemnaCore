@@ -118,12 +118,10 @@ func validatePassword(password string) error {
 
 // NewEmailVerification generates a new email verification record with a
 // cryptographically random hex token and a TTL-based expiration.
-func NewEmailVerification(userID, email string, now time.Time) *EmailVerification {
+func NewEmailVerification(userID, email string, now time.Time) (*EmailVerification, error) {
 	tokenBytes := make([]byte, VerificationTokenLen)
-	// crypto/rand.Read always returns len(p) bytes on supported platforms;
-	// a failure here indicates a broken runtime, so panic is appropriate.
 	if _, err := rand.Read(tokenBytes); err != nil {
-		panic(fmt.Sprintf("crypto/rand.Read failed: %v", err))
+		return nil, fmt.Errorf("generating verification token: %w", err)
 	}
 
 	return &EmailVerification{
@@ -133,7 +131,7 @@ func NewEmailVerification(userID, email string, now time.Time) *EmailVerificatio
 		Token:     hex.EncodeToString(tokenBytes),
 		ExpiresAt: now.Add(EmailVerificationTTL),
 		CreatedAt: now,
-	}
+	}, nil
 }
 
 // IsExpiredAt returns true if the verification token has passed its expiration
@@ -154,10 +152,10 @@ type PasswordReset struct {
 
 // NewPasswordReset generates a new password reset record with a
 // cryptographically random hex token and a TTL-based expiration.
-func NewPasswordReset(userID, email string, now time.Time) *PasswordReset {
+func NewPasswordReset(userID, email string, now time.Time) (*PasswordReset, error) {
 	tokenBytes := make([]byte, PasswordResetTokenLen)
 	if _, err := rand.Read(tokenBytes); err != nil {
-		panic(fmt.Sprintf("crypto/rand.Read failed: %v", err))
+		return nil, fmt.Errorf("generating password reset token: %w", err)
 	}
 
 	return &PasswordReset{
@@ -167,7 +165,7 @@ func NewPasswordReset(userID, email string, now time.Time) *PasswordReset {
 		Token:     hex.EncodeToString(tokenBytes),
 		ExpiresAt: now.Add(PasswordResetTTL),
 		CreatedAt: now,
-	}
+	}, nil
 }
 
 // IsExpiredAt returns true if the password reset token has passed its expiration

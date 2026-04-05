@@ -47,7 +47,8 @@ func TestPlatformUser_VerifyEmail(t *testing.T) {
 }
 
 func TestEmailVerification_Generate(t *testing.T) {
-	v := NewEmailVerification("user-123", "alice@example.com", time.Now())
+	v, err := NewEmailVerification("user-123", "alice@example.com", time.Now())
+	require.NoError(t, err)
 
 	assert.NotEmpty(t, v.ID)
 	assert.Equal(t, "user-123", v.UserID)
@@ -60,7 +61,8 @@ func TestEmailVerification_Generate(t *testing.T) {
 }
 
 func TestEmailVerification_IsExpired(t *testing.T) {
-	v := NewEmailVerification("user-123", "alice@example.com", time.Now())
+	v, err := NewEmailVerification("user-123", "alice@example.com", time.Now())
+	require.NoError(t, err)
 	v.ExpiresAt = time.Now().Add(-time.Hour)
 
 	assert.True(t, v.IsExpiredAt(time.Now()))
