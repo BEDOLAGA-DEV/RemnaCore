@@ -14,4 +14,12 @@ import (
 type Dispatcher interface {
 	DispatchSync(ctx context.Context, hookName string, payload json.RawMessage) (json.RawMessage, error)
 	DispatchSyncVersioned(ctx context.Context, hookName string, currentVersion int, payload json.RawMessage) (json.RawMessage, error)
+
+	// BeginFlow snapshots the current plugin pool versions and returns a
+	// context that pins those versions for all subsequent DispatchSync calls.
+	// Use this at the start of a multi-hook business flow (e.g., checkout) to
+	// guarantee version consistency even if a plugin is hot-reloaded mid-flow.
+	// If called on a context that already has flow bindings, it returns the
+	// context unchanged.
+	BeginFlow(ctx context.Context) context.Context
 }

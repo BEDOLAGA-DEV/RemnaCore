@@ -9,6 +9,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tracing"
 )
 
 // Drain configuration.
@@ -55,6 +59,7 @@ type WASMRunnerFactory func(wasmBytes []byte, config map[string]string, limits M
 // them and terminates.
 type PluginInstancePool struct {
 	slug     string
+	version  uint64 // monotonically increasing version assigned at load time
 	factory  WASMRunnerFactory
 	wasm     []byte
 	config   map[string]string
@@ -305,8 +310,10 @@ type RuntimePool struct {
 	mu            sync.RWMutex
 	plugins       map[string]*PluginInstancePool // keyed by plugin slug
 	metadata      map[string]*PluginInstance     // keyed by plugin slug
+	retiredPools  map[string]*PluginInstancePool // keyed by "slug:version" — old pools kept alive for flow-pinned calls
 	logger        *slog.Logger
 	runnerFactory WASMRunnerFactory
+	nextVersion   atomic.Uint64 // monotonic counter for pool version generation
 }
 
 // NewRuntimePool creates an empty runtime pool. If factory is nil, LoadPlugin
@@ -315,6 +322,7 @@ func NewRuntimePool(logger *slog.Logger, factory WASMRunnerFactory) *RuntimePool
 	return &RuntimePool{
 		plugins:       make(map[string]*PluginInstancePool),
 		metadata:      make(map[string]*PluginInstance),
+		retiredPools:  make(map[string]*PluginInstancePool),
 		logger:        logger,
 		runnerFactory: factory,
 	}
@@ -332,10 +340,12 @@ func (rp *RuntimePool) LoadPlugin(p *Plugin) error {
 	rp.mu.Lock()
 	defer rp.mu.Unlock()
 
-	// Drain existing pool gracefully in the background. The new pool is
-	// installed immediately so new requests are never blocked by the drain.
+	// Retire existing pool so flow-pinned contexts can still reach it. The
+	// new pool is installed immediately so new requests are never blocked.
 	if existing, ok := rp.plugins[p.Slug]; ok {
-		go existing.Drain(context.Background())
+		retiredKey := fmt.Sprintf("%s:%d", existing.slug, existing.version)
+		rp.retiredPools[retiredKey] = existing
+		go rp.drainAndRemoveRetired(retiredKey, existing)
 		delete(rp.plugins, p.Slug)
 		delete(rp.metadata, p.Slug)
 	}
@@ -358,6 +368,9 @@ func (rp *RuntimePool) LoadPlugin(p *Plugin) error {
 		if err != nil {
 			return fmt.Errorf("%w: %v", ErrWASMCompilationFailed, err)
 		}
+
+		// Assign a monotonically increasing version to the new pool.
+		pool.version = rp.nextVersion.Add(1)
 		rp.plugins[p.Slug] = pool
 	}
 
@@ -418,9 +431,20 @@ func (rp *RuntimePool) GetInstance(slug string) (*PluginInstance, error) {
 // indicating WASM corruption (memory fault, trap, etc.), the runner is
 // discarded and a replacement is created asynchronously. The context controls
 // both pool acquisition timeout and function execution timeout.
+//
+// If the context carries FlowBindings (see WithFlowBindings), CallHook will
+// prefer the pool version pinned at the start of the business flow. This
+// ensures that a multi-hook flow (e.g., checkout) uses the same plugin version
+// across all its hook calls, even if the plugin is hot-reloaded mid-flow.
 func (rp *RuntimePool) CallHook(ctx context.Context, slug, funcName string, input []byte) ([]byte, error) {
+	ctx, span := tracing.StartSpan(ctx, "plugin.call_hook")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("plugin.slug", slug),
+		attribute.String("plugin.func", funcName),
+	)
+
 	rp.mu.RLock()
-	pool, poolOK := rp.plugins[slug]
 	_, metaOK := rp.metadata[slug]
 	rp.mu.RUnlock()
 
@@ -428,10 +452,53 @@ func (rp *RuntimePool) CallHook(ctx context.Context, slug, funcName string, inpu
 		return nil, ErrPluginNotFound
 	}
 
-	if !poolOK || pool == nil {
+	// Resolve the target pool, preferring a flow-pinned version if present.
+	pool := rp.resolvePool(ctx, slug)
+	if pool == nil {
 		return nil, fmt.Errorf("plugin %q has no WASM runner", slug)
 	}
 
+	return rp.callOnPool(ctx, pool, slug, funcName, input)
+}
+
+// resolvePool returns the PluginInstancePool to use for the given slug. If the
+// context carries FlowBindings with a pinned version for this slug, the pinned
+// pool is returned (from current or retired pools). Otherwise the current
+// active pool is returned.
+func (rp *RuntimePool) resolvePool(ctx context.Context, slug string) *PluginInstancePool {
+	if bindings := flowBindingsFromContext(ctx); bindings != nil {
+		if pinnedVersion, ok := bindings[slug]; ok {
+			rp.mu.RLock()
+			currentPool := rp.plugins[slug]
+			rp.mu.RUnlock()
+
+			// Common case: current pool matches the pinned version.
+			if currentPool != nil && currentPool.version == pinnedVersion {
+				return currentPool
+			}
+
+			// Check retired pools for the pinned version.
+			rp.mu.RLock()
+			retiredKey := fmt.Sprintf("%s:%d", slug, pinnedVersion)
+			retiredPool := rp.retiredPools[retiredKey]
+			rp.mu.RUnlock()
+
+			if retiredPool != nil {
+				return retiredPool
+			}
+			// Pinned version no longer available — fall through to current.
+		}
+	}
+
+	rp.mu.RLock()
+	pool := rp.plugins[slug]
+	rp.mu.RUnlock()
+	return pool
+}
+
+// callOnPool acquires a WASM runner from the given pool, invokes funcName, and
+// handles corruption detection and runner lifecycle.
+func (rp *RuntimePool) callOnPool(ctx context.Context, pool *PluginInstancePool, slug, funcName string, input []byte) ([]byte, error) {
 	// Honour context deadline/cancellation before acquiring.
 	select {
 	case <-ctx.Done():
@@ -553,4 +620,40 @@ func (rp *RuntimePool) LoadedSlugs() []string {
 		slugs = append(slugs, slug)
 	}
 	return slugs
+}
+
+// CaptureFlowBindings snapshots the current pool versions for all loaded
+// plugins. Use this at the start of a multi-hook business flow to pin plugin
+// versions for the flow's duration.
+func (rp *RuntimePool) CaptureFlowBindings() FlowBindings {
+	rp.mu.RLock()
+	defer rp.mu.RUnlock()
+
+	bindings := make(FlowBindings, len(rp.plugins))
+	for slug, pool := range rp.plugins {
+		bindings[slug] = pool.version
+	}
+	return bindings
+}
+
+// drainAndRemoveRetired drains the given retired pool and removes it from the
+// retiredPools map once fully drained. This runs as a background goroutine.
+func (rp *RuntimePool) drainAndRemoveRetired(key string, pool *PluginInstancePool) {
+	_ = pool.Drain(context.Background())
+
+	rp.mu.Lock()
+	delete(rp.retiredPools, key)
+	rp.mu.Unlock()
+
+	rp.logger.Info("retired pool drained and removed",
+		slog.String("key", key),
+	)
+}
+
+// RetiredPoolCount returns the number of retired pools still alive. This is
+// primarily useful for testing drain completion.
+func (rp *RuntimePool) RetiredPoolCount() int {
+	rp.mu.RLock()
+	defer rp.mu.RUnlock()
+	return len(rp.retiredPools)
 }

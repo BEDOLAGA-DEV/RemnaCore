@@ -85,6 +85,13 @@ func (cs *CheckoutService) StartCheckout(ctx context.Context, req CheckoutReques
 		return nil, billing.ErrCheckoutRateLimited
 	}
 
+	// Pin plugin versions for the duration of this checkout flow so that all
+	// hook calls within this flow use the same plugin version, even if a
+	// plugin is hot-reloaded mid-flow.
+	if cs.dispatcher != nil {
+		ctx = cs.dispatcher.BeginFlow(ctx)
+	}
+
 	// 1. Create subscription + invoice via billing service.
 	sub, inv, err := cs.billing.CreateSubscription(ctx, CreateSubscriptionCmd{
 		UserID:   req.UserID,

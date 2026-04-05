@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/sdk"
@@ -38,17 +39,19 @@ type HookDispatcher struct {
 	registrations map[string][]HookRegistration // hookName -> sorted registrations
 	runtime       *RuntimePool
 	publisher     domainevent.Publisher
+	metrics       *observability.Metrics
 	logger        *slog.Logger
 	clock         clock.Clock
 }
 
-// NewHookDispatcher creates a dispatcher wired to the given runtime pool and
-// event publisher.
-func NewHookDispatcher(runtime *RuntimePool, publisher domainevent.Publisher, logger *slog.Logger, clk clock.Clock) *HookDispatcher {
+// NewHookDispatcher creates a dispatcher wired to the given runtime pool,
+// event publisher, and Prometheus metrics collector.
+func NewHookDispatcher(runtime *RuntimePool, publisher domainevent.Publisher, metrics *observability.Metrics, logger *slog.Logger, clk clock.Clock) *HookDispatcher {
 	return &HookDispatcher{
 		registrations: make(map[string][]HookRegistration),
 		runtime:       runtime,
 		publisher:     publisher,
+		metrics:       metrics,
 		logger:        logger,
 		clock:         clk,
 	}
@@ -183,10 +186,16 @@ func (d *HookDispatcher) DispatchSync(ctx context.Context, hookName string, payl
 
 		start := d.clock.Now()
 		output, err := d.runtime.CallHook(callCtx, reg.PluginSlug, reg.FuncName, inputBytes)
-		durationMs := d.clock.Now().Sub(start).Milliseconds()
+		elapsed := d.clock.Now().Sub(start)
+		durationMs := elapsed.Milliseconds()
 		callCancel()
 
+		// Record Prometheus metrics for every call path.
+		d.recordHookDuration(reg.PluginSlug, hookName, elapsed.Seconds())
+
 		if err != nil {
+			d.recordHookError(reg.PluginSlug, hookName)
+
 			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrHookTimeout) {
 				d.logger.Error("hook execution timed out",
 					"hook", hookName, "plugin", reg.PluginSlug, "timeout", timeout, "duration_ms", durationMs)
@@ -215,10 +224,13 @@ func (d *HookDispatcher) DispatchSync(ctx context.Context, hookName string, payl
 
 		var result sdk.HookResult
 		if err := json.Unmarshal(output, &result); err != nil {
+			d.recordHookError(reg.PluginSlug, hookName)
 			d.logger.Error("failed to unmarshal hook result",
 				"hook", hookName, "plugin", reg.PluginSlug, "error", err)
 			return nil, fmt.Errorf("invalid hook result from plugin %q: %w", reg.PluginSlug, err)
 		}
+
+		d.recordHookTotal(reg.PluginSlug, hookName, string(result.Action))
 
 		if d.publisher != nil {
 			if pubErr := d.publisher.Publish(ctx, NewHookExecutedEvent(reg.PluginID, reg.PluginSlug, hookName, durationMs, d.clock.Now())); pubErr != nil {
@@ -302,6 +314,18 @@ func (d *HookDispatcher) Registrations(hookName string) []HookRegistration {
 	return out
 }
 
+// BeginFlow snapshots the current plugin pool versions and returns a context
+// that pins those versions for all subsequent CallHook invocations. If the
+// context already carries flow bindings, it is returned unchanged to avoid
+// overwriting an existing pin.
+func (d *HookDispatcher) BeginFlow(ctx context.Context) context.Context {
+	if flowBindingsFromContext(ctx) != nil {
+		return ctx
+	}
+	bindings := d.runtime.CaptureFlowBindings()
+	return WithFlowBindings(ctx, bindings)
+}
+
 // syncTimeoutForPlugin returns the sync hook timeout for the given plugin. If
 // the plugin is loaded and its manifest declares a custom timeout_sync_ms, that
 // value is used. Otherwise, the platform default (DefaultSyncTimeoutMs) applies.
@@ -314,4 +338,31 @@ func (d *HookDispatcher) syncTimeoutForPlugin(slug string) time.Duration {
 		}
 	}
 	return time.Duration(DefaultSyncTimeoutMs) * time.Millisecond
+}
+
+// recordHookDuration observes the hook execution duration in the Prometheus
+// histogram. Safe to call when metrics is nil (e.g. in tests).
+func (d *HookDispatcher) recordHookDuration(pluginSlug, hookName string, seconds float64) {
+	if d.metrics == nil {
+		return
+	}
+	d.metrics.PluginHookDuration.WithLabelValues(pluginSlug, hookName).Observe(seconds)
+}
+
+// recordHookError increments the Prometheus error counter for the given
+// plugin/hook pair. Safe to call when metrics is nil.
+func (d *HookDispatcher) recordHookError(pluginSlug, hookName string) {
+	if d.metrics == nil {
+		return
+	}
+	d.metrics.PluginHookErrors.WithLabelValues(pluginSlug, hookName).Inc()
+}
+
+// recordHookTotal increments the Prometheus invocation counter with the hook
+// action label. Safe to call when metrics is nil.
+func (d *HookDispatcher) recordHookTotal(pluginSlug, hookName, action string) {
+	if d.metrics == nil {
+		return
+	}
+	d.metrics.PluginHookTotal.WithLabelValues(pluginSlug, hookName, action).Inc()
 }
