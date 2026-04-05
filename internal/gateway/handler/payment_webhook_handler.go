@@ -11,6 +11,14 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
 )
 
+// Webhook response status values returned to payment providers.
+const (
+	WebhookStatusOK        = "ok"
+	WebhookStatusIgnored   = "ignored"
+	WebhookStatusError     = "error"
+	WebhookStatusDuplicate = "duplicate"
+)
+
 // PaymentWebhookHandler receives webhooks from payment providers (Stripe,
 // BTCPay, etc.) and dispatches them through the payment facade for
 // verification and processing.
@@ -59,18 +67,18 @@ func (h *PaymentWebhookHandler) HandlePaymentWebhook(w http.ResponseWriter, r *h
 	if err != nil {
 		// Return 200 to prevent retries from the payment provider even on
 		// verification failure. Errors are logged internally.
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
+		writeJSON(w, http.StatusOK, map[string]string{"status": WebhookStatusIgnored})
 		return
 	}
 
 	// 2. Check idempotency — skip if already processed.
 	isDuplicate, err := h.facade.CheckIdempotency(r.Context(), provider, verified.ExternalID, body)
 	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "error"})
+		writeJSON(w, http.StatusOK, map[string]string{"status": WebhookStatusError})
 		return
 	}
 	if isDuplicate {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "duplicate"})
+		writeJSON(w, http.StatusOK, map[string]string{"status": WebhookStatusDuplicate})
 		return
 	}
 
@@ -79,14 +87,14 @@ func (h *PaymentWebhookHandler) HandlePaymentWebhook(w http.ResponseWriter, r *h
 		// Complete the payment record.
 		if _, err := h.facade.CompletePayment(r.Context(), provider, verified.ExternalID); err != nil {
 			_ = h.facade.MarkWebhookFailed(r.Context(), provider, verified.ExternalID)
-			writeJSON(w, http.StatusOK, map[string]string{"status": "error"})
+			writeJSON(w, http.StatusOK, map[string]string{"status": WebhookStatusError})
 			return
 		}
 
 		// Complete checkout (marks invoice paid, activates subscription).
 		if err := h.checkout.CompleteCheckout(r.Context(), verified.InvoiceID); err != nil {
 			_ = h.facade.MarkWebhookFailed(r.Context(), provider, verified.ExternalID)
-			writeJSON(w, http.StatusOK, map[string]string{"status": "error"})
+			writeJSON(w, http.StatusOK, map[string]string{"status": WebhookStatusError})
 			return
 		}
 	}
@@ -95,5 +103,5 @@ func (h *PaymentWebhookHandler) HandlePaymentWebhook(w http.ResponseWriter, r *h
 	_ = h.facade.MarkWebhookProcessed(r.Context(), provider, verified.ExternalID)
 
 	// Always return 200 OK immediately.
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": WebhookStatusOK})
 }
