@@ -66,8 +66,9 @@ func (c *MetricsCollector) Describe(ch chan<- *prometheus.Desc) {
 }
 
 // Collect fetches current NATS connection stats and sends them as metrics.
+// Uses conn.Stats() which returns a race-safe copy of the statistics.
 func (c *MetricsCollector) Collect(ch chan<- prometheus.Metric) {
-	stats := c.conn.Statistics
+	stats := c.conn.Stats()
 
 	ch <- prometheus.MustNewConstMetric(c.inMsgs, prometheus.CounterValue, float64(stats.InMsgs))
 	ch <- prometheus.MustNewConstMetric(c.outMsgs, prometheus.CounterValue, float64(stats.OutMsgs))

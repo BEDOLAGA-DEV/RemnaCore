@@ -20,7 +20,8 @@ var Module = fx.Module("valkey",
 )
 
 // registerMetrics creates and registers the Valkey pool stats collector with
-// the default Prometheus registry. Called by Fx on application start.
+// the default Prometheus registry. Duplicate registrations (e.g. during tests
+// that construct the Fx graph multiple times) are silently ignored.
 func registerMetrics(client *redis.Client) {
-	prometheus.MustRegister(NewMetricsCollector(client))
+	_ = prometheus.Register(NewMetricsCollector(client))
 }

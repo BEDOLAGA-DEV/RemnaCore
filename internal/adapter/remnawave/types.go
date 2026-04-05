@@ -28,7 +28,7 @@ type UpdateUserRequest struct {
 	UUID              string    `json:"uuid"`
 	Username          string    `json:"username,omitempty"`
 	TrafficLimitBytes float64   `json:"trafficLimitBytes,omitempty"`
-	ExpireAt          time.Time `json:"expireAt"`
+	ExpireAt          time.Time `json:"expireAt,omitempty"`
 }
 
 // APIResponse is the generic envelope returned by Remnawave REST endpoints.

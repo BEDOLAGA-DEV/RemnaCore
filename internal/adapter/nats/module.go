@@ -27,9 +27,10 @@ var Module = fx.Module("nats",
 )
 
 // registerMetrics creates and registers the NATS connection stats collector
-// with the default Prometheus registry.
+// with the default Prometheus registry. Duplicate registrations (e.g. during
+// tests that construct the Fx graph multiple times) are silently ignored.
 func registerMetrics(conn *nc.Conn) {
-	prometheus.MustRegister(NewMetricsCollector(conn))
+	_ = prometheus.Register(NewMetricsCollector(conn))
 }
 
 // NewConnection dials the NATS server described in cfg and registers lifecycle
