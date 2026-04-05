@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres"
@@ -50,49 +51,89 @@ const (
 // MarkPublished fails, the transaction rolls back and the event is
 // re-published on the next tick. Consumers must be idempotent.
 type OutboxRelay struct {
-	outbox    *postgres.OutboxRepository
-	publisher *EventPublisher
-	txRunner  txmanager.Runner
-	logger    *slog.Logger
+	outbox      *postgres.OutboxRepository
+	publisher   *EventPublisher
+	txRunner    txmanager.Runner
+	logger      *slog.Logger
+	workerCount int
 }
 
+// MinOutboxRelayWorkers is the lower bound for worker count to ensure at
+// least one goroutine always processes the outbox.
+const MinOutboxRelayWorkers = 1
+
 // NewOutboxRelay creates an OutboxRelay with the given dependencies.
+// workerCount controls the number of parallel relay goroutines; values
+// below MinOutboxRelayWorkers are clamped to MinOutboxRelayWorkers.
 func NewOutboxRelay(
 	outbox *postgres.OutboxRepository,
 	publisher *EventPublisher,
 	txRunner txmanager.Runner,
 	logger *slog.Logger,
+	workerCount int,
 ) *OutboxRelay {
+	if workerCount < MinOutboxRelayWorkers {
+		workerCount = MinOutboxRelayWorkers
+	}
 	return &OutboxRelay{
-		outbox:    outbox,
-		publisher: publisher,
-		txRunner:  txRunner,
-		logger:    logger,
+		outbox:      outbox,
+		publisher:   publisher,
+		txRunner:    txRunner,
+		logger:      logger,
+		workerCount: workerCount,
 	}
 }
 
-// Run starts the relay loop that polls the outbox table and publishes events
-// to NATS. It also periodically purges old published events. Run blocks until
-// the context is cancelled.
+// Run spawns workerCount relay goroutines plus a single cleanup goroutine.
+// Each worker independently polls the outbox table with FOR UPDATE SKIP
+// LOCKED, so rows are never processed by more than one worker. Run blocks
+// until the context is cancelled and all goroutines have exited.
 //
-// An immediate relay pass is executed on startup to catch up on any events
-// that were written but not yet relayed before a previous shutdown or crash.
+// An immediate relay pass is executed by each worker on startup to catch up
+// on any events that were written but not yet relayed before a previous
+// shutdown or crash.
 func (r *OutboxRelay) Run(ctx context.Context) {
+	var wg sync.WaitGroup
+
+	// Spawn relay workers — each polls independently with FOR UPDATE SKIP LOCKED.
+	for i := range r.workerCount {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			r.runWorker(ctx, workerID)
+		}(i)
+	}
+
+	// Single cleanup goroutine (no need to parallelise cleanup).
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		r.runCleanup(ctx)
+	}()
+
+	wg.Wait()
+}
+
+// runWorker is the per-worker relay loop. It executes an immediate catch-up
+// pass, then enters a timer-based loop with exponential backoff on idle.
+func (r *OutboxRelay) runWorker(ctx context.Context, workerID int) {
+	logger := r.logger.With(slog.Int("worker_id", workerID))
+	logger.Info("outbox relay worker started")
+
 	// Immediate catch-up for events stuck from a prior crash.
-	r.relay(ctx)
+	r.relay(ctx, logger)
 
 	currentInterval := OutboxRelayBaseInterval
 	relayTimer := time.NewTimer(currentInterval)
-	cleanupTicker := time.NewTicker(OutboxCleanupInterval)
 	defer relayTimer.Stop()
-	defer cleanupTicker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
+			logger.Info("outbox relay worker stopping")
 			return
 		case <-relayTimer.C:
-			published := r.relay(ctx)
+			published := r.relay(ctx, logger)
 			if published > 0 {
 				// Reset to base interval when events were found.
 				currentInterval = OutboxRelayBaseInterval
@@ -104,6 +145,20 @@ func (r *OutboxRelay) Run(ctx context.Context) {
 				}
 			}
 			relayTimer.Reset(currentInterval)
+		}
+	}
+}
+
+// runCleanup periodically purges old published events. It runs as a single
+// goroutine regardless of worker count.
+func (r *OutboxRelay) runCleanup(ctx context.Context) {
+	cleanupTicker := time.NewTicker(OutboxCleanupInterval)
+	defer cleanupTicker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
 		case <-cleanupTicker.C:
 			r.cleanup(ctx)
 		}
@@ -119,7 +174,10 @@ func (r *OutboxRelay) Run(ctx context.Context) {
 // will be retried on the next tick (the row lock is released on commit).
 // If MarkPublished fails, the entire transaction is rolled back; events that
 // were already published to NATS will be re-delivered (at-least-once).
-func (r *OutboxRelay) relay(ctx context.Context) int {
+//
+// The logger parameter carries the worker ID so log lines can be correlated
+// to a specific worker.
+func (r *OutboxRelay) relay(ctx context.Context, logger *slog.Logger) int {
 	var published int
 
 	err := r.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
@@ -134,7 +192,7 @@ func (r *OutboxRelay) relay(ctx context.Context) int {
 
 		for _, event := range events {
 			if err := r.publisher.Publish(ctx, event.EventType, event.Payload); err != nil {
-				r.logger.Warn("outbox relay: failed to publish event, will retry",
+				logger.Warn("outbox relay: failed to publish event, will retry",
 					slog.String("event_id", event.ID),
 					slog.String("event_type", event.EventType),
 					slog.Any("error", err),
@@ -151,7 +209,7 @@ func (r *OutboxRelay) relay(ctx context.Context) int {
 		}
 
 		if published > 0 {
-			r.logger.Info("outbox relay: batch completed",
+			logger.Info("outbox relay: batch completed",
 				slog.Int("published", published),
 				slog.Int("total", len(events)),
 			)
@@ -161,7 +219,7 @@ func (r *OutboxRelay) relay(ctx context.Context) int {
 	})
 
 	if err != nil {
-		r.logger.Error("outbox relay: batch failed",
+		logger.Error("outbox relay: batch failed",
 			slog.Any("error", err),
 		)
 	}

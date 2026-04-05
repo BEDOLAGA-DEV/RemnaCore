@@ -34,7 +34,15 @@ var natsWiring = fx.Options(
 	fx.Provide(func(pub *postgres.OutboxPublisher, metrics *observability.Metrics) domainevent.Publisher {
 		return observability.NewMeteredPublisher(pub, metrics)
 	}),
-	fx.Provide(natsadapter.NewOutboxRelay),
+	fx.Provide(func(
+		outbox *postgres.OutboxRepository,
+		publisher *natsadapter.EventPublisher,
+		txRunner txmanager.Runner,
+		logger *slog.Logger,
+		cfg *config.Config,
+	) *natsadapter.OutboxRelay {
+		return natsadapter.NewOutboxRelay(outbox, publisher, txRunner, logger, cfg.Outbox.RelayWorkers)
+	}),
 
 	// NATS subscriber (shared by all consumers)
 	fx.Provide(func(conn *nc.Conn) (*natsadapter.EventSubscriber, error) {
@@ -44,6 +52,17 @@ var natsWiring = fx.Options(
 	// Idempotency repository for NATS message deduplication
 	fx.Provide(postgres.NewIdempotencyRepository),
 	fx.Provide(func(r *postgres.IdempotencyRepository) natsadapter.IdempotencyChecker {
+		return r
+	}),
+
+	// Schema registry: upcasts old event payloads to the latest version
+	// before consumers process them. Register upcasters here as event
+	// schemas evolve.
+	fx.Provide(func() *domainevent.SchemaRegistry {
+		r := domainevent.NewSchemaRegistry()
+		// Register upcasters here as event schemas evolve.
+		// Example:
+		// r.Register(billing.EventSubActivated, billing.SubActivatedV1ToV2{})
 		return r
 	}),
 

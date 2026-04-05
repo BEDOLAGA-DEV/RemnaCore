@@ -28,6 +28,7 @@ const (
 	DefaultSubscriptionProxyPort  = 4100
 	DefaultCheckoutMaxPerHour     = 10
 	DefaultSubscriptionMaxPerDay  = 5
+	DefaultOutboxRelayWorkers     = 1
 )
 
 // DefaultAppVersion is used when no APP_VERSION environment variable is set.
@@ -103,6 +104,11 @@ type RateLimitConfig struct {
 	SubscriptionMaxPerDay int `koanf:"subscription_max_per_day"`
 }
 
+// OutboxConfig holds settings for the transactional outbox relay.
+type OutboxConfig struct {
+	RelayWorkers int `koanf:"relay_workers"`
+}
+
 // CORSConfig holds the Cross-Origin Resource Sharing configuration.
 type CORSConfig struct {
 	AllowedOrigins []string `koanf:"allowed_origins"`
@@ -119,6 +125,7 @@ type Config struct {
 	Plugin    PluginConfig    `koanf:"plugin"`
 	Telegram  TelegramConfig  `koanf:"telegram"`
 	Infra     InfraConfig     `koanf:"infra"`
+	Outbox    OutboxConfig    `koanf:"outbox"`
 	CORS      CORSConfig      `koanf:"cors"`
 	Tracing   TracingConfig   `koanf:"tracing"`
 	RateLimit RateLimitConfig `koanf:"ratelimit"`
@@ -167,13 +174,14 @@ func Load() (*Config, error) {
 		"infra.subscription_proxy_port":  DefaultSubscriptionProxyPort,
 		"ratelimit.checkout_max_per_hour":    DefaultCheckoutMaxPerHour,
 		"ratelimit.subscription_max_per_day": DefaultSubscriptionMaxPerDay,
+		"outbox.relay_workers":               DefaultOutboxRelayWorkers,
 	}
 	for key, val := range defaults {
 		k.Set(key, val) //nolint:errcheck // Set on a fresh koanf instance cannot fail
 	}
 
 	// Load each prefix group from environment variables.
-	prefixes := []string{"APP_", "DATABASE_", "VALKEY_", "NATS_", "JWT_", "REMNAWAVE_", "BILLING_", "PLUGIN_", "TELEGRAM_", "INFRA_", "CORS_", "TRACING_", "RATELIMIT_"}
+	prefixes := []string{"APP_", "DATABASE_", "VALKEY_", "NATS_", "JWT_", "REMNAWAVE_", "BILLING_", "PLUGIN_", "TELEGRAM_", "INFRA_", "OUTBOX_", "CORS_", "TRACING_", "RATELIMIT_"}
 	for _, prefix := range prefixes {
 		provider := env.Provider(prefix, ".", func(s string) string {
 			// Strip prefix then lowercase and replace _ with . for nesting
