@@ -175,14 +175,15 @@ func (r *OutboxRelay) runCleanup(ctx context.Context) {
 }
 
 // relay fetches a batch of unpublished events within a transaction (holding
-// FOR UPDATE SKIP LOCKED row locks), publishes each to NATS, and marks
-// successfully published events as published. The transaction ensures that
-// locked rows are invisible to other relay instances.
+// FOR UPDATE SKIP LOCKED row locks), publishes each to NATS, and marks all
+// successfully published events as published in a single MERGE statement.
+// The transaction ensures that locked rows are invisible to other relay
+// instances.
 //
 // If a NATS publish fails for a specific event, that event is skipped and
 // will be retried on the next tick (the row lock is released on commit).
-// If MarkPublished fails, the entire transaction is rolled back; events that
-// were already published to NATS will be re-delivered (at-least-once).
+// If MarkPublishedBatch fails, the entire transaction is rolled back; events
+// that were already published to NATS will be re-delivered (at-least-once).
 //
 // The logger parameter carries the worker ID so log lines can be correlated
 // to a specific worker.
@@ -199,6 +200,10 @@ func (r *OutboxRelay) relay(ctx context.Context, logger *slog.Logger) int {
 			return nil
 		}
 
+		// Publish to NATS, collect successfully published event references.
+		var publishedIDs []string
+		var publishedTimes []time.Time
+
 		for _, event := range events {
 			if err := r.publisher.Publish(txCtx, event.EventType, event.Payload); err != nil {
 				logger.Warn("outbox relay: failed to publish event, will retry",
@@ -209,13 +214,21 @@ func (r *OutboxRelay) relay(ctx context.Context, logger *slog.Logger) int {
 				// Skip this event — row lock released on commit, retry next tick.
 				continue
 			}
-
-			if err := r.outbox.MarkPublished(txCtx, event.ID, event.CreatedAt); err != nil {
-				return fmt.Errorf("mark published event %s: %w", event.ID, err)
-			}
-
-			published++
+			publishedIDs = append(publishedIDs, event.ID)
+			publishedTimes = append(publishedTimes, event.CreatedAt)
 		}
+
+		if len(publishedIDs) == 0 {
+			return nil
+		}
+
+		// Single MERGE statement marks all published events at once.
+		count, err := r.outbox.MarkPublishedBatch(txCtx, publishedIDs, publishedTimes)
+		if err != nil {
+			return fmt.Errorf("mark published batch: %w", err)
+		}
+
+		published = count
 
 		if published > 0 {
 			logger.Info("outbox relay: batch completed",

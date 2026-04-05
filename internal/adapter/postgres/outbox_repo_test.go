@@ -165,3 +165,84 @@ func TestOutboxMarkPublished(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, events)
 }
+
+func TestOutboxMarkPublishedBatch(t *testing.T) {
+	// batchTestEventCount is the number of events stored for batch tests.
+	const batchTestEventCount = 3
+
+	tests := []struct {
+		name       string
+		setup      func(t *testing.T, repo *postgres.OutboxRepository, ctx context.Context) ([]string, []time.Time)
+		wantCount  int
+		wantErr    bool
+		errContain string
+	}{
+		{
+			name: "empty batch returns zero",
+			setup: func(_ *testing.T, _ *postgres.OutboxRepository, _ context.Context) ([]string, []time.Time) {
+				return nil, nil
+			},
+			wantCount: 0,
+			wantErr:   false,
+		},
+		{
+			name: "mismatched lengths returns error",
+			setup: func(_ *testing.T, _ *postgres.OutboxRepository, _ context.Context) ([]string, []time.Time) {
+				return []string{"id-1", "id-2"}, []time.Time{time.Now()}
+			},
+			wantCount:  0,
+			wantErr:    true,
+			errContain: "length mismatch",
+		},
+		{
+			name: "batch of three events marks all published",
+			setup: func(t *testing.T, repo *postgres.OutboxRepository, ctx context.Context) ([]string, []time.Time) {
+				t.Helper()
+				for i := range batchTestEventCount {
+					payload, _ := json.Marshal(map[string]int{"i": i})
+					require.NoError(t, repo.Store(ctx, "batch.test", payload))
+				}
+				events, err := repo.GetUnpublished(ctx, batchTestEventCount)
+				require.NoError(t, err)
+				require.Len(t, events, batchTestEventCount)
+
+				ids := make([]string, batchTestEventCount)
+				times := make([]time.Time, batchTestEventCount)
+				for i, e := range events {
+					ids[i] = e.ID
+					times[i] = e.CreatedAt
+				}
+				return ids, times
+			},
+			wantCount: batchTestEventCount,
+			wantErr:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pool := setupOutboxDB(t)
+			repo := postgres.NewOutboxRepository(pool, clock.NewReal())
+			ctx := context.Background()
+
+			ids, createdAts := tt.setup(t, repo, ctx)
+
+			count, err := repo.MarkPublishedBatch(ctx, ids, createdAts)
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errContain)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantCount, count)
+
+			// Verify all marked events are no longer unpublished.
+			if tt.wantCount > 0 {
+				remaining, err := repo.GetUnpublished(ctx, batchTestEventCount)
+				require.NoError(t, err)
+				assert.Empty(t, remaining)
+			}
+		})
+	}
+}

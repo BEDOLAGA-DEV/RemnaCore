@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres/gen"
@@ -76,11 +77,14 @@ func (r *OutboxRepository) GetUnpublished(ctx context.Context, limit int) ([]Out
 	return events, nil
 }
 
-// MarkPublished sets the published flag and timestamp for the given event.
+// MarkPublished sets the published flag and timestamp for a single event.
 // The relay calls this after successfully publishing to the message broker.
 // When called within RunInTx, uses the same transaction that holds the row lock.
 // Both id and createdAt are required for partition pruning on the
 // range-partitioned outbox table.
+//
+// For batch operations, prefer MarkPublishedBatch which uses PG18 MERGE for a
+// single round-trip.
 func (r *OutboxRepository) MarkPublished(ctx context.Context, id string, createdAt time.Time) error {
 	err := r.queries(ctx).MarkOutboxEventPublished(ctx, gen.MarkOutboxEventPublishedParams{
 		ID:        pgutil.UUIDToPgtype(id),
@@ -90,6 +94,59 @@ func (r *OutboxRepository) MarkPublished(ctx context.Context, id string, created
 		return fmt.Errorf("mark outbox event published: %w", err)
 	}
 	return nil
+}
+
+// markPublishedBatchSQL uses PG18 MERGE ... RETURNING to atomically mark
+// multiple outbox events as published in a single statement. The unnest
+// approach passes parallel arrays of IDs and created_at timestamps to
+// enable partition pruning on the range-partitioned outbox table.
+const markPublishedBatchSQL = `
+MERGE INTO public.outbox AS o
+USING (
+    SELECT unnest($1::uuid[]) AS id, unnest($2::timestamptz[]) AS created_at
+) AS input ON o.id = input.id AND o.created_at = input.created_at
+WHEN MATCHED AND o.published = false THEN
+    UPDATE SET published = true, published_at = now()
+RETURNING o.id`
+
+// MarkPublishedBatch atomically marks multiple events as published using a
+// single PG18 MERGE statement. Returns the number of rows actually updated.
+// Both ids and createdAts must have the same length; each pair (ids[i],
+// createdAts[i]) identifies one event. Uses MERGE ... RETURNING for
+// partition-pruned batch updates in a single round-trip.
+func (r *OutboxRepository) MarkPublishedBatch(ctx context.Context, ids []string, createdAts []time.Time) (int, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	if len(ids) != len(createdAts) {
+		return 0, fmt.Errorf("mark published batch: ids and createdAts length mismatch: %d vs %d", len(ids), len(createdAts))
+	}
+
+	db := DBFromContext(ctx, r.pool)
+
+	// pgx v5 natively maps []pgtype.UUID to uuid[] and []time.Time to
+	// timestamptz[], so we convert IDs to pgtype and pass times directly.
+	pgIDs := pgutil.StringsToPgtypeUUIDs(ids)
+
+	rows, err := db.Query(ctx, markPublishedBatchSQL, pgIDs, createdAts)
+	if err != nil {
+		return 0, fmt.Errorf("merge mark published batch: %w", err)
+	}
+	defer rows.Close()
+
+	var count int
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return count, fmt.Errorf("scan merge result: %w", err)
+		}
+		count++
+	}
+	if err := rows.Err(); err != nil {
+		return count, fmt.Errorf("merge mark published batch rows: %w", err)
+	}
+
+	return count, nil
 }
 
 // DeleteOld removes published events whose published_at is older than the
