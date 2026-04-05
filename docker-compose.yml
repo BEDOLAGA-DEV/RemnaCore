@@ -69,7 +69,7 @@ services:
       POSTGRES_PASSWORD: "${PLATFORM_DB_PASSWORD:-secret}"
       POSTGRES_HOST_AUTH_METHOD: "${POSTGRES_AUTH_METHOD:-scram-sha-256}"
     volumes:
-      - platform_pgdata:/var/lib/postgresql/data
+      - platform_pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-platform} -d ${POSTGRES_DB:-remnacore}"]
       interval: 10s
