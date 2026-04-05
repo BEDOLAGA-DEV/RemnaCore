@@ -55,7 +55,7 @@ func NewMetricsCollector(client *redis.Client) *MetricsCollector {
 			nil, nil,
 		),
 		poolStaleConns: prometheus.NewDesc(
-			prometheus.BuildFQName(metricsNamespace, metricsSubsystem, "pool_stale_connections"),
+			prometheus.BuildFQName(metricsNamespace, metricsSubsystem, "pool_stale_connections_total"),
 			"Number of stale connections removed from the pool.",
 			nil, nil,
 		),

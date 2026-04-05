@@ -98,12 +98,12 @@ func lint(ctx context.Context, client *dagger.Client, src *dagger.Directory) err
 	return err
 }
 
-// test runs unit tests with race detection and the Go 1.26 experimental
-// goroutine leak profiler (detects goroutines blocked on unreachable
-// channels/mutexes via GC reachability analysis).
+// test runs unit tests with the race detector enabled. The race detector
+// requires CGO, so we install gcc/musl-dev on Alpine and set CGO_ENABLED=1.
 func test(ctx context.Context, client *dagger.Client, src *dagger.Directory) error {
 	_, err := goBase(client, src).
-		WithEnvVariable("GOEXPERIMENT", "goroutineleakprofile").
+		WithExec([]string{"apk", "add", "--no-cache", "gcc", "musl-dev"}).
+		WithEnvVariable("CGO_ENABLED", "1").
 		WithExec([]string{"go", "test", "-race", "-count=1", "-short", "./..."}).
 		Sync(ctx)
 	return err

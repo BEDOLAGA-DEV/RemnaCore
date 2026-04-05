@@ -181,8 +181,7 @@ func parseSelectedAddons(cb *models.CallbackQuery) []string {
 	for _, row := range cb.Message.Message.ReplyMarkup.InlineKeyboard {
 		for _, btn := range row {
 			if after, ok := strings.CutPrefix(btn.CallbackData, CallbackPrefixConfirm); ok {
-				data := after
-				parts := strings.SplitN(data, ":", 2)
+				parts := strings.SplitN(after, ":", 2)
 				if len(parts) > 1 && parts[1] != "" {
 					return strings.Split(parts[1], ",")
 				}
