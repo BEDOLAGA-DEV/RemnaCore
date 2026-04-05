@@ -104,7 +104,7 @@ func NewBinding(subID, platformUserID string, purpose BindingPurpose, index int,
 	}
 
 	return &RemnawaveBinding{
-		ID:                uuid.New().String(),
+		ID:                uuid.Must(uuid.NewV7()).String(),
 		SubscriptionID:    subID,
 		PlatformUserID:    platformUserID,
 		RemnawaveUsername: naming.BuildRemnawaveUsername(platformUserID, string(purpose), index),

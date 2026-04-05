@@ -163,7 +163,7 @@ func (d *HookDispatcher) DispatchSync(ctx context.Context, hookName string, payl
 
 		hookCtx := sdk.HookContext{
 			HookName:  hookName,
-			RequestID: uuid.New().String(),
+			RequestID: uuid.Must(uuid.NewV7()).String(),
 			Timestamp: d.clock.Now().Unix(),
 			PluginID:  reg.PluginSlug,
 			Payload:   currentPayload,

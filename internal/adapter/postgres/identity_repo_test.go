@@ -67,8 +67,8 @@ func newTestUser(t *testing.T) *identity.PlatformUser {
 	t.Helper()
 	now := time.Now().Truncate(time.Microsecond)
 	return &identity.PlatformUser{
-		ID:            uuid.New().String(),
-		Email:         fmt.Sprintf("user-%s@test.com", uuid.New().String()[:8]),
+		ID:            uuid.Must(uuid.NewV7()).String(),
+		Email:         fmt.Sprintf("user-%s@test.com", uuid.Must(uuid.NewV7()).String()[:8]),
 		PasswordHash:  "$2a$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012",
 		DisplayName:   "",
 		EmailVerified: false,
@@ -105,7 +105,7 @@ func TestIdentityRepo_CreateAndGetUser(t *testing.T) {
 	assert.Equal(t, user.Email, got2.Email)
 
 	// Not found
-	_, err = repo.GetUserByID(ctx, uuid.New().String())
+	_, err = repo.GetUserByID(ctx, uuid.Must(uuid.NewV7()).String())
 	assert.ErrorIs(t, err, identity.ErrNotFound)
 
 	_, err = repo.GetUserByEmail(ctx, "nonexistent@test.com")
@@ -138,9 +138,9 @@ func TestIdentityRepo_SessionLifecycle(t *testing.T) {
 
 	now := time.Now().Truncate(time.Microsecond)
 	session := &identity.Session{
-		ID:           uuid.New().String(),
+		ID:           uuid.Must(uuid.NewV7()).String(),
 		UserID:       user.ID,
-		RefreshToken: uuid.New().String(),
+		RefreshToken: uuid.Must(uuid.NewV7()).String(),
 		ExpiresAt:    now.Add(24 * time.Hour),
 		CreatedAt:    now,
 	}
@@ -169,13 +169,13 @@ func TestIdentityRepo_SessionLifecycle(t *testing.T) {
 
 	// Delete user sessions (create two, delete all)
 	s1 := &identity.Session{
-		ID: uuid.New().String(), UserID: user.ID,
-		RefreshToken: uuid.New().String(),
+		ID: uuid.Must(uuid.NewV7()).String(), UserID: user.ID,
+		RefreshToken: uuid.Must(uuid.NewV7()).String(),
 		ExpiresAt: now.Add(time.Hour), CreatedAt: now,
 	}
 	s2 := &identity.Session{
-		ID: uuid.New().String(), UserID: user.ID,
-		RefreshToken: uuid.New().String(),
+		ID: uuid.Must(uuid.NewV7()).String(), UserID: user.ID,
+		RefreshToken: uuid.Must(uuid.NewV7()).String(),
 		ExpiresAt: now.Add(time.Hour), CreatedAt: now,
 	}
 	require.NoError(t, repo.CreateSession(ctx, s1))
@@ -200,10 +200,10 @@ func TestIdentityRepo_EmailVerification(t *testing.T) {
 
 	now := time.Now().Truncate(time.Microsecond)
 	verification := &identity.EmailVerification{
-		ID:        uuid.New().String(),
+		ID:        uuid.Must(uuid.NewV7()).String(),
 		UserID:    user.ID,
 		Email:     user.Email,
-		Token:     uuid.New().String(),
+		Token:     uuid.Must(uuid.NewV7()).String(),
 		ExpiresAt: now.Add(24 * time.Hour),
 		CreatedAt: now,
 	}

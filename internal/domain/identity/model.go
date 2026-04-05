@@ -73,7 +73,7 @@ func NewPlatformUser(email, password string, now time.Time) (*PlatformUser, erro
 	}
 
 	return &PlatformUser{
-		ID:            uuid.New().String(),
+		ID:            uuid.Must(uuid.NewV7()).String(),
 		Email:         email,
 		PasswordHash:  hash,
 		EmailVerified: false,
@@ -127,7 +127,7 @@ func NewEmailVerification(userID, email string, now time.Time) *EmailVerificatio
 	}
 
 	return &EmailVerification{
-		ID:        uuid.New().String(),
+		ID:        uuid.Must(uuid.NewV7()).String(),
 		UserID:    userID,
 		Email:     email,
 		Token:     hex.EncodeToString(tokenBytes),
@@ -161,7 +161,7 @@ func NewPasswordReset(userID, email string, now time.Time) *PasswordReset {
 	}
 
 	return &PasswordReset{
-		ID:        uuid.New().String(),
+		ID:        uuid.Must(uuid.NewV7()).String(),
 		UserID:    userID,
 		Email:     email,
 		Token:     hex.EncodeToString(tokenBytes),

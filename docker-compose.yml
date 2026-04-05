@@ -38,6 +38,23 @@ services:
     image: postgres:18
     ports:
       - "${PLATFORM_DB_PORT:-5432}:5432"
+    # PG18 async I/O and performance tuning (sized for 1GB container, SSD storage).
+    # Data checksums are enabled by default in PG18 (initdb --data-checksums).
+    # Use SHOW data_checksums; to verify at runtime.
+    command:
+      - "postgres"
+      - "-c"
+      - "io_method=${PG_IO_METHOD:-worker}"
+      - "-c"
+      - "effective_io_concurrency=${PG_EFFECTIVE_IO_CONCURRENCY:-200}"
+      - "-c"
+      - "maintenance_io_concurrency=${PG_MAINTENANCE_IO_CONCURRENCY:-10}"
+      - "-c"
+      - "shared_buffers=${PG_SHARED_BUFFERS:-256MB}"
+      - "-c"
+      - "work_mem=${PG_WORK_MEM:-16MB}"
+      - "-c"
+      - "log_checksum_failures=on"
     environment:
       POSTGRES_DB: "${PLATFORM_DB_NAME:-remnacore}"
       POSTGRES_USER: "${PLATFORM_DB_USER:-platform}"

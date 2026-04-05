@@ -11,9 +11,10 @@ LIMIT $1
 FOR UPDATE SKIP LOCKED;
 
 -- name: MarkOutboxEventPublished :exec
+-- Includes created_at for partition pruning on the range-partitioned outbox.
 UPDATE public.outbox
 SET published = true, published_at = now()
-WHERE id = $1;
+WHERE id = $1 AND created_at = $2;
 
 -- name: DeleteOldPublishedOutboxEvents :exec
 DELETE FROM public.outbox

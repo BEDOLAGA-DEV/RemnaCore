@@ -52,7 +52,7 @@ func (j *JWTIssuer) Sign(claims UserClaims, ttl time.Duration) (string, error) {
 			Issuer:    JWTIssuerName,
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
-			ID:        uuid.New().String(),
+			ID:        uuid.Must(uuid.NewV7()).String(),
 		},
 	})
 

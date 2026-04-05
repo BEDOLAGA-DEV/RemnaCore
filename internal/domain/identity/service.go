@@ -145,7 +145,7 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (*LoginResult, er
 
 	now := s.clock.Now()
 	session := &Session{
-		ID:           uuid.New().String(),
+		ID:           uuid.Must(uuid.NewV7()).String(),
 		UserID:       user.ID,
 		RefreshToken: refreshToken,
 		ExpiresAt:    now.Add(s.refreshTTL),
@@ -234,7 +234,7 @@ func (s *Service) RefreshToken(ctx context.Context, refreshToken string) (*Login
 
 	now := s.clock.Now()
 	newSession := &Session{
-		ID:           uuid.New().String(),
+		ID:           uuid.Must(uuid.NewV7()).String(),
 		UserID:       user.ID,
 		RefreshToken: newRefreshToken,
 		ExpiresAt:    now.Add(s.refreshTTL),

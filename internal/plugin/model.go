@@ -61,7 +61,7 @@ func NewPlugin(manifest *Manifest, wasmBytes []byte, now time.Time) (*Plugin, er
 	}
 
 	return &Plugin{
-		ID:          uuid.New().String(),
+		ID:          uuid.Must(uuid.NewV7()).String(),
 		Slug:        manifest.Plugin.ID,
 		Name:        manifest.Plugin.Name,
 		Version:     manifest.Plugin.Version,

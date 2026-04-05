@@ -3,7 +3,6 @@ package postgres
 import (
 	"context"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres/gen"
@@ -27,68 +26,22 @@ func NewIdentityRepository(pool *pgxpool.Pool) *IdentityRepository {
 }
 
 // ---------------------------------------------------------------------------
-// Generic user row converter
+// Row converter
 // ---------------------------------------------------------------------------
 
-// userRow is a constraint matching both GetUserByIDRow and GetUserByEmailRow,
-// which sqlc generates as separate structs with identical fields.
-type userRow interface {
-	gen.GetUserByIDRow | gen.GetUserByEmailRow
-}
-
-// userFields holds the extracted fields from any userRow, avoiding duplication
-// in the conversion logic.
-type userFields struct {
-	ID            pgtype.UUID
-	Email         string
-	PasswordHash  string
-	DisplayName   *string
-	EmailVerified bool
-	TelegramID    *int64
-	Role          string
-	TenantID      pgtype.UUID
-	CreatedAt     pgtype.Timestamptz
-	UpdatedAt     pgtype.Timestamptz
-}
-
-// extractUserFields converts any userRow to the common userFields struct.
-func extractUserFields[T userRow](row T) userFields {
-	// Use type switch via any to access the concrete fields.
-	switch r := any(row).(type) {
-	case gen.GetUserByIDRow:
-		return userFields{
-			ID: r.ID, Email: r.Email, PasswordHash: r.PasswordHash,
-			DisplayName: r.DisplayName, EmailVerified: r.EmailVerified,
-			TelegramID: r.TelegramID, Role: r.Role, TenantID: r.TenantID,
-			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
-		}
-	case gen.GetUserByEmailRow:
-		return userFields{
-			ID: r.ID, Email: r.Email, PasswordHash: r.PasswordHash,
-			DisplayName: r.DisplayName, EmailVerified: r.EmailVerified,
-			TelegramID: r.TelegramID, Role: r.Role, TenantID: r.TenantID,
-			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
-		}
-	default:
-		// unreachable due to type constraint
-		return userFields{}
-	}
-}
-
-// rowToUser converts any sqlc user row type to a domain PlatformUser.
-func rowToUser[T userRow](row T) *identity.PlatformUser {
-	f := extractUserFields(row)
+// rowToUser converts the sqlc IdentityPlatformUser model to a domain PlatformUser.
+func rowToUser(row gen.IdentityPlatformUser) *identity.PlatformUser {
 	return &identity.PlatformUser{
-		ID:            pgutil.PgtypeToUUID(f.ID),
-		Email:         f.Email,
-		PasswordHash:  f.PasswordHash,
-		DisplayName:   pgutil.DerefStr(f.DisplayName),
-		EmailVerified: f.EmailVerified,
-		TelegramID:    f.TelegramID,
-		Role:          identity.Role(f.Role),
-		TenantID:      pgutil.PgtypeUUIDToOptStr(f.TenantID),
-		CreatedAt:     pgutil.PgtypeToTime(f.CreatedAt),
-		UpdatedAt:     pgutil.PgtypeToTime(f.UpdatedAt),
+		ID:            pgutil.PgtypeToUUID(row.ID),
+		Email:         row.Email,
+		PasswordHash:  row.PasswordHash,
+		DisplayName:   pgutil.DerefStr(row.DisplayName),
+		EmailVerified: row.EmailVerified,
+		TelegramID:    row.TelegramID,
+		Role:          identity.Role(row.Role),
+		TenantID:      pgutil.PgtypeUUIDToOptStr(row.TenantID),
+		CreatedAt:     pgutil.PgtypeToTime(row.CreatedAt),
+		UpdatedAt:     pgutil.PgtypeToTime(row.UpdatedAt),
 	}
 }
 
@@ -116,37 +69,6 @@ func rowToEmailVerification(row gen.IdentityEmailVerification) *identity.EmailVe
 	}
 }
 
-// rowToUserFromTelegram converts a GetUserByTelegramIDRow to a domain PlatformUser.
-func rowToUserFromTelegram(row gen.GetUserByTelegramIDRow) *identity.PlatformUser {
-	return &identity.PlatformUser{
-		ID:            pgutil.PgtypeToUUID(row.ID),
-		Email:         row.Email,
-		PasswordHash:  row.PasswordHash,
-		DisplayName:   pgutil.DerefStr(row.DisplayName),
-		EmailVerified: row.EmailVerified,
-		TelegramID:    row.TelegramID,
-		Role:          identity.Role(row.Role),
-		TenantID:      pgutil.PgtypeUUIDToOptStr(row.TenantID),
-		CreatedAt:     pgutil.PgtypeToTime(row.CreatedAt),
-		UpdatedAt:     pgutil.PgtypeToTime(row.UpdatedAt),
-	}
-}
-
-// rowToUserFromList converts a ListUsersRow to a domain PlatformUser.
-func rowToUserFromList(row gen.ListUsersRow) *identity.PlatformUser {
-	return &identity.PlatformUser{
-		ID:            pgutil.PgtypeToUUID(row.ID),
-		Email:         row.Email,
-		PasswordHash:  row.PasswordHash,
-		DisplayName:   pgutil.DerefStr(row.DisplayName),
-		EmailVerified: row.EmailVerified,
-		TelegramID:    row.TelegramID,
-		Role:          identity.Role(row.Role),
-		TenantID:      pgutil.PgtypeUUIDToOptStr(row.TenantID),
-		CreatedAt:     pgutil.PgtypeToTime(row.CreatedAt),
-		UpdatedAt:     pgutil.PgtypeToTime(row.UpdatedAt),
-	}
-}
 
 // ---------------------------------------------------------------------------
 // Repository interface implementation
@@ -189,7 +111,7 @@ func (r *IdentityRepository) GetUserByTelegramID(ctx context.Context, telegramID
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get user by telegram id", identity.ErrNotFound)
 	}
-	return rowToUserFromTelegram(row), nil
+	return rowToUser(row), nil
 }
 
 func (r *IdentityRepository) ListUsers(ctx context.Context, limit, offset int) ([]*identity.PlatformUser, error) {
@@ -202,7 +124,7 @@ func (r *IdentityRepository) ListUsers(ctx context.Context, limit, offset int) (
 	}
 	users := make([]*identity.PlatformUser, 0, len(rows))
 	for _, row := range rows {
-		users = append(users, rowToUserFromList(row))
+		users = append(users, rowToUser(row))
 	}
 	return users, nil
 }

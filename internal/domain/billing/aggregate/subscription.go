@@ -78,7 +78,7 @@ func NewSubscription(userID, planID string, interval vo.BillingInterval, addonID
 
 	period := vo.NewBillingPeriod(now, interval)
 	sub := &Subscription{
-		ID:        uuid.New().String(),
+		ID:        uuid.Must(uuid.NewV7()).String(),
 		UserID:    userID,
 		PlanID:    planID,
 		Status:    StatusTrial,

@@ -42,7 +42,7 @@ type PaymentRecord struct {
 // NewPaymentRecord creates a new PaymentRecord in pending status.
 func NewPaymentRecord(invoiceID, provider, externalID string, amount int64, currency string, now time.Time) *PaymentRecord {
 	return &PaymentRecord{
-		ID:         uuid.New().String(),
+		ID:         uuid.Must(uuid.NewV7()).String(),
 		InvoiceID:  invoiceID,
 		Provider:   provider,
 		ExternalID: externalID,
@@ -98,7 +98,7 @@ type WebhookLog struct {
 // NewWebhookLog creates a new WebhookLog entry in pending status.
 func NewWebhookLog(provider, externalID string, rawBody []byte, now time.Time) *WebhookLog {
 	return &WebhookLog{
-		ID:         uuid.New().String(),
+		ID:         uuid.Must(uuid.NewV7()).String(),
 		Provider:   provider,
 		ExternalID: externalID,
 		RawBody:    rawBody,

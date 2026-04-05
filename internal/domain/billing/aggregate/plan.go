@@ -103,7 +103,7 @@ func NewPlan(
 	}
 
 	plan := &Plan{
-		ID:                   uuid.New().String(),
+		ID:                   uuid.Must(uuid.NewV7()).String(),
 		Name:                 name,
 		Description:          description,
 		BasePrice:            basePrice,

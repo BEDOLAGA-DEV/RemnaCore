@@ -105,7 +105,7 @@ func TestOutboxGetUnpublished(t *testing.T) {
 				events, err := repo.GetUnpublished(ctx, 10)
 				require.NoError(t, err)
 				require.NotEmpty(t, events)
-				require.NoError(t, repo.MarkPublished(ctx, events[0].ID))
+				require.NoError(t, repo.MarkPublished(ctx, events[0].ID, events[0].CreatedAt))
 			},
 			limit:     10,
 			wantCount: 1,
@@ -157,7 +157,7 @@ func TestOutboxMarkPublished(t *testing.T) {
 	require.Len(t, events, 1)
 
 	// Mark it as published.
-	err = repo.MarkPublished(ctx, events[0].ID)
+	err = repo.MarkPublished(ctx, events[0].ID, events[0].CreatedAt)
 	require.NoError(t, err)
 
 	// It should no longer appear in unpublished results.

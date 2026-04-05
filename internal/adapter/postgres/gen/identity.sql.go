@@ -242,25 +242,12 @@ func (q *Queries) GetSessionByRefreshToken(ctx context.Context, refreshToken str
 
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT id, email, password_hash, display_name, email_verified, telegram_id, role, tenant_id, created_at, updated_at
-FROM identity.platform_users WHERE email_lower = lower($1)
+FROM identity.platform_users WHERE lower(email) = lower($1)
 `
 
-type GetUserByEmailRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	Email         string             `json:"email"`
-	PasswordHash  string             `json:"password_hash"`
-	DisplayName   *string            `json:"display_name"`
-	EmailVerified bool               `json:"email_verified"`
-	TelegramID    *int64             `json:"telegram_id"`
-	Role          string             `json:"role"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) GetUserByEmail(ctx context.Context, lower string) (GetUserByEmailRow, error) {
+func (q *Queries) GetUserByEmail(ctx context.Context, lower string) (IdentityPlatformUser, error) {
 	row := q.db.QueryRow(ctx, getUserByEmail, lower)
-	var i GetUserByEmailRow
+	var i IdentityPlatformUser
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
@@ -281,22 +268,9 @@ SELECT id, email, password_hash, display_name, email_verified, telegram_id, role
 FROM identity.platform_users WHERE id = $1
 `
 
-type GetUserByIDRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	Email         string             `json:"email"`
-	PasswordHash  string             `json:"password_hash"`
-	DisplayName   *string            `json:"display_name"`
-	EmailVerified bool               `json:"email_verified"`
-	TelegramID    *int64             `json:"telegram_id"`
-	Role          string             `json:"role"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (GetUserByIDRow, error) {
+func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (IdentityPlatformUser, error) {
 	row := q.db.QueryRow(ctx, getUserByID, id)
-	var i GetUserByIDRow
+	var i IdentityPlatformUser
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
@@ -317,22 +291,9 @@ SELECT id, email, password_hash, display_name, email_verified, telegram_id, role
 FROM identity.platform_users WHERE telegram_id = $1
 `
 
-type GetUserByTelegramIDRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	Email         string             `json:"email"`
-	PasswordHash  string             `json:"password_hash"`
-	DisplayName   *string            `json:"display_name"`
-	EmailVerified bool               `json:"email_verified"`
-	TelegramID    *int64             `json:"telegram_id"`
-	Role          string             `json:"role"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) GetUserByTelegramID(ctx context.Context, telegramID *int64) (GetUserByTelegramIDRow, error) {
+func (q *Queries) GetUserByTelegramID(ctx context.Context, telegramID *int64) (IdentityPlatformUser, error) {
 	row := q.db.QueryRow(ctx, getUserByTelegramID, telegramID)
-	var i GetUserByTelegramIDRow
+	var i IdentityPlatformUser
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
@@ -360,28 +321,15 @@ type ListUsersParams struct {
 	Offset int32 `json:"offset"`
 }
 
-type ListUsersRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	Email         string             `json:"email"`
-	PasswordHash  string             `json:"password_hash"`
-	DisplayName   *string            `json:"display_name"`
-	EmailVerified bool               `json:"email_verified"`
-	TelegramID    *int64             `json:"telegram_id"`
-	Role          string             `json:"role"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error) {
+func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]IdentityPlatformUser, error) {
 	rows, err := q.db.Query(ctx, listUsers, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListUsersRow{}
+	items := []IdentityPlatformUser{}
 	for rows.Next() {
-		var i ListUsersRow
+		var i IdentityPlatformUser
 		if err := rows.Scan(
 			&i.ID,
 			&i.Email,

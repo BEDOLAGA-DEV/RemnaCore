@@ -75,11 +75,16 @@ func (r *OutboxRepository) GetUnpublished(ctx context.Context, limit int) ([]Out
 	return events, nil
 }
 
-// MarkPublished sets the published flag and timestamp for the given event ID.
+// MarkPublished sets the published flag and timestamp for the given event.
 // The relay calls this after successfully publishing to the message broker.
 // When called within RunInTx, uses the same transaction that holds the row lock.
-func (r *OutboxRepository) MarkPublished(ctx context.Context, id string) error {
-	err := r.queries(ctx).MarkOutboxEventPublished(ctx, pgutil.UUIDToPgtype(id))
+// Both id and createdAt are required for partition pruning on the
+// range-partitioned outbox table.
+func (r *OutboxRepository) MarkPublished(ctx context.Context, id string, createdAt time.Time) error {
+	err := r.queries(ctx).MarkOutboxEventPublished(ctx, gen.MarkOutboxEventPublishedParams{
+		ID:        pgutil.UUIDToPgtype(id),
+		CreatedAt: pgutil.TimeToPgtype(createdAt),
+	})
 	if err != nil {
 		return fmt.Errorf("mark outbox event published: %w", err)
 	}
@@ -93,6 +98,23 @@ func (r *OutboxRepository) DeleteOld(ctx context.Context, olderThan time.Duratio
 	err := r.queries(ctx).DeleteOldPublishedOutboxEvents(ctx, cutoff)
 	if err != nil {
 		return fmt.Errorf("delete old outbox events: %w", err)
+	}
+	return nil
+}
+
+// DetachAndDropPartition detaches and drops an old outbox partition by name.
+// This is the PG18 partition-based cleanup path — instant, no vacuum bloat.
+// Example: DetachAndDropPartition(ctx, "outbox_2026_q1") after the quarter ends
+// and all events in it are published and past the retention period.
+func (r *OutboxRepository) DetachAndDropPartition(ctx context.Context, partitionName string) error {
+	// CONCURRENTLY avoids blocking concurrent DML on the parent table.
+	detachSQL := fmt.Sprintf("ALTER TABLE public.outbox DETACH PARTITION %s CONCURRENTLY", partitionName)
+	if _, err := r.pool.Exec(ctx, detachSQL); err != nil {
+		return fmt.Errorf("detach partition %s: %w", partitionName, err)
+	}
+	dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS %s", partitionName)
+	if _, err := r.pool.Exec(ctx, dropSQL); err != nil {
+		return fmt.Errorf("drop partition %s: %w", partitionName, err)
 	}
 	return nil
 }

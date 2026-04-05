@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres/gen"
@@ -224,23 +225,67 @@ func NewSubscriptionRepository(pool *pgxpool.Pool) *SubscriptionRepository {
 	}
 }
 
-func subRowToDomain(row gen.BillingSubscription) *aggregate.Subscription {
+// subFields holds the common columns returned by all subscription queries.
+// Using an intermediate struct avoids a 13-parameter function and eliminates
+// the risk of silently swapping same-typed positional arguments.
+type subFields struct {
+	ID             pgtype.UUID
+	UserID         pgtype.UUID
+	PlanID         pgtype.UUID
+	Status         string
+	PeriodStart    pgtype.Timestamptz
+	PeriodEnd      pgtype.Timestamptz
+	PeriodInterval string
+	AddonIds       []pgtype.UUID
+	AssignedTo     *string
+	CancelledAt    pgtype.Timestamptz
+	PausedAt       pgtype.Timestamptz
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+}
+
+// subRow is a constraint matching all sqlc-generated subscription row types.
+// Each query returns a separate struct because the explicit column list differs
+// from the model (which now includes the billing_period generated column).
+type subRow interface {
+	gen.GetSubscriptionByIDRow | gen.GetSubscriptionsByUserIDRow | gen.GetActiveSubscriptionsByUserIDRow | gen.GetAllSubscriptionsRow
+}
+
+// extractSubFields extracts the common fields from any subscription row type.
+func extractSubFields[T subRow](row T) subFields {
+	switch r := any(row).(type) {
+	case gen.GetSubscriptionByIDRow:
+		return subFields{r.ID, r.UserID, r.PlanID, r.Status, r.PeriodStart, r.PeriodEnd, r.PeriodInterval, r.AddonIds, r.AssignedTo, r.CancelledAt, r.PausedAt, r.CreatedAt, r.UpdatedAt}
+	case gen.GetSubscriptionsByUserIDRow:
+		return subFields{r.ID, r.UserID, r.PlanID, r.Status, r.PeriodStart, r.PeriodEnd, r.PeriodInterval, r.AddonIds, r.AssignedTo, r.CancelledAt, r.PausedAt, r.CreatedAt, r.UpdatedAt}
+	case gen.GetActiveSubscriptionsByUserIDRow:
+		return subFields{r.ID, r.UserID, r.PlanID, r.Status, r.PeriodStart, r.PeriodEnd, r.PeriodInterval, r.AddonIds, r.AssignedTo, r.CancelledAt, r.PausedAt, r.CreatedAt, r.UpdatedAt}
+	case gen.GetAllSubscriptionsRow:
+		return subFields{r.ID, r.UserID, r.PlanID, r.Status, r.PeriodStart, r.PeriodEnd, r.PeriodInterval, r.AddonIds, r.AssignedTo, r.CancelledAt, r.PausedAt, r.CreatedAt, r.UpdatedAt}
+	default:
+		panic("unreachable: unhandled subRow type")
+	}
+}
+
+// subRowToDomain converts any subscription row type to a domain Subscription.
+func subRowToDomain[T subRow](row T) *aggregate.Subscription {
+	f := extractSubFields(row)
 	return &aggregate.Subscription{
-		ID:     pgutil.PgtypeToUUID(row.ID),
-		UserID: pgutil.PgtypeToUUID(row.UserID),
-		PlanID: pgutil.PgtypeToUUID(row.PlanID),
-		Status: aggregate.SubscriptionStatus(row.Status),
+		ID:     pgutil.PgtypeToUUID(f.ID),
+		UserID: pgutil.PgtypeToUUID(f.UserID),
+		PlanID: pgutil.PgtypeToUUID(f.PlanID),
+		Status: aggregate.SubscriptionStatus(f.Status),
 		Period: vo.BillingPeriod{
-			Start:    pgutil.PgtypeToTime(row.PeriodStart),
-			End:      pgutil.PgtypeToTime(row.PeriodEnd),
-			Interval: vo.BillingInterval(row.PeriodInterval),
+			Start:    pgutil.PgtypeToTime(f.PeriodStart),
+			End:      pgutil.PgtypeToTime(f.PeriodEnd),
+			Interval: vo.BillingInterval(f.PeriodInterval),
 		},
-		AddonIDs:    pgutil.PgtypeUUIDsToStrings(row.AddonIds),
-		AssignedTo:  pgutil.DerefStr(row.AssignedTo),
-		CancelledAt: pgutil.PgtypeToOptTime(row.CancelledAt),
-		PausedAt:    pgutil.PgtypeToOptTime(row.PausedAt),
-		CreatedAt:   pgutil.PgtypeToTime(row.CreatedAt),
-		UpdatedAt:   pgutil.PgtypeToTime(row.UpdatedAt),
+		AddonIDs:    pgutil.PgtypeUUIDsToStrings(f.AddonIds),
+		AssignedTo:  pgutil.DerefStr(f.AssignedTo),
+		CancelledAt: pgutil.PgtypeToOptTime(f.CancelledAt),
+		PausedAt:    pgutil.PgtypeToOptTime(f.PausedAt),
+		CreatedAt:   pgutil.PgtypeToTime(f.CreatedAt),
+		UpdatedAt:   pgutil.PgtypeToTime(f.UpdatedAt),
 	}
 }
 
@@ -325,6 +370,26 @@ func (r *SubscriptionRepository) Update(ctx context.Context, sub *aggregate.Subs
 	return pgutil.MapErr(err, "update subscription", billing.ErrSubscriptionNotFound)
 }
 
+// updateSubscriptionStatusSQL uses PG18 native OLD/NEW in RETURNING to
+// atomically capture both the previous and new status in a single round-trip.
+// This bypasses sqlc (which does not yet support OLD/NEW syntax) and uses
+// pgx directly. The query is race-free unlike the CTE-based alternative.
+const updateSubscriptionStatusSQL = `UPDATE billing.subscriptions SET status = $2 WHERE id = $1 RETURNING old.status AS previous_status, new.status AS current_status`
+
+// UpdateStatus atomically transitions a subscription's status and returns both
+// the old and new values for audit trail and event payloads.
+func (r *SubscriptionRepository) UpdateStatus(ctx context.Context, id string, newStatus aggregate.SubscriptionStatus) (*billing.StatusTransition, error) {
+	var prev, curr string
+	err := r.pool.QueryRow(ctx, updateSubscriptionStatusSQL, pgutil.UUIDToPgtype(id), string(newStatus)).Scan(&prev, &curr)
+	if err != nil {
+		return nil, pgutil.MapErr(err, "update subscription status", billing.ErrSubscriptionNotFound)
+	}
+	return &billing.StatusTransition{
+		PreviousStatus: aggregate.SubscriptionStatus(prev),
+		CurrentStatus:  aggregate.SubscriptionStatus(curr),
+	}, nil
+}
+
 var _ billing.SubscriptionRepository = (*SubscriptionRepository)(nil)
 
 // ---------------------------------------------------------------------------
@@ -345,18 +410,54 @@ func NewInvoiceRepository(pool *pgxpool.Pool) *InvoiceRepository {
 	}
 }
 
-func invoiceRowToDomain(row gen.BillingInvoice) *aggregate.Invoice {
+// invFields holds the common columns returned by all invoice queries.
+type invFields struct {
+	ID                  pgtype.UUID
+	SubscriptionID      pgtype.UUID
+	UserID              pgtype.UUID
+	SubtotalAmount      int64
+	TotalDiscountAmount int64
+	TotalAmount         int64
+	Currency            string
+	Status              string
+	PaidAt              pgtype.Timestamptz
+	CreatedAt           pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+}
+
+// invRow is a constraint matching all sqlc-generated invoice row types.
+type invRow interface {
+	gen.GetInvoiceByIDRow | gen.GetInvoicesBySubscriptionIDRow | gen.GetPendingInvoicesByUserIDRow | gen.GetAllInvoicesRow
+}
+
+func extractInvFields[T invRow](row T) invFields {
+	switch r := any(row).(type) {
+	case gen.GetInvoiceByIDRow:
+		return invFields{r.ID, r.SubscriptionID, r.UserID, r.SubtotalAmount, r.TotalDiscountAmount, r.TotalAmount, r.Currency, r.Status, r.PaidAt, r.CreatedAt, r.UpdatedAt}
+	case gen.GetInvoicesBySubscriptionIDRow:
+		return invFields{r.ID, r.SubscriptionID, r.UserID, r.SubtotalAmount, r.TotalDiscountAmount, r.TotalAmount, r.Currency, r.Status, r.PaidAt, r.CreatedAt, r.UpdatedAt}
+	case gen.GetPendingInvoicesByUserIDRow:
+		return invFields{r.ID, r.SubscriptionID, r.UserID, r.SubtotalAmount, r.TotalDiscountAmount, r.TotalAmount, r.Currency, r.Status, r.PaidAt, r.CreatedAt, r.UpdatedAt}
+	case gen.GetAllInvoicesRow:
+		return invFields{r.ID, r.SubscriptionID, r.UserID, r.SubtotalAmount, r.TotalDiscountAmount, r.TotalAmount, r.Currency, r.Status, r.PaidAt, r.CreatedAt, r.UpdatedAt}
+	default:
+		panic("unreachable: unhandled invRow type")
+	}
+}
+
+func invoiceRowToDomain[T invRow](row T) *aggregate.Invoice {
+	f := extractInvFields(row)
 	return &aggregate.Invoice{
-		ID:             pgutil.PgtypeToUUID(row.ID),
-		SubscriptionID: pgutil.PgtypeToUUID(row.SubscriptionID),
-		UserID:         pgutil.PgtypeToUUID(row.UserID),
-		Subtotal:       vo.NewMoney(row.SubtotalAmount, vo.Currency(row.Currency)),
-		TotalDiscount:  vo.NewMoney(row.TotalDiscountAmount, vo.Currency(row.Currency)),
-		Total:          vo.NewMoney(row.TotalAmount, vo.Currency(row.Currency)),
-		Status:         aggregate.InvoiceStatus(row.Status),
-		PaidAt:         pgutil.PgtypeToOptTime(row.PaidAt),
-		CreatedAt:      pgutil.PgtypeToTime(row.CreatedAt),
-		UpdatedAt:      pgutil.PgtypeToTime(row.UpdatedAt),
+		ID:             pgutil.PgtypeToUUID(f.ID),
+		SubscriptionID: pgutil.PgtypeToUUID(f.SubscriptionID),
+		UserID:         pgutil.PgtypeToUUID(f.UserID),
+		Subtotal:       vo.NewMoney(f.SubtotalAmount, vo.Currency(f.Currency)),
+		TotalDiscount:  vo.NewMoney(f.TotalDiscountAmount, vo.Currency(f.Currency)),
+		Total:          vo.NewMoney(f.TotalAmount, vo.Currency(f.Currency)),
+		Status:         aggregate.InvoiceStatus(f.Status),
+		PaidAt:         pgutil.PgtypeToOptTime(f.PaidAt),
+		CreatedAt:      pgutil.PgtypeToTime(f.CreatedAt),
+		UpdatedAt:      pgutil.PgtypeToTime(f.UpdatedAt),
 	}
 }
 

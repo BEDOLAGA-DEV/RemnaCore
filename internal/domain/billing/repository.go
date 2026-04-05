@@ -15,6 +15,14 @@ type PlanRepository interface {
 	Update(ctx context.Context, plan *aggregate.Plan) error
 }
 
+// StatusTransition holds the previous and current status of a subscription
+// after an atomic status update. Returned by UpdateStatus for audit trail
+// and domain event payloads.
+type StatusTransition struct {
+	PreviousStatus aggregate.SubscriptionStatus
+	CurrentStatus  aggregate.SubscriptionStatus
+}
+
 // SubscriptionRepository defines persistence operations for the Subscription aggregate.
 type SubscriptionRepository interface {
 	GetByID(ctx context.Context, id string) (*aggregate.Subscription, error)
@@ -23,6 +31,9 @@ type SubscriptionRepository interface {
 	GetAll(ctx context.Context, limit, offset int) ([]*aggregate.Subscription, error)
 	Create(ctx context.Context, sub *aggregate.Subscription) error
 	Update(ctx context.Context, sub *aggregate.Subscription) error
+	// UpdateStatus atomically transitions a subscription's status and returns
+	// both the old and new values. Uses PG18 native OLD/NEW RETURNING.
+	UpdateStatus(ctx context.Context, id string, newStatus aggregate.SubscriptionStatus) (*StatusTransition, error)
 }
 
 // InvoiceRepository defines persistence operations for the Invoice aggregate.

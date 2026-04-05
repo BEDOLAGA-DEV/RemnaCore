@@ -101,6 +101,10 @@ SET status = $2, period_start = $3, period_end = $4, period_interval = $5,
     addon_ids = $6, assigned_to = $7, cancelled_at = $8, paused_at = $9
 WHERE id = $1;
 
+-- NOTE: UpdateSubscriptionStatus uses PG18 native OLD/NEW RETURNING syntax
+-- and is implemented as a raw pgx query in billing_repo.go (bypassing sqlc,
+-- which does not yet support OLD/NEW). See SubscriptionRepository.UpdateStatus.
+
 -- ============================================================================
 -- Invoices
 -- ============================================================================

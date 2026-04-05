@@ -107,6 +107,14 @@ func (m *MockSubscriptionRepo) Update(ctx context.Context, sub *aggregate.Subscr
 	return args.Error(0)
 }
 
+func (m *MockSubscriptionRepo) UpdateStatus(ctx context.Context, id string, newStatus aggregate.SubscriptionStatus) (*billing.StatusTransition, error) {
+	args := m.Called(ctx, id, newStatus)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*billing.StatusTransition), args.Error(1)
+}
+
 // --- MockInvoiceRepo ---
 
 // MockInvoiceRepo is a testify/mock implementation of billing.InvoiceRepository.

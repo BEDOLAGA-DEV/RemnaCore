@@ -85,7 +85,7 @@ func NewInvoice(subID, userID string, lineItems []vo.LineItem, discounts []vo.Di
 	}
 
 	inv := &Invoice{
-		ID:             uuid.New().String(),
+		ID:             uuid.Must(uuid.NewV7()).String(),
 		SubscriptionID: subID,
 		UserID:         userID,
 		LineItems:      lineItems,

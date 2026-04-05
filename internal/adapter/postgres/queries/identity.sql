@@ -8,7 +8,7 @@ FROM identity.platform_users WHERE id = $1;
 
 -- name: GetUserByEmail :one
 SELECT id, email, password_hash, display_name, email_verified, telegram_id, role, tenant_id, created_at, updated_at
-FROM identity.platform_users WHERE email_lower = lower($1);
+FROM identity.platform_users WHERE lower(email) = lower($1);
 
 -- name: UpdateUser :exec
 UPDATE identity.platform_users

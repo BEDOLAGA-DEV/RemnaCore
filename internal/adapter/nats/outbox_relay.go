@@ -143,7 +143,7 @@ func (r *OutboxRelay) relay(ctx context.Context) int {
 				continue
 			}
 
-			if err := r.outbox.MarkPublished(txCtx, event.ID); err != nil {
+			if err := r.outbox.MarkPublished(txCtx, event.ID, event.CreatedAt); err != nil {
 				return fmt.Errorf("mark published event %s: %w", event.ID, err)
 			}
 

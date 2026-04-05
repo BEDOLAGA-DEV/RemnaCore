@@ -69,6 +69,7 @@ func (q *Queries) CreateFamilyMember(ctx context.Context, arg CreateFamilyMember
 
 const createInvoice = `-- name: CreateInvoice :exec
 
+
 INSERT INTO billing.invoices (
     id, subscription_id, user_id, subtotal_amount, total_discount_amount,
     total_amount, currency, status, paid_at, created_at, updated_at
@@ -89,6 +90,9 @@ type CreateInvoiceParams struct {
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 }
 
+// NOTE: UpdateSubscriptionStatus uses PG18 native OLD/NEW RETURNING syntax
+// and is implemented as a raw pgx query in billing_repo.go (bypassing sqlc,
+// which does not yet support OLD/NEW). See SubscriptionRepository.UpdateStatus.
 // ============================================================================
 // Invoices
 // ============================================================================
@@ -373,15 +377,31 @@ SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
 FROM billing.subscriptions WHERE user_id = $1 AND status IN ('trial', 'active') ORDER BY created_at DESC
 `
 
-func (q *Queries) GetActiveSubscriptionsByUserID(ctx context.Context, userID pgtype.UUID) ([]BillingSubscription, error) {
+type GetActiveSubscriptionsByUserIDRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	PlanID         pgtype.UUID        `json:"plan_id"`
+	Status         string             `json:"status"`
+	PeriodStart    pgtype.Timestamptz `json:"period_start"`
+	PeriodEnd      pgtype.Timestamptz `json:"period_end"`
+	PeriodInterval string             `json:"period_interval"`
+	AddonIds       []pgtype.UUID      `json:"addon_ids"`
+	AssignedTo     *string            `json:"assigned_to"`
+	CancelledAt    pgtype.Timestamptz `json:"cancelled_at"`
+	PausedAt       pgtype.Timestamptz `json:"paused_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetActiveSubscriptionsByUserID(ctx context.Context, userID pgtype.UUID) ([]GetActiveSubscriptionsByUserIDRow, error) {
 	rows, err := q.db.Query(ctx, getActiveSubscriptionsByUserID, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []BillingSubscription{}
+	items := []GetActiveSubscriptionsByUserIDRow{}
 	for rows.Next() {
-		var i BillingSubscription
+		var i GetActiveSubscriptionsByUserIDRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.UserID,
@@ -456,15 +476,29 @@ type GetAllInvoicesParams struct {
 	Offset int32 `json:"offset"`
 }
 
-func (q *Queries) GetAllInvoices(ctx context.Context, arg GetAllInvoicesParams) ([]BillingInvoice, error) {
+type GetAllInvoicesRow struct {
+	ID                  pgtype.UUID        `json:"id"`
+	SubscriptionID      pgtype.UUID        `json:"subscription_id"`
+	UserID              pgtype.UUID        `json:"user_id"`
+	SubtotalAmount      int64              `json:"subtotal_amount"`
+	TotalDiscountAmount int64              `json:"total_discount_amount"`
+	TotalAmount         int64              `json:"total_amount"`
+	Currency            string             `json:"currency"`
+	Status              string             `json:"status"`
+	PaidAt              pgtype.Timestamptz `json:"paid_at"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetAllInvoices(ctx context.Context, arg GetAllInvoicesParams) ([]GetAllInvoicesRow, error) {
 	rows, err := q.db.Query(ctx, getAllInvoices, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []BillingInvoice{}
+	items := []GetAllInvoicesRow{}
 	for rows.Next() {
-		var i BillingInvoice
+		var i GetAllInvoicesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.SubscriptionID,
@@ -547,15 +581,31 @@ type GetAllSubscriptionsParams struct {
 	Offset int32 `json:"offset"`
 }
 
-func (q *Queries) GetAllSubscriptions(ctx context.Context, arg GetAllSubscriptionsParams) ([]BillingSubscription, error) {
+type GetAllSubscriptionsRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	PlanID         pgtype.UUID        `json:"plan_id"`
+	Status         string             `json:"status"`
+	PeriodStart    pgtype.Timestamptz `json:"period_start"`
+	PeriodEnd      pgtype.Timestamptz `json:"period_end"`
+	PeriodInterval string             `json:"period_interval"`
+	AddonIds       []pgtype.UUID      `json:"addon_ids"`
+	AssignedTo     *string            `json:"assigned_to"`
+	CancelledAt    pgtype.Timestamptz `json:"cancelled_at"`
+	PausedAt       pgtype.Timestamptz `json:"paused_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetAllSubscriptions(ctx context.Context, arg GetAllSubscriptionsParams) ([]GetAllSubscriptionsRow, error) {
 	rows, err := q.db.Query(ctx, getAllSubscriptions, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []BillingSubscription{}
+	items := []GetAllSubscriptionsRow{}
 	for rows.Next() {
-		var i BillingSubscription
+		var i GetAllSubscriptionsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.UserID,
@@ -655,9 +705,23 @@ SELECT id, subscription_id, user_id, subtotal_amount, total_discount_amount,
 FROM billing.invoices WHERE id = $1
 `
 
-func (q *Queries) GetInvoiceByID(ctx context.Context, id pgtype.UUID) (BillingInvoice, error) {
+type GetInvoiceByIDRow struct {
+	ID                  pgtype.UUID        `json:"id"`
+	SubscriptionID      pgtype.UUID        `json:"subscription_id"`
+	UserID              pgtype.UUID        `json:"user_id"`
+	SubtotalAmount      int64              `json:"subtotal_amount"`
+	TotalDiscountAmount int64              `json:"total_discount_amount"`
+	TotalAmount         int64              `json:"total_amount"`
+	Currency            string             `json:"currency"`
+	Status              string             `json:"status"`
+	PaidAt              pgtype.Timestamptz `json:"paid_at"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetInvoiceByID(ctx context.Context, id pgtype.UUID) (GetInvoiceByIDRow, error) {
 	row := q.db.QueryRow(ctx, getInvoiceByID, id)
-	var i BillingInvoice
+	var i GetInvoiceByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.SubscriptionID,
@@ -680,15 +744,29 @@ SELECT id, subscription_id, user_id, subtotal_amount, total_discount_amount,
 FROM billing.invoices WHERE subscription_id = $1 ORDER BY created_at DESC
 `
 
-func (q *Queries) GetInvoicesBySubscriptionID(ctx context.Context, subscriptionID pgtype.UUID) ([]BillingInvoice, error) {
+type GetInvoicesBySubscriptionIDRow struct {
+	ID                  pgtype.UUID        `json:"id"`
+	SubscriptionID      pgtype.UUID        `json:"subscription_id"`
+	UserID              pgtype.UUID        `json:"user_id"`
+	SubtotalAmount      int64              `json:"subtotal_amount"`
+	TotalDiscountAmount int64              `json:"total_discount_amount"`
+	TotalAmount         int64              `json:"total_amount"`
+	Currency            string             `json:"currency"`
+	Status              string             `json:"status"`
+	PaidAt              pgtype.Timestamptz `json:"paid_at"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetInvoicesBySubscriptionID(ctx context.Context, subscriptionID pgtype.UUID) ([]GetInvoicesBySubscriptionIDRow, error) {
 	rows, err := q.db.Query(ctx, getInvoicesBySubscriptionID, subscriptionID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []BillingInvoice{}
+	items := []GetInvoicesBySubscriptionIDRow{}
 	for rows.Next() {
-		var i BillingInvoice
+		var i GetInvoicesBySubscriptionIDRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.SubscriptionID,
@@ -751,15 +829,29 @@ SELECT id, subscription_id, user_id, subtotal_amount, total_discount_amount,
 FROM billing.invoices WHERE user_id = $1 AND status = 'pending' ORDER BY created_at DESC
 `
 
-func (q *Queries) GetPendingInvoicesByUserID(ctx context.Context, userID pgtype.UUID) ([]BillingInvoice, error) {
+type GetPendingInvoicesByUserIDRow struct {
+	ID                  pgtype.UUID        `json:"id"`
+	SubscriptionID      pgtype.UUID        `json:"subscription_id"`
+	UserID              pgtype.UUID        `json:"user_id"`
+	SubtotalAmount      int64              `json:"subtotal_amount"`
+	TotalDiscountAmount int64              `json:"total_discount_amount"`
+	TotalAmount         int64              `json:"total_amount"`
+	Currency            string             `json:"currency"`
+	Status              string             `json:"status"`
+	PaidAt              pgtype.Timestamptz `json:"paid_at"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetPendingInvoicesByUserID(ctx context.Context, userID pgtype.UUID) ([]GetPendingInvoicesByUserIDRow, error) {
 	rows, err := q.db.Query(ctx, getPendingInvoicesByUserID, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []BillingInvoice{}
+	items := []GetPendingInvoicesByUserIDRow{}
 	for rows.Next() {
-		var i BillingInvoice
+		var i GetPendingInvoicesByUserIDRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.SubscriptionID,
@@ -823,9 +915,25 @@ SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
 FROM billing.subscriptions WHERE id = $1
 `
 
-func (q *Queries) GetSubscriptionByID(ctx context.Context, id pgtype.UUID) (BillingSubscription, error) {
+type GetSubscriptionByIDRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	PlanID         pgtype.UUID        `json:"plan_id"`
+	Status         string             `json:"status"`
+	PeriodStart    pgtype.Timestamptz `json:"period_start"`
+	PeriodEnd      pgtype.Timestamptz `json:"period_end"`
+	PeriodInterval string             `json:"period_interval"`
+	AddonIds       []pgtype.UUID      `json:"addon_ids"`
+	AssignedTo     *string            `json:"assigned_to"`
+	CancelledAt    pgtype.Timestamptz `json:"cancelled_at"`
+	PausedAt       pgtype.Timestamptz `json:"paused_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetSubscriptionByID(ctx context.Context, id pgtype.UUID) (GetSubscriptionByIDRow, error) {
 	row := q.db.QueryRow(ctx, getSubscriptionByID, id)
-	var i BillingSubscription
+	var i GetSubscriptionByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
@@ -850,15 +958,31 @@ SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
 FROM billing.subscriptions WHERE user_id = $1 ORDER BY created_at DESC
 `
 
-func (q *Queries) GetSubscriptionsByUserID(ctx context.Context, userID pgtype.UUID) ([]BillingSubscription, error) {
+type GetSubscriptionsByUserIDRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	PlanID         pgtype.UUID        `json:"plan_id"`
+	Status         string             `json:"status"`
+	PeriodStart    pgtype.Timestamptz `json:"period_start"`
+	PeriodEnd      pgtype.Timestamptz `json:"period_end"`
+	PeriodInterval string             `json:"period_interval"`
+	AddonIds       []pgtype.UUID      `json:"addon_ids"`
+	AssignedTo     *string            `json:"assigned_to"`
+	CancelledAt    pgtype.Timestamptz `json:"cancelled_at"`
+	PausedAt       pgtype.Timestamptz `json:"paused_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetSubscriptionsByUserID(ctx context.Context, userID pgtype.UUID) ([]GetSubscriptionsByUserIDRow, error) {
 	rows, err := q.db.Query(ctx, getSubscriptionsByUserID, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []BillingSubscription{}
+	items := []GetSubscriptionsByUserIDRow{}
 	for rows.Next() {
-		var i BillingSubscription
+		var i GetSubscriptionsByUserIDRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.UserID,

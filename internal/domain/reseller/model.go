@@ -82,7 +82,7 @@ type Commission struct {
 // NewTenant creates a new Tenant with a generated UUID and default settings.
 func NewTenant(name, domain, ownerUserID string, now time.Time) *Tenant {
 	return &Tenant{
-		ID:          uuid.New().String(),
+		ID:          uuid.Must(uuid.NewV7()).String(),
 		Name:        name,
 		Domain:      domain,
 		OwnerUserID: ownerUserID,
@@ -122,7 +122,7 @@ func NewResellerAccount(tenantID, userID string, commissionRate int, now time.Ti
 	}
 
 	return &ResellerAccount{
-		ID:             uuid.New().String(),
+		ID:             uuid.Must(uuid.NewV7()).String(),
 		TenantID:       tenantID,
 		UserID:         userID,
 		CommissionRate: commissionRate,
@@ -136,7 +136,7 @@ func NewCommission(resellerID, saleID string, saleAmount int64, commissionRate i
 	amount := saleAmount * int64(commissionRate) / PercentBase
 
 	return &Commission{
-		ID:         uuid.New().String(),
+		ID:         uuid.Must(uuid.NewV7()).String(),
 		ResellerID: resellerID,
 		SaleID:     saleID,
 		Amount:     amount,

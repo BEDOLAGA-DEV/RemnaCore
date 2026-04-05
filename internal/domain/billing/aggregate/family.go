@@ -54,7 +54,7 @@ type FamilyGroup struct {
 // NewFamilyGroup creates a new family group with the owner as the first member.
 func NewFamilyGroup(ownerID string, maxMembers int, now time.Time) *FamilyGroup {
 	return &FamilyGroup{
-		ID:         uuid.New().String(),
+		ID:         uuid.Must(uuid.NewV7()).String(),
 		OwnerID:    ownerID,
 		MaxMembers: maxMembers,
 		Members: []FamilyMember{

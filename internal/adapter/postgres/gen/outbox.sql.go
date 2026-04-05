@@ -35,7 +35,7 @@ type GetUnpublishedOutboxEventsRow struct {
 	EventType      string             `json:"event_type"`
 	Payload        []byte             `json:"payload"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	SequenceNumber *int64             `json:"sequence_number"`
+	SequenceNumber int64              `json:"sequence_number"`
 }
 
 func (q *Queries) GetUnpublishedOutboxEvents(ctx context.Context, limit int32) ([]GetUnpublishedOutboxEventsRow, error) {
@@ -82,10 +82,16 @@ func (q *Queries) InsertOutboxEvent(ctx context.Context, arg InsertOutboxEventPa
 const markOutboxEventPublished = `-- name: MarkOutboxEventPublished :exec
 UPDATE public.outbox
 SET published = true, published_at = now()
-WHERE id = $1
+WHERE id = $1 AND created_at = $2
 `
 
-func (q *Queries) MarkOutboxEventPublished(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, markOutboxEventPublished, id)
+type MarkOutboxEventPublishedParams struct {
+	ID        pgtype.UUID        `json:"id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+// Includes created_at for partition pruning on the range-partitioned outbox.
+func (q *Queries) MarkOutboxEventPublished(ctx context.Context, arg MarkOutboxEventPublishedParams) error {
+	_, err := q.db.Exec(ctx, markOutboxEventPublished, arg.ID, arg.CreatedAt)
 	return err
 }
