@@ -8,6 +8,7 @@ import (
 
 	"go.uber.org/fx"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	nc "github.com/nats-io/nats.go"
 
 	natsadapter "github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/nats"
@@ -15,6 +16,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/remnawave"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
@@ -76,7 +78,23 @@ var natsWiring = fx.Options(
 	// Webhook handler
 	fx.Provide(provideWebhookHandler),
 
+	// Partition manager: ensures future partitions + cleans up expired ones.
+	fx.Provide(func(
+		outbox *postgres.OutboxRepository,
+		pool *pgxpool.Pool,
+		clk clock.Clock,
+		logger *slog.Logger,
+		cfg *config.Config,
+	) *postgres.PartitionManager {
+		var retention time.Duration
+		if cfg.Outbox.RetentionDays > 0 {
+			retention = time.Duration(cfg.Outbox.RetentionDays) * 24 * time.Hour
+		}
+		return postgres.NewPartitionManager(outbox, pool, clk, logger, cfg.Outbox.PartitionLookahead, retention)
+	}),
+
 	// Lifecycle hooks
+	fx.Invoke(startPartitionManager),
 	fx.Invoke(startOutboxRelay),
 	fx.Invoke(startBillingEventConsumer),
 	fx.Invoke(startPluginAsyncConsumer),
@@ -101,23 +119,35 @@ func provideWebhookHandler(cfg *config.Config, pub *natsadapter.EventPublisher, 
 	})
 }
 
-// outboxPartitionsAhead is the number of future quarters to pre-create
-// outbox partitions for on startup (2 years).
-const outboxPartitionsAhead = 8
+// startPartitionManager spawns the PartitionManager as a background goroutine
+// managed by the Fx lifecycle. It pre-creates future quarterly partitions and
+// cleans up expired ones on a daily schedule.
+func startPartitionManager(lc fx.Lifecycle, pm *postgres.PartitionManager, logger *slog.Logger) {
+	lc.Append(fx.Hook{
+		OnStart: func(_ context.Context) error {
+			pmCtx, cancel := context.WithCancel(context.Background())
+			go func() {
+				logger.Info("partition manager started")
+				pm.Run(pmCtx)
+			}()
+			lc.Append(fx.Hook{
+				OnStop: func(_ context.Context) error {
+					logger.Info("partition manager stopping")
+					cancel()
+					return nil
+				},
+			})
+			return nil
+		},
+	})
+}
 
 // startOutboxRelay spawns the transactional outbox relay as a background
 // goroutine managed by the Fx lifecycle. The relay polls the outbox table for
 // unpublished domain events and forwards them to NATS.
-// Before starting, it ensures outbox partitions exist for the next 8 quarters
-// to prevent events from falling into the default partition.
-func startOutboxRelay(lc fx.Lifecycle, relay *natsadapter.OutboxRelay, outboxRepo *postgres.OutboxRepository, logger *slog.Logger) {
+func startOutboxRelay(lc fx.Lifecycle, relay *natsadapter.OutboxRelay, logger *slog.Logger) {
 	lc.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error {
-			// Ensure outbox partitions exist for the next 8 quarters (2 years).
-			if err := outboxRepo.EnsurePartitions(ctx, time.Now(), outboxPartitionsAhead); err != nil {
-				logger.Error("failed to ensure outbox partitions", slog.Any("error", err))
-			}
-
+		OnStart: func(_ context.Context) error {
 			relayCtx, cancel := context.WithCancel(context.Background())
 			go func() {
 				logger.Info("outbox relay started")

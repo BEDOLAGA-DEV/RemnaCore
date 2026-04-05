@@ -28,7 +28,9 @@ const (
 	DefaultSubscriptionProxyPort  = 4100
 	DefaultCheckoutMaxPerHour     = 10
 	DefaultSubscriptionMaxPerDay  = 5
-	DefaultOutboxRelayWorkers     = 1
+	DefaultOutboxRelayWorkers        = 1
+	DefaultOutboxPartitionLookahead = 2
+	DefaultOutboxRetentionDays      = 90
 )
 
 // DefaultAppVersion is used when no APP_VERSION environment variable is set.
@@ -104,9 +106,12 @@ type RateLimitConfig struct {
 	SubscriptionMaxPerDay int `koanf:"subscription_max_per_day"`
 }
 
-// OutboxConfig holds settings for the transactional outbox relay.
+// OutboxConfig holds settings for the transactional outbox relay and
+// automatic partition lifecycle management.
 type OutboxConfig struct {
-	RelayWorkers int `koanf:"relay_workers"`
+	RelayWorkers       int `koanf:"relay_workers"`
+	PartitionLookahead int `koanf:"partition_lookahead"` // quarters ahead to pre-create, default 2
+	RetentionDays      int `koanf:"retention_days"`      // 0 = disable cleanup, default 90
 }
 
 // CORSConfig holds the Cross-Origin Resource Sharing configuration.
@@ -175,6 +180,8 @@ func Load() (*Config, error) {
 		"ratelimit.checkout_max_per_hour":    DefaultCheckoutMaxPerHour,
 		"ratelimit.subscription_max_per_day": DefaultSubscriptionMaxPerDay,
 		"outbox.relay_workers":               DefaultOutboxRelayWorkers,
+		"outbox.partition_lookahead":         DefaultOutboxPartitionLookahead,
+		"outbox.retention_days":              DefaultOutboxRetentionDays,
 	}
 	for key, val := range defaults {
 		k.Set(key, val) //nolint:errcheck // Set on a fresh koanf instance cannot fail

@@ -35,6 +35,8 @@ services:
       REMNAWAVE_API_TOKEN: "${REMNAWAVE_API_TOKEN:-changeme}"
       REMNAWAVE_WEBHOOK_SECRET: "${REMNAWAVE_WEBHOOK_SECRET:-changeme}"
       OUTBOX_RELAY_WORKERS: "${OUTBOX_RELAY_WORKERS:-1}"
+      OUTBOX_PARTITION_LOOKAHEAD: "${OUTBOX_PARTITION_LOOKAHEAD:-2}"
+      OUTBOX_RETENTION_DAYS: "${OUTBOX_RETENTION_DAYS:-90}"
     depends_on:
       platform-db:
         condition: service_healthy
