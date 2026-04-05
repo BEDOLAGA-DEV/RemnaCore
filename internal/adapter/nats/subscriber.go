@@ -3,6 +3,7 @@ package nats
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/message"
@@ -30,6 +31,15 @@ func NewEventSubscriber(conn *nc.Conn, consumerGroup string) (*EventSubscriber, 
 			JetStream: wmnats.JetStreamConfig{
 				AutoProvision: true, // consumers auto-provisioned; streams pre-created by EnsureStreams
 				DurablePrefix: consumerGroup,
+				// DurableCalculator generates a unique consumer name per subject.
+				// Without this, Watermill reuses the same DurablePrefix for all
+				// subscriptions on a stream, causing "subject does not match consumer".
+				DurableCalculator: func(prefix, topic string) string {
+					safe := strings.ReplaceAll(topic, ".", "_")
+					safe = strings.ReplaceAll(safe, ">", "all")
+					safe = strings.ReplaceAll(safe, "*", "any")
+					return prefix + "_" + safe
+				},
 			},
 		},
 		watermill.NewStdLogger(false, false),
