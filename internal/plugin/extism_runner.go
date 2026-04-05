@@ -116,6 +116,11 @@ type logRequest struct {
 // hostFunctionName constants for host functions exposed to WASM guests.
 const hostFunctionNameLog = "log"
 
+// maxLogPayloadBytes is the maximum size of a log payload from a WASM guest.
+// Oversized entries are silently dropped to prevent a misbehaving plugin from
+// flooding the host with unbounded log data.
+const maxLogPayloadBytes = 64 << 10 // 64 KB
+
 // buildExtismHostFunctions creates the Extism host function definitions bound
 // to a specific plugin slug. If hf is nil, no host functions are registered
 // (the WASM guest cannot call back into the host).
@@ -131,6 +136,9 @@ func buildExtismHostFunctions(hf *HostFunctions, slug string) []extism.HostFunct
 			input, err := p.ReadBytes(offset)
 			if err != nil {
 				return
+			}
+			if len(input) > maxLogPayloadBytes {
+				return // silently drop oversized log entries
 			}
 
 			var req logRequest

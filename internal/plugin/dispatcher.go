@@ -144,9 +144,104 @@ func (d *HookDispatcher) SwapHooks(pluginSlug string, newRegs []HookRegistration
 	}
 }
 
+// dispatchStep represents the outcome of a single plugin execution within a chain.
+type dispatchStep struct {
+	result  sdk.HookResult
+	elapsed time.Duration
+	err     error
+}
+
+// executePluginStep builds a HookContext, calls the WASM runtime, records metrics,
+// publishes events, and returns the parsed result. Both DispatchSync and
+// DispatchSyncSafe delegate to this method for the per-plugin execution logic.
+func (d *HookDispatcher) executePluginStep(ctx context.Context, reg HookRegistration, hookName string, payload json.RawMessage) *dispatchStep {
+	hookCtx := sdk.HookContext{
+		HookName:  hookName,
+		RequestID: uuid.Must(uuid.NewV7()).String(),
+		Timestamp: d.clock.Now().Unix(),
+		PluginID:  reg.PluginSlug,
+		Payload:   payload,
+	}
+
+	inputBytes, err := json.Marshal(hookCtx)
+	if err != nil {
+		d.logger.Error("failed to marshal hook context",
+			"hook", hookName, "plugin", reg.PluginSlug, "error", err)
+		return &dispatchStep{err: fmt.Errorf("marshal hook context: %w", err)}
+	}
+
+	timeout := d.syncTimeoutForPlugin(reg.PluginSlug)
+	callCtx, callCancel := context.WithTimeout(ctx, timeout)
+	defer callCancel()
+
+	start := d.clock.Now()
+	output, callErr := d.runtime.CallHook(callCtx, reg.PluginSlug, reg.FuncName, inputBytes)
+	elapsed := d.clock.Now().Sub(start)
+
+	// Record Prometheus metrics for every call path.
+	d.recordHookDuration(reg.PluginSlug, hookName, elapsed.Seconds())
+
+	if callErr != nil {
+		d.recordHookError(reg.PluginSlug, hookName)
+		d.recordHookTotal(reg.PluginSlug, hookName, "error")
+
+		// Wrap timeout errors with ErrHookTimeout sentinel.
+		if errors.Is(callErr, context.DeadlineExceeded) || errors.Is(callErr, ErrHookTimeout) {
+			callErr = fmt.Errorf("%w: plugin %q timed out after %v", ErrHookTimeout, reg.PluginSlug, timeout)
+		} else {
+			callErr = fmt.Errorf("hook %q failed for plugin %q: %w", hookName, reg.PluginSlug, callErr)
+		}
+
+		// Publish failure event.
+		if d.publisher != nil {
+			reason := "execution error"
+			if errors.Is(callErr, ErrHookTimeout) {
+				reason = "timed out"
+			}
+			if pubErr := d.publisher.Publish(ctx, NewHookFailedEvent(reg.PluginID, reg.PluginSlug, hookName, reason, d.clock.Now())); pubErr != nil {
+				d.logger.Warn("failed to publish event",
+					"event_type", string(EventHookFailed),
+					"error", pubErr.Error(),
+				)
+			}
+		}
+
+		return &dispatchStep{err: callErr, elapsed: elapsed}
+	}
+
+	var result sdk.HookResult
+	if err := json.Unmarshal(output, &result); err != nil {
+		d.recordHookError(reg.PluginSlug, hookName)
+		d.recordHookTotal(reg.PluginSlug, hookName, "error")
+		return &dispatchStep{err: fmt.Errorf("invalid hook result from plugin %q: %w", reg.PluginSlug, err), elapsed: elapsed}
+	}
+
+	// Sanitize action for metrics.
+	action := string(result.Action)
+	switch result.Action {
+	case sdk.ActionContinue, sdk.ActionModify, sdk.ActionHalt, sdk.ActionRollback:
+		// known
+	default:
+		action = "unknown"
+	}
+	d.recordHookTotal(reg.PluginSlug, hookName, action)
+
+	// Publish success event.
+	if d.publisher != nil {
+		if pubErr := d.publisher.Publish(ctx, NewHookExecutedEvent(reg.PluginID, reg.PluginSlug, hookName, elapsed.Milliseconds(), d.clock.Now())); pubErr != nil {
+			d.logger.Warn("failed to publish event",
+				"event_type", string(EventHookExecuted),
+				"error", pubErr.Error(),
+			)
+		}
+	}
+
+	return &dispatchStep{result: result, elapsed: elapsed}
+}
+
 // DispatchSync executes synchronous hooks in priority order, chaining payload
 // modifications from one plugin to the next. If any plugin returns action
-// "halt", the chain stops and ErrHookHalted is returned.
+// "halt" or "rollback", the chain stops and an error is returned.
 func (d *HookDispatcher) DispatchSync(ctx context.Context, hookName string, payload json.RawMessage) (json.RawMessage, error) {
 	ctx, span := tracing.StartSpan(ctx, "plugin.dispatch_sync."+hookName)
 	defer span.End()
@@ -169,108 +264,29 @@ func (d *HookDispatcher) DispatchSync(ctx context.Context, hookName string, payl
 			continue
 		}
 
-		hookCtx := sdk.HookContext{
-			HookName:  hookName,
-			RequestID: uuid.Must(uuid.NewV7()).String(),
-			Timestamp: d.clock.Now().Unix(),
-			PluginID:  reg.PluginSlug,
-			Payload:   currentPayload,
+		step := d.executePluginStep(ctx, reg, hookName, currentPayload)
+		if step.err != nil {
+			return nil, step.err
 		}
 
-		inputBytes, err := json.Marshal(hookCtx)
-		if err != nil {
-			d.logger.Error("failed to marshal hook context",
-				"hook", hookName, "plugin", reg.PluginSlug, "error", err)
-			continue
-		}
-
-		// Resolve per-plugin timeout from manifest, falling back to the
-		// platform default.
-		timeout := d.syncTimeoutForPlugin(reg.PluginSlug)
-		callCtx, callCancel := context.WithTimeout(ctx, timeout)
-
-		start := d.clock.Now()
-		output, err := d.runtime.CallHook(callCtx, reg.PluginSlug, reg.FuncName, inputBytes)
-		elapsed := d.clock.Now().Sub(start)
-		durationMs := elapsed.Milliseconds()
-		callCancel()
-
-		// Record Prometheus metrics for every call path.
-		d.recordHookDuration(reg.PluginSlug, hookName, elapsed.Seconds())
-
-		if err != nil {
-			d.recordHookError(reg.PluginSlug, hookName)
-			d.recordHookTotal(reg.PluginSlug, hookName, "error")
-
-			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrHookTimeout) {
-				d.logger.Error("hook execution timed out",
-					"hook", hookName, "plugin", reg.PluginSlug, "timeout", timeout, "duration_ms", durationMs)
-				if d.publisher != nil {
-					if pubErr := d.publisher.Publish(ctx, NewHookFailedEvent(reg.PluginID, reg.PluginSlug, hookName, "timed out", d.clock.Now())); pubErr != nil {
-						d.logger.Warn("failed to publish event",
-							"event_type", string(EventHookFailed),
-							"error", pubErr.Error(),
-						)
-					}
-				}
-				return nil, fmt.Errorf("%w: plugin %q timed out after %v", ErrHookTimeout, reg.PluginSlug, timeout)
-			}
-			d.logger.Error("hook execution failed",
-				"hook", hookName, "plugin", reg.PluginSlug, "error", err, "duration_ms", durationMs)
-			if d.publisher != nil {
-				if pubErr := d.publisher.Publish(ctx, NewHookFailedEvent(reg.PluginID, reg.PluginSlug, hookName, err.Error(), d.clock.Now())); pubErr != nil {
-					d.logger.Warn("failed to publish event",
-						"event_type", string(EventHookFailed),
-						"error", pubErr.Error(),
-					)
-				}
-			}
-			return nil, fmt.Errorf("hook %q failed for plugin %q: %w", hookName, reg.PluginSlug, err)
-		}
-
-		var result sdk.HookResult
-		if err := json.Unmarshal(output, &result); err != nil {
-			d.recordHookError(reg.PluginSlug, hookName)
-			d.recordHookTotal(reg.PluginSlug, hookName, "error")
-			d.logger.Error("failed to unmarshal hook result",
-				"hook", hookName, "plugin", reg.PluginSlug, "error", err)
-			return nil, fmt.Errorf("invalid hook result from plugin %q: %w", reg.PluginSlug, err)
-		}
-
-		action := string(result.Action)
-		switch result.Action {
-		case sdk.ActionContinue, sdk.ActionModify, sdk.ActionHalt, sdk.ActionRollback:
-			// known action — use as-is
-		default:
-			action = "unknown"
-		}
-		d.recordHookTotal(reg.PluginSlug, hookName, action)
-
-		if d.publisher != nil {
-			if pubErr := d.publisher.Publish(ctx, NewHookExecutedEvent(reg.PluginID, reg.PluginSlug, hookName, durationMs, d.clock.Now())); pubErr != nil {
-				d.logger.Warn("failed to publish event",
-					"event_type", string(EventHookExecuted),
-					"error", pubErr.Error(),
-				)
-			}
-		}
-
-		switch result.Action {
+		switch step.result.Action {
 		case sdk.ActionContinue:
 			// Payload unchanged, continue chain.
 		case sdk.ActionModify:
-			if result.Modified != nil {
-				currentPayload = result.Modified
+			if step.result.Modified != nil {
+				currentPayload = step.result.Modified
 			}
 		case sdk.ActionHalt:
-			errMsg := result.Error
+			errMsg := step.result.Error
 			if errMsg == "" {
 				errMsg = "halted by plugin"
 			}
 			return nil, fmt.Errorf("%w: %s (plugin: %s)", ErrHookHalted, errMsg, reg.PluginSlug)
+		case sdk.ActionRollback:
+			return nil, fmt.Errorf("%w: plugin %q requested rollback (use DispatchSyncSafe for compensation support)", ErrHookHalted, reg.PluginSlug)
 		default:
 			d.logger.Warn("unknown hook action, treating as continue",
-				"hook", hookName, "plugin", reg.PluginSlug, "action", result.Action)
+				"hook", hookName, "plugin", reg.PluginSlug, "action", step.result.Action)
 		}
 	}
 
@@ -327,111 +343,33 @@ func (d *HookDispatcher) DispatchSyncSafe(ctx context.Context, hookName string, 
 			continue
 		}
 
-		hookCtx := sdk.HookContext{
-			HookName:  hookName,
-			RequestID: uuid.Must(uuid.NewV7()).String(),
-			Timestamp: d.clock.Now().Unix(),
-			PluginID:  reg.PluginSlug,
-			Payload:   currentPayload,
-		}
-
-		inputBytes, err := json.Marshal(hookCtx)
-		if err != nil {
-			d.logger.Error("failed to marshal hook context",
-				"hook", hookName, "plugin", reg.PluginSlug, "error", err)
-			continue
-		}
-
-		timeout := d.syncTimeoutForPlugin(reg.PluginSlug)
-		callCtx, callCancel := context.WithTimeout(ctx, timeout)
-
-		start := d.clock.Now()
-		output, err := d.runtime.CallHook(callCtx, reg.PluginSlug, reg.FuncName, inputBytes)
-		elapsed := d.clock.Now().Sub(start)
-		durationMs := elapsed.Milliseconds()
-		callCancel()
-
-		d.recordHookDuration(reg.PluginSlug, hookName, elapsed.Seconds())
-
-		if err != nil {
-			d.recordHookError(reg.PluginSlug, hookName)
-			d.recordHookTotal(reg.PluginSlug, hookName, "error")
-
-			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrHookTimeout) {
-				d.logger.Error("hook execution timed out",
-					"hook", hookName, "plugin", reg.PluginSlug, "timeout", timeout, "duration_ms", durationMs)
-			} else {
-				d.logger.Error("hook execution failed",
-					"hook", hookName, "plugin", reg.PluginSlug, "error", err, "duration_ms", durationMs)
-			}
-
-			if d.publisher != nil {
-				if pubErr := d.publisher.Publish(ctx, NewHookFailedEvent(reg.PluginID, reg.PluginSlug, hookName, err.Error(), d.clock.Now())); pubErr != nil {
-					d.logger.Warn("failed to publish event",
-						"event_type", string(EventHookFailed),
-						"error", pubErr.Error(),
-					)
-				}
-			}
-
-			result.Err = fmt.Errorf("hook %q failed for plugin %q: %w", hookName, reg.PluginSlug, err)
+		step := d.executePluginStep(ctx, reg, hookName, currentPayload)
+		if step.err != nil {
+			result.Err = step.err
 			result.Payload = currentPayload
 			result.ExecutedPlugins = executedPlugins
-			d.compensateChain(ctx, hookName, executedPlugins, payload)
+			d.compensateChain(hookName, executedPlugins, payload)
 			result.Compensated = true
 			return result
 		}
 
-		var hookResult sdk.HookResult
-		if err := json.Unmarshal(output, &hookResult); err != nil {
-			d.recordHookError(reg.PluginSlug, hookName)
-			d.recordHookTotal(reg.PluginSlug, hookName, "error")
-			d.logger.Error("failed to unmarshal hook result",
-				"hook", hookName, "plugin", reg.PluginSlug, "error", err)
-
-			result.Err = fmt.Errorf("invalid hook result from plugin %q: %w", reg.PluginSlug, err)
-			result.Payload = currentPayload
-			result.ExecutedPlugins = executedPlugins
-			d.compensateChain(ctx, hookName, executedPlugins, payload)
-			result.Compensated = true
-			return result
-		}
-
-		action := string(hookResult.Action)
-		switch hookResult.Action {
-		case sdk.ActionContinue, sdk.ActionModify, sdk.ActionHalt, sdk.ActionRollback:
-			// known action — use as-is
-		default:
-			action = "unknown"
-		}
-		d.recordHookTotal(reg.PluginSlug, hookName, action)
-
-		if d.publisher != nil {
-			if pubErr := d.publisher.Publish(ctx, NewHookExecutedEvent(reg.PluginID, reg.PluginSlug, hookName, durationMs, d.clock.Now())); pubErr != nil {
-				d.logger.Warn("failed to publish event",
-					"event_type", string(EventHookExecuted),
-					"error", pubErr.Error(),
-				)
-			}
-		}
-
-		switch hookResult.Action {
+		switch step.result.Action {
 		case sdk.ActionContinue:
 			executedPlugins = append(executedPlugins, reg.PluginSlug)
 		case sdk.ActionModify:
-			if hookResult.Modified != nil {
-				currentPayload = hookResult.Modified
+			if step.result.Modified != nil {
+				currentPayload = step.result.Modified
 			}
 			executedPlugins = append(executedPlugins, reg.PluginSlug)
 		case sdk.ActionHalt:
-			errMsg := hookResult.Error
+			errMsg := step.result.Error
 			if errMsg == "" {
 				errMsg = "halted by plugin"
 			}
 			result.Err = fmt.Errorf("%w: %s (plugin: %s)", ErrHookHalted, errMsg, reg.PluginSlug)
 			result.Payload = currentPayload
 			result.ExecutedPlugins = executedPlugins
-			d.compensateChain(ctx, hookName, executedPlugins, payload)
+			d.compensateChain(hookName, executedPlugins, payload)
 			result.Compensated = true
 			return result
 		case sdk.ActionRollback:
@@ -443,7 +381,7 @@ func (d *HookDispatcher) DispatchSyncSafe(ctx context.Context, hookName string, 
 			return result
 		default:
 			d.logger.Warn("unknown hook action, treating as continue",
-				"hook", hookName, "plugin", reg.PluginSlug, "action", hookResult.Action)
+				"hook", hookName, "plugin", reg.PluginSlug, "action", step.result.Action)
 			executedPlugins = append(executedPlugins, reg.PluginSlug)
 		}
 	}
@@ -456,16 +394,23 @@ func (d *HookDispatcher) DispatchSyncSafe(ctx context.Context, hookName string, 
 // compensateChain calls "{hookName}.compensate" on each previously executed
 // plugin in reverse order, passing the original payload. Best-effort: failures
 // are logged but do not propagate.
-func (d *HookDispatcher) compensateChain(ctx context.Context, hookName string, executedPlugins []string, originalPayload json.RawMessage) {
+//
+// Uses a detached context (context.Background) because the original request
+// context may already be cancelled, but compensation must still run to undo
+// side-effects.
+func (d *HookDispatcher) compensateChain(hookName string, executedPlugins []string, originalPayload json.RawMessage) {
 	compensateHook := hookName + compensateHookSuffix
 
 	// Reverse order — last executed first.
 	for i := len(executedPlugins) - 1; i >= 0; i-- {
 		slug := executedPlugins[i]
 
-		// Check if this plugin has a compensate handler.
+		// Copy the registrations slice under lock to avoid races with
+		// concurrent Register/Unregister calls.
 		d.mu.RLock()
-		regs := d.registrations[compensateHook]
+		src := d.registrations[compensateHook]
+		regs := make([]HookRegistration, len(src))
+		copy(regs, src)
 		d.mu.RUnlock()
 
 		var targetReg *HookRegistration
@@ -495,7 +440,7 @@ func (d *HookDispatcher) compensateChain(ctx context.Context, hookName string, e
 		}
 
 		timeout := d.syncTimeoutForPlugin(slug)
-		callCtx, callCancel := context.WithTimeout(ctx, timeout)
+		callCtx, callCancel := context.WithTimeout(context.Background(), timeout)
 		_, err = d.runtime.CallHook(callCtx, slug, targetReg.FuncName, inputBytes)
 		callCancel()
 
