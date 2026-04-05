@@ -28,7 +28,7 @@ func NewEventSubscriber(conn *nc.Conn, consumerGroup string) (*EventSubscriber, 
 			SubjectCalculator: wmnats.DefaultSubjectCalculator,
 			QueueGroupPrefix:  consumerGroup,
 			JetStream: wmnats.JetStreamConfig{
-				AutoProvision: false, // streams pre-created by EnsureStreams
+				AutoProvision: true, // consumers auto-provisioned; streams pre-created by EnsureStreams
 				DurablePrefix: consumerGroup,
 			},
 		},
