@@ -50,7 +50,7 @@ func NewBot(
 	logger *slog.Logger,
 ) *Bot {
 	return &Bot{
-		token:      cfg.Telegram.BotToken,
+		token:      cfg.Telegram.BotToken.Expose(),
 		webhookURL: cfg.Telegram.WebhookURL,
 		cabinetURL: cfg.Telegram.CabinetURL,
 

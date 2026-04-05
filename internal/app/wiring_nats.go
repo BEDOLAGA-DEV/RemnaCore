@@ -65,7 +65,7 @@ var natsWiring = fx.Options(
 // provideWebhookHandler creates a Remnawave WebhookHandler that translates
 // incoming webhook payloads into domain events and publishes them to NATS.
 func provideWebhookHandler(cfg *config.Config, pub *natsadapter.EventPublisher, logger *slog.Logger) *remnawave.WebhookHandler {
-	return remnawave.NewWebhookHandler(cfg.Remnawave.WebhookSecret, func(payload remnawave.WebhookPayload) {
+	return remnawave.NewWebhookHandler(cfg.Remnawave.WebhookSecret.Expose(), func(payload remnawave.WebhookPayload) {
 		domainEvent := remnawave.MapWebhookEvent(payload.Scope, payload.Event)
 		logger.Info("remnawave webhook received",
 			slog.String("scope", payload.Scope),

@@ -107,8 +107,8 @@ func TestLoadConfig_CustomValues(t *testing.T) {
 
 	// Remnawave
 	assert.Equal(t, "https://api.remnawave.example.com", cfg.Remnawave.URL)
-	assert.Equal(t, "token-abc-123", cfg.Remnawave.APIToken)
-	assert.Equal(t, "webhook-secret-xyz", cfg.Remnawave.WebhookSecret)
+	assert.Equal(t, "token-abc-123", cfg.Remnawave.APIToken.Expose())
+	assert.Equal(t, "webhook-secret-xyz", cfg.Remnawave.WebhookSecret.Expose())
 
 	// Valkey & NATS
 	assert.Equal(t, "redis://localhost:6379", cfg.Valkey.URL)

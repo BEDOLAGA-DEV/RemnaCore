@@ -10,7 +10,7 @@ import (
 // wrapped) client to the Fx dependency graph.
 var Module = fx.Module("remnawave",
 	fx.Provide(func(cfg *config.Config) *Client {
-		return NewClient(cfg.Remnawave.URL, cfg.Remnawave.APIToken)
+		return NewClient(cfg.Remnawave.URL, cfg.Remnawave.APIToken.Expose())
 	}),
 	fx.Provide(NewResilientClient),
 )

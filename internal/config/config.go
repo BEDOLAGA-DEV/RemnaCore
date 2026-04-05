@@ -63,9 +63,9 @@ type JWTConfig struct {
 }
 
 type RemnawaveConfig struct {
-	URL           string `koanf:"url"`
-	APIToken      string `koanf:"api_token"`
-	WebhookSecret string `koanf:"webhook_secret"`
+	URL           string       `koanf:"url"`
+	APIToken      SecretString `koanf:"api_token"`
+	WebhookSecret SecretString `koanf:"webhook_secret"`
 }
 
 type BillingConfig struct {
@@ -79,9 +79,9 @@ type PluginConfig struct {
 }
 
 type TelegramConfig struct {
-	BotToken   string `koanf:"bot_token"`
-	WebhookURL string `koanf:"webhook_url"`
-	CabinetURL string `koanf:"cabinet_url"`
+	BotToken   SecretString `koanf:"bot_token"`
+	WebhookURL string       `koanf:"webhook_url"`
+	CabinetURL string       `koanf:"cabinet_url"`
 }
 
 // InfraConfig holds settings for in-process infrastructure services.
