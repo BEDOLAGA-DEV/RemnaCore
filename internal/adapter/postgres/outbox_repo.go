@@ -77,9 +77,10 @@ func (r *OutboxRepository) GetUnpublished(ctx context.Context, limit int) ([]Out
 	return events, nil
 }
 
+// Deprecated: Use MarkPublishedBatch for production code — it uses a single
+// PG18 MERGE statement instead of N individual UPDATEs.
+//
 // MarkPublished sets the published flag and timestamp for a single event.
-// The relay calls this after successfully publishing to the message broker.
-// When called within RunInTx, uses the same transaction that holds the row lock.
 // Both id and createdAt are required for partition pruning on the
 // range-partitioned outbox table.
 //

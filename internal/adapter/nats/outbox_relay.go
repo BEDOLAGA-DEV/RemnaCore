@@ -48,7 +48,7 @@ const (
 // waiting for the first tick.
 //
 // Delivery guarantee: at-least-once. If NATS publish succeeds but
-// MarkPublished fails, the transaction rolls back and the event is
+// MarkPublishedBatch fails, the transaction rolls back and the event is
 // re-published on the next tick. Consumers must be idempotent.
 type OutboxRelay struct {
 	outbox      *postgres.OutboxRepository
@@ -201,8 +201,8 @@ func (r *OutboxRelay) relay(ctx context.Context, logger *slog.Logger) int {
 		}
 
 		// Publish to NATS, collect successfully published event references.
-		var publishedIDs []string
-		var publishedTimes []time.Time
+		publishedIDs := make([]string, 0, len(events))
+		publishedTimes := make([]time.Time, 0, len(events))
 
 		for _, event := range events {
 			if err := r.publisher.Publish(txCtx, event.EventType, event.Payload); err != nil {

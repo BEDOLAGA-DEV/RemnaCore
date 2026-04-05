@@ -195,6 +195,34 @@ func TestOutboxMarkPublishedBatch(t *testing.T) {
 			errContain: "length mismatch",
 		},
 		{
+			name: "already published events are skipped (idempotency)",
+			setup: func(t *testing.T, repo *postgres.OutboxRepository, ctx context.Context) ([]string, []time.Time) {
+				t.Helper()
+				for i := range batchTestEventCount {
+					payload, _ := json.Marshal(map[string]int{"i": i})
+					require.NoError(t, repo.Store(ctx, "idem.test", payload))
+				}
+				events, err := repo.GetUnpublished(ctx, batchTestEventCount)
+				require.NoError(t, err)
+				require.Len(t, events, batchTestEventCount)
+
+				ids := make([]string, batchTestEventCount)
+				times := make([]time.Time, batchTestEventCount)
+				for i, e := range events {
+					ids[i] = e.ID
+					times[i] = e.CreatedAt
+				}
+				// First call marks all as published.
+				count, err := repo.MarkPublishedBatch(ctx, ids, times)
+				require.NoError(t, err)
+				require.Equal(t, batchTestEventCount, count)
+				// Return same IDs for the second call — should return 0.
+				return ids, times
+			},
+			wantCount: 0,
+			wantErr:   false,
+		},
+		{
 			name: "batch of three events marks all published",
 			setup: func(t *testing.T, repo *postgres.OutboxRepository, ctx context.Context) ([]string, []time.Time) {
 				t.Helper()
