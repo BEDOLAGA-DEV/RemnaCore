@@ -34,9 +34,10 @@ func newOrchestrator(
 ) *service.MultiSubOrchestrator {
 	clk := clock.NewReal()
 	calc := service.NewBindingCalculator()
-	provisioning := service.NewProvisioningSaga(repo, gw, pub, calc, clk)
-	deprovisioning := service.NewDeprovisioningSaga(repo, gw, pub, clk)
-	syncSaga := service.NewSyncSaga(repo, gw, pub, clk)
+	sagaRepo := newPermissiveSagaRepo()
+	provisioning := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, clk)
+	deprovisioning := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, clk)
+	syncSaga := service.NewSyncSaga(repo, gw, pub, sagaRepo, clk)
 	syncService := service.NewSyncService(repo, syncSaga, pub)
 
 	return service.NewMultiSubOrchestrator(
@@ -116,7 +117,7 @@ func TestOnSubscriptionActivated_Idempotent(t *testing.T) {
 
 			orch := newOrchestrator(repo, gw, pub)
 
-			repo.On("GetActiveBySubscriptionID", ctx, "sub-1").
+			repo.On("GetActiveBySubscriptionID", mock.Anything, "sub-1").
 				Return(tt.existing, nil)
 
 			plan := newPlanSnapshotForOrchestrator()
@@ -141,7 +142,7 @@ func TestOnSubscriptionActivated_RepoError(t *testing.T) {
 
 	orch := newOrchestrator(repo, gw, pub)
 
-	repo.On("GetActiveBySubscriptionID", ctx, "sub-1").
+	repo.On("GetActiveBySubscriptionID", mock.Anything, "sub-1").
 		Return(nil, errors.New("db connection lost"))
 
 	plan := newPlanSnapshotForOrchestrator()
@@ -163,7 +164,7 @@ func TestOnSubscriptionCancelled_Idempotent(t *testing.T) {
 
 	orch := newOrchestrator(repo, gw, pub)
 
-	repo.On("GetActiveBySubscriptionID", ctx, "sub-1").
+	repo.On("GetActiveBySubscriptionID", mock.Anything, "sub-1").
 		Return([]*aggregate.RemnawaveBinding{}, nil)
 
 	err := orch.OnSubscriptionCancelled(ctx, "sub-1")
@@ -181,7 +182,7 @@ func TestOnSubscriptionCancelled_RepoError(t *testing.T) {
 
 	orch := newOrchestrator(repo, gw, pub)
 
-	repo.On("GetActiveBySubscriptionID", ctx, "sub-1").
+	repo.On("GetActiveBySubscriptionID", mock.Anything, "sub-1").
 		Return(nil, errors.New("db connection lost"))
 
 	err := orch.OnSubscriptionCancelled(ctx, "sub-1")
@@ -201,7 +202,7 @@ func TestOnSubscriptionPaused_Idempotent(t *testing.T) {
 
 	orch := newOrchestrator(repo, gw, pub)
 
-	repo.On("GetActiveBySubscriptionID", ctx, "sub-1").
+	repo.On("GetActiveBySubscriptionID", mock.Anything, "sub-1").
 		Return([]*aggregate.RemnawaveBinding{}, nil)
 
 	err := orch.OnSubscriptionPaused(ctx, "sub-1")
@@ -219,7 +220,7 @@ func TestOnSubscriptionPaused_RepoError(t *testing.T) {
 
 	orch := newOrchestrator(repo, gw, pub)
 
-	repo.On("GetActiveBySubscriptionID", ctx, "sub-1").
+	repo.On("GetActiveBySubscriptionID", mock.Anything, "sub-1").
 		Return(nil, errors.New("db connection lost"))
 
 	err := orch.OnSubscriptionPaused(ctx, "sub-1")
@@ -258,7 +259,7 @@ func TestOnSubscriptionResumed_Idempotent(t *testing.T) {
 
 			orch := newOrchestrator(repo, gw, pub)
 
-			repo.On("GetBySubscriptionID", ctx, "sub-1").
+			repo.On("GetBySubscriptionID", mock.Anything, "sub-1").
 				Return(tt.bindings, nil)
 
 			err := orch.OnSubscriptionResumed(ctx, "sub-1")
@@ -283,12 +284,12 @@ func TestOnSubscriptionResumed_EnablesDisabledBindings(t *testing.T) {
 		disabledBinding("b-2", "sub-1", "rw-2", aggregate.PurposeGaming),
 	}
 
-	repo.On("GetBySubscriptionID", ctx, "sub-1").
+	repo.On("GetBySubscriptionID", mock.Anything, "sub-1").
 		Return(bindings, nil)
 
-	gw.On("EnableUser", ctx, "rw-2").Return(nil)
+	gw.On("EnableUser", mock.Anything, "rw-2").Return(nil)
 
-	repo.On("Update", ctx, mock.MatchedBy(func(b *aggregate.RemnawaveBinding) bool {
+	repo.On("Update", mock.Anything, mock.MatchedBy(func(b *aggregate.RemnawaveBinding) bool {
 		return b.ID == "b-2" && b.Status == aggregate.BindingActive
 	})).Return(nil).Once()
 
@@ -298,7 +299,7 @@ func TestOnSubscriptionResumed_EnablesDisabledBindings(t *testing.T) {
 	gw.AssertExpectations(t)
 	repo.AssertExpectations(t)
 	// b-1 was already active — EnableUser must NOT be called for it
-	gw.AssertNotCalled(t, "EnableUser", ctx, "rw-1")
+	gw.AssertNotCalled(t, "EnableUser", mock.Anything, "rw-1")
 }
 
 func TestOnSubscriptionResumed_RepoError(t *testing.T) {
@@ -309,7 +310,7 @@ func TestOnSubscriptionResumed_RepoError(t *testing.T) {
 
 	orch := newOrchestrator(repo, gw, pub)
 
-	repo.On("GetBySubscriptionID", ctx, "sub-1").
+	repo.On("GetBySubscriptionID", mock.Anything, "sub-1").
 		Return(nil, errors.New("db connection lost"))
 
 	err := orch.OnSubscriptionResumed(ctx, "sub-1")

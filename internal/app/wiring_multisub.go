@@ -14,8 +14,8 @@ import (
 )
 
 // multisubWiring provides all multisub-domain bindings: binding repository,
-// Remnawave gateway, event handler, lookup adapters, and lifecycle hooks for
-// the periodic sync and binding reconciler.
+// saga repository, Remnawave gateway, event handler, lookup adapters, and
+// lifecycle hooks for periodic sync, binding reconciler, and saga cleanup.
 var multisubWiring = fx.Options(
 	// MultiSub domain services
 	fx.Provide(multisubservice.NewBindingCalculator),
@@ -25,10 +25,15 @@ var multisubWiring = fx.Options(
 	fx.Provide(multisubservice.NewSyncService),
 	fx.Provide(multisubservice.NewMultiSubOrchestrator),
 	fx.Provide(multisubservice.NewBindingReconciler),
+	fx.Provide(multisubservice.NewSagaCleanupService),
 
 	// MultiSub repos -> interface bindings
 	fx.Provide(postgres.NewBindingRepository),
 	fx.Provide(func(repo *postgres.BindingRepository) multisub.BindingRepository { return repo }),
+
+	// Saga repository -> interface binding
+	fx.Provide(postgres.NewSagaRepository),
+	fx.Provide(func(repo *postgres.SagaRepository) multisub.SagaRepository { return repo }),
 
 	// Remnawave gateway -> interface binding
 	fx.Provide(remnawave.NewGatewayAdapter),
@@ -48,6 +53,7 @@ var multisubWiring = fx.Options(
 	// Lifecycle hooks
 	fx.Invoke(startSyncService),
 	fx.Invoke(startBindingReconciler),
+	fx.Invoke(startSagaCleanup),
 )
 
 // startSyncService spawns the periodic Remnawave binding sync as a background
@@ -88,6 +94,31 @@ func startBindingReconciler(lc fx.Lifecycle, reconciler *multisubservice.Binding
 			lc.Append(fx.Hook{
 				OnStop: func(_ context.Context) error {
 					logger.Info("binding reconciler stopping")
+					cancel()
+					return nil
+				},
+			})
+			return nil
+		},
+	})
+}
+
+// startSagaCleanup reports stale running sagas on startup and spawns the
+// periodic saga cleanup service as a background goroutine.
+func startSagaCleanup(lc fx.Lifecycle, cleanup *multisubservice.SagaCleanupService, logger *slog.Logger) {
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			// Report stale sagas synchronously on startup before accepting traffic.
+			cleanup.ReportStaleOnStartup(ctx)
+
+			cleanupCtx, cancel := context.WithCancel(context.Background())
+			go func() {
+				logger.Info("saga cleanup service started")
+				cleanup.Run(cleanupCtx)
+			}()
+			lc.Append(fx.Hook{
+				OnStop: func(_ context.Context) error {
+					logger.Info("saga cleanup service stopping")
 					cancel()
 					return nil
 				},

@@ -10,4 +10,6 @@ var (
 	ErrBindingAlreadyActive = errors.New("binding already active")
 	ErrRemnawaveUnavailable = errors.New("remnawave panel unavailable")
 	ErrMaxBindingsExceeded  = errors.New("maximum remnawave bindings exceeded")
+	ErrSagaNotFound         = errors.New("saga instance not found")
+	ErrSagaAlreadyExists    = errors.New("saga instance already exists for correlation")
 )

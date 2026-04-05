@@ -4,6 +4,7 @@ package multisubtest
 
 import (
 	"context"
+	"time"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
@@ -132,6 +133,57 @@ func (m *MockRemnawaveGateway) DisableUser(ctx context.Context, remnawaveUUID st
 
 func (m *MockRemnawaveGateway) AssignToSquad(ctx context.Context, remnawaveUUID, squadUUID string) error {
 	args := m.Called(ctx, remnawaveUUID, squadUUID)
+	return args.Error(0)
+}
+
+// --- MockSagaRepo ---
+
+// MockSagaRepo is a testify/mock implementation of multisub.SagaRepository.
+type MockSagaRepo struct {
+	mock.Mock
+}
+
+func (m *MockSagaRepo) Create(ctx context.Context, saga *multisub.SagaInstance) (*multisub.SagaInstance, error) {
+	args := m.Called(ctx, saga)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*multisub.SagaInstance), args.Error(1)
+}
+
+func (m *MockSagaRepo) UpdateProgress(ctx context.Context, id string, step int, stateData []byte) error {
+	args := m.Called(ctx, id, step, stateData)
+	return args.Error(0)
+}
+
+func (m *MockSagaRepo) Complete(ctx context.Context, id string) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
+func (m *MockSagaRepo) Fail(ctx context.Context, id string, errMsg string) error {
+	args := m.Called(ctx, id, errMsg)
+	return args.Error(0)
+}
+
+func (m *MockSagaRepo) GetRunning(ctx context.Context) ([]*multisub.SagaInstance, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*multisub.SagaInstance), args.Error(1)
+}
+
+func (m *MockSagaRepo) GetByCorrelation(ctx context.Context, sagaType multisub.SagaType, correlationID string) (*multisub.SagaInstance, error) {
+	args := m.Called(ctx, sagaType, correlationID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*multisub.SagaInstance), args.Error(1)
+}
+
+func (m *MockSagaRepo) Cleanup(ctx context.Context, olderThan time.Duration) error {
+	args := m.Called(ctx, olderThan)
 	return args.Error(0)
 }
 

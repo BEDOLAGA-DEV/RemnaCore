@@ -147,6 +147,19 @@ type MultisubBindingSyncLog struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type MultisubSagaInstance struct {
+	ID            pgtype.UUID        `json:"id"`
+	SagaType      string             `json:"saga_type"`
+	CorrelationID string             `json:"correlation_id"`
+	Status        string             `json:"status"`
+	CurrentStep   int32              `json:"current_step"`
+	TotalSteps    int32              `json:"total_steps"`
+	StateData     []byte             `json:"state_data"`
+	ErrorMessage  *string            `json:"error_message"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
 type MultisubIdempotencyKey struct {
 	Key       string             `json:"key"`
 	Result    []byte             `json:"result"`

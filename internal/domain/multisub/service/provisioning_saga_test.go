@@ -32,14 +32,27 @@ func newPlanSnapshotForSaga() multisub.PlanSnapshot {
 	}
 }
 
+// newPermissiveSagaRepo creates a MockSagaRepo that accepts all calls
+// without assertion, for tests that focus on provisioning behavior rather
+// than saga persistence.
+func newPermissiveSagaRepo() *multisubtest.MockSagaRepo {
+	sagaRepo := new(multisubtest.MockSagaRepo)
+	sagaRepo.On("Create", mock.Anything, mock.Anything).Return(&multisub.SagaInstance{ID: "saga-1"}, nil)
+	sagaRepo.On("UpdateProgress", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	sagaRepo.On("Complete", mock.Anything, mock.Anything).Return(nil)
+	sagaRepo.On("Fail", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	return sagaRepo
+}
+
 func TestProvision_Success(t *testing.T) {
 	ctx := context.Background()
 	repo := new(multisubtest.MockBindingRepo)
 	gw := new(multisubtest.MockRemnawaveGateway)
 	pub := new(multisubtest.MockEventPublisher)
 	calc := service.NewBindingCalculator()
+	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewProvisioningSaga(repo, gw, pub, calc, clock.NewReal())
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, clock.NewReal())
 	plan := newPlanSnapshotForSaga()
 
 	// Expect 3 bindings: base + gaming + 1 family member
@@ -98,8 +111,9 @@ func TestProvision_RemnawaveFail(t *testing.T) {
 	gw := new(multisubtest.MockRemnawaveGateway)
 	pub := new(multisubtest.MockEventPublisher)
 	calc := service.NewBindingCalculator()
+	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewProvisioningSaga(repo, gw, pub, calc, clock.NewReal())
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, clock.NewReal())
 	plan := newPlanSnapshotForSaga()
 
 	// First binding: base - succeeds fully
@@ -155,8 +169,9 @@ func TestProvision_CompensationOnDBFail(t *testing.T) {
 	gw := new(multisubtest.MockRemnawaveGateway)
 	pub := new(multisubtest.MockEventPublisher)
 	calc := service.NewBindingCalculator()
+	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewProvisioningSaga(repo, gw, pub, calc, clock.NewReal())
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, clock.NewReal())
 	plan := newPlanSnapshotForSaga()
 
 	// Create binding in DB succeeds
@@ -201,8 +216,9 @@ func TestProvision_CompensationRetryOnDeleteFail(t *testing.T) {
 	gw := new(multisubtest.MockRemnawaveGateway)
 	pub := new(multisubtest.MockEventPublisher)
 	calc := service.NewBindingCalculator()
+	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewProvisioningSaga(repo, gw, pub, calc, clock.NewReal())
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, clock.NewReal())
 	plan := newPlanSnapshotForSaga()
 
 	// Create binding in DB succeeds
@@ -249,8 +265,9 @@ func TestProvision_MaxBindingsExceeded(t *testing.T) {
 	gw := new(multisubtest.MockRemnawaveGateway)
 	pub := new(multisubtest.MockEventPublisher)
 	calc := service.NewBindingCalculator()
+	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewProvisioningSaga(repo, gw, pub, calc, clock.NewReal())
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, clock.NewReal())
 
 	// Plan allows only 2 bindings, but base + gaming + 2 family = 4 specs
 	plan := multisub.PlanSnapshot{
@@ -291,8 +308,9 @@ func TestProvision_ZeroMaxBindings_NoLimit(t *testing.T) {
 	gw := new(multisubtest.MockRemnawaveGateway)
 	pub := new(multisubtest.MockEventPublisher)
 	calc := service.NewBindingCalculator()
+	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewProvisioningSaga(repo, gw, pub, calc, clock.NewReal())
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, clock.NewReal())
 
 	// MaxRemnawaveBindings=0 means no limit enforced
 	plan := multisub.PlanSnapshot{
@@ -327,4 +345,50 @@ func TestProvision_ZeroMaxBindings_NoLimit(t *testing.T) {
 	repo.AssertExpectations(t)
 	gw.AssertExpectations(t)
 	pub.AssertExpectations(t)
+}
+
+func TestProvision_SagaPersistence(t *testing.T) {
+	ctx := context.Background()
+	repo := new(multisubtest.MockBindingRepo)
+	gw := new(multisubtest.MockRemnawaveGateway)
+	pub := new(multisubtest.MockEventPublisher)
+	calc := service.NewBindingCalculator()
+	sagaRepo := new(multisubtest.MockSagaRepo)
+
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, clock.NewReal())
+
+	plan := multisub.PlanSnapshot{
+		ID:                   "plan-basic",
+		TrafficLimitBytes:    100_000_000_000,
+		MaxRemnawaveBindings: 0,
+	}
+
+	// Saga repo expectations: create, checkpoint progress, complete
+	sagaRepo.On("Create", mock.Anything, mock.MatchedBy(func(s *multisub.SagaInstance) bool {
+		return s.SagaType == multisub.SagaTypeProvisioning &&
+			s.CorrelationID == "sub-saga" &&
+			s.Status == multisub.SagaStatusRunning
+	})).Return(&multisub.SagaInstance{ID: "saga-test-1"}, nil)
+	sagaRepo.On("UpdateProgress", mock.Anything, "saga-test-1", 1, mock.Anything).Return(nil)
+	sagaRepo.On("Complete", mock.Anything, "saga-test-1").Return(nil)
+
+	repo.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.RemnawaveBinding")).Return(nil)
+	repo.On("Update", mock.Anything, mock.AnythingOfType("*aggregate.RemnawaveBinding")).Return(nil)
+	gw.On("CreateUser", mock.Anything, mock.Anything).Return(&multisub.RemnawaveUserResult{
+		UUID: "rw-1", ShortUUID: "rw-s-1",
+	}, nil)
+	pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
+
+	results, err := saga.Provision(ctx, service.ProvisionRequest{
+		SubscriptionID: "sub-saga",
+		PlatformUserID: "user-abc12345xyz",
+		Plan:           plan,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+
+	sagaRepo.AssertExpectations(t)
+	repo.AssertExpectations(t)
+	gw.AssertExpectations(t)
 }

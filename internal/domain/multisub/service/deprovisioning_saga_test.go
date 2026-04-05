@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/multisubtest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/service"
@@ -34,8 +35,9 @@ func TestDeprovision_Success(t *testing.T) {
 	repo := new(multisubtest.MockBindingRepo)
 	gw := new(multisubtest.MockRemnawaveGateway)
 	pub := new(multisubtest.MockEventPublisher)
+	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewDeprovisioningSaga(repo, gw, pub, clock.NewReal())
+	saga := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, clock.NewReal())
 
 	bindings := []*aggregate.RemnawaveBinding{
 		activeBinding("b-1", "sub-1", "rw-1", aggregate.PurposeBase),
@@ -43,17 +45,17 @@ func TestDeprovision_Success(t *testing.T) {
 		activeBinding("b-3", "sub-1", "rw-3", aggregate.PurposeFamilyMember),
 	}
 
-	repo.On("GetActiveBySubscriptionID", ctx, "sub-1").Return(bindings, nil)
+	repo.On("GetActiveBySubscriptionID", mock.Anything, "sub-1").Return(bindings, nil)
 
-	gw.On("DeleteUser", ctx, "rw-1").Return(nil)
-	gw.On("DeleteUser", ctx, "rw-2").Return(nil)
-	gw.On("DeleteUser", ctx, "rw-3").Return(nil)
+	gw.On("DeleteUser", mock.Anything, "rw-1").Return(nil)
+	gw.On("DeleteUser", mock.Anything, "rw-2").Return(nil)
+	gw.On("DeleteUser", mock.Anything, "rw-3").Return(nil)
 
-	repo.On("Update", ctx, mock.MatchedBy(func(b *aggregate.RemnawaveBinding) bool {
+	repo.On("Update", mock.Anything, mock.MatchedBy(func(b *aggregate.RemnawaveBinding) bool {
 		return b.Status == aggregate.BindingDeprovisioned
 	})).Return(nil).Times(3)
 
-	pub.On("Publish", ctx, mock.AnythingOfType("domainevent.Event")).Return(nil).Times(3)
+	pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil).Times(3)
 
 	err := saga.Deprovision(ctx, "sub-1")
 
@@ -68,8 +70,9 @@ func TestDeprovision_PartialFailure(t *testing.T) {
 	repo := new(multisubtest.MockBindingRepo)
 	gw := new(multisubtest.MockRemnawaveGateway)
 	pub := new(multisubtest.MockEventPublisher)
+	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewDeprovisioningSaga(repo, gw, pub, clock.NewReal())
+	saga := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, clock.NewReal())
 
 	bindings := []*aggregate.RemnawaveBinding{
 		activeBinding("b-1", "sub-1", "rw-1", aggregate.PurposeBase),
@@ -77,26 +80,26 @@ func TestDeprovision_PartialFailure(t *testing.T) {
 		activeBinding("b-3", "sub-1", "rw-3", aggregate.PurposeFamilyMember),
 	}
 
-	repo.On("GetActiveBySubscriptionID", ctx, "sub-1").Return(bindings, nil)
+	repo.On("GetActiveBySubscriptionID", mock.Anything, "sub-1").Return(bindings, nil)
 
 	// First and third succeed, second fails
-	gw.On("DeleteUser", ctx, "rw-1").Return(nil)
-	gw.On("DeleteUser", ctx, "rw-2").Return(errors.New("connection refused"))
-	gw.On("DeleteUser", ctx, "rw-3").Return(nil)
+	gw.On("DeleteUser", mock.Anything, "rw-1").Return(nil)
+	gw.On("DeleteUser", mock.Anything, "rw-2").Return(errors.New("connection refused"))
+	gw.On("DeleteUser", mock.Anything, "rw-3").Return(nil)
 
 	// Two deprovisioned updates + one failed update
-	repo.On("Update", ctx, mock.MatchedBy(func(b *aggregate.RemnawaveBinding) bool {
+	repo.On("Update", mock.Anything, mock.MatchedBy(func(b *aggregate.RemnawaveBinding) bool {
 		return b.ID == "b-1" && b.Status == aggregate.BindingDeprovisioned
 	})).Return(nil).Once()
-	repo.On("Update", ctx, mock.MatchedBy(func(b *aggregate.RemnawaveBinding) bool {
+	repo.On("Update", mock.Anything, mock.MatchedBy(func(b *aggregate.RemnawaveBinding) bool {
 		return b.ID == "b-2" && b.Status == aggregate.BindingFailed
 	})).Return(nil).Once()
-	repo.On("Update", ctx, mock.MatchedBy(func(b *aggregate.RemnawaveBinding) bool {
+	repo.On("Update", mock.Anything, mock.MatchedBy(func(b *aggregate.RemnawaveBinding) bool {
 		return b.ID == "b-3" && b.Status == aggregate.BindingDeprovisioned
 	})).Return(nil).Once()
 
 	// Events published only for the 2 successful deprovisions
-	pub.On("Publish", ctx, mock.AnythingOfType("domainevent.Event")).Return(nil).Times(2)
+	pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil).Times(2)
 
 	err := saga.Deprovision(ctx, "sub-1")
 
@@ -117,10 +120,11 @@ func TestDeprovision_NoBindings(t *testing.T) {
 	repo := new(multisubtest.MockBindingRepo)
 	gw := new(multisubtest.MockRemnawaveGateway)
 	pub := new(multisubtest.MockEventPublisher)
+	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewDeprovisioningSaga(repo, gw, pub, clock.NewReal())
+	saga := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, clock.NewReal())
 
-	repo.On("GetActiveBySubscriptionID", ctx, "sub-empty").
+	repo.On("GetActiveBySubscriptionID", mock.Anything, "sub-empty").
 		Return([]*aggregate.RemnawaveBinding{}, nil)
 
 	err := saga.Deprovision(ctx, "sub-empty")
@@ -130,4 +134,38 @@ func TestDeprovision_NoBindings(t *testing.T) {
 	// No gateway or publisher calls expected
 	gw.AssertNotCalled(t, "DeleteUser")
 	pub.AssertNotCalled(t, "Publish")
+}
+
+func TestDeprovision_SagaPersistence(t *testing.T) {
+	ctx := context.Background()
+	repo := new(multisubtest.MockBindingRepo)
+	gw := new(multisubtest.MockRemnawaveGateway)
+	pub := new(multisubtest.MockEventPublisher)
+	sagaRepo := new(multisubtest.MockSagaRepo)
+
+	saga := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, clock.NewReal())
+
+	bindings := []*aggregate.RemnawaveBinding{
+		activeBinding("b-1", "sub-saga-d", "rw-1", aggregate.PurposeBase),
+	}
+
+	repo.On("GetActiveBySubscriptionID", mock.Anything, "sub-saga-d").Return(bindings, nil)
+	gw.On("DeleteUser", mock.Anything, "rw-1").Return(nil)
+	repo.On("Update", mock.Anything, mock.MatchedBy(func(b *aggregate.RemnawaveBinding) bool {
+		return b.Status == aggregate.BindingDeprovisioned
+	})).Return(nil)
+	pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
+
+	// Saga persistence expectations
+	sagaRepo.On("Create", mock.Anything, mock.MatchedBy(func(s *multisub.SagaInstance) bool {
+		return s.SagaType == multisub.SagaTypeDeprovisioning &&
+			s.CorrelationID == "sub-saga-d"
+	})).Return(&multisub.SagaInstance{ID: "saga-d-1"}, nil)
+	sagaRepo.On("UpdateProgress", mock.Anything, "saga-d-1", 1, mock.Anything).Return(nil)
+	sagaRepo.On("Complete", mock.Anything, "saga-d-1").Return(nil)
+
+	err := saga.Deprovision(ctx, "sub-saga-d")
+
+	require.NoError(t, err)
+	sagaRepo.AssertExpectations(t)
 }
