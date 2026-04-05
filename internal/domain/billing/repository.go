@@ -2,6 +2,7 @@ package billing
 
 import (
 	"context"
+	"time"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 )
@@ -35,6 +36,13 @@ type SubscriptionRepository interface {
 	// both the previous and new values in a single operation for audit trail
 	// and domain event payloads.
 	UpdateStatus(ctx context.Context, id string, newStatus aggregate.SubscriptionStatus) (*StatusTransition, error)
+	// GetActiveByUserAtTime returns the single active subscription whose
+	// billing period contains the given point in time. Uses the GiST index
+	// on billing_period via the @> containment operator.
+	GetActiveByUserAtTime(ctx context.Context, userID string, at time.Time) (*aggregate.Subscription, error)
+	// GetOverlapping returns subscriptions whose billing period overlaps the
+	// given [start, end) range. Uses the GiST index via the && operator.
+	GetOverlapping(ctx context.Context, userID, planID string, start, end time.Time) ([]*aggregate.Subscription, error)
 }
 
 // InvoiceRepository defines persistence operations for the Invoice aggregate.

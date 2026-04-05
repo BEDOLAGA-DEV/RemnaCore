@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"go.uber.org/fx"
 
@@ -100,12 +101,23 @@ func provideWebhookHandler(cfg *config.Config, pub *natsadapter.EventPublisher, 
 	})
 }
 
+// outboxPartitionsAhead is the number of future quarters to pre-create
+// outbox partitions for on startup (2 years).
+const outboxPartitionsAhead = 8
+
 // startOutboxRelay spawns the transactional outbox relay as a background
 // goroutine managed by the Fx lifecycle. The relay polls the outbox table for
 // unpublished domain events and forwards them to NATS.
-func startOutboxRelay(lc fx.Lifecycle, relay *natsadapter.OutboxRelay, logger *slog.Logger) {
+// Before starting, it ensures outbox partitions exist for the next 8 quarters
+// to prevent events from falling into the default partition.
+func startOutboxRelay(lc fx.Lifecycle, relay *natsadapter.OutboxRelay, outboxRepo *postgres.OutboxRepository, logger *slog.Logger) {
 	lc.Append(fx.Hook{
-		OnStart: func(_ context.Context) error {
+		OnStart: func(ctx context.Context) error {
+			// Ensure outbox partitions exist for the next 8 quarters (2 years).
+			if err := outboxRepo.EnsurePartitions(ctx, time.Now(), outboxPartitionsAhead); err != nil {
+				logger.Error("failed to ensure outbox partitions", slog.Any("error", err))
+			}
+
 			relayCtx, cancel := context.WithCancel(context.Background())
 			go func() {
 				logger.Info("outbox relay started")

@@ -105,6 +105,16 @@ WHERE id = $1;
 -- and is implemented as a raw pgx query in billing_repo.go (bypassing sqlc,
 -- which does not yet support OLD/NEW). See SubscriptionRepository.UpdateStatus.
 
+-- NOTE: GetActiveSubscriptionByUserAtTime uses the GiST index on
+-- billing_period via the @> containment operator. sqlc does not support the @>
+-- operator on tstzrange, so this query is implemented as raw pgx in
+-- billing_repo.go. See SubscriptionRepository.GetActiveByUserAtTime.
+
+-- NOTE: GetOverlappingSubscriptions uses the GiST index on billing_period via
+-- the && overlap operator. sqlc does not support the && operator on tstzrange,
+-- so this query is implemented as raw pgx in billing_repo.go. See
+-- SubscriptionRepository.GetOverlapping.
+
 -- ============================================================================
 -- Invoices
 -- ============================================================================

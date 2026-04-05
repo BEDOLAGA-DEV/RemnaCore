@@ -4,6 +4,7 @@ package billingtest
 
 import (
 	"context"
+	"time"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
@@ -113,6 +114,22 @@ func (m *MockSubscriptionRepo) UpdateStatus(ctx context.Context, id string, newS
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*billing.StatusTransition), args.Error(1)
+}
+
+func (m *MockSubscriptionRepo) GetActiveByUserAtTime(ctx context.Context, userID string, at time.Time) (*aggregate.Subscription, error) {
+	args := m.Called(ctx, userID, at)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*aggregate.Subscription), args.Error(1)
+}
+
+func (m *MockSubscriptionRepo) GetOverlapping(ctx context.Context, userID, planID string, start, end time.Time) ([]*aggregate.Subscription, error) {
+	args := m.Called(ctx, userID, planID, start, end)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*aggregate.Subscription), args.Error(1)
 }
 
 // --- MockInvoiceRepo ---

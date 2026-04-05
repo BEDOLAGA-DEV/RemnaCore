@@ -107,6 +107,65 @@ func (r *OutboxRepository) DeleteOld(ctx context.Context, olderThan time.Duratio
 // Only allows names like outbox_2026_q1, outbox_2027_q3, outbox_default.
 var outboxPartitionPattern = regexp.MustCompile(`^outbox_(\d{4}_q[1-4]|default)$`)
 
+// monthsPerQuarter is the number of months in a calendar quarter.
+const monthsPerQuarter = 3
+
+// quartersPerYear is the number of quarters in a year.
+const quartersPerYear = 4
+
+// EnsurePartitions creates outbox partitions for the next N quarters from the
+// given start time. Existing partitions are silently skipped (IF NOT EXISTS).
+// This should be called on startup to prevent events falling into the default
+// partition after pre-created partitions from migrations are exhausted.
+func (r *OutboxRepository) EnsurePartitions(ctx context.Context, from time.Time, quartersAhead int) error {
+	for i := range quartersAhead {
+		year, quarter := quarterOf(from, i)
+		start := quarterStart(year, quarter)
+		end := nextQuarterStart(year, quarter)
+		name := fmt.Sprintf("outbox_%d_q%d", year, quarter)
+
+		if !outboxPartitionPattern.MatchString(name) {
+			return fmt.Errorf("invalid partition name: %s", name)
+		}
+
+		sql := fmt.Sprintf(
+			"CREATE TABLE IF NOT EXISTS %s PARTITION OF public.outbox FOR VALUES FROM ('%s') TO ('%s')",
+			name,
+			start.Format(time.DateOnly),
+			end.Format(time.DateOnly),
+		)
+		if _, err := r.pool.Exec(ctx, sql); err != nil {
+			return fmt.Errorf("create partition %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// quarterOf returns the year and quarter (1-4) for the quarter that is offset
+// quarters ahead of the given time.
+func quarterOf(t time.Time, offset int) (year int, quarter int) {
+	// Current quarter: (month-1)/3 + 1 gives 1-4.
+	currentQuarter := (int(t.Month()) - 1) / monthsPerQuarter
+	totalQuarters := currentQuarter + offset
+	year = t.Year() + totalQuarters/quartersPerYear
+	quarter = totalQuarters%quartersPerYear + 1
+	return year, quarter
+}
+
+// quarterStart returns the first day of the given quarter.
+func quarterStart(year, quarter int) time.Time {
+	month := time.Month((quarter-1)*monthsPerQuarter + 1)
+	return time.Date(year, month, 1, 0, 0, 0, 0, time.UTC)
+}
+
+// nextQuarterStart returns the first day of the quarter following the given one.
+func nextQuarterStart(year, quarter int) time.Time {
+	if quarter == quartersPerYear {
+		return quarterStart(year+1, 1)
+	}
+	return quarterStart(year, quarter+1)
+}
+
 // DetachAndDropPartition detaches and drops an old outbox partition by name.
 // This is the PG18 partition-based cleanup path — instant, no vacuum bloat.
 // Example: DetachAndDropPartition(ctx, "outbox_2026_q1") after the quarter ends

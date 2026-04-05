@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -389,6 +390,107 @@ func (r *SubscriptionRepository) UpdateStatus(ctx context.Context, id string, ne
 		PreviousStatus: aggregate.SubscriptionStatus(prev),
 		CurrentStatus:  aggregate.SubscriptionStatus(curr),
 	}, nil
+}
+
+// getActiveSubscriptionByUserAtTimeSQL uses the GiST index on billing_period
+// via the @> containment operator to find the single active subscription whose
+// billing period contains the given point in time. This bypasses sqlc, which
+// does not support the @> operator on tstzrange.
+const getActiveSubscriptionByUserAtTimeSQL = `
+SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
+       addon_ids, assigned_to, cancelled_at, paused_at, created_at, updated_at
+FROM billing.subscriptions
+WHERE user_id = $1
+  AND billing_period @> $2::timestamptz
+  AND status IN ('trial', 'active', 'past_due')
+LIMIT 1`
+
+// GetActiveByUserAtTime returns the single active subscription whose billing
+// period contains the given point in time.
+func (r *SubscriptionRepository) GetActiveByUserAtTime(ctx context.Context, userID string, at time.Time) (*aggregate.Subscription, error) {
+	db := DBFromContext(ctx, r.pool)
+	row := db.QueryRow(ctx, getActiveSubscriptionByUserAtTimeSQL, pgutil.UUIDToPgtype(userID), pgutil.TimeToPgtype(at))
+
+	var f subFields
+	err := row.Scan(
+		&f.ID, &f.UserID, &f.PlanID, &f.Status,
+		&f.PeriodStart, &f.PeriodEnd, &f.PeriodInterval,
+		&f.AddonIds, &f.AssignedTo, &f.CancelledAt, &f.PausedAt,
+		&f.CreatedAt, &f.UpdatedAt,
+	)
+	if err != nil {
+		return nil, pgutil.MapErr(err, "get active subscription by user at time", billing.ErrSubscriptionNotFound)
+	}
+	return subFieldsToDomain(f), nil
+}
+
+// getOverlappingSubscriptionsSQL uses the GiST index on billing_period via the
+// && overlap operator to find subscriptions whose billing period overlaps the
+// given [start, end) range. This bypasses sqlc, which does not support the &&
+// operator on tstzrange.
+const getOverlappingSubscriptionsSQL = `
+SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
+       addon_ids, assigned_to, cancelled_at, paused_at, created_at, updated_at
+FROM billing.subscriptions
+WHERE user_id = $1
+  AND plan_id = $2
+  AND billing_period && tstzrange($3, $4, '[)')
+  AND status IN ('trial', 'active', 'past_due', 'paused')`
+
+// GetOverlapping returns subscriptions whose billing period overlaps the given
+// [start, end) range for a specific user and plan.
+func (r *SubscriptionRepository) GetOverlapping(ctx context.Context, userID, planID string, start, end time.Time) ([]*aggregate.Subscription, error) {
+	db := DBFromContext(ctx, r.pool)
+	rows, err := db.Query(ctx, getOverlappingSubscriptionsSQL,
+		pgutil.UUIDToPgtype(userID),
+		pgutil.UUIDToPgtype(planID),
+		pgutil.TimeToPgtype(start),
+		pgutil.TimeToPgtype(end),
+	)
+	if err != nil {
+		return nil, pgutil.MapErr(err, "get overlapping subscriptions", billing.ErrSubscriptionNotFound)
+	}
+	defer rows.Close()
+
+	var subs []*aggregate.Subscription
+	for rows.Next() {
+		var f subFields
+		if err := rows.Scan(
+			&f.ID, &f.UserID, &f.PlanID, &f.Status,
+			&f.PeriodStart, &f.PeriodEnd, &f.PeriodInterval,
+			&f.AddonIds, &f.AssignedTo, &f.CancelledAt, &f.PausedAt,
+			&f.CreatedAt, &f.UpdatedAt,
+		); err != nil {
+			return nil, pgutil.MapErr(err, "scan overlapping subscription", billing.ErrSubscriptionNotFound)
+		}
+		subs = append(subs, subFieldsToDomain(f))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, pgutil.MapErr(err, "iterate overlapping subscriptions", billing.ErrSubscriptionNotFound)
+	}
+	return subs, nil
+}
+
+// subFieldsToDomain converts a raw subFields struct to a domain Subscription.
+// Used by raw pgx queries that bypass sqlc-generated row types.
+func subFieldsToDomain(f subFields) *aggregate.Subscription {
+	return &aggregate.Subscription{
+		ID:     pgutil.PgtypeToUUID(f.ID),
+		UserID: pgutil.PgtypeToUUID(f.UserID),
+		PlanID: pgutil.PgtypeToUUID(f.PlanID),
+		Status: aggregate.SubscriptionStatus(f.Status),
+		Period: vo.BillingPeriod{
+			Start:    pgutil.PgtypeToTime(f.PeriodStart),
+			End:      pgutil.PgtypeToTime(f.PeriodEnd),
+			Interval: vo.BillingInterval(f.PeriodInterval),
+		},
+		AddonIDs:    pgutil.PgtypeUUIDsToStrings(f.AddonIds),
+		AssignedTo:  pgutil.DerefStr(f.AssignedTo),
+		CancelledAt: pgutil.PgtypeToOptTime(f.CancelledAt),
+		PausedAt:    pgutil.PgtypeToOptTime(f.PausedAt),
+		CreatedAt:   pgutil.PgtypeToTime(f.CreatedAt),
+		UpdatedAt:   pgutil.PgtypeToTime(f.UpdatedAt),
+	}
 }
 
 var _ billing.SubscriptionRepository = (*SubscriptionRepository)(nil)
