@@ -8,6 +8,7 @@ import (
 
 	billingservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/payment"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
 )
 
@@ -43,13 +44,13 @@ func NewPaymentWebhookHandler(
 func (h *PaymentWebhookHandler) HandlePaymentWebhook(w http.ResponseWriter, r *http.Request) {
 	provider := chi.URLParam(r, "provider")
 	if provider == "" {
-		writeError(w, http.StatusBadRequest, "provider is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("provider is required"))
 		return
 	}
 
 	body, err := io.ReadAll(io.LimitReader(r.Body, httpconst.MaxWebhookBodySize))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "failed to read request body")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("failed to read request body"))
 		return
 	}
 	defer r.Body.Close()
@@ -71,7 +72,7 @@ func (h *PaymentWebhookHandler) HandlePaymentWebhook(w http.ResponseWriter, r *h
 		return
 	}
 
-	// 2. Check idempotency — skip if already processed.
+	// 2. Check idempotency -- skip if already processed.
 	isDuplicate, err := h.facade.CheckIdempotency(r.Context(), provider, verified.ExternalID, body)
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]string{"status": WebhookStatusError})

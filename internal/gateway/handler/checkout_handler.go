@@ -6,6 +6,7 @@ import (
 
 	billingservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
 )
 
 // CheckoutHandler exposes HTTP endpoints for the checkout flow.
@@ -33,18 +34,18 @@ type startCheckoutRequest struct {
 func (h *CheckoutHandler) StartCheckout(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeAPIError(w, apierror.Unauthorized)
 		return
 	}
 
 	var req startCheckoutRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeValidationError(w, err)
 		return
 	}
 
 	if req.PlanID == "" {
-		writeError(w, http.StatusBadRequest, "plan_id is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("plan_id is required"))
 		return
 	}
 
@@ -57,8 +58,7 @@ func (h *CheckoutHandler) StartCheckout(w http.ResponseWriter, r *http.Request) 
 		CancelURL: req.CancelURL,
 	})
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
 )
 
 // MultiSubHandler exposes read-only HTTP endpoints for Remnawave bindings.
@@ -26,14 +27,13 @@ func NewMultiSubHandler(bindingRepo multisub.BindingRepository) *MultiSubHandler
 func (h *MultiSubHandler) GetMyBindings(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeAPIError(w, apierror.Unauthorized)
 		return
 	}
 
 	bindings, err := h.bindingRepo.GetByPlatformUserID(r.Context(), claims.UserID)
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -45,20 +45,19 @@ func (h *MultiSubHandler) GetMyBindings(w http.ResponseWriter, r *http.Request) 
 func (h *MultiSubHandler) GetBindingsBySubscription(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeAPIError(w, apierror.Unauthorized)
 		return
 	}
 
 	subID := chi.URLParam(r, "subID")
 	if subID == "" {
-		writeError(w, http.StatusBadRequest, "subscription ID is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("subscription ID is required"))
 		return
 	}
 
 	bindings, err := h.bindingRepo.GetBySubscriptionID(r.Context(), subID)
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -67,7 +66,7 @@ func (h *MultiSubHandler) GetBindingsBySubscription(w http.ResponseWriter, r *ht
 	// bindings by guessing subscription IDs.
 	for _, b := range bindings {
 		if b.PlatformUserID != claims.UserID {
-			writeError(w, http.StatusForbidden, "subscription does not belong to you")
+			writeAPIError(w, apierror.Forbidden.WithDetails("subscription does not belong to you"))
 			return
 		}
 		break

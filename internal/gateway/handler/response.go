@@ -12,6 +12,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/payment"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
 )
 
@@ -23,144 +24,236 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 }
 
 // writeError writes a JSON error response with the given HTTP status code.
+// Retained for backward compatibility with middleware and simple cases.
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
 }
 
-// mapServiceError translates a domain-level error into an HTTP status code and
-// user-facing message. This centralises the error-to-status mapping so
-// individual handlers do not duplicate if/else chains.
-func mapServiceError(err error) (status int, message string) {
+// writeAPIError writes a structured API error as JSON.
+func writeAPIError(w http.ResponseWriter, apiErr *apierror.Error) {
+	w.Header().Set(httpconst.HeaderContentType, httpconst.ContentTypeJSON)
+	w.WriteHeader(apiErr.HTTPStatus)
+	_ = json.NewEncoder(w).Encode(apiErr)
+}
+
+// writeErrorFromDomain maps a domain error to a structured API error and writes
+// it as JSON. Unknown errors are mapped to COMMON.INTERNAL without leaking
+// implementation details.
+func writeErrorFromDomain(w http.ResponseWriter, err error) {
+	writeAPIError(w, mapDomainError(err))
+}
+
+// mapDomainError converts a domain sentinel error to a structured API error.
+// Unknown errors are mapped to COMMON.INTERNAL without leaking details.
+func mapDomainError(err error) *apierror.Error {
 	switch {
-	// Identity domain
+	// ── Identity ─────────────────────────────────────────────────────────
 	case errors.Is(err, identity.ErrEmailTaken):
-		return http.StatusConflict, "email already taken"
+		return apierror.IdentityEmailTaken
 	case errors.Is(err, identity.ErrInvalidCredentials):
-		return http.StatusUnauthorized, "invalid credentials"
+		return apierror.IdentityInvalidCreds
 	case errors.Is(err, identity.ErrTokenExpired):
-		return http.StatusGone, "verification token expired"
+		return apierror.IdentityTokenExpired
 	case errors.Is(err, identity.ErrSessionExpired):
-		return http.StatusUnauthorized, "session expired"
+		return apierror.IdentitySessionExpired
 	case errors.Is(err, identity.ErrNotFound):
-		return http.StatusNotFound, "not found"
+		return apierror.IdentityNotFound
 	case errors.Is(err, identity.ErrEmailNotVerified):
-		return http.StatusForbidden, "email not verified"
-	case errors.Is(err, identity.ErrPasswordResetExpired):
-		return http.StatusGone, "password reset token expired"
-	case errors.Is(err, identity.ErrPasswordResetNotFound):
-		return http.StatusNotFound, "password reset token not found"
+		return apierror.IdentityEmailNotVerified
 	case errors.Is(err, identity.ErrPasswordTooShort):
-		return http.StatusBadRequest, "password must be at least 8 characters"
+		return apierror.IdentityPasswordTooShort
 	case errors.Is(err, identity.ErrPasswordTooWeak):
-		return http.StatusBadRequest, "password must contain uppercase, lowercase, and digit characters"
+		return apierror.IdentityPasswordTooWeak
+	case errors.Is(err, identity.ErrPasswordResetExpired):
+		return apierror.IdentityResetExpired
+	case errors.Is(err, identity.ErrPasswordResetNotFound):
+		return apierror.IdentityResetNotFound
 
-	// Billing domain -- not found
+	// ── Billing ──────────────────────────────────────────────────────────
 	case errors.Is(err, billing.ErrPlanNotFound):
-		return http.StatusNotFound, "plan not found"
+		return apierror.BillingPlanNotFound
 	case errors.Is(err, billing.ErrSubscriptionNotFound):
-		return http.StatusNotFound, "subscription not found"
+		return apierror.BillingSubscriptionNotFound
 	case errors.Is(err, billing.ErrInvoiceNotFound):
-		return http.StatusNotFound, "invoice not found"
+		return apierror.BillingInvoiceNotFound
 	case errors.Is(err, billing.ErrFamilyGroupNotFound):
-		return http.StatusNotFound, "family group not found"
-
-	// Billing domain -- conflict / invalid state
-	case errors.Is(err, aggregate.ErrInvalidTransition):
-		return http.StatusConflict, "invalid subscription state transition"
+		return apierror.BillingFamilyGroupNotFound
 	case errors.Is(err, billing.ErrInvoiceAlreadyPaid):
-		return http.StatusConflict, "invoice already paid"
-	case errors.Is(err, billing.ErrSubscriptionNotActive):
-		return http.StatusConflict, "subscription is not active"
-	case errors.Is(err, billing.ErrFamilyNotEnabled):
-		return http.StatusConflict, "family sharing not enabled for this plan"
-	case errors.Is(err, billing.ErrAddonNotAvailable):
-		return http.StatusBadRequest, "addon not available for this plan"
+		return apierror.BillingInvoiceAlreadyPaid
+	case errors.Is(err, billing.ErrInsufficientFunds):
+		return apierror.BillingInsufficientFunds
 	case errors.Is(err, billing.ErrCurrencyMismatch):
-		return http.StatusBadRequest, "currency mismatch"
-	case errors.Is(err, multisub.ErrMaxBindingsExceeded):
-		return http.StatusConflict, "maximum bindings exceeded"
-	case errors.Is(err, billing.ErrPlanNotActive):
-		return http.StatusBadRequest, "plan is not active"
-	case errors.Is(err, billing.ErrNoPriceConfigured):
-		return http.StatusBadRequest, "plan has no price configured"
+		return apierror.BillingCurrencyMismatch
+	case errors.Is(err, billing.ErrAddonNotAvailable):
+		return apierror.BillingAddonNotAvailable
+	case errors.Is(err, billing.ErrSubscriptionNotActive):
+		return apierror.BillingSubscriptionNotActive
+	case errors.Is(err, billing.ErrNotTrialStatus):
+		return apierror.BillingNotTrialStatus
 	case errors.Is(err, billing.ErrCheckoutRateLimited):
-		return http.StatusTooManyRequests, "checkout rate limit exceeded, try again later"
+		return apierror.BillingCheckoutRateLimited
 	case errors.Is(err, billing.ErrAddonAlreadyOnSubscription):
-		return http.StatusConflict, "addon already added"
+		return apierror.BillingAddonAlreadyOn
 	case errors.Is(err, billing.ErrAddonNotOnSubscription):
-		return http.StatusNotFound, "addon not found on subscription"
+		return apierror.BillingAddonNotOn
+	case errors.Is(err, billing.ErrPlanNotActive):
+		return apierror.BillingPlanNotActive
+	case errors.Is(err, billing.ErrNoPriceConfigured):
+		return apierror.BillingNoPriceConfigured
+	case errors.Is(err, billing.ErrFamilyNotEnabled):
+		return apierror.BillingFamilyNotEnabled
 
-	// MultiSub domain
+	// Billing aggregate errors (not aliased at the billing package level).
+	case errors.Is(err, aggregate.ErrInvalidTransition):
+		return apierror.BillingInvalidTransition
+	case errors.Is(err, aggregate.ErrMaxFamilyExceeded):
+		return apierror.BillingMaxFamilyExceeded
+	case errors.Is(err, aggregate.ErrAlreadyMember):
+		return apierror.BillingAlreadyMember
+	case errors.Is(err, aggregate.ErrCannotRemoveOwner):
+		return apierror.BillingCannotRemoveOwner
+	case errors.Is(err, aggregate.ErrMemberNotFound):
+		return apierror.BillingMemberNotFound
+	case errors.Is(err, aggregate.ErrEmptyPlanName):
+		return apierror.BillingEmptyPlanName
+	case errors.Is(err, aggregate.ErrBasePriceNotPositive):
+		return apierror.BillingBasePriceNotPositive
+	case errors.Is(err, aggregate.ErrNoCountriesAllowed):
+		return apierror.BillingNoCountriesAllowed
+	case errors.Is(err, aggregate.ErrAddonAlreadyExists):
+		return apierror.BillingAddonAlreadyExists
+	case errors.Is(err, aggregate.ErrAddonNotFound):
+		return apierror.BillingAddonNotFound
+	case errors.Is(err, aggregate.ErrInvoiceRequiresLineItems):
+		return apierror.BillingInvoiceRequiresItems
+	case errors.Is(err, aggregate.ErrInvoiceMustBeDraftForPending):
+		return apierror.BillingInvoiceMustBeDraft
+	case errors.Is(err, aggregate.ErrInvoiceMustBePendingForPaid):
+		return apierror.BillingInvoiceMustBePending
+	case errors.Is(err, aggregate.ErrInvoiceMustBePendingForFailed):
+		return apierror.BillingInvoicePendingForFailed
+	case errors.Is(err, aggregate.ErrInvoiceMustBePaidForRefund):
+		return apierror.BillingInvoiceMustBePaid
+	case errors.Is(err, aggregate.ErrSubscriptionNotActiveForRenewal):
+		return apierror.BillingSubscriptionNotActive
+
+	// ── MultiSub ─────────────────────────────────────────────────────────
 	case errors.Is(err, multisub.ErrBindingNotFound):
-		return http.StatusNotFound, "binding not found"
+		return apierror.MultiSubBindingNotFound
 	case errors.Is(err, multisub.ErrProvisioningFailed):
-		return http.StatusInternalServerError, "provisioning failed"
+		return apierror.MultiSubProvisioningFailed
+	case errors.Is(err, multisub.ErrDeprovisioningFailed):
+		return apierror.MultiSubDeprovisioningFailed
+	case errors.Is(err, multisub.ErrSyncFailed):
+		return apierror.MultiSubSyncFailed
+	case errors.Is(err, multisub.ErrBindingAlreadyActive):
+		return apierror.MultiSubBindingAlreadyActive
 	case errors.Is(err, multisub.ErrRemnawaveUnavailable):
-		return http.StatusServiceUnavailable, "remnawave panel unavailable"
+		return apierror.MultiSubRemnawaveUnavailable
+	case errors.Is(err, multisub.ErrMaxBindingsExceeded):
+		return apierror.MultiSubMaxBindingsExceeded
+	case errors.Is(err, multisub.ErrSagaNotFound):
+		return apierror.MultiSubSagaNotFound
+	case errors.Is(err, multisub.ErrSagaAlreadyExists):
+		return apierror.MultiSubSagaAlreadyExists
 
-	// Payment domain
+	// ── Payment ──────────────────────────────────────────────────────────
 	case errors.Is(err, payment.ErrPaymentNotFound):
-		return http.StatusNotFound, "payment not found"
+		return apierror.PaymentNotFound
+	case errors.Is(err, payment.ErrWebhookNotFound):
+		return apierror.PaymentWebhookNotFound
+	case errors.Is(err, payment.ErrWebhookDuplicate):
+		return apierror.PaymentWebhookDup
 	case errors.Is(err, payment.ErrNoPaymentPlugin):
-		return http.StatusServiceUnavailable, "no payment plugin configured"
+		return apierror.PaymentNoPlugin
 	case errors.Is(err, payment.ErrPaymentFailed):
-		return http.StatusBadGateway, "payment processing failed"
+		return apierror.PaymentFailed
 	case errors.Is(err, payment.ErrVerificationFailed):
-		return http.StatusBadRequest, "webhook verification failed"
+		return apierror.PaymentVerifyFailed
 	case errors.Is(err, payment.ErrRefundFailed):
-		return http.StatusBadGateway, "refund processing failed"
+		return apierror.PaymentRefundFailed
 	case errors.Is(err, payment.ErrInvalidProvider):
-		return http.StatusBadRequest, "invalid payment provider"
+		return apierror.PaymentInvalidProvider
 	case errors.Is(err, payment.ErrMissingInvoiceID):
-		return http.StatusBadRequest, "invoice ID is required"
+		return apierror.PaymentMissingInvoice
 	case errors.Is(err, payment.ErrMissingAmount):
-		return http.StatusBadRequest, "payment amount must be positive"
+		return apierror.PaymentMissingAmount
 	case errors.Is(err, payment.ErrMissingCurrency):
-		return http.StatusBadRequest, "currency is required"
+		return apierror.PaymentMissingCurrency
+	case errors.Is(err, payment.ErrMissingExternalID):
+		return apierror.PaymentMissingExtID
+	case errors.Is(err, payment.ErrInvalidPaymentState):
+		return apierror.PaymentInvalidState
 
-	// Reseller domain
+	// ── Reseller ─────────────────────────────────────────────────────────
 	case errors.Is(err, reseller.ErrTenantNotFound):
-		return http.StatusNotFound, "tenant not found"
+		return apierror.ResellerTenantNotFound
 	case errors.Is(err, reseller.ErrResellerNotFound):
-		return http.StatusNotFound, "reseller account not found"
+		return apierror.ResellerAccountNotFound
 	case errors.Is(err, reseller.ErrCommissionNotFound):
-		return http.StatusNotFound, "commission not found"
+		return apierror.ResellerCommissionNotFound
 	case errors.Is(err, reseller.ErrInvalidCommissionRate):
-		return http.StatusBadRequest, "commission rate must be between 0 and 100"
+		return apierror.ResellerInvalidCommission
 	case errors.Is(err, reseller.ErrInvalidAPIKey):
-		return http.StatusUnauthorized, "invalid API key"
+		return apierror.ResellerInvalidAPIKey
 	case errors.Is(err, reseller.ErrTenantInactive):
-		return http.StatusForbidden, "tenant is inactive"
+		return apierror.ResellerTenantInactive
 	case errors.Is(err, reseller.ErrDuplicateDomain):
-		return http.StatusConflict, "domain already in use"
+		return apierror.ResellerDuplicateDomain
+	case errors.Is(err, reseller.ErrNotFound):
+		return apierror.ResellerNotFound
 
-	// Plugin domain
+	// ── Plugin ───────────────────────────────────────────────────────────
 	case errors.Is(err, plugin.ErrPluginNotFound):
-		return http.StatusNotFound, "plugin not found"
+		return apierror.PluginNotFound
 	case errors.Is(err, plugin.ErrPluginAlreadyExists):
-		return http.StatusConflict, "plugin already exists"
+		return apierror.PluginAlreadyExists
 	case errors.Is(err, plugin.ErrInvalidManifest):
-		return http.StatusBadRequest, "invalid plugin manifest"
+		return apierror.PluginInvalidManifest
 	case errors.Is(err, plugin.ErrInvalidPluginSlug):
-		return http.StatusBadRequest, "invalid plugin slug"
-	case errors.Is(err, plugin.ErrPluginAlreadyEnabled):
-		return http.StatusConflict, "plugin is already enabled"
+		return apierror.PluginInvalidSlug
 	case errors.Is(err, plugin.ErrPluginNotEnabled):
-		return http.StatusConflict, "plugin is not enabled"
+		return apierror.PluginNotEnabled
+	case errors.Is(err, plugin.ErrPluginAlreadyEnabled):
+		return apierror.PluginAlreadyEnabled
+	case errors.Is(err, plugin.ErrHookTimeout):
+		return apierror.PluginHookTimeout
+	case errors.Is(err, plugin.ErrHookHalted):
+		return apierror.PluginHookHalted
 	case errors.Is(err, plugin.ErrPermissionDenied):
-		return http.StatusForbidden, "plugin permission denied"
+		return apierror.PluginPermissionDenied
+	case errors.Is(err, plugin.ErrStorageQuotaExceeded):
+		return apierror.PluginStorageQuota
+	case errors.Is(err, plugin.ErrHTTPRateLimitExceeded):
+		return apierror.PluginHTTPRateLimit
+	case errors.Is(err, plugin.ErrInternalNetworkAccess):
+		return apierror.PluginInternalNetwork
 	case errors.Is(err, plugin.ErrWASMCompilationFailed):
-		return http.StatusUnprocessableEntity, "WASM compilation failed"
+		return apierror.PluginWASMCompileFail
+	case errors.Is(err, plugin.ErrNoHandlerForHook):
+		return apierror.PluginNoHandler
 	case errors.Is(err, plugin.ErrSlugMismatch):
-		return http.StatusBadRequest, "plugin slug mismatch during hot reload"
+		return apierror.PluginSlugMismatch
 	case errors.Is(err, plugin.ErrPluginNotRunning):
-		return http.StatusConflict, "plugin is not running"
+		return apierror.PluginNotRunning
 	case errors.Is(err, plugin.ErrIncompatibleSDK):
-		return http.StatusConflict, "incompatible plugin SDK version"
+		return apierror.PluginIncompatibleSDK
 	case errors.Is(err, plugin.ErrPluginDraining):
-		return http.StatusServiceUnavailable, "plugin is draining"
+		return apierror.PluginDraining
+	case errors.Is(err, plugin.ErrWASMNotFound):
+		return apierror.PluginWASMNotFound
+	case errors.Is(err, plugin.ErrMissingConfig):
+		return apierror.PluginMissingConfig
 
 	default:
-		return http.StatusInternalServerError, "internal server error"
+		return apierror.Internal
 	}
+}
+
+// mapServiceError translates a domain-level error into an HTTP status code and
+// user-facing message. Deprecated: prefer writeErrorFromDomain which returns
+// structured error codes. Retained for backward compatibility.
+func mapServiceError(err error) (status int, message string) {
+	apiErr := mapDomainError(err)
+	return apiErr.HTTPStatus, apiErr.Message
 }

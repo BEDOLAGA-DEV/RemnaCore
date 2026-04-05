@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/infra"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
 )
 
 // RoutingHandler exposes the smart routing API.
@@ -22,13 +23,13 @@ func NewRoutingHandler(router *infra.SmartRouter) *RoutingHandler {
 func (h *RoutingHandler) SelectNode(w http.ResponseWriter, r *http.Request) {
 	var req infra.RouteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeValidationError(w, err)
 		return
 	}
 
 	resp, err := h.router.SelectNode(r.Context(), req)
 	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, err.Error())
+		writeAPIError(w, apierror.New("ROUTING.NO_NODES_AVAILABLE", err.Error(), http.StatusServiceUnavailable))
 		return
 	}
 

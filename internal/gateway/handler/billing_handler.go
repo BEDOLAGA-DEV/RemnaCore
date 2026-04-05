@@ -9,6 +9,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	billingservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
 )
 
 // BillingHandler exposes HTTP endpoints for plans, subscriptions, and invoices.
@@ -48,8 +49,7 @@ type createSubscriptionRequest struct {
 func (h *BillingHandler) GetPlans(w http.ResponseWriter, r *http.Request) {
 	plans, err := h.plans.GetActive(r.Context())
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -60,14 +60,13 @@ func (h *BillingHandler) GetPlans(w http.ResponseWriter, r *http.Request) {
 func (h *BillingHandler) GetPlan(w http.ResponseWriter, r *http.Request) {
 	planID := chi.URLParam(r, "planID")
 	if planID == "" {
-		writeError(w, http.StatusBadRequest, "plan ID is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("plan ID is required"))
 		return
 	}
 
 	plan, err := h.plans.GetByID(r.Context(), planID)
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -78,18 +77,18 @@ func (h *BillingHandler) GetPlan(w http.ResponseWriter, r *http.Request) {
 func (h *BillingHandler) CreateSubscription(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeAPIError(w, apierror.Unauthorized)
 		return
 	}
 
 	var req createSubscriptionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeValidationError(w, err)
 		return
 	}
 
 	if req.PlanID == "" {
-		writeError(w, http.StatusBadRequest, "plan_id is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("plan_id is required"))
 		return
 	}
 
@@ -99,8 +98,7 @@ func (h *BillingHandler) CreateSubscription(w http.ResponseWriter, r *http.Reque
 		AddonIDs: req.AddonIDs,
 	})
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -114,14 +112,13 @@ func (h *BillingHandler) CreateSubscription(w http.ResponseWriter, r *http.Reque
 func (h *BillingHandler) GetMySubscriptions(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeAPIError(w, apierror.Unauthorized)
 		return
 	}
 
 	subs, err := h.subs.GetByUserID(r.Context(), claims.UserID)
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -132,31 +129,29 @@ func (h *BillingHandler) GetMySubscriptions(w http.ResponseWriter, r *http.Reque
 func (h *BillingHandler) CancelSubscription(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeAPIError(w, apierror.Unauthorized)
 		return
 	}
 
 	subID := chi.URLParam(r, "subID")
 	if subID == "" {
-		writeError(w, http.StatusBadRequest, "subscription ID is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("subscription ID is required"))
 		return
 	}
 
 	// Verify the subscription belongs to the authenticated user.
 	sub, err := h.subs.GetByID(r.Context(), subID)
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 	if sub.UserID != claims.UserID {
-		writeError(w, http.StatusForbidden, "subscription does not belong to you")
+		writeAPIError(w, apierror.Forbidden.WithDetails("subscription does not belong to you"))
 		return
 	}
 
 	if err := h.service.CancelSubscription(r.Context(), subID); err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -167,14 +162,13 @@ func (h *BillingHandler) CancelSubscription(w http.ResponseWriter, r *http.Reque
 func (h *BillingHandler) GetInvoices(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeAPIError(w, apierror.Unauthorized)
 		return
 	}
 
 	invoices, err := h.invoices.GetPendingByUserID(r.Context(), claims.UserID)
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -185,24 +179,23 @@ func (h *BillingHandler) GetInvoices(w http.ResponseWriter, r *http.Request) {
 func (h *BillingHandler) GetSubscription(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeAPIError(w, apierror.Unauthorized)
 		return
 	}
 
 	subID := chi.URLParam(r, "subID")
 	if subID == "" {
-		writeError(w, http.StatusBadRequest, "subscription ID is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("subscription ID is required"))
 		return
 	}
 
 	sub, err := h.subs.GetByID(r.Context(), subID)
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 	if sub.UserID != claims.UserID {
-		writeError(w, http.StatusForbidden, "subscription does not belong to you")
+		writeAPIError(w, apierror.Forbidden.WithDetails("subscription does not belong to you"))
 		return
 	}
 
@@ -213,13 +206,13 @@ func (h *BillingHandler) GetSubscription(w http.ResponseWriter, r *http.Request)
 func (h *BillingHandler) AddSubscriptionAddon(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeAPIError(w, apierror.Unauthorized)
 		return
 	}
 
 	subID := chi.URLParam(r, "subID")
 	if subID == "" {
-		writeError(w, http.StatusBadRequest, "subscription ID is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("subscription ID is required"))
 		return
 	}
 
@@ -227,29 +220,27 @@ func (h *BillingHandler) AddSubscriptionAddon(w http.ResponseWriter, r *http.Req
 		AddonID string `json:"addon_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeValidationError(w, err)
 		return
 	}
 	if req.AddonID == "" {
-		writeError(w, http.StatusBadRequest, "addon_id is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("addon_id is required"))
 		return
 	}
 
 	// Verify ownership.
 	sub, err := h.subs.GetByID(r.Context(), subID)
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 	if sub.UserID != claims.UserID {
-		writeError(w, http.StatusForbidden, "subscription does not belong to you")
+		writeAPIError(w, apierror.Forbidden.WithDetails("subscription does not belong to you"))
 		return
 	}
 
 	if err := h.service.AddSubscriptionAddon(r.Context(), subID, req.AddonID); err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -260,32 +251,30 @@ func (h *BillingHandler) AddSubscriptionAddon(w http.ResponseWriter, r *http.Req
 func (h *BillingHandler) RemoveSubscriptionAddon(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeAPIError(w, apierror.Unauthorized)
 		return
 	}
 
 	subID := chi.URLParam(r, "subID")
 	addonID := chi.URLParam(r, "addonID")
 	if subID == "" || addonID == "" {
-		writeError(w, http.StatusBadRequest, "subscription ID and addon ID are required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("subscription ID and addon ID are required"))
 		return
 	}
 
 	// Verify ownership.
 	sub, err := h.subs.GetByID(r.Context(), subID)
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 	if sub.UserID != claims.UserID {
-		writeError(w, http.StatusForbidden, "subscription does not belong to you")
+		writeAPIError(w, apierror.Forbidden.WithDetails("subscription does not belong to you"))
 		return
 	}
 
 	if err := h.service.RemoveSubscriptionAddon(r.Context(), subID, addonID); err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -298,31 +287,29 @@ func (h *BillingHandler) RemoveSubscriptionAddon(w http.ResponseWriter, r *http.
 func (h *BillingHandler) PayInvoice(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeAPIError(w, apierror.Unauthorized)
 		return
 	}
 
 	invoiceID := chi.URLParam(r, "invoiceID")
 	if invoiceID == "" {
-		writeError(w, http.StatusBadRequest, "invoice ID is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("invoice ID is required"))
 		return
 	}
 
 	// Verify the invoice belongs to the authenticated user.
 	inv, err := h.invoices.GetByID(r.Context(), invoiceID)
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 	if inv.UserID != claims.UserID {
-		writeError(w, http.StatusForbidden, "invoice does not belong to you")
+		writeAPIError(w, apierror.Forbidden.WithDetails("invoice does not belong to you"))
 		return
 	}
 
 	if err := h.service.PayInvoice(r.Context(), invoiceID); err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 

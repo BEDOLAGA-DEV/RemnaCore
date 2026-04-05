@@ -8,6 +8,7 @@ import (
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
 )
 
 const (
@@ -61,8 +62,7 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	limit, offset := parsePagination(r)
 	users, err := h.identitySvc.ListUsers(r.Context(), limit, offset)
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -73,14 +73,13 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 func (h *AdminHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "userID")
 	if userID == "" {
-		writeError(w, http.StatusBadRequest, "user ID is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("user ID is required"))
 		return
 	}
 
 	user, err := h.identitySvc.GetMe(r.Context(), userID)
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -93,8 +92,7 @@ func (h *AdminHandler) ListSubscriptions(w http.ResponseWriter, r *http.Request)
 	limit, offset := parsePagination(r)
 	subs, err := h.subs.GetAll(r.Context(), limit, offset)
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -106,8 +104,7 @@ func (h *AdminHandler) ListInvoices(w http.ResponseWriter, r *http.Request) {
 	limit, offset := parsePagination(r)
 	invoices, err := h.invoices.GetAll(r.Context(), limit, offset)
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
 )
 
 // ResellerHandler exposes HTTP endpoints for reseller and white-label tenant
@@ -44,19 +45,18 @@ type updateBrandingRequest struct {
 func (h *ResellerHandler) CreateTenant(w http.ResponseWriter, r *http.Request) {
 	var req createTenantRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeValidationError(w, err)
 		return
 	}
 
 	if req.Name == "" || req.OwnerUserID == "" {
-		writeError(w, http.StatusBadRequest, "name and owner_user_id are required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("name and owner_user_id are required"))
 		return
 	}
 
 	tenant, plainKey, err := h.service.CreateTenant(r.Context(), req.Name, req.Domain, req.OwnerUserID)
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -71,8 +71,7 @@ func (h *ResellerHandler) ListTenants(w http.ResponseWriter, r *http.Request) {
 	limit, offset := parsePagination(r)
 	tenants, err := h.service.ListTenants(r.Context(), limit, offset)
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -87,14 +86,13 @@ func (h *ResellerHandler) ListTenants(w http.ResponseWriter, r *http.Request) {
 func (h *ResellerHandler) GetTenant(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	if tenantID == "" {
-		writeError(w, http.StatusBadRequest, "tenant ID is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("tenant ID is required"))
 		return
 	}
 
 	tenant, err := h.service.GetTenant(r.Context(), tenantID)
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -105,13 +103,13 @@ func (h *ResellerHandler) GetTenant(w http.ResponseWriter, r *http.Request) {
 func (h *ResellerHandler) UpdateBranding(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	if tenantID == "" {
-		writeError(w, http.StatusBadRequest, "tenant ID is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("tenant ID is required"))
 		return
 	}
 
 	var req updateBrandingRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeValidationError(w, err)
 		return
 	}
 
@@ -125,8 +123,7 @@ func (h *ResellerHandler) UpdateBranding(w http.ResponseWriter, r *http.Request)
 
 	tenant, err := h.service.UpdateBranding(r.Context(), tenantID, branding)
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -139,7 +136,7 @@ func (h *ResellerHandler) UpdateBranding(w http.ResponseWriter, r *http.Request)
 func (h *ResellerHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	tenant := middleware.GetTenant(r.Context())
 	if tenant == nil {
-		writeError(w, http.StatusForbidden, "tenant context required")
+		writeAPIError(w, apierror.Forbidden.WithDetails("tenant context required"))
 		return
 	}
 
@@ -164,7 +161,7 @@ func (h *ResellerHandler) Commissions(w http.ResponseWriter, r *http.Request) {
 func (h *ResellerHandler) Customers(w http.ResponseWriter, r *http.Request) {
 	tenant := middleware.GetTenant(r.Context())
 	if tenant == nil {
-		writeError(w, http.StatusForbidden, "tenant context required")
+		writeAPIError(w, apierror.Forbidden.WithDetails("tenant context required"))
 		return
 	}
 

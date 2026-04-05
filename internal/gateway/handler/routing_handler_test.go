@@ -55,7 +55,13 @@ func TestRoutingHandler_SelectNode_BadRequest(t *testing.T) {
 
 	h.SelectNode(w, req)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	// writeValidationError returns 422 for JSON decode failures.
+	assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
+
+	var resp map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "COMMON.VALIDATION_ERROR", resp["code"])
 }
 
 func TestRoutingHandler_SelectNode_NoNodes(t *testing.T) {

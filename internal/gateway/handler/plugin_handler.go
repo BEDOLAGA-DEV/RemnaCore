@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
 )
 
 // PluginHandler exposes admin-only HTTP endpoints for managing plugins.
@@ -42,8 +43,7 @@ type updatePluginConfigRequest struct {
 func (h *PluginHandler) ListPlugins(w http.ResponseWriter, r *http.Request) {
 	plugins, err := h.repo.GetAll(r.Context())
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -54,14 +54,13 @@ func (h *PluginHandler) ListPlugins(w http.ResponseWriter, r *http.Request) {
 func (h *PluginHandler) GetPlugin(w http.ResponseWriter, r *http.Request) {
 	pluginID := chi.URLParam(r, "pluginID")
 	if pluginID == "" {
-		writeError(w, http.StatusBadRequest, "plugin ID is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("plugin ID is required"))
 		return
 	}
 
 	p, err := h.repo.GetByID(r.Context(), pluginID)
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -72,12 +71,12 @@ func (h *PluginHandler) GetPlugin(w http.ResponseWriter, r *http.Request) {
 func (h *PluginHandler) InstallPlugin(w http.ResponseWriter, r *http.Request) {
 	var req installPluginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeValidationError(w, err)
 		return
 	}
 
 	if req.Manifest == "" {
-		writeError(w, http.StatusBadRequest, "manifest is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("manifest is required"))
 		return
 	}
 
@@ -90,8 +89,7 @@ func (h *PluginHandler) InstallPlugin(w http.ResponseWriter, r *http.Request) {
 
 	p, err := h.lifecycle.Install(r.Context(), manifestBytes, req.WASM)
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -102,13 +100,12 @@ func (h *PluginHandler) InstallPlugin(w http.ResponseWriter, r *http.Request) {
 func (h *PluginHandler) EnablePlugin(w http.ResponseWriter, r *http.Request) {
 	pluginID := chi.URLParam(r, "pluginID")
 	if pluginID == "" {
-		writeError(w, http.StatusBadRequest, "plugin ID is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("plugin ID is required"))
 		return
 	}
 
 	if err := h.lifecycle.Enable(r.Context(), pluginID); err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -119,13 +116,12 @@ func (h *PluginHandler) EnablePlugin(w http.ResponseWriter, r *http.Request) {
 func (h *PluginHandler) DisablePlugin(w http.ResponseWriter, r *http.Request) {
 	pluginID := chi.URLParam(r, "pluginID")
 	if pluginID == "" {
-		writeError(w, http.StatusBadRequest, "plugin ID is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("plugin ID is required"))
 		return
 	}
 
 	if err := h.lifecycle.Disable(r.Context(), pluginID); err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -136,13 +132,12 @@ func (h *PluginHandler) DisablePlugin(w http.ResponseWriter, r *http.Request) {
 func (h *PluginHandler) UninstallPlugin(w http.ResponseWriter, r *http.Request) {
 	pluginID := chi.URLParam(r, "pluginID")
 	if pluginID == "" {
-		writeError(w, http.StatusBadRequest, "plugin ID is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("plugin ID is required"))
 		return
 	}
 
 	if err := h.lifecycle.Uninstall(r.Context(), pluginID); err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -155,18 +150,18 @@ func (h *PluginHandler) UninstallPlugin(w http.ResponseWriter, r *http.Request) 
 func (h *PluginHandler) HotReloadPlugin(w http.ResponseWriter, r *http.Request) {
 	pluginID := chi.URLParam(r, "pluginID")
 	if pluginID == "" {
-		writeError(w, http.StatusBadRequest, "plugin ID is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("plugin ID is required"))
 		return
 	}
 
 	var req installPluginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeValidationError(w, err)
 		return
 	}
 
 	if req.Manifest == "" {
-		writeError(w, http.StatusBadRequest, "manifest is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("manifest is required"))
 		return
 	}
 
@@ -178,8 +173,7 @@ func (h *PluginHandler) HotReloadPlugin(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := h.lifecycle.HotReload(r.Context(), pluginID, manifestBytes, req.WASM); err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -190,19 +184,18 @@ func (h *PluginHandler) HotReloadPlugin(w http.ResponseWriter, r *http.Request) 
 func (h *PluginHandler) UpdatePluginConfig(w http.ResponseWriter, r *http.Request) {
 	pluginID := chi.URLParam(r, "pluginID")
 	if pluginID == "" {
-		writeError(w, http.StatusBadRequest, "plugin ID is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("plugin ID is required"))
 		return
 	}
 
 	var req updatePluginConfigRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeValidationError(w, err)
 		return
 	}
 
 	if err := h.lifecycle.UpdateConfig(r.Context(), pluginID, req.Config); err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 

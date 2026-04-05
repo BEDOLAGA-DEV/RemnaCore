@@ -94,7 +94,8 @@ func TestRegister_DuplicateEmail(t *testing.T) {
 	var resp map[string]any
 	err := json.NewDecoder(rec.Body).Decode(&resp)
 	require.NoError(t, err)
-	assert.Contains(t, resp["error"], "already taken")
+	assert.Equal(t, "IDENTITY.EMAIL_TAKEN", resp["code"])
+	assert.NotEmpty(t, resp["message"])
 	repo.AssertExpectations(t)
 }
 
@@ -163,7 +164,7 @@ func TestLogin_WrongPassword(t *testing.T) {
 	var resp map[string]any
 	err = json.NewDecoder(rec.Body).Decode(&resp)
 	require.NoError(t, err)
-	assert.Contains(t, resp["error"], "invalid credentials")
+	assert.Equal(t, "IDENTITY.INVALID_CREDENTIALS", resp["code"])
 	repo.AssertExpectations(t)
 }
 
@@ -303,25 +304,25 @@ func TestResetPassword_WeakPassword(t *testing.T) {
 		name        string
 		newPassword string
 		wantStatus  int
-		wantError   string
+		wantCode    string
 	}{
 		{
 			name:        "too short",
 			newPassword: "Ab1",
-			wantStatus:  http.StatusBadRequest,
-			wantError:   "at least 8 characters",
+			wantStatus:  http.StatusUnprocessableEntity,
+			wantCode:    "IDENTITY.PASSWORD_TOO_SHORT",
 		},
 		{
 			name:        "no uppercase",
 			newPassword: "alllowercase1",
-			wantStatus:  http.StatusBadRequest,
-			wantError:   "uppercase",
+			wantStatus:  http.StatusUnprocessableEntity,
+			wantCode:    "IDENTITY.PASSWORD_TOO_WEAK",
 		},
 		{
 			name:        "no digit",
 			newPassword: "NoDigitHere",
-			wantStatus:  http.StatusBadRequest,
-			wantError:   "uppercase",
+			wantStatus:  http.StatusUnprocessableEntity,
+			wantCode:    "IDENTITY.PASSWORD_TOO_WEAK",
 		},
 	}
 
@@ -347,12 +348,12 @@ func TestResetPassword_WeakPassword(t *testing.T) {
 
 			h.ResetPassword(rec, req)
 
-			assert.Equal(t, tt.wantStatus, rec.Code, "weak password should return 400, not 500")
+			assert.Equal(t, tt.wantStatus, rec.Code)
 
 			var resp map[string]any
 			err := json.NewDecoder(rec.Body).Decode(&resp)
 			require.NoError(t, err)
-			assert.Contains(t, resp["error"], tt.wantError)
+			assert.Equal(t, tt.wantCode, resp["code"])
 			repo.AssertExpectations(t)
 		})
 	}
@@ -370,13 +371,13 @@ func TestResetPassword_InvalidToken(t *testing.T) {
 
 	h.ResetPassword(rec, req)
 
-	// ErrPasswordResetNotFound maps to 404 in mapServiceError.
+	// ErrPasswordResetNotFound maps to 404 in mapDomainError.
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 
 	var resp map[string]any
 	err := json.NewDecoder(rec.Body).Decode(&resp)
 	require.NoError(t, err)
-	assert.Contains(t, resp["error"], "password reset token not found")
+	assert.Equal(t, "IDENTITY.RESET_NOT_FOUND", resp["code"])
 	repo.AssertExpectations(t)
 }
 
@@ -406,6 +407,6 @@ func TestResetPassword_ExpiredToken(t *testing.T) {
 	var resp map[string]any
 	err := json.NewDecoder(rec.Body).Decode(&resp)
 	require.NoError(t, err)
-	assert.Contains(t, resp["error"], "expired")
+	assert.Equal(t, "IDENTITY.RESET_EXPIRED", resp["code"])
 	repo.AssertExpectations(t)
 }

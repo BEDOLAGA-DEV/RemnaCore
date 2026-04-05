@@ -2,10 +2,12 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
 )
 
 // IdentityHandler exposes HTTP endpoints for user registration, login, email
@@ -46,12 +48,12 @@ type refreshTokenRequest struct {
 func (h *IdentityHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req registerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeValidationError(w, err)
 		return
 	}
 
 	if req.Email == "" || req.Password == "" {
-		writeError(w, http.StatusBadRequest, "email and password are required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("email and password are required"))
 		return
 	}
 
@@ -60,8 +62,7 @@ func (h *IdentityHandler) Register(w http.ResponseWriter, r *http.Request) {
 		Password: req.Password,
 	})
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -76,12 +77,12 @@ func (h *IdentityHandler) Register(w http.ResponseWriter, r *http.Request) {
 func (h *IdentityHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeValidationError(w, err)
 		return
 	}
 
 	if req.Email == "" || req.Password == "" {
-		writeError(w, http.StatusBadRequest, "email and password are required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("email and password are required"))
 		return
 	}
 
@@ -90,8 +91,7 @@ func (h *IdentityHandler) Login(w http.ResponseWriter, r *http.Request) {
 		Password: req.Password,
 	})
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -106,18 +106,17 @@ func (h *IdentityHandler) Login(w http.ResponseWriter, r *http.Request) {
 func (h *IdentityHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 	var req verifyEmailRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeValidationError(w, err)
 		return
 	}
 
 	if req.Token == "" {
-		writeError(w, http.StatusBadRequest, "token is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("token is required"))
 		return
 	}
 
 	if err := h.service.VerifyEmail(r.Context(), req.Token); err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -128,19 +127,18 @@ func (h *IdentityHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 func (h *IdentityHandler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 	var req refreshTokenRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeValidationError(w, err)
 		return
 	}
 
 	if req.RefreshToken == "" {
-		writeError(w, http.StatusBadRequest, "refresh_token is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("refresh_token is required"))
 		return
 	}
 
 	result, err := h.service.RefreshToken(r.Context(), req.RefreshToken)
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -154,14 +152,13 @@ func (h *IdentityHandler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 func (h *IdentityHandler) Me(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeAPIError(w, apierror.Unauthorized)
 		return
 	}
 
 	user, err := h.service.GetMe(r.Context(), claims.UserID)
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -182,19 +179,18 @@ type linkTelegramRequest struct {
 func (h *IdentityHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeAPIError(w, apierror.Unauthorized)
 		return
 	}
 
 	var req updateProfileRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeValidationError(w, err)
 		return
 	}
 
 	if err := h.service.UpdateDisplayName(r.Context(), claims.UserID, req.DisplayName); err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -205,24 +201,23 @@ func (h *IdentityHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) 
 func (h *IdentityHandler) LinkTelegram(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeAPIError(w, apierror.Unauthorized)
 		return
 	}
 
 	var req linkTelegramRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeValidationError(w, err)
 		return
 	}
 
 	if req.TelegramID == 0 {
-		writeError(w, http.StatusBadRequest, "telegram_id is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("telegram_id is required"))
 		return
 	}
 
 	if err := h.service.LinkTelegram(r.Context(), claims.UserID, req.TelegramID); err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -233,13 +228,12 @@ func (h *IdentityHandler) LinkTelegram(w http.ResponseWriter, r *http.Request) {
 func (h *IdentityHandler) UnlinkTelegram(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeAPIError(w, apierror.Unauthorized)
 		return
 	}
 
 	if err := h.service.UnlinkTelegram(r.Context(), claims.UserID); err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -261,18 +255,17 @@ type resetPasswordRequest struct {
 func (h *IdentityHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 	var req forgotPasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeValidationError(w, err)
 		return
 	}
 
 	if req.Email == "" {
-		writeError(w, http.StatusBadRequest, "email is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("email is required"))
 		return
 	}
 
 	if err := h.service.RequestPasswordReset(r.Context(), req.Email); err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -286,22 +279,32 @@ func (h *IdentityHandler) ForgotPassword(w http.ResponseWriter, r *http.Request)
 func (h *IdentityHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	var req resetPasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeValidationError(w, err)
 		return
 	}
 
 	if req.Token == "" || req.NewPassword == "" {
-		writeError(w, http.StatusBadRequest, "token and new_password are required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("token and new_password are required"))
 		return
 	}
 
 	if err := h.service.ResetPassword(r.Context(), req.Token, req.NewPassword); err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "password reset successful"})
+}
+
+// writeValidationError writes a structured validation error, detecting
+// MaxBytesError to return COMMON.BODY_TOO_LARGE instead of generic validation.
+func writeValidationError(w http.ResponseWriter, err error) {
+	var maxBytesErr *http.MaxBytesError
+	if errors.As(err, &maxBytesErr) {
+		writeAPIError(w, apierror.BodyTooLarge)
+		return
+	}
+	writeAPIError(w, apierror.ValidationFailed)
 }
 
 // userToResponse converts a PlatformUser to a JSON-friendly map.

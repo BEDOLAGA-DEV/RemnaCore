@@ -9,6 +9,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	billingservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
 )
 
 // FamilyHandler exposes HTTP endpoints for family group management.
@@ -47,18 +48,18 @@ type addFamilyMemberRequest struct {
 func (h *FamilyHandler) CreateFamily(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeAPIError(w, apierror.Unauthorized)
 		return
 	}
 
 	var req createFamilyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeValidationError(w, err)
 		return
 	}
 
 	if req.SubscriptionID == "" {
-		writeError(w, http.StatusBadRequest, "subscription_id is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("subscription_id is required"))
 		return
 	}
 
@@ -66,8 +67,8 @@ func (h *FamilyHandler) CreateFamily(w http.ResponseWriter, r *http.Request) {
 	// yet created. Alternatively, we can just return the existing group.
 	fg, err := h.families.GetByOwnerID(r.Context(), claims.UserID)
 	if err != nil {
-		// No group yet — caller should use AddFamilyMember which auto-creates.
-		writeError(w, http.StatusNotFound, "family group not found, add a member to create one")
+		// No group yet -- caller should use AddFamilyMember which auto-creates.
+		writeAPIError(w, apierror.BillingFamilyGroupNotFound.WithDetails("add a member to create one"))
 		return
 	}
 
@@ -78,14 +79,13 @@ func (h *FamilyHandler) CreateFamily(w http.ResponseWriter, r *http.Request) {
 func (h *FamilyHandler) GetMyFamily(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeAPIError(w, apierror.Unauthorized)
 		return
 	}
 
 	fg, err := h.families.GetByOwnerID(r.Context(), claims.UserID)
 	if err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -96,24 +96,23 @@ func (h *FamilyHandler) GetMyFamily(w http.ResponseWriter, r *http.Request) {
 func (h *FamilyHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeAPIError(w, apierror.Unauthorized)
 		return
 	}
 
 	var req addFamilyMemberRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeValidationError(w, err)
 		return
 	}
 
 	if req.SubscriptionID == "" || req.MemberUserID == "" {
-		writeError(w, http.StatusBadRequest, "subscription_id and member_user_id are required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("subscription_id and member_user_id are required"))
 		return
 	}
 
 	if err := h.service.AddFamilyMember(r.Context(), req.SubscriptionID, req.MemberUserID, req.Nickname); err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
@@ -124,26 +123,25 @@ func (h *FamilyHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 func (h *FamilyHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	if claims == nil {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		writeAPIError(w, apierror.Unauthorized)
 		return
 	}
 
 	memberUserID := chi.URLParam(r, "userID")
 	if memberUserID == "" {
-		writeError(w, http.StatusBadRequest, "user ID is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("user ID is required"))
 		return
 	}
 
 	// Get the subscription ID from query param for authorization check.
 	subID := r.URL.Query().Get("subscription_id")
 	if subID == "" {
-		writeError(w, http.StatusBadRequest, "subscription_id query parameter is required")
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("subscription_id query parameter is required"))
 		return
 	}
 
 	if err := h.service.RemoveFamilyMember(r.Context(), subID, memberUserID); err != nil {
-		status, message := mapServiceError(err)
-		writeError(w, status, message)
+		writeErrorFromDomain(w, err)
 		return
 	}
 
