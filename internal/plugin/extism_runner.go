@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -34,12 +35,14 @@ func applyManifestLimits(m *extism.Manifest, config map[string]string, limits Ma
 
 // ExtismRunnerFactory creates a WASMRunnerFactory that produces ExtismRunners
 // with WASI support. The returned runners use wazero as the underlying runtime.
+// Host functions bound to the given HostFunctions are registered so WASM guest
+// code can call back into the host (e.g. log, kv_get, kv_set, http_request).
 // Resource limits from the manifest are applied: MaxFuel is mapped to the
 // Extism manifest timeout (the closest available control since wazero does not
 // expose fuel-based CPU budgets); MaxMemoryMB is enforced via the manifest's
 // MaxPages field (1 MB = 16 WASM pages of 64 KB each).
-func ExtismRunnerFactory() WASMRunnerFactory {
-	return func(wasmBytes []byte, config map[string]string, limits ManifestLimits) (WASMRunner, error) {
+func ExtismRunnerFactory(hf *HostFunctions) WASMRunnerFactory {
+	return func(slug string, wasmBytes []byte, config map[string]string, limits ManifestLimits) (WASMRunner, error) {
 		manifest := extism.Manifest{
 			Wasm: []extism.Wasm{
 				extism.WasmData{Data: wasmBytes},
@@ -52,7 +55,10 @@ func ExtismRunnerFactory() WASMRunnerFactory {
 			EnableWasi: true,
 		}
 
-		p, err := extism.NewPlugin(context.Background(), manifest, pluginConfig, nil)
+		// Build host functions bound to this plugin slug.
+		hostFns := buildExtismHostFunctions(hf, slug)
+
+		p, err := extism.NewPlugin(context.Background(), manifest, pluginConfig, hostFns)
 		if err != nil {
 			return nil, fmt.Errorf("create extism plugin: %w", err)
 		}
@@ -65,9 +71,10 @@ func ExtismRunnerFactory() WASMRunnerFactory {
 // plugin timeout and resource limits from the effective manifest limits. The
 // explicit timeoutMs overrides the limits.MaxFuel if non-zero. Memory limits
 // from ManifestLimits.MaxMemoryMB are always enforced via the manifest's
-// MaxPages field.
-func ExtismRunnerFactoryWithTimeout(timeoutMs int) WASMRunnerFactory {
-	return func(wasmBytes []byte, config map[string]string, limits ManifestLimits) (WASMRunner, error) {
+// MaxPages field. Host functions are registered identically to
+// ExtismRunnerFactory.
+func ExtismRunnerFactoryWithTimeout(hf *HostFunctions, timeoutMs int) WASMRunnerFactory {
+	return func(slug string, wasmBytes []byte, config map[string]string, limits ManifestLimits) (WASMRunner, error) {
 		manifest := extism.Manifest{
 			Wasm: []extism.Wasm{
 				extism.WasmData{Data: wasmBytes},
@@ -86,13 +93,58 @@ func ExtismRunnerFactoryWithTimeout(timeoutMs int) WASMRunnerFactory {
 			EnableWasi: true,
 		}
 
-		p, err := extism.NewPlugin(context.Background(), manifest, pluginConfig, nil)
+		// Build host functions bound to this plugin slug.
+		hostFns := buildExtismHostFunctions(hf, slug)
+
+		p, err := extism.NewPlugin(context.Background(), manifest, pluginConfig, hostFns)
 		if err != nil {
 			return nil, fmt.Errorf("create extism plugin with timeout: %w", err)
 		}
 
 		return &ExtismRunner{plugin: p}, nil
 	}
+}
+
+// logRequest is the JSON structure WASM guests send when calling the log host
+// function. Level must be one of: debug, info, warn, error.
+type logRequest struct {
+	Level   string            `json:"level"`
+	Message string            `json:"message"`
+	Fields  map[string]string `json:"fields,omitempty"`
+}
+
+// hostFunctionName constants for host functions exposed to WASM guests.
+const hostFunctionNameLog = "log"
+
+// buildExtismHostFunctions creates the Extism host function definitions bound
+// to a specific plugin slug. If hf is nil, no host functions are registered
+// (the WASM guest cannot call back into the host).
+func buildExtismHostFunctions(hf *HostFunctions, slug string) []extism.HostFunction {
+	if hf == nil {
+		return nil
+	}
+
+	logFn := extism.NewHostFunctionWithStack(
+		hostFunctionNameLog,
+		func(ctx context.Context, p *extism.CurrentPlugin, stack []uint64) {
+			offset := stack[0]
+			input, err := p.ReadBytes(offset)
+			if err != nil {
+				return
+			}
+
+			var req logRequest
+			if err := json.Unmarshal(input, &req); err != nil {
+				return
+			}
+
+			hf.Log(slug, req.Level, req.Message, req.Fields)
+		},
+		[]extism.ValueType{extism.ValueTypePTR},
+		nil,
+	)
+
+	return []extism.HostFunction{logFn}
 }
 
 // Call invokes an exported WASM function by name. Input and output bytes use

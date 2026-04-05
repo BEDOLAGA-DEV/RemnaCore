@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -395,4 +396,201 @@ func TestHasHandlers(t *testing.T) {
 
 	assert.True(t, d.hasHandlers("invoice.created"))
 	assert.False(t, d.hasHandlers("invoice.created.v2"))
+}
+
+// --- DispatchSyncSafe Tests ---
+
+func TestDispatchSyncSafe_AllContinue(t *testing.T) {
+	d, _ := dispatcherWithMock(t, map[string]func(ctx context.Context, funcName string, input []byte) ([]byte, error){
+		"plugin-a": func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+			return hookResultBytes(sdk.ActionContinue, nil, ""), nil
+		},
+		"plugin-b": func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+			return hookResultBytes(sdk.ActionContinue, nil, ""), nil
+		},
+	})
+
+	d.RegisterHooks([]HookRegistration{
+		{PluginID: "id-a", PluginSlug: "plugin-a", HookName: "order.finalized", HookType: HookSync, Priority: 10, FuncName: "order.finalized"},
+		{PluginID: "id-b", PluginSlug: "plugin-b", HookName: "order.finalized", HookType: HookSync, Priority: 20, FuncName: "order.finalized"},
+	})
+
+	payload := json.RawMessage(`{"order_id":"o-1"}`)
+	result := d.DispatchSyncSafe(context.Background(), "order.finalized", payload)
+
+	require.NoError(t, result.Err)
+	assert.False(t, result.Compensated)
+	assert.JSONEq(t, `{"order_id":"o-1"}`, string(result.Payload))
+	assert.JSONEq(t, `{"order_id":"o-1"}`, string(result.OriginalPayload))
+	assert.Equal(t, []string{"plugin-a", "plugin-b"}, result.ExecutedPlugins)
+}
+
+func TestDispatchSyncSafe_ModifyChain(t *testing.T) {
+	d, _ := dispatcherWithMock(t, map[string]func(ctx context.Context, funcName string, input []byte) ([]byte, error){
+		"plugin-a": func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+			return hookResultBytes(sdk.ActionModify, json.RawMessage(`{"amount":200}`), ""), nil
+		},
+		"plugin-b": func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+			return hookResultBytes(sdk.ActionModify, json.RawMessage(`{"amount":300}`), ""), nil
+		},
+	})
+
+	d.RegisterHooks([]HookRegistration{
+		{PluginID: "id-a", PluginSlug: "plugin-a", HookName: "order.finalized", HookType: HookSync, Priority: 10, FuncName: "order.finalized"},
+		{PluginID: "id-b", PluginSlug: "plugin-b", HookName: "order.finalized", HookType: HookSync, Priority: 20, FuncName: "order.finalized"},
+	})
+
+	payload := json.RawMessage(`{"amount":100}`)
+	result := d.DispatchSyncSafe(context.Background(), "order.finalized", payload)
+
+	require.NoError(t, result.Err)
+	assert.False(t, result.Compensated)
+	assert.JSONEq(t, `{"amount":300}`, string(result.Payload))
+	assert.JSONEq(t, `{"amount":100}`, string(result.OriginalPayload))
+	assert.Equal(t, []string{"plugin-a", "plugin-b"}, result.ExecutedPlugins)
+}
+
+func TestDispatchSyncSafe_PluginFails_CompensationCalled(t *testing.T) {
+	var compensatedSlugs []string
+
+	d, _ := dispatcherWithMock(t, map[string]func(ctx context.Context, funcName string, input []byte) ([]byte, error){
+		"plugin-a": func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+			// Dispatch to the correct function based on funcName.
+			var hookCtx sdk.HookContext
+			_ = json.Unmarshal(input, &hookCtx)
+			if hookCtx.HookName == "order.finalized.compensate" {
+				compensatedSlugs = append(compensatedSlugs, "plugin-a")
+				return hookResultBytes(sdk.ActionContinue, nil, ""), nil
+			}
+			return hookResultBytes(sdk.ActionModify, json.RawMessage(`{"amount":200}`), ""), nil
+		},
+		"plugin-b": func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+			return nil, fmt.Errorf("plugin-b crashed")
+		},
+	})
+
+	// Register main hooks and compensation hook for plugin-a.
+	d.RegisterHooks([]HookRegistration{
+		{PluginID: "id-a", PluginSlug: "plugin-a", HookName: "order.finalized", HookType: HookSync, Priority: 10, FuncName: "order.finalized"},
+		{PluginID: "id-b", PluginSlug: "plugin-b", HookName: "order.finalized", HookType: HookSync, Priority: 20, FuncName: "order.finalized"},
+		{PluginID: "id-a", PluginSlug: "plugin-a", HookName: "order.finalized.compensate", HookType: HookSync, Priority: 10, FuncName: "order.finalized.compensate"},
+	})
+
+	payload := json.RawMessage(`{"amount":100}`)
+	result := d.DispatchSyncSafe(context.Background(), "order.finalized", payload)
+
+	require.Error(t, result.Err)
+	assert.Contains(t, result.Err.Error(), "plugin-b crashed")
+	assert.True(t, result.Compensated)
+	assert.Equal(t, []string{"plugin-a"}, result.ExecutedPlugins)
+	// plugin-a's compensation hook should have been called.
+	assert.Equal(t, []string{"plugin-a"}, compensatedSlugs)
+	// Payload should be the last successfully modified payload (plugin-a's modification).
+	assert.JSONEq(t, `{"amount":200}`, string(result.Payload))
+	// Original payload preserved.
+	assert.JSONEq(t, `{"amount":100}`, string(result.OriginalPayload))
+}
+
+func TestDispatchSyncSafe_Rollback(t *testing.T) {
+	d, _ := dispatcherWithMock(t, map[string]func(ctx context.Context, funcName string, input []byte) ([]byte, error){
+		"plugin-a": func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+			return hookResultBytes(sdk.ActionModify, json.RawMessage(`{"amount":200}`), ""), nil
+		},
+		"plugin-b": func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+			return hookResultBytes(sdk.ActionRollback, nil, "fraud detected"), nil
+		},
+	})
+
+	d.RegisterHooks([]HookRegistration{
+		{PluginID: "id-a", PluginSlug: "plugin-a", HookName: "order.finalized", HookType: HookSync, Priority: 10, FuncName: "order.finalized"},
+		{PluginID: "id-b", PluginSlug: "plugin-b", HookName: "order.finalized", HookType: HookSync, Priority: 20, FuncName: "order.finalized"},
+	})
+
+	payload := json.RawMessage(`{"amount":100}`)
+	result := d.DispatchSyncSafe(context.Background(), "order.finalized", payload)
+
+	require.Error(t, result.Err)
+	assert.Contains(t, result.Err.Error(), "rollback requested")
+	assert.Contains(t, result.Err.Error(), "plugin-b")
+	assert.True(t, result.Compensated)
+	// Rollback returns the ORIGINAL payload, not the modified one.
+	assert.JSONEq(t, `{"amount":100}`, string(result.Payload))
+	assert.JSONEq(t, `{"amount":100}`, string(result.OriginalPayload))
+	assert.Equal(t, []string{"plugin-a"}, result.ExecutedPlugins)
+}
+
+func TestDispatchSyncSafe_NoCompensateHook(t *testing.T) {
+	d, _ := dispatcherWithMock(t, map[string]func(ctx context.Context, funcName string, input []byte) ([]byte, error){
+		"plugin-a": func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+			return hookResultBytes(sdk.ActionModify, json.RawMessage(`{"amount":200}`), ""), nil
+		},
+		"plugin-b": func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+			return nil, fmt.Errorf("plugin-b exploded")
+		},
+	})
+
+	// Register main hooks but NO compensate hook for plugin-a.
+	d.RegisterHooks([]HookRegistration{
+		{PluginID: "id-a", PluginSlug: "plugin-a", HookName: "order.finalized", HookType: HookSync, Priority: 10, FuncName: "order.finalized"},
+		{PluginID: "id-b", PluginSlug: "plugin-b", HookName: "order.finalized", HookType: HookSync, Priority: 20, FuncName: "order.finalized"},
+	})
+
+	payload := json.RawMessage(`{"amount":100}`)
+	result := d.DispatchSyncSafe(context.Background(), "order.finalized", payload)
+
+	require.Error(t, result.Err)
+	assert.Contains(t, result.Err.Error(), "plugin-b exploded")
+	// Compensation was attempted (result.Compensated is true) even though no
+	// compensate hook exists — the dispatcher silently skips missing hooks.
+	assert.True(t, result.Compensated)
+	assert.Equal(t, []string{"plugin-a"}, result.ExecutedPlugins)
+}
+
+func TestDispatchSyncSafe_NoHandlers(t *testing.T) {
+	rp := NewRuntimePool(testErrorLogger(), nil)
+	d := NewHookDispatcher(rp, &testPublisher{}, nil, testErrorLogger(), clock.NewReal())
+
+	payload := json.RawMessage(`{"amount":100}`)
+	result := d.DispatchSyncSafe(context.Background(), "nonexistent.hook", payload)
+
+	require.NoError(t, result.Err)
+	assert.False(t, result.Compensated)
+	assert.JSONEq(t, `{"amount":100}`, string(result.Payload))
+	assert.JSONEq(t, `{"amount":100}`, string(result.OriginalPayload))
+	assert.Empty(t, result.ExecutedPlugins)
+}
+
+func TestDispatchSyncSafe_HaltTriggersCompensation(t *testing.T) {
+	var compensatedSlugs []string
+
+	d, _ := dispatcherWithMock(t, map[string]func(ctx context.Context, funcName string, input []byte) ([]byte, error){
+		"plugin-a": func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+			var hookCtx sdk.HookContext
+			_ = json.Unmarshal(input, &hookCtx)
+			if hookCtx.HookName == "order.finalized.compensate" {
+				compensatedSlugs = append(compensatedSlugs, "plugin-a")
+				return hookResultBytes(sdk.ActionContinue, nil, ""), nil
+			}
+			return hookResultBytes(sdk.ActionContinue, nil, ""), nil
+		},
+		"plugin-b": func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+			return hookResultBytes(sdk.ActionHalt, nil, "compliance violation"), nil
+		},
+	})
+
+	d.RegisterHooks([]HookRegistration{
+		{PluginID: "id-a", PluginSlug: "plugin-a", HookName: "order.finalized", HookType: HookSync, Priority: 10, FuncName: "order.finalized"},
+		{PluginID: "id-b", PluginSlug: "plugin-b", HookName: "order.finalized", HookType: HookSync, Priority: 20, FuncName: "order.finalized"},
+		{PluginID: "id-a", PluginSlug: "plugin-a", HookName: "order.finalized.compensate", HookType: HookSync, Priority: 10, FuncName: "order.finalized.compensate"},
+	})
+
+	payload := json.RawMessage(`{"amount":100}`)
+	result := d.DispatchSyncSafe(context.Background(), "order.finalized", payload)
+
+	require.Error(t, result.Err)
+	assert.ErrorIs(t, result.Err, ErrHookHalted)
+	assert.Contains(t, result.Err.Error(), "compliance violation")
+	assert.True(t, result.Compensated)
+	assert.Equal(t, []string{"plugin-a"}, result.ExecutedPlugins)
+	assert.Equal(t, []string{"plugin-a"}, compensatedSlugs)
 }

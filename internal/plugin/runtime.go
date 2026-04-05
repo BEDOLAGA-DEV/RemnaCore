@@ -49,9 +49,10 @@ type WASMRunner interface {
 }
 
 // WASMRunnerFactory creates a WASMRunner from compiled WASM bytes,
-// configuration, and resource limits. The real implementation uses the Extism
-// Go SDK; tests supply a mock factory.
-type WASMRunnerFactory func(wasmBytes []byte, config map[string]string, limits ManifestLimits) (WASMRunner, error)
+// configuration, and resource limits. The slug identifies which plugin the
+// runner is for (used for per-plugin host function binding). The real
+// implementation uses the Extism Go SDK; tests supply a mock factory.
+type WASMRunnerFactory func(slug string, wasmBytes []byte, config map[string]string, limits ManifestLimits) (WASMRunner, error)
 
 // PluginInstancePool manages a pool of WASMRunner instances for a single
 // plugin. It uses a buffered channel as a semaphore-style pool, allowing
@@ -109,7 +110,7 @@ func newPluginInstancePool(slug string, factory WASMRunnerFactory, wasm []byte, 
 
 	// Pre-create all instances.
 	for i := range size {
-		runner, err := factory(wasm, config, limits)
+		runner, err := factory(slug, wasm, config, limits)
 		if err != nil {
 			p.Close() // cleanup already created
 			return nil, fmt.Errorf("create instance %d for %s: %w", i, slug, err)
@@ -259,7 +260,7 @@ func (p *PluginInstancePool) replaceInstance() {
 		return
 	}
 
-	newRunner, err := p.factory(p.wasm, p.config, p.limits)
+	newRunner, err := p.factory(p.slug, p.wasm, p.config, p.limits)
 	if err != nil {
 		slog.Warn("failed to replace corrupted WASM instance",
 			slog.String("slug", p.slug),

@@ -183,7 +183,7 @@ func newTestLifecycleManager() (*LifecycleManager, *mockRepo, *mockStorage, *tes
 	pub := &testPublisher{}
 	logger := testErrorLogger()
 
-	factory := func(wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
+	factory := func(_ string, wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
 		return &mockRunner{callFn: func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
 			return []byte(`{"action":"continue"}`), nil
 		}}, nil
@@ -358,7 +358,7 @@ func TestLoadAllEnabled_Success(t *testing.T) {
 
 	// Create a fresh runtime pool (simulating restart).
 	logger := testErrorLogger()
-	factory := func(wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
+	factory := func(_ string, wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
 		return &mockRunner{}, nil
 	}
 	freshRuntime := NewRuntimePool(logger, factory)

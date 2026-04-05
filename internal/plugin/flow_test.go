@@ -75,7 +75,7 @@ func TestCallHook_WithFlowBindings_UsesPinnedPool(t *testing.T) {
 
 	var callVersion atomic.Int64
 
-	v1Factory := func(wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
+	v1Factory := func(_ string, wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
 		return &mockRunner{
 			callFn: func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
 				callVersion.Store(1)
@@ -94,7 +94,7 @@ func TestCallHook_WithFlowBindings_UsesPinnedPool(t *testing.T) {
 	ctx := withFlowBindings(context.Background(), bindings)
 
 	// Hot reload the plugin with a new factory that marks calls as v2.
-	v2Factory := func(wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
+	v2Factory := func(_ string, wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
 		return &mockRunner{
 			callFn: func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
 				callVersion.Store(2)
@@ -199,7 +199,7 @@ func TestCallHook_WithoutFlowBindings_BehavesAsDefault(t *testing.T) {
 func TestRetiredPools_KeptDuringGracePeriod(t *testing.T) {
 	var closedCount atomic.Int32
 
-	factory := func(wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
+	factory := func(_ string, wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
 		return &trackingMockRunner{onClose: func() { closedCount.Add(1) }}, nil
 	}
 

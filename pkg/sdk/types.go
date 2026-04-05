@@ -32,6 +32,9 @@ const (
 	ActionModify HookAction = "modify"
 	// ActionHalt means the plugin wants to stop the hook chain and return an error.
 	ActionHalt HookAction = "halt"
+	// ActionRollback means the plugin wants to discard all accumulated
+	// modifications from the chain and return the original payload.
+	ActionRollback HookAction = "rollback"
 )
 
 // --- Host-function request/response types ---

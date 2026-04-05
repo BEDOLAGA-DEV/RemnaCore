@@ -10,36 +10,36 @@ import (
 )
 
 func TestExtismRunnerFactory_ReturnsFactory(t *testing.T) {
-	factory := ExtismRunnerFactory()
+	factory := ExtismRunnerFactory(nil)
 	require.NotNil(t, factory)
 }
 
 func TestExtismRunnerFactoryWithTimeout_ReturnsFactory(t *testing.T) {
 	const timeoutMs = 5000
-	factory := ExtismRunnerFactoryWithTimeout(timeoutMs)
+	factory := ExtismRunnerFactoryWithTimeout(nil, timeoutMs)
 	require.NotNil(t, factory)
 }
 
 func TestExtismRunnerFactory_InvalidWASM(t *testing.T) {
-	factory := ExtismRunnerFactory()
+	factory := ExtismRunnerFactory(nil)
 
-	_, err := factory([]byte("not-valid-wasm"), nil, ManifestLimits{})
+	_, err := factory("test-slug", []byte("not-valid-wasm"), nil, ManifestLimits{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "create extism plugin")
 }
 
 func TestExtismRunnerFactory_EmptyWASM(t *testing.T) {
-	factory := ExtismRunnerFactory()
+	factory := ExtismRunnerFactory(nil)
 
-	_, err := factory([]byte{}, nil, ManifestLimits{})
+	_, err := factory("test-slug", []byte{}, nil, ManifestLimits{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "create extism plugin")
 }
 
 func TestExtismRunnerFactory_NilWASM(t *testing.T) {
-	factory := ExtismRunnerFactory()
+	factory := ExtismRunnerFactory(nil)
 
-	_, err := factory(nil, nil, ManifestLimits{})
+	_, err := factory("test-slug", nil, nil, ManifestLimits{})
 	require.Error(t, err)
 }
 
@@ -47,23 +47,23 @@ func TestExtismRunnerFactory_ConfigPassthrough(t *testing.T) {
 	// Verify the factory does not panic when config is provided, even though
 	// the WASM bytes are invalid (the config path is exercised before
 	// compilation fails).
-	factory := ExtismRunnerFactory()
+	factory := ExtismRunnerFactory(nil)
 
 	config := map[string]string{
 		"api_key": "sk_test_123",
 		"mode":    "sandbox",
 	}
-	_, err := factory([]byte("not-valid-wasm"), config, ManifestLimits{})
+	_, err := factory("test-slug", []byte("not-valid-wasm"), config, ManifestLimits{})
 	require.Error(t, err, "invalid WASM should still fail")
 }
 
 func TestExtismRunnerFactory_MemoryLimitsDoNotPanic(t *testing.T) {
 	// Verify the factory exercises the memory-limit code path without
 	// panicking, even though WASM compilation fails on invalid bytes.
-	factory := ExtismRunnerFactory()
+	factory := ExtismRunnerFactory(nil)
 
 	limits := ManifestLimits{MaxMemoryMB: 128}
-	_, err := factory([]byte("not-valid-wasm"), nil, limits)
+	_, err := factory("test-slug", []byte("not-valid-wasm"), nil, limits)
 	require.Error(t, err, "invalid WASM should still fail")
 	assert.Contains(t, err.Error(), "create extism plugin")
 }
@@ -72,20 +72,20 @@ func TestExtismRunnerFactory_ZeroMemorySkipsMemoryConfig(t *testing.T) {
 	// When MaxMemoryMB is zero the factory must not set a memory limit.
 	// We verify indirectly: the factory should not panic and the error
 	// message should remain the same as without limits.
-	factory := ExtismRunnerFactory()
+	factory := ExtismRunnerFactory(nil)
 
 	limits := ManifestLimits{MaxMemoryMB: 0}
-	_, err := factory([]byte("not-valid-wasm"), nil, limits)
+	_, err := factory("test-slug", []byte("not-valid-wasm"), nil, limits)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "create extism plugin")
 }
 
 func TestExtismRunnerFactoryWithTimeout_MemoryLimitsDoNotPanic(t *testing.T) {
 	const timeoutMs = 5000
-	factory := ExtismRunnerFactoryWithTimeout(timeoutMs)
+	factory := ExtismRunnerFactoryWithTimeout(nil, timeoutMs)
 
 	limits := ManifestLimits{MaxMemoryMB: 256}
-	_, err := factory([]byte("not-valid-wasm"), nil, limits)
+	_, err := factory("test-slug", []byte("not-valid-wasm"), nil, limits)
 	require.Error(t, err, "invalid WASM should still fail")
 	assert.Contains(t, err.Error(), "create extism plugin with timeout")
 }
@@ -105,7 +105,7 @@ func TestMemoryLimits_PropagatedThroughPool(t *testing.T) {
 	// receives limits with MaxMemoryMB populated via EffectiveLimits.
 	var capturedLimits ManifestLimits
 
-	capturingFactory := func(wasmBytes []byte, config map[string]string, limits ManifestLimits) (WASMRunner, error) {
+	capturingFactory := func(_ string, wasmBytes []byte, config map[string]string, limits ManifestLimits) (WASMRunner, error) {
 		capturedLimits = limits
 		return &mockRunner{}, nil
 	}
@@ -128,7 +128,7 @@ func TestMemoryLimits_DefaultAppliedWhenZero(t *testing.T) {
 	// default. Verify the factory receives the default value.
 	var capturedLimits ManifestLimits
 
-	capturingFactory := func(wasmBytes []byte, config map[string]string, limits ManifestLimits) (WASMRunner, error) {
+	capturingFactory := func(_ string, wasmBytes []byte, config map[string]string, limits ManifestLimits) (WASMRunner, error) {
 		capturedLimits = limits
 		return &mockRunner{}, nil
 	}
@@ -149,8 +149,8 @@ func TestMemoryLimits_DefaultAppliedWhenZero(t *testing.T) {
 
 func TestMemoryLimits_PageCalculation(t *testing.T) {
 	tests := []struct {
-		name         string
-		maxMemoryMB  int
+		name          string
+		maxMemoryMB   int
 		expectedPages uint32
 	}{
 		{
@@ -191,7 +191,7 @@ func TestNoopWASMFactory_StillWorks(t *testing.T) {
 		return []byte(`{"action":"continue"}`), nil
 	})
 
-	runner, err := factory([]byte("fake"), nil, ManifestLimits{})
+	runner, err := factory("test-slug", []byte("fake"), nil, ManifestLimits{})
 	require.NoError(t, err)
 	defer runner.Close()
 

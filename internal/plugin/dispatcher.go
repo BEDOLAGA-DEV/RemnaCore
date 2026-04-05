@@ -14,6 +14,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/sdk"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tracing"
 )
@@ -30,6 +31,10 @@ const DefaultHookVersion = 1
 // MinHookVersion is the lowest version that maps to a versioned hook name.
 // Version 1 is always the unversioned (base) hook name.
 const MinHookVersion = 2
+
+// compensateHookSuffix is appended to a hook name to form the compensation hook
+// name (e.g., "invoice.created" -> "invoice.created.compensate").
+const compensateHookSuffix = ".compensate"
 
 // HookDispatcher routes hook invocations to registered plugins. Sync hooks
 // execute in priority order with payload chaining; async hooks are published to
@@ -234,7 +239,7 @@ func (d *HookDispatcher) DispatchSync(ctx context.Context, hookName string, payl
 
 		action := string(result.Action)
 		switch result.Action {
-		case sdk.ActionContinue, sdk.ActionModify, sdk.ActionHalt:
+		case sdk.ActionContinue, sdk.ActionModify, sdk.ActionHalt, sdk.ActionRollback:
 			// known action — use as-is
 		default:
 			action = "unknown"
@@ -285,6 +290,223 @@ func (d *HookDispatcher) DispatchSyncVersioned(ctx context.Context, hookName str
 	}
 	// Fall back to unversioned (v1).
 	return d.DispatchSync(ctx, hookName, payload)
+}
+
+// DispatchSyncSafe executes synchronous hooks with compensation support. If a
+// plugin in the chain fails, the dispatcher calls "{hookName}.compensate" on
+// each previously executed plugin in reverse priority order, passing the
+// original payload. This allows plugins to undo side-effects.
+//
+// If no ".compensate" hook is registered for a plugin, it is silently skipped.
+//
+// Returns a ChainResult regardless of success/failure, giving the caller access
+// to both the original and modified payloads.
+func (d *HookDispatcher) DispatchSyncSafe(ctx context.Context, hookName string, payload json.RawMessage) *hookdispatch.ChainResult {
+	ctx, span := tracing.StartSpan(ctx, "plugin.dispatch_sync_safe."+hookName)
+	defer span.End()
+
+	d.mu.RLock()
+	regs := make([]HookRegistration, len(d.registrations[hookName]))
+	copy(regs, d.registrations[hookName])
+	d.mu.RUnlock()
+
+	result := &hookdispatch.ChainResult{
+		OriginalPayload: payload,
+		Payload:         payload,
+	}
+
+	if len(regs) == 0 {
+		return result
+	}
+
+	currentPayload := payload
+	var executedPlugins []string
+
+	for _, reg := range regs {
+		if reg.HookType != HookSync {
+			continue
+		}
+
+		hookCtx := sdk.HookContext{
+			HookName:  hookName,
+			RequestID: uuid.Must(uuid.NewV7()).String(),
+			Timestamp: d.clock.Now().Unix(),
+			PluginID:  reg.PluginSlug,
+			Payload:   currentPayload,
+		}
+
+		inputBytes, err := json.Marshal(hookCtx)
+		if err != nil {
+			d.logger.Error("failed to marshal hook context",
+				"hook", hookName, "plugin", reg.PluginSlug, "error", err)
+			continue
+		}
+
+		timeout := d.syncTimeoutForPlugin(reg.PluginSlug)
+		callCtx, callCancel := context.WithTimeout(ctx, timeout)
+
+		start := d.clock.Now()
+		output, err := d.runtime.CallHook(callCtx, reg.PluginSlug, reg.FuncName, inputBytes)
+		elapsed := d.clock.Now().Sub(start)
+		durationMs := elapsed.Milliseconds()
+		callCancel()
+
+		d.recordHookDuration(reg.PluginSlug, hookName, elapsed.Seconds())
+
+		if err != nil {
+			d.recordHookError(reg.PluginSlug, hookName)
+			d.recordHookTotal(reg.PluginSlug, hookName, "error")
+
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrHookTimeout) {
+				d.logger.Error("hook execution timed out",
+					"hook", hookName, "plugin", reg.PluginSlug, "timeout", timeout, "duration_ms", durationMs)
+			} else {
+				d.logger.Error("hook execution failed",
+					"hook", hookName, "plugin", reg.PluginSlug, "error", err, "duration_ms", durationMs)
+			}
+
+			if d.publisher != nil {
+				if pubErr := d.publisher.Publish(ctx, NewHookFailedEvent(reg.PluginID, reg.PluginSlug, hookName, err.Error(), d.clock.Now())); pubErr != nil {
+					d.logger.Warn("failed to publish event",
+						"event_type", string(EventHookFailed),
+						"error", pubErr.Error(),
+					)
+				}
+			}
+
+			result.Err = fmt.Errorf("hook %q failed for plugin %q: %w", hookName, reg.PluginSlug, err)
+			result.Payload = currentPayload
+			result.ExecutedPlugins = executedPlugins
+			d.compensateChain(ctx, hookName, executedPlugins, payload)
+			result.Compensated = true
+			return result
+		}
+
+		var hookResult sdk.HookResult
+		if err := json.Unmarshal(output, &hookResult); err != nil {
+			d.recordHookError(reg.PluginSlug, hookName)
+			d.recordHookTotal(reg.PluginSlug, hookName, "error")
+			d.logger.Error("failed to unmarshal hook result",
+				"hook", hookName, "plugin", reg.PluginSlug, "error", err)
+
+			result.Err = fmt.Errorf("invalid hook result from plugin %q: %w", reg.PluginSlug, err)
+			result.Payload = currentPayload
+			result.ExecutedPlugins = executedPlugins
+			d.compensateChain(ctx, hookName, executedPlugins, payload)
+			result.Compensated = true
+			return result
+		}
+
+		action := string(hookResult.Action)
+		switch hookResult.Action {
+		case sdk.ActionContinue, sdk.ActionModify, sdk.ActionHalt, sdk.ActionRollback:
+			// known action — use as-is
+		default:
+			action = "unknown"
+		}
+		d.recordHookTotal(reg.PluginSlug, hookName, action)
+
+		if d.publisher != nil {
+			if pubErr := d.publisher.Publish(ctx, NewHookExecutedEvent(reg.PluginID, reg.PluginSlug, hookName, durationMs, d.clock.Now())); pubErr != nil {
+				d.logger.Warn("failed to publish event",
+					"event_type", string(EventHookExecuted),
+					"error", pubErr.Error(),
+				)
+			}
+		}
+
+		switch hookResult.Action {
+		case sdk.ActionContinue:
+			executedPlugins = append(executedPlugins, reg.PluginSlug)
+		case sdk.ActionModify:
+			if hookResult.Modified != nil {
+				currentPayload = hookResult.Modified
+			}
+			executedPlugins = append(executedPlugins, reg.PluginSlug)
+		case sdk.ActionHalt:
+			errMsg := hookResult.Error
+			if errMsg == "" {
+				errMsg = "halted by plugin"
+			}
+			result.Err = fmt.Errorf("%w: %s (plugin: %s)", ErrHookHalted, errMsg, reg.PluginSlug)
+			result.Payload = currentPayload
+			result.ExecutedPlugins = executedPlugins
+			d.compensateChain(ctx, hookName, executedPlugins, payload)
+			result.Compensated = true
+			return result
+		case sdk.ActionRollback:
+			result.Err = fmt.Errorf("rollback requested by plugin %q", reg.PluginSlug)
+			result.Payload = payload // return ORIGINAL payload
+			result.ExecutedPlugins = executedPlugins
+			result.Compensated = true
+			// No compensation needed — rollback signals "undo at caller level".
+			return result
+		default:
+			d.logger.Warn("unknown hook action, treating as continue",
+				"hook", hookName, "plugin", reg.PluginSlug, "action", hookResult.Action)
+			executedPlugins = append(executedPlugins, reg.PluginSlug)
+		}
+	}
+
+	result.Payload = currentPayload
+	result.ExecutedPlugins = executedPlugins
+	return result
+}
+
+// compensateChain calls "{hookName}.compensate" on each previously executed
+// plugin in reverse order, passing the original payload. Best-effort: failures
+// are logged but do not propagate.
+func (d *HookDispatcher) compensateChain(ctx context.Context, hookName string, executedPlugins []string, originalPayload json.RawMessage) {
+	compensateHook := hookName + compensateHookSuffix
+
+	// Reverse order — last executed first.
+	for i := len(executedPlugins) - 1; i >= 0; i-- {
+		slug := executedPlugins[i]
+
+		// Check if this plugin has a compensate handler.
+		d.mu.RLock()
+		regs := d.registrations[compensateHook]
+		d.mu.RUnlock()
+
+		var targetReg *HookRegistration
+		for _, r := range regs {
+			if r.PluginSlug == slug {
+				targetReg = &r
+				break
+			}
+		}
+		if targetReg == nil {
+			continue // No compensate handler for this plugin — skip silently.
+		}
+
+		hookCtx := sdk.HookContext{
+			HookName:  compensateHook,
+			RequestID: uuid.Must(uuid.NewV7()).String(),
+			Timestamp: d.clock.Now().Unix(),
+			PluginID:  slug,
+			Payload:   originalPayload,
+		}
+
+		inputBytes, err := json.Marshal(hookCtx)
+		if err != nil {
+			d.logger.Error("failed to marshal compensation context",
+				"hook", compensateHook, "plugin", slug, "error", err)
+			continue
+		}
+
+		timeout := d.syncTimeoutForPlugin(slug)
+		callCtx, callCancel := context.WithTimeout(ctx, timeout)
+		_, err = d.runtime.CallHook(callCtx, slug, targetReg.FuncName, inputBytes)
+		callCancel()
+
+		if err != nil {
+			d.logger.Error("compensation hook failed",
+				"hook", compensateHook, "plugin", slug, "error", err)
+		} else {
+			d.logger.Info("compensation hook executed",
+				"hook", compensateHook, "plugin", slug)
+		}
+	}
 }
 
 // hasHandlers returns true if at least one handler is registered for the given

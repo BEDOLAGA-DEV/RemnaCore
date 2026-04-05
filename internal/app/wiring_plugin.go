@@ -39,9 +39,10 @@ var pluginWiring = fx.Options(
 
 // provideExtismWASMFactory returns a WASMRunnerFactory backed by the Extism Go
 // SDK (wazero runtime). Plugins are loaded with WASI support and receive their
-// config via the Extism manifest config mechanism.
-func provideExtismWASMFactory() plugin.WASMRunnerFactory {
-	return plugin.ExtismRunnerFactory()
+// config via the Extism manifest config mechanism. Host functions (log, etc.)
+// are bound per-plugin so WASM guests can call back into the host.
+func provideExtismWASMFactory(hf *plugin.HostFunctions) plugin.WASMRunnerFactory {
+	return plugin.ExtismRunnerFactory(hf)
 }
 
 // loadEnabledPlugins bootstraps the plugin runtime by loading every plugin that
