@@ -17,6 +17,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 )
 
 // testContainerStartupTimeout is the maximum time to wait for the PostgreSQL
@@ -61,7 +62,7 @@ func setupOutboxDB(t *testing.T) *pgxpool.Pool {
 
 func TestOutboxStore(t *testing.T) {
 	pool := setupOutboxDB(t)
-	repo := postgres.NewOutboxRepository(pool)
+	repo := postgres.NewOutboxRepository(pool, clock.NewReal())
 	ctx := context.Background()
 
 	payload, err := json.Marshal(map[string]string{"subscription_id": "sub-123"})
@@ -127,7 +128,7 @@ func TestOutboxGetUnpublished(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Each subtest gets a fresh DB to avoid cross-contamination.
 			pool := setupOutboxDB(t)
-			repo := postgres.NewOutboxRepository(pool)
+			repo := postgres.NewOutboxRepository(pool, clock.NewReal())
 			ctx := context.Background()
 
 			tt.setup(t, repo, ctx)
@@ -141,7 +142,7 @@ func TestOutboxGetUnpublished(t *testing.T) {
 
 func TestOutboxMarkPublished(t *testing.T) {
 	pool := setupOutboxDB(t)
-	repo := postgres.NewOutboxRepository(pool)
+	repo := postgres.NewOutboxRepository(pool, clock.NewReal())
 	ctx := context.Background()
 
 	payload, err := json.Marshal(map[string]string{"key": "value"})

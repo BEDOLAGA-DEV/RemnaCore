@@ -87,7 +87,7 @@ func TestExtractString(t *testing.T) {
 
 func TestNewBillingEventConsumer_WithPublisher(t *testing.T) {
 	// NewBillingEventConsumer should not panic with nil dependencies.
-	consumer := NewBillingEventConsumer(nil, nil, nil, nil, nil, nil, nil)
+	consumer := NewBillingEventConsumer(nil, nil, nil, nil, nil, nil, nil, nil)
 	assert.NotNil(t, consumer)
 }
 

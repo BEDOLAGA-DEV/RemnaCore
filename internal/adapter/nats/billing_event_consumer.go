@@ -16,6 +16,7 @@ import (
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
 
@@ -104,6 +105,7 @@ type BillingEventConsumer struct {
 	idempotency IdempotencyChecker
 	publisher   *EventPublisher
 	logger      *slog.Logger
+	clock       clock.Clock
 	entityLocks sync.Map // map[string]*entityLock — per-entity serialisation
 }
 
@@ -119,6 +121,7 @@ func NewBillingEventConsumer(
 	idempotency IdempotencyChecker,
 	publisher *EventPublisher,
 	logger *slog.Logger,
+	clk clock.Clock,
 ) *BillingEventConsumer {
 	return &BillingEventConsumer{
 		subscriber:  subscriber,
@@ -128,6 +131,7 @@ func NewBillingEventConsumer(
 		idempotency: idempotency,
 		publisher:   publisher,
 		logger:      logger,
+		clock:       clk,
 	}
 }
 
@@ -136,7 +140,7 @@ func NewBillingEventConsumer(
 func (c *BillingEventConsumer) getEntityLock(entityID string) *entityLock {
 	val, _ := c.entityLocks.LoadOrStore(entityID, &entityLock{})
 	lock := val.(*entityLock)
-	lock.lastUsed.Store(time.Now().UnixNano())
+	lock.lastUsed.Store(c.clock.Now().UnixNano())
 	return lock
 }
 
@@ -152,7 +156,7 @@ func (c *BillingEventConsumer) evictStaleLocks(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			cutoff := time.Now().Add(-entityLockTTL).UnixNano()
+			cutoff := c.clock.Now().Add(-entityLockTTL).UnixNano()
 			c.entityLocks.Range(func(key, value any) bool {
 				lock := value.(*entityLock)
 				if lock.lastUsed.Load() < cutoff {
@@ -340,7 +344,7 @@ func (c *BillingEventConsumer) sendToDLQ(subject string, msg *message.Message, p
 		OriginalPayload: string(msg.Payload),
 		Error:           processingErr.Error(),
 		MsgID:           msg.UUID,
-		FailedAt:        time.Now().Format(time.RFC3339),
+		FailedAt:        c.clock.Now().Format(time.RFC3339),
 		RetryCount:      getRetryCount(msg),
 	}
 

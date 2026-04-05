@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
 
@@ -138,6 +139,7 @@ func TestHandleMessage_BusinessLevelIdempotencyKey(t *testing.T) {
 		handler:     handler,
 		idempotency: idem,
 		logger:      discardLogger(),
+		clock:       clock.NewReal(),
 	}
 
 	// Use subscription.cancelled (handled by handleSimple) to avoid needing
@@ -172,6 +174,7 @@ func TestHandleMessage_DuplicateEventSkipped(t *testing.T) {
 		handler:     handler,
 		idempotency: idem,
 		logger:      discardLogger(),
+		clock:       clock.NewReal(),
 	}
 
 	event := domainevent.NewWithEntity(
@@ -203,6 +206,7 @@ func TestHandleMessage_FallbackToSubscriptionIDFromPayload(t *testing.T) {
 		handler:     handler,
 		idempotency: idem,
 		logger:      discardLogger(),
+		clock:       clock.NewReal(),
 	}
 
 	// Event without EntityID (backward compat: pre-migration events).
@@ -247,6 +251,7 @@ func TestHandleMessage_SerialProcessingPerEntity(t *testing.T) {
 		handler:     handler,
 		idempotency: idem,
 		logger:      discardLogger(),
+		clock:       clock.NewReal(),
 	}
 
 	sameSubID := "sub-serial"
@@ -306,6 +311,7 @@ func TestHandleMessage_DifferentEntitiesProcessConcurrently(t *testing.T) {
 		handler:     handler,
 		idempotency: idem,
 		logger:      discardLogger(),
+		clock:       clock.NewReal(),
 	}
 
 	// Two events for DIFFERENT entities should not block each other.
@@ -340,7 +346,7 @@ func TestHandleMessage_DifferentEntitiesProcessConcurrently(t *testing.T) {
 }
 
 func TestGetEntityLock_ReturnsSameLockForSameID(t *testing.T) {
-	consumer := &BillingEventConsumer{}
+	consumer := &BillingEventConsumer{clock: clock.NewReal()}
 
 	lock1 := consumer.getEntityLock("sub-1")
 	lock2 := consumer.getEntityLock("sub-1")

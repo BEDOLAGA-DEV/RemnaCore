@@ -3,7 +3,6 @@ package postgres
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pgutil"
 )
 
@@ -22,13 +22,15 @@ import (
 type PlanRepository struct {
 	pool    *pgxpool.Pool
 	queries *gen.Queries
+	clock   clock.Clock
 }
 
 // NewPlanRepository returns a new PlanRepository using the given pool.
-func NewPlanRepository(pool *pgxpool.Pool) *PlanRepository {
+func NewPlanRepository(pool *pgxpool.Pool, clk clock.Clock) *PlanRepository {
 	return &PlanRepository{
 		pool:    pool,
 		queries: gen.New(pool),
+		clock:   clk,
 	}
 }
 
@@ -163,7 +165,7 @@ func (r *PlanRepository) createAddon(ctx context.Context, planID string, addon a
 		ExtraTrafficBytes: addon.ExtraTrafficBytes,
 		ExtraNodes:        addon.ExtraNodes,
 		ExtraFeatureFlags: addon.ExtraFeatureFlags,
-		CreatedAt:         pgutil.TimeToPgtype(time.Now()),
+		CreatedAt:         pgutil.TimeToPgtype(r.clock.Now()),
 	})
 	return pgutil.MapErr(err, "create plan addon", billing.ErrPlanNotFound)
 }

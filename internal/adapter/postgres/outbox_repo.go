@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres/gen"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pgutil"
 )
 
@@ -29,12 +30,13 @@ type OutboxEvent struct {
 // GetUnpublished uses FOR UPDATE SKIP LOCKED, which requires a transaction to
 // hold the row locks until publish + mark-published complete.
 type OutboxRepository struct {
-	pool *pgxpool.Pool
+	pool  *pgxpool.Pool
+	clock clock.Clock
 }
 
 // NewOutboxRepository returns a new OutboxRepository using the given pool.
-func NewOutboxRepository(pool *pgxpool.Pool) *OutboxRepository {
-	return &OutboxRepository{pool: pool}
+func NewOutboxRepository(pool *pgxpool.Pool, clk clock.Clock) *OutboxRepository {
+	return &OutboxRepository{pool: pool, clock: clk}
 }
 
 // queries returns a *gen.Queries backed by the active transaction (if any) or
@@ -87,7 +89,7 @@ func (r *OutboxRepository) MarkPublished(ctx context.Context, id string) error {
 // DeleteOld removes published events whose published_at is older than the
 // given duration. This keeps the outbox table from growing unbounded.
 func (r *OutboxRepository) DeleteOld(ctx context.Context, olderThan time.Duration) error {
-	cutoff := pgutil.TimeToPgtype(time.Now().Add(-olderThan))
+	cutoff := pgutil.TimeToPgtype(r.clock.Now().Add(-olderThan))
 	err := r.queries(ctx).DeleteOldPublishedOutboxEvents(ctx, cutoff)
 	if err != nil {
 		return fmt.Errorf("delete old outbox events: %w", err)
