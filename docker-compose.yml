@@ -22,8 +22,13 @@ services:
       NATS_URL: "nats://nats:4222"
       JWT_PRIVATE_KEY_PATH: "${JWT_PRIVATE_KEY_PATH:-/etc/remnacore/keys/private.pem}"
       JWT_PUBLIC_KEY_PATH: "${JWT_PUBLIC_KEY_PATH:-/etc/remnacore/keys/public.pem}"
-      # Go 1.26 Green Tea GC tuning (enabled by default).
-      # GOGC controls GC frequency; GOMEMLIMIT sets a soft memory ceiling.
+      # Go 1.26 Green Tea GC tuning. Green Tea GC is enabled by default and
+      # provides 10-40% lower GC overhead for allocation-heavy workloads.
+      # GOGC: target heap growth ratio (100 = double before GC). Lower = less
+      #   memory, more CPU on GC. Try 50 for lower tail latency.
+      # GOMEMLIMIT: soft memory ceiling. Set to ~80% of container memory limit.
+      #   Prevents OOM by triggering GC earlier when approaching the limit.
+      # Monitor via /metrics: go_gc_duration_seconds, go_memstats_heap_inuse_bytes
       GOGC: "${GOGC:-100}"
       GOMEMLIMIT: "${GOMEMLIMIT:-512MiB}"
       REMNAWAVE_URL: "http://remnawave-backend:3000"

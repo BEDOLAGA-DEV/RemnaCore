@@ -2,6 +2,7 @@ package observability
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
@@ -65,8 +66,36 @@ type Metrics struct {
 	EventPublishFailures *prometheus.CounterVec
 }
 
+// registerRuntimeCollectors replaces the default Go and process collectors with
+// enhanced versions that expose runtime/metrics-based GC, memory, and scheduler
+// metrics. This is essential for observing Go 1.26 Green Tea GC behavior.
+//
+// Exposed metric families include:
+//   - go_gc_duration_seconds (GC pause duration histogram)
+//   - go_gc_gogc_percent (current GOGC setting)
+//   - go_gc_gomemlimit_bytes (current GOMEMLIMIT)
+//   - go_memstats_* (heap, stack, GC stats)
+//   - go_sched_* (scheduler latency)
+func registerRuntimeCollectors() {
+	// Unregister the default collectors so we can replace them with the
+	// extended versions that include runtime/metrics GC and scheduler data.
+	prometheus.Unregister(collectors.NewGoCollector())
+	prometheus.Unregister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+
+	prometheus.MustRegister(collectors.NewGoCollector(
+		collectors.WithGoCollectorRuntimeMetrics(
+			collectors.MetricsGC,
+			collectors.MetricsMemory,
+			collectors.MetricsScheduler,
+		),
+	))
+	prometheus.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+}
+
 // NewMetrics registers and returns the platform Prometheus metrics.
 func NewMetrics() *Metrics {
+	registerRuntimeCollectors()
+
 	return &Metrics{
 		HTTPRequestsTotal: promauto.NewCounterVec(prometheus.CounterOpts{
 			Name: MetricHTTPRequestsTotal,
