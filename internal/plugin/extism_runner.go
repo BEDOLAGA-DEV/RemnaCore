@@ -15,8 +15,10 @@ type ExtismRunner struct {
 
 // ExtismRunnerFactory creates a WASMRunnerFactory that produces ExtismRunners
 // with WASI support. The returned runners use wazero as the underlying runtime.
-// Resource limits from the manifest are applied: fuel is mapped to the Extism
-// manifest timeout; memory limits are enforced at the WASM page level.
+// Resource limits from the manifest are applied: MaxFuel is mapped to the
+// Extism manifest timeout (the closest available control since wazero does not
+// expose fuel-based CPU budgets); MaxMemoryMB is enforced via the manifest's
+// MaxPages field (1 MB = 16 WASM pages of 64 KB each).
 func ExtismRunnerFactory() WASMRunnerFactory {
 	return func(wasmBytes []byte, config map[string]string, limits ManifestLimits) (WASMRunner, error) {
 		manifest := extism.Manifest{
@@ -26,9 +28,19 @@ func ExtismRunnerFactory() WASMRunnerFactory {
 		}
 
 		// Apply fuel as Extism timeout (milliseconds). MaxFuel maps to a
-		// CPU budget; the Extism timeout is the closest available control.
+		// CPU budget; the Extism timeout is the closest available control
+		// because neither the Extism SDK nor wazero v1.9 expose fuel-based
+		// instruction budgets.
 		if limits.MaxFuel > 0 {
 			manifest.Timeout = uint64(limits.MaxFuel)
+		}
+
+		// Apply memory limits: convert MB to WASM pages (1 MB = 16 pages
+		// of 64 KB). This caps the linear memory the plugin can grow to.
+		if limits.MaxMemoryMB > 0 {
+			manifest.Memory = &extism.ManifestMemory{
+				MaxPages: uint32(limits.MaxMemoryMB * WASMPagesPerMB),
+			}
 		}
 
 		// Pass plugin config as Extism manifest config so plugins can
@@ -55,7 +67,9 @@ func ExtismRunnerFactory() WASMRunnerFactory {
 
 // ExtismRunnerFactoryWithTimeout creates a WASMRunnerFactory that applies per-
 // plugin timeout and resource limits from the effective manifest limits. The
-// explicit timeoutMs overrides the limits.MaxFuel if non-zero.
+// explicit timeoutMs overrides the limits.MaxFuel if non-zero. Memory limits
+// from ManifestLimits.MaxMemoryMB are always enforced via the manifest's
+// MaxPages field.
 func ExtismRunnerFactoryWithTimeout(timeoutMs int) WASMRunnerFactory {
 	return func(wasmBytes []byte, config map[string]string, limits ManifestLimits) (WASMRunner, error) {
 		manifest := extism.Manifest{
@@ -66,6 +80,14 @@ func ExtismRunnerFactoryWithTimeout(timeoutMs int) WASMRunnerFactory {
 
 		if timeoutMs > 0 {
 			manifest.Timeout = uint64(timeoutMs)
+		}
+
+		// Apply memory limits: convert MB to WASM pages (1 MB = 16 pages
+		// of 64 KB). This caps the linear memory the plugin can grow to.
+		if limits.MaxMemoryMB > 0 {
+			manifest.Memory = &extism.ManifestMemory{
+				MaxPages: uint32(limits.MaxMemoryMB * WASMPagesPerMB),
+			}
 		}
 
 		if len(config) > 0 {
