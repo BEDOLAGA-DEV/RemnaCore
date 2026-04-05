@@ -75,6 +75,18 @@ func NewAtWithEntity(eventType EventType, data any, ts time.Time, entityID strin
 	}
 }
 
+// NewAtVersioned creates an Event with explicit version, timestamp, and entity ID.
+// Use this when publishing events with a schema version different from DefaultEventVersion.
+func NewAtVersioned(eventType EventType, version int, data any, ts time.Time, entityID string) Event {
+	return Event{
+		Type:      eventType,
+		Version:   version,
+		Timestamp: ts,
+		Data:      data,
+		EntityID:  entityID,
+	}
+}
+
 // DataAsMap is a backward-compatible helper that returns the Data field as
 // map[string]any. It returns nil if Data is not a map. Consumers that
 // already use typed payloads should type-assert directly instead.

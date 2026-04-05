@@ -98,21 +98,23 @@ type entityLock struct {
 //   - Retry + DLQ: failed messages are retried up to MaxMessageRetries times;
 //     permanently failing messages are sent to the dead-letter queue.
 type BillingEventConsumer struct {
-	subscriber  *EventSubscriber
-	handler     SubscriptionEventHandler
-	plans       multisub.PlanProvider
-	subs        multisub.SubscriptionProvider
-	idempotency IdempotencyChecker
-	publisher   *EventPublisher
-	logger      *slog.Logger
-	clock       clock.Clock
-	entityLocks sync.Map // map[string]*entityLock — per-entity serialisation
+	subscriber     *EventSubscriber
+	handler        SubscriptionEventHandler
+	plans          multisub.PlanProvider
+	subs           multisub.SubscriptionProvider
+	idempotency    IdempotencyChecker
+	publisher      *EventPublisher
+	schemaRegistry *domainevent.SchemaRegistry
+	logger         *slog.Logger
+	clock          clock.Clock
+	entityLocks    sync.Map // map[string]*entityLock — per-entity serialisation
 }
 
 // NewBillingEventConsumer creates a BillingEventConsumer with the given
 // dependencies. The publisher is used to route permanently failed messages to
 // the dead-letter queue. Plan and subscription data are resolved through
-// multisub domain ports (PlanProvider + SubscriptionProvider).
+// multisub domain ports (PlanProvider + SubscriptionProvider). The schema
+// registry upcasts old event payloads to the latest version before processing.
 func NewBillingEventConsumer(
 	subscriber *EventSubscriber,
 	handler SubscriptionEventHandler,
@@ -120,18 +122,20 @@ func NewBillingEventConsumer(
 	subs multisub.SubscriptionProvider,
 	idempotency IdempotencyChecker,
 	publisher *EventPublisher,
+	schemaRegistry *domainevent.SchemaRegistry,
 	logger *slog.Logger,
 	clk clock.Clock,
 ) *BillingEventConsumer {
 	return &BillingEventConsumer{
-		subscriber:  subscriber,
-		handler:     handler,
-		plans:       plans,
-		subs:        subs,
-		idempotency: idempotency,
-		publisher:   publisher,
-		logger:      logger,
-		clock:       clk,
+		subscriber:     subscriber,
+		handler:        handler,
+		plans:          plans,
+		subs:           subs,
+		idempotency:    idempotency,
+		publisher:      publisher,
+		schemaRegistry: schemaRegistry,
+		logger:         logger,
+		clock:          clk,
 	}
 }
 
@@ -249,6 +253,9 @@ func (c *BillingEventConsumer) handleMessage(ctx context.Context, subject string
 		msg.Ack()
 		return
 	}
+
+	// Upcast old event payloads to the latest schema version before processing.
+	event = c.schemaRegistry.Upcast(event)
 
 	// Resolve entity ID: prefer the top-level EntityID field; fall back to
 	// extracting subscription_id from the data payload for backward compat

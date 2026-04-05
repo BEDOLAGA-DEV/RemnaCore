@@ -136,10 +136,11 @@ func TestHandleMessage_BusinessLevelIdempotencyKey(t *testing.T) {
 	handler := &recordingHandler{}
 
 	consumer := &BillingEventConsumer{
-		handler:     handler,
-		idempotency: idem,
-		logger:      discardLogger(),
-		clock:       clock.NewReal(),
+		handler:        handler,
+		idempotency:    idem,
+		schemaRegistry: domainevent.NewSchemaRegistry(),
+		logger:         discardLogger(),
+		clock:          clock.NewReal(),
 	}
 
 	// Use subscription.cancelled (handled by handleSimple) to avoid needing
@@ -171,10 +172,11 @@ func TestHandleMessage_DuplicateEventSkipped(t *testing.T) {
 	}
 
 	consumer := &BillingEventConsumer{
-		handler:     handler,
-		idempotency: idem,
-		logger:      discardLogger(),
-		clock:       clock.NewReal(),
+		handler:        handler,
+		idempotency:    idem,
+		schemaRegistry: domainevent.NewSchemaRegistry(),
+		logger:         discardLogger(),
+		clock:          clock.NewReal(),
 	}
 
 	event := domainevent.NewWithEntity(
@@ -203,10 +205,11 @@ func TestHandleMessage_FallbackToSubscriptionIDFromPayload(t *testing.T) {
 	handler := &recordingHandler{}
 
 	consumer := &BillingEventConsumer{
-		handler:     handler,
-		idempotency: idem,
-		logger:      discardLogger(),
-		clock:       clock.NewReal(),
+		handler:        handler,
+		idempotency:    idem,
+		schemaRegistry: domainevent.NewSchemaRegistry(),
+		logger:         discardLogger(),
+		clock:          clock.NewReal(),
 	}
 
 	// Event without EntityID (backward compat: pre-migration events).
@@ -248,10 +251,11 @@ func TestHandleMessage_SerialProcessingPerEntity(t *testing.T) {
 	}
 
 	consumer := &BillingEventConsumer{
-		handler:     handler,
-		idempotency: idem,
-		logger:      discardLogger(),
-		clock:       clock.NewReal(),
+		handler:        handler,
+		idempotency:    idem,
+		schemaRegistry: domainevent.NewSchemaRegistry(),
+		logger:         discardLogger(),
+		clock:          clock.NewReal(),
 	}
 
 	sameSubID := "sub-serial"
@@ -308,10 +312,11 @@ func TestHandleMessage_DifferentEntitiesProcessConcurrently(t *testing.T) {
 	}
 
 	consumer := &BillingEventConsumer{
-		handler:     handler,
-		idempotency: idem,
-		logger:      discardLogger(),
-		clock:       clock.NewReal(),
+		handler:        handler,
+		idempotency:    idem,
+		schemaRegistry: domainevent.NewSchemaRegistry(),
+		logger:         discardLogger(),
+		clock:          clock.NewReal(),
 	}
 
 	// Two events for DIFFERENT entities should not block each other.
