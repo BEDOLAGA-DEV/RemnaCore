@@ -141,24 +141,17 @@ func TestRuntimePool_LoadPlugin_NilPlugin(t *testing.T) {
 }
 
 func TestRuntimePool_LoadPlugin_ReplacesExisting(t *testing.T) {
-	var closedCount atomic.Int32
-
-	factoryWithTracking := func(wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
-		return &trackingMockRunner{onClose: func() { closedCount.Add(1) }}, nil
-	}
-
-	rp := NewRuntimePool(testErrorLogger(), factoryWithTracking)
+	rp := NewRuntimePool(testErrorLogger(), mockFactory(nil))
 
 	p := testPlugin("test-plugin")
 	require.NoError(t, rp.LoadPlugin(p))
 	require.NoError(t, rp.LoadPlugin(p))
 
-	// Drain runs in the background. Wait briefly for it to complete.
-	assert.Eventually(t, func() bool {
-		return closedCount.Load() == int32(DefaultPoolSize)
-	}, time.Second, 5*time.Millisecond,
-		"first-batch runners should be closed via drain")
+	// After replacement, the old pool is retired (kept alive for the grace
+	// period). The new pool is serving and the slug is still registered.
 	assert.Len(t, rp.LoadedSlugs(), 1)
+	assert.Equal(t, 1, rp.RetiredPoolCount(),
+		"replaced pool should be retired, not drained immediately")
 }
 
 func TestRuntimePool_UnloadPlugin(t *testing.T) {
@@ -548,8 +541,8 @@ func TestPluginInstancePool_DrainClosesIdleRunners(t *testing.T) {
 }
 
 func TestLoadPlugin_GracefulDrainOnReplace(t *testing.T) {
-	// When a plugin is replaced, in-flight requests on the old pool should
-	// complete normally while the new pool starts serving immediately.
+	// When a plugin is replaced, the old pool is retired with a grace period
+	// so flow-pinned callers can complete. The new pool serves immediately.
 	var oldClosedCount atomic.Int32
 
 	factory := func(wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
@@ -569,28 +562,26 @@ func TestLoadPlugin_GracefulDrainOnReplace(t *testing.T) {
 	runner, err := oldPool.Acquire(context.Background())
 	require.NoError(t, err)
 
-	// Load the plugin again — replaces pool, old pool drains in background.
+	// Load the plugin again — old pool is retired with a grace period.
 	require.NoError(t, rp.LoadPlugin(p))
 
-	// Old pool drain is blocked waiting for the in-flight runner. No runners
-	// should be closed yet because Drain waits for all in-flight runners
-	// before closing idle ones.
+	// Old pool is in the grace period — no runners should be closed yet.
 	time.Sleep(20 * time.Millisecond)
-	assert.Less(t, oldClosedCount.Load(), int32(DefaultPoolSize),
-		"drain should not have closed all runners while one is still in-flight")
+	assert.Equal(t, int32(0), oldClosedCount.Load(),
+		"no runners should be closed during grace period")
 
-	// Release the in-flight runner — drain should now complete and close all.
+	// Release the in-flight runner — it returns to the retired pool normally
+	// since drain hasn't started yet.
 	oldPool.Release(runner)
-
-	assert.Eventually(t, func() bool {
-		return oldClosedCount.Load() == int32(DefaultPoolSize)
-	}, time.Second, 5*time.Millisecond,
-		"all old runners should be closed after in-flight release")
 
 	// New pool should be fully operational.
 	output, err := rp.CallHook(context.Background(), "drain-replace", "hook.test", nil)
 	require.NoError(t, err)
 	assert.Nil(t, output) // trackingMockRunner returns nil
+
+	// Verify retired pool still exists (grace period is 30s).
+	assert.Equal(t, 1, rp.RetiredPoolCount(),
+		"retired pool should still exist during grace period")
 }
 
 // --- WASM Health Check Tests ---

@@ -20,6 +20,10 @@ const (
 	// DrainTimeout is the maximum time to wait for in-flight requests to
 	// complete before force-closing a draining pool.
 	DrainTimeout = 30 * time.Second
+
+	// RetiredPoolGracePeriod is the time a retired pool stays available for
+	// flow-pinned callers before draining begins.
+	RetiredPoolGracePeriod = 30 * time.Second
 )
 
 // WASM runner corruption indicators. If a runner error contains any of these
@@ -432,7 +436,7 @@ func (rp *RuntimePool) GetInstance(slug string) (*PluginInstance, error) {
 // discarded and a replacement is created asynchronously. The context controls
 // both pool acquisition timeout and function execution timeout.
 //
-// If the context carries FlowBindings (see WithFlowBindings), CallHook will
+// If the context carries FlowBindings (see withFlowBindings), CallHook will
 // prefer the pool version pinned at the start of the business flow. This
 // ensures that a multi-hook flow (e.g., checkout) uses the same plugin version
 // across all its hook calls, even if the plugin is hot-reloaded mid-flow.
@@ -466,34 +470,25 @@ func (rp *RuntimePool) CallHook(ctx context.Context, slug, funcName string, inpu
 // pool is returned (from current or retired pools). Otherwise the current
 // active pool is returned.
 func (rp *RuntimePool) resolvePool(ctx context.Context, slug string) *PluginInstancePool {
+	rp.mu.RLock()
+	defer rp.mu.RUnlock()
+
 	if bindings := flowBindingsFromContext(ctx); bindings != nil {
 		if pinnedVersion, ok := bindings[slug]; ok {
-			rp.mu.RLock()
-			currentPool := rp.plugins[slug]
-			rp.mu.RUnlock()
-
-			// Common case: current pool matches the pinned version.
-			if currentPool != nil && currentPool.version == pinnedVersion {
-				return currentPool
+			// Common case: current pool matches pinned version.
+			if pool := rp.plugins[slug]; pool != nil && pool.version == pinnedVersion {
+				return pool
 			}
-
-			// Check retired pools for the pinned version.
-			rp.mu.RLock()
+			// Check retired pools.
 			retiredKey := fmt.Sprintf("%s:%d", slug, pinnedVersion)
-			retiredPool := rp.retiredPools[retiredKey]
-			rp.mu.RUnlock()
-
-			if retiredPool != nil {
-				return retiredPool
+			if pool := rp.retiredPools[retiredKey]; pool != nil {
+				return pool
 			}
 			// Pinned version no longer available — fall through to current.
 		}
 	}
 
-	rp.mu.RLock()
-	pool := rp.plugins[slug]
-	rp.mu.RUnlock()
-	return pool
+	return rp.plugins[slug]
 }
 
 // callOnPool acquires a WASM runner from the given pool, invokes funcName, and
@@ -636,18 +631,23 @@ func (rp *RuntimePool) CaptureFlowBindings() FlowBindings {
 	return bindings
 }
 
-// drainAndRemoveRetired drains the given retired pool and removes it from the
-// retiredPools map once fully drained. This runs as a background goroutine.
+// drainAndRemoveRetired waits a grace period for flow-pinned callers to
+// complete, then drains the given retired pool and removes it from the
+// retiredPools map. This runs as a background goroutine.
 func (rp *RuntimePool) drainAndRemoveRetired(key string, pool *PluginInstancePool) {
+	defer func() {
+		rp.mu.Lock()
+		delete(rp.retiredPools, key)
+		rp.mu.Unlock()
+	}()
+
+	// Grace period: allow flow-pinned callers to complete before draining.
+	timer := time.NewTimer(RetiredPoolGracePeriod)
+	defer timer.Stop()
+	<-timer.C
+
 	_ = pool.Drain(context.Background())
-
-	rp.mu.Lock()
-	delete(rp.retiredPools, key)
-	rp.mu.Unlock()
-
-	rp.logger.Info("retired pool drained and removed",
-		slog.String("key", key),
-	)
+	rp.logger.Info("retired pool drained and removed", slog.String("key", key))
 }
 
 // RetiredPoolCount returns the number of retired pools still alive. This is

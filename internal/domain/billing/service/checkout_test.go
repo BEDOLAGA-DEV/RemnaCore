@@ -74,6 +74,7 @@ func TestStartCheckout_Success(t *testing.T) {
 
 	// Pricing hook dispatcher.
 	dispatcher := &hookdispatchtest.MockDispatcher{}
+	dispatcher.On("BeginFlow", mock.Anything).Return()
 	dispatcher.On("DispatchSync", mock.Anything, "pricing.calculate", mock.AnythingOfType("json.RawMessage")).
 		Return(nil, nil)
 
@@ -194,6 +195,7 @@ func TestStartCheckout_RateLimiterError_FailsOpen(t *testing.T) {
 		}, nil)
 
 	dispatcher := &hookdispatchtest.MockDispatcher{}
+	dispatcher.On("BeginFlow", mock.Anything).Return()
 	dispatcher.On("DispatchSync", mock.Anything, "pricing.calculate", mock.AnythingOfType("json.RawMessage")).
 		Return(nil, nil)
 

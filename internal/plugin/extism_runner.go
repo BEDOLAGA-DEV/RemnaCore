@@ -13,6 +13,25 @@ type ExtismRunner struct {
 	plugin *extism.Plugin
 }
 
+// applyManifestLimits configures resource limits and plugin config on an Extism
+// manifest. This consolidates the shared logic between factory variants.
+func applyManifestLimits(m *extism.Manifest, config map[string]string, limits ManifestLimits) {
+	if limits.MaxFuel > 0 {
+		m.Timeout = uint64(limits.MaxFuel)
+	}
+	if limits.MaxMemoryMB > 0 {
+		m.Memory = &extism.ManifestMemory{
+			MaxPages: uint32(limits.MaxMemoryMB * WASMPagesPerMB),
+		}
+	}
+	if len(config) > 0 {
+		m.Config = make(map[string]string, len(config))
+		for k, v := range config {
+			m.Config[k] = v
+		}
+	}
+}
+
 // ExtismRunnerFactory creates a WASMRunnerFactory that produces ExtismRunners
 // with WASI support. The returned runners use wazero as the underlying runtime.
 // Resource limits from the manifest are applied: MaxFuel is mapped to the
@@ -27,30 +46,7 @@ func ExtismRunnerFactory() WASMRunnerFactory {
 			},
 		}
 
-		// Apply fuel as Extism timeout (milliseconds). MaxFuel maps to a
-		// CPU budget; the Extism timeout is the closest available control
-		// because neither the Extism SDK nor wazero v1.9 expose fuel-based
-		// instruction budgets.
-		if limits.MaxFuel > 0 {
-			manifest.Timeout = uint64(limits.MaxFuel)
-		}
-
-		// Apply memory limits: convert MB to WASM pages (1 MB = 16 pages
-		// of 64 KB). This caps the linear memory the plugin can grow to.
-		if limits.MaxMemoryMB > 0 {
-			manifest.Memory = &extism.ManifestMemory{
-				MaxPages: uint32(limits.MaxMemoryMB * WASMPagesPerMB),
-			}
-		}
-
-		// Pass plugin config as Extism manifest config so plugins can
-		// retrieve values via pdk.ConfigGet.
-		if len(config) > 0 {
-			manifest.Config = make(map[string]string, len(config))
-			for k, v := range config {
-				manifest.Config[k] = v
-			}
-		}
+		applyManifestLimits(&manifest, config, limits)
 
 		pluginConfig := extism.PluginConfig{
 			EnableWasi: true,
@@ -78,23 +74,12 @@ func ExtismRunnerFactoryWithTimeout(timeoutMs int) WASMRunnerFactory {
 			},
 		}
 
+		applyManifestLimits(&manifest, config, limits)
+
+		// Explicit timeout overrides the fuel-based timeout set by
+		// applyManifestLimits.
 		if timeoutMs > 0 {
 			manifest.Timeout = uint64(timeoutMs)
-		}
-
-		// Apply memory limits: convert MB to WASM pages (1 MB = 16 pages
-		// of 64 KB). This caps the linear memory the plugin can grow to.
-		if limits.MaxMemoryMB > 0 {
-			manifest.Memory = &extism.ManifestMemory{
-				MaxPages: uint32(limits.MaxMemoryMB * WASMPagesPerMB),
-			}
-		}
-
-		if len(config) > 0 {
-			manifest.Config = make(map[string]string, len(config))
-			for k, v := range config {
-				manifest.Config[k] = v
-			}
 		}
 
 		pluginConfig := extism.PluginConfig{

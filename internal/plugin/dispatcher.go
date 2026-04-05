@@ -195,6 +195,7 @@ func (d *HookDispatcher) DispatchSync(ctx context.Context, hookName string, payl
 
 		if err != nil {
 			d.recordHookError(reg.PluginSlug, hookName)
+			d.recordHookTotal(reg.PluginSlug, hookName, "error")
 
 			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrHookTimeout) {
 				d.logger.Error("hook execution timed out",
@@ -225,12 +226,20 @@ func (d *HookDispatcher) DispatchSync(ctx context.Context, hookName string, payl
 		var result sdk.HookResult
 		if err := json.Unmarshal(output, &result); err != nil {
 			d.recordHookError(reg.PluginSlug, hookName)
+			d.recordHookTotal(reg.PluginSlug, hookName, "error")
 			d.logger.Error("failed to unmarshal hook result",
 				"hook", hookName, "plugin", reg.PluginSlug, "error", err)
 			return nil, fmt.Errorf("invalid hook result from plugin %q: %w", reg.PluginSlug, err)
 		}
 
-		d.recordHookTotal(reg.PluginSlug, hookName, string(result.Action))
+		action := string(result.Action)
+		switch result.Action {
+		case sdk.ActionContinue, sdk.ActionModify, sdk.ActionHalt:
+			// known action — use as-is
+		default:
+			action = "unknown"
+		}
+		d.recordHookTotal(reg.PluginSlug, hookName, action)
 
 		if d.publisher != nil {
 			if pubErr := d.publisher.Publish(ctx, NewHookExecutedEvent(reg.PluginID, reg.PluginSlug, hookName, durationMs, d.clock.Now())); pubErr != nil {
@@ -323,7 +332,7 @@ func (d *HookDispatcher) BeginFlow(ctx context.Context) context.Context {
 		return ctx
 	}
 	bindings := d.runtime.CaptureFlowBindings()
-	return WithFlowBindings(ctx, bindings)
+	return withFlowBindings(ctx, bindings)
 }
 
 // syncTimeoutForPlugin returns the sync hook timeout for the given plugin. If

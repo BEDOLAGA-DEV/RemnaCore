@@ -34,8 +34,9 @@ func (m *MockDispatcher) DispatchSyncVersioned(ctx context.Context, hookName str
 	return args.Get(0).(json.RawMessage), args.Error(1)
 }
 
-// BeginFlow returns the context unchanged in tests. Domain tests do not need
-// real flow bindings since they mock the dispatcher.
+// BeginFlow records the call and returns the context unchanged. Domain tests do
+// not need real flow bindings since they mock the dispatcher.
 func (m *MockDispatcher) BeginFlow(ctx context.Context) context.Context {
+	m.Called(ctx)
 	return ctx
 }

@@ -47,6 +47,10 @@ const (
 	DefaultSyncTimeoutMs      = 5000  // 5 seconds
 	DefaultAsyncTimeoutMs     = 30000 // 30 seconds
 	DefaultPluginPriority     = 50    // middle priority (0 = first, 100 = last)
+
+	// MaxMemoryMB is the upper bound for WASM memory to prevent wazero panics.
+	// 4096 MB = 65536 pages (wazero hard maximum).
+	MaxMemoryMB = 4096
 )
 
 // WASM instance pool sizing.

@@ -55,7 +55,7 @@ func TestCaptureFlowBindings_VersionIncrementsOnReload(t *testing.T) {
 
 func TestWithFlowBindings_RoundTrip(t *testing.T) {
 	bindings := FlowBindings{"plugin-a": 42, "plugin-b": 7}
-	ctx := WithFlowBindings(context.Background(), bindings)
+	ctx := withFlowBindings(context.Background(), bindings)
 
 	got := flowBindingsFromContext(ctx)
 	require.NotNil(t, got)
@@ -91,7 +91,7 @@ func TestCallHook_WithFlowBindings_UsesPinnedPool(t *testing.T) {
 
 	// Capture flow bindings while v1 is active.
 	bindings := rp.CaptureFlowBindings()
-	ctx := WithFlowBindings(context.Background(), bindings)
+	ctx := withFlowBindings(context.Background(), bindings)
 
 	// Hot reload the plugin with a new factory that marks calls as v2.
 	v2Factory := func(wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
@@ -140,14 +140,21 @@ func TestCallHook_WithFlowBindings_FallsThroughWhenExpired(t *testing.T) {
 	// Reload to create v2.
 	require.NoError(t, rp.LoadPlugin(p))
 
-	// Wait for the retired v1 pool to be drained and removed.
-	assert.Eventually(t, func() bool {
-		return rp.RetiredPoolCount() == 0
-	}, 2*time.Second, 10*time.Millisecond,
-		"retired pool should be drained and removed")
+	// The retired pool should still be present during the grace period.
+	assert.Equal(t, 1, rp.RetiredPoolCount(),
+		"retired pool should exist during grace period")
+
+	// Manually remove the retired pool to simulate expiry without waiting
+	// for the full RetiredPoolGracePeriod.
+	rp.mu.Lock()
+	for key, pool := range rp.retiredPools {
+		_ = pool.Drain(context.Background())
+		delete(rp.retiredPools, key)
+	}
+	rp.mu.Unlock()
 
 	// Call with stale flow bindings — should fall through to current pool.
-	ctx := WithFlowBindings(context.Background(), bindings)
+	ctx := withFlowBindings(context.Background(), bindings)
 	output, err := rp.CallHook(ctx, "expire-plugin", "hook.test", nil)
 	require.NoError(t, err)
 	assert.Equal(t, []byte("current-output"), output)
@@ -165,7 +172,7 @@ func TestCallHook_WithFlowBindings_MatchesCurrentPool(t *testing.T) {
 	require.NoError(t, rp.LoadPlugin(p))
 
 	bindings := rp.CaptureFlowBindings()
-	ctx := WithFlowBindings(context.Background(), bindings)
+	ctx := withFlowBindings(context.Background(), bindings)
 
 	output, err := rp.CallHook(ctx, "same-version-plugin", "hook.test", nil)
 	require.NoError(t, err)
@@ -189,7 +196,7 @@ func TestCallHook_WithoutFlowBindings_BehavesAsDefault(t *testing.T) {
 	assert.Equal(t, expected, output)
 }
 
-func TestRetiredPools_DrainedAndRemoved(t *testing.T) {
+func TestRetiredPools_KeptDuringGracePeriod(t *testing.T) {
 	var closedCount atomic.Int32
 
 	factory := func(wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
@@ -204,15 +211,16 @@ func TestRetiredPools_DrainedAndRemoved(t *testing.T) {
 	// Reload — the old pool becomes a retired pool.
 	require.NoError(t, rp.LoadPlugin(p))
 
-	// The retired pool should be drained in the background.
-	assert.Eventually(t, func() bool {
-		return rp.RetiredPoolCount() == 0
-	}, 2*time.Second, 10*time.Millisecond,
-		"retired pool should be cleaned up after drain")
+	// The retired pool should still be present during the grace period
+	// (RetiredPoolGracePeriod = 30s), allowing flow-pinned callers to finish.
+	time.Sleep(50 * time.Millisecond)
+	assert.Equal(t, 1, rp.RetiredPoolCount(),
+		"retired pool should still exist during grace period")
 
-	// The first batch of runners should have been closed.
-	assert.Equal(t, int32(DefaultPoolSize), closedCount.Load(),
-		"all runners from the retired pool should be closed")
+	// No runners from the retired pool should have been closed yet because
+	// the grace period timer has not fired.
+	assert.Equal(t, int32(0), closedCount.Load(),
+		"no runners should be closed during grace period")
 }
 
 func TestPoolVersion_MonotonicallyIncreasing(t *testing.T) {
@@ -251,7 +259,7 @@ func TestCallHook_FlowBindings_UnknownSlugIgnored(t *testing.T) {
 
 	// Bindings reference a different slug that doesn't exist.
 	bindings := FlowBindings{"unknown-plugin": 999}
-	ctx := WithFlowBindings(context.Background(), bindings)
+	ctx := withFlowBindings(context.Background(), bindings)
 
 	// Calling a known plugin with bindings for an unknown one should work fine.
 	output, err := rp.CallHook(ctx, "known-plugin", "hook.test", nil)

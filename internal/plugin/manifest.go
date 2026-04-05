@@ -118,6 +118,9 @@ func (m *Manifest) EffectiveLimits() ManifestLimits {
 	if l.MaxMemoryMB == 0 {
 		l.MaxMemoryMB = DefaultMaxMemoryMB
 	}
+	if l.MaxMemoryMB > MaxMemoryMB {
+		l.MaxMemoryMB = MaxMemoryMB
+	}
 	if l.MaxFuel == 0 {
 		l.MaxFuel = DefaultMaxFuel
 	}
