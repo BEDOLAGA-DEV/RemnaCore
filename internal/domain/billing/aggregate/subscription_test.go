@@ -355,3 +355,117 @@ func TestSubscription_Resume_ClearsPausedAt(t *testing.T) {
 
 	assert.Nil(t, sub.PausedAt)
 }
+
+func TestSubscription_AddAddon(t *testing.T) {
+	tests := []struct {
+		name      string
+		initial   []string
+		addonID   string
+		wantErr   error
+		wantAddons []string
+	}{
+		{
+			name:       "adds addon to empty list",
+			initial:    nil,
+			addonID:    "addon-1",
+			wantAddons: []string{"addon-1"},
+		},
+		{
+			name:       "adds addon to existing list",
+			initial:    []string{"addon-1"},
+			addonID:    "addon-2",
+			wantAddons: []string{"addon-1", "addon-2"},
+		},
+		{
+			name:    "rejects duplicate addon",
+			initial: []string{"addon-1"},
+			addonID: "addon-1",
+			wantErr: ErrAddonAlreadyOnSubscription,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			now := time.Now()
+			sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, tt.initial, now)
+			// Drain creation events so we can verify addon events in isolation.
+			sub.DomainEvents()
+
+			addonTime := now.Add(time.Second)
+			err := sub.AddAddon(tt.addonID, addonTime)
+
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantAddons, sub.AddonIDs)
+			assert.Equal(t, addonTime, sub.UpdatedAt)
+
+			events := sub.DomainEvents()
+			require.Len(t, events, 1)
+			assert.Equal(t, EventSubUpdated, events[0].Type)
+		})
+	}
+}
+
+func TestSubscription_RemoveAddon(t *testing.T) {
+	tests := []struct {
+		name       string
+		initial    []string
+		addonID    string
+		wantErr    error
+		wantAddons []string
+	}{
+		{
+			name:       "removes existing addon",
+			initial:    []string{"addon-1", "addon-2"},
+			addonID:    "addon-1",
+			wantAddons: []string{"addon-2"},
+		},
+		{
+			name:       "removes last addon",
+			initial:    []string{"addon-1"},
+			addonID:    "addon-1",
+			wantAddons: []string{},
+		},
+		{
+			name:    "rejects missing addon",
+			initial: []string{"addon-1"},
+			addonID: "addon-99",
+			wantErr: ErrAddonNotOnSubscription,
+		},
+		{
+			name:    "rejects on empty list",
+			initial: nil,
+			addonID: "addon-1",
+			wantErr: ErrAddonNotOnSubscription,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			now := time.Now()
+			sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, tt.initial, now)
+			// Drain creation events so we can verify addon events in isolation.
+			sub.DomainEvents()
+
+			removeTime := now.Add(time.Second)
+			err := sub.RemoveAddon(tt.addonID, removeTime)
+
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantAddons, sub.AddonIDs)
+			assert.Equal(t, removeTime, sub.UpdatedAt)
+
+			events := sub.DomainEvents()
+			require.Len(t, events, 1)
+			assert.Equal(t, EventSubUpdated, events[0].Type)
+		})
+	}
+}

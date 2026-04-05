@@ -14,3 +14,9 @@ var ErrPlanNotActive = errors.New("plan is not active")
 
 // ErrNoPriceConfigured indicates the plan has no positive price configured.
 var ErrNoPriceConfigured = errors.New("plan has no price configured")
+
+// ErrAddonAlreadyOnSubscription indicates the addon is already present on the subscription.
+var ErrAddonAlreadyOnSubscription = errors.New("addon already added to subscription")
+
+// ErrAddonNotOnSubscription indicates the addon was not found on the subscription.
+var ErrAddonNotOnSubscription = errors.New("addon not found on subscription")

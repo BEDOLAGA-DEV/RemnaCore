@@ -6,18 +6,27 @@ import (
 	"time"
 
 	multisubdomain "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
 // ReconcilerInterval is the period between reconciliation runs that clean up
 // orphaned Remnawave users from failed bindings.
 const ReconcilerInterval = 1 * time.Hour
 
+// ReconcilerBatchLimit is the maximum number of failed bindings to process in
+// a single reconciliation pass.
+const ReconcilerBatchLimit = 50
+
 // BindingReconciler periodically scans for failed bindings that still reference
 // a Remnawave user (ghost users) and attempts to delete them. This serves as a
 // safety net for compensation failures in ProvisioningSaga.
+//
+// The reconciler uses SELECT ... FOR UPDATE SKIP LOCKED to prevent concurrent
+// instances on multiple pods from processing the same bindings.
 type BindingReconciler struct {
 	bindings multisubdomain.BindingRepository
 	gateway  multisubdomain.RemnawaveGateway
+	txRunner txmanager.Runner
 	logger   *slog.Logger
 }
 
@@ -25,11 +34,13 @@ type BindingReconciler struct {
 func NewBindingReconciler(
 	bindings multisubdomain.BindingRepository,
 	gateway multisubdomain.RemnawaveGateway,
+	txRunner txmanager.Runner,
 	logger *slog.Logger,
 ) *BindingReconciler {
 	return &BindingReconciler{
 		bindings: bindings,
 		gateway:  gateway,
+		txRunner: txRunner,
 		logger:   logger,
 	}
 }
@@ -56,50 +67,57 @@ func (r *BindingReconciler) ReconcileOnce(ctx context.Context) {
 	r.reconcile(ctx)
 }
 
-// reconcile finds all failed bindings that still have a remnawave_uuid and
-// attempts to clean up the orphaned Remnawave user for each.
+// reconcile finds failed bindings that still have a remnawave_uuid and attempts
+// to clean up the orphaned Remnawave user for each. The query runs inside a
+// transaction with FOR UPDATE SKIP LOCKED to prevent concurrent processing by
+// multiple reconciler instances.
 func (r *BindingReconciler) reconcile(ctx context.Context) {
-	bindings, err := r.bindings.GetFailedWithRemnawaveUUID(ctx)
-	if err != nil {
-		r.logger.Error("reconciler: failed to query failed bindings",
-			slog.Any("error", err),
+	err := r.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		bindings, err := r.bindings.GetFailedForReconciliation(txCtx, ReconcilerBatchLimit)
+		if err != nil {
+			return err
+		}
+
+		if len(bindings) == 0 {
+			return nil
+		}
+
+		r.logger.Info("reconciler: found orphaned remnawave users",
+			slog.Int("count", len(bindings)),
 		)
-		return
-	}
 
-	if len(bindings) == 0 {
-		return
-	}
+		for _, binding := range bindings {
+			if err := r.gateway.DeleteUser(txCtx, binding.RemnawaveUUID); err != nil {
+				r.logger.Warn("reconciler: failed to delete orphaned remnawave user",
+					slog.String("binding_id", binding.ID),
+					slog.String("remnawave_uuid", binding.RemnawaveUUID),
+					slog.Any("error", err),
+				)
+				continue
+			}
 
-	r.logger.Info("reconciler: found orphaned remnawave users",
-		slog.Int("count", len(bindings)),
-	)
+			// Clear the remnawave_uuid so this binding is not retried on the
+			// next reconciliation pass.
+			binding.RemnawaveUUID = ""
+			binding.RemnawaveShortUUID = ""
+			if err := r.bindings.Update(txCtx, binding); err != nil {
+				r.logger.Warn("reconciler: deleted remnawave user but failed to update binding",
+					slog.String("binding_id", binding.ID),
+					slog.Any("error", err),
+				)
+				continue
+			}
 
-	for _, binding := range bindings {
-		if err := r.gateway.DeleteUser(ctx, binding.RemnawaveUUID); err != nil {
-			r.logger.Warn("reconciler: failed to delete orphaned remnawave user",
+			r.logger.Info("reconciler: cleaned up orphaned remnawave user",
 				slog.String("binding_id", binding.ID),
-				slog.String("remnawave_uuid", binding.RemnawaveUUID),
-				slog.Any("error", err),
 			)
-			continue
 		}
 
-		// Clear the remnawave_uuid so this binding is not retried on the next
-		// reconciliation pass.
-		binding.RemnawaveUUID = ""
-		binding.RemnawaveShortUUID = ""
-		if err := r.bindings.Update(ctx, binding); err != nil {
-			r.logger.Warn("reconciler: deleted remnawave user but failed to update binding",
-				slog.String("binding_id", binding.ID),
-				slog.Any("error", err),
-			)
-			continue
-		}
-
-		r.logger.Info("reconciler: cleaned up orphaned remnawave user",
-			slog.String("binding_id", binding.ID),
-			slog.String("remnawave_uuid", binding.RemnawaveUUID),
+		return nil
+	})
+	if err != nil {
+		r.logger.Error("reconciler: failed to run reconciliation",
+			slog.Any("error", err),
 		)
 	}
 }

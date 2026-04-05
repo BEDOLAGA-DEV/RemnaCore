@@ -78,6 +78,14 @@ func (m *MockBindingRepo) GetFailedWithRemnawaveUUID(ctx context.Context) ([]*ag
 	return args.Get(0).([]*aggregate.RemnawaveBinding), args.Error(1)
 }
 
+func (m *MockBindingRepo) GetFailedForReconciliation(ctx context.Context, limit int) ([]*aggregate.RemnawaveBinding, error) {
+	args := m.Called(ctx, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*aggregate.RemnawaveBinding), args.Error(1)
+}
+
 func (m *MockBindingRepo) Create(ctx context.Context, binding *aggregate.RemnawaveBinding) error {
 	args := m.Called(ctx, binding)
 	return args.Error(0)

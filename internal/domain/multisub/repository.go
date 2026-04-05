@@ -15,6 +15,10 @@ type BindingRepository interface {
 	GetActiveBySubscriptionID(ctx context.Context, subID string) ([]*aggregate.RemnawaveBinding, error)
 	GetAllActive(ctx context.Context) ([]*aggregate.RemnawaveBinding, error)
 	GetFailedWithRemnawaveUUID(ctx context.Context) ([]*aggregate.RemnawaveBinding, error)
+	// GetFailedForReconciliation returns failed bindings that still reference a
+	// Remnawave UUID, locked with FOR UPDATE SKIP LOCKED to prevent concurrent
+	// processing by multiple reconciler instances.
+	GetFailedForReconciliation(ctx context.Context, limit int) ([]*aggregate.RemnawaveBinding, error)
 	Create(ctx context.Context, binding *aggregate.RemnawaveBinding) error
 	Update(ctx context.Context, binding *aggregate.RemnawaveBinding) error
 	Delete(ctx context.Context, id string) error

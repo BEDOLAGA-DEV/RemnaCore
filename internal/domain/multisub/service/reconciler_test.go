@@ -12,18 +12,19 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/multisubtest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/service"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager/txmanagertest"
 )
 
 func TestBindingReconciler_Reconcile(t *testing.T) {
 	tests := []struct {
-		name           string
-		setupMocks     func(repo *multisubtest.MockBindingRepo, gw *multisubtest.MockRemnawaveGateway)
-		assertMocks    func(t *testing.T, repo *multisubtest.MockBindingRepo, gw *multisubtest.MockRemnawaveGateway)
+		name        string
+		setupMocks  func(repo *multisubtest.MockBindingRepo, gw *multisubtest.MockRemnawaveGateway)
+		assertMocks func(t *testing.T, repo *multisubtest.MockBindingRepo, gw *multisubtest.MockRemnawaveGateway)
 	}{
 		{
 			name: "no orphaned bindings",
 			setupMocks: func(repo *multisubtest.MockBindingRepo, gw *multisubtest.MockRemnawaveGateway) {
-				repo.On("GetFailedWithRemnawaveUUID", mock.Anything).
+				repo.On("GetFailedForReconciliation", mock.Anything, service.ReconcilerBatchLimit).
 					Return([]*aggregate.RemnawaveBinding{}, nil)
 			},
 			assertMocks: func(t *testing.T, repo *multisubtest.MockBindingRepo, gw *multisubtest.MockRemnawaveGateway) {
@@ -40,7 +41,7 @@ func TestBindingReconciler_Reconcile(t *testing.T) {
 					RemnawaveUUID: "rw-orphan-1",
 					Status:        aggregate.BindingFailed,
 				}
-				repo.On("GetFailedWithRemnawaveUUID", mock.Anything).
+				repo.On("GetFailedForReconciliation", mock.Anything, service.ReconcilerBatchLimit).
 					Return([]*aggregate.RemnawaveBinding{orphan}, nil)
 				gw.On("DeleteUser", mock.Anything, "rw-orphan-1").Return(nil)
 				repo.On("Update", mock.Anything, mock.MatchedBy(func(b *aggregate.RemnawaveBinding) bool {
@@ -61,7 +62,7 @@ func TestBindingReconciler_Reconcile(t *testing.T) {
 					RemnawaveUUID: "rw-orphan-2",
 					Status:        aggregate.BindingFailed,
 				}
-				repo.On("GetFailedWithRemnawaveUUID", mock.Anything).
+				repo.On("GetFailedForReconciliation", mock.Anything, service.ReconcilerBatchLimit).
 					Return([]*aggregate.RemnawaveBinding{orphan}, nil)
 				gw.On("DeleteUser", mock.Anything, "rw-orphan-2").
 					Return(errors.New("connection refused"))
@@ -77,7 +78,7 @@ func TestBindingReconciler_Reconcile(t *testing.T) {
 		{
 			name: "query fails gracefully",
 			setupMocks: func(repo *multisubtest.MockBindingRepo, gw *multisubtest.MockRemnawaveGateway) {
-				repo.On("GetFailedWithRemnawaveUUID", mock.Anything).
+				repo.On("GetFailedForReconciliation", mock.Anything, service.ReconcilerBatchLimit).
 					Return(nil, errors.New("database unavailable"))
 			},
 			assertMocks: func(t *testing.T, repo *multisubtest.MockBindingRepo, gw *multisubtest.MockRemnawaveGateway) {
@@ -92,11 +93,12 @@ func TestBindingReconciler_Reconcile(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := new(multisubtest.MockBindingRepo)
 			gw := new(multisubtest.MockRemnawaveGateway)
+			txRunner := txmanagertest.NoopTxRunner{}
 			logger := slog.Default()
 
 			tt.setupMocks(repo, gw)
 
-			reconciler := service.NewBindingReconciler(repo, gw, logger)
+			reconciler := service.NewBindingReconciler(repo, gw, txRunner, logger)
 
 			// Call the exported Reconcile method for testing.
 			// We test via ReconcileOnce which is the single-pass variant.

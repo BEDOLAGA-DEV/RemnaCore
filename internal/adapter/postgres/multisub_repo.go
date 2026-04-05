@@ -120,6 +120,57 @@ func (r *BindingRepository) GetFailedWithRemnawaveUUID(ctx context.Context) ([]*
 	return bindings, nil
 }
 
+// getFailedForReconciliationQuery selects failed bindings with a non-null
+// remnawave_uuid, ordered by updated_at, and locks them with SKIP LOCKED to
+// prevent concurrent reconciler instances from processing the same rows.
+const getFailedForReconciliationQuery = `
+SELECT id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uuid,
+       remnawave_username, purpose, status, traffic_limit_bytes,
+       allowed_nodes, inbound_tags, synced_at, created_at, updated_at
+FROM multisub.remnawave_bindings
+WHERE status = 'failed' AND remnawave_uuid IS NOT NULL
+ORDER BY updated_at
+LIMIT $1
+FOR UPDATE SKIP LOCKED
+`
+
+func (r *BindingRepository) GetFailedForReconciliation(ctx context.Context, limit int) ([]*aggregate.RemnawaveBinding, error) {
+	db := DBFromContext(ctx, r.pool)
+	rows, err := db.Query(ctx, getFailedForReconciliationQuery, limit)
+	if err != nil {
+		return nil, pgutil.MapErr(err, "get failed bindings for reconciliation", multisub.ErrBindingNotFound)
+	}
+	defer rows.Close()
+
+	var bindings []*aggregate.RemnawaveBinding
+	for rows.Next() {
+		var row gen.MultisubRemnawaveBinding
+		if err := rows.Scan(
+			&row.ID,
+			&row.SubscriptionID,
+			&row.PlatformUserID,
+			&row.RemnawaveUuid,
+			&row.RemnawaveShortUuid,
+			&row.RemnawaveUsername,
+			&row.Purpose,
+			&row.Status,
+			&row.TrafficLimitBytes,
+			&row.AllowedNodes,
+			&row.InboundTags,
+			&row.SyncedAt,
+			&row.CreatedAt,
+			&row.UpdatedAt,
+		); err != nil {
+			return nil, pgutil.MapErr(err, "scan failed binding for reconciliation", multisub.ErrBindingNotFound)
+		}
+		bindings = append(bindings, bindingRowToDomain(row))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, pgutil.MapErr(err, "iterate failed bindings for reconciliation", multisub.ErrBindingNotFound)
+	}
+	return bindings, nil
+}
+
 func (r *BindingRepository) Create(ctx context.Context, b *aggregate.RemnawaveBinding) error {
 	err := r.queries.CreateBinding(ctx, gen.CreateBindingParams{
 		ID:                 pgutil.UUIDToPgtype(b.ID),

@@ -190,6 +190,37 @@ func (s *Subscription) Expire(now time.Time) error {
 	return nil
 }
 
+// AddAddon appends an addon ID to the subscription and records an update event.
+// Returns an error if the addon is already present.
+func (s *Subscription) AddAddon(addonID string, now time.Time) error {
+	if slices.Contains(s.AddonIDs, addonID) {
+		return ErrAddonAlreadyOnSubscription
+	}
+	s.AddonIDs = append(s.AddonIDs, addonID)
+	s.UpdatedAt = now
+	s.RecordEvent(domainevent.NewAtWithEntity(EventSubUpdated, SubUpdatedPayload{
+		SubscriptionID: s.ID,
+		UserID:         s.UserID,
+	}, now, s.ID))
+	return nil
+}
+
+// RemoveAddon removes an addon ID from the subscription and records an update
+// event. Returns an error if the addon is not present.
+func (s *Subscription) RemoveAddon(addonID string, now time.Time) error {
+	idx := slices.Index(s.AddonIDs, addonID)
+	if idx == -1 {
+		return ErrAddonNotOnSubscription
+	}
+	s.AddonIDs = slices.Delete(s.AddonIDs, idx, idx+1)
+	s.UpdatedAt = now
+	s.RecordEvent(domainevent.NewAtWithEntity(EventSubUpdated, SubUpdatedPayload{
+		SubscriptionID: s.ID,
+		UserID:         s.UserID,
+	}, now, s.ID))
+	return nil
+}
+
 // Renew advances the subscription to its next billing period. The next period
 // is calculated from the current period's end date and interval, so the caller
 // does not need to construct the new period manually. Only allowed when active.

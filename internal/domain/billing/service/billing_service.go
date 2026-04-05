@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
@@ -315,17 +314,9 @@ func (s *BillingService) AddSubscriptionAddon(ctx context.Context, subID, addonI
 		return fmt.Errorf("get subscription: %w", err)
 	}
 
-	if slices.Contains(sub.AddonIDs, addonID) {
-		return billing.ErrAddonAlreadyOnSubscription
+	if err := sub.AddAddon(addonID, s.clock.Now()); err != nil {
+		return err
 	}
-
-	now := s.clock.Now()
-	sub.AddonIDs = append(sub.AddonIDs, addonID)
-	sub.UpdatedAt = now
-	sub.RecordEvent(domainevent.NewAtWithEntity(aggregate.EventSubUpdated, aggregate.SubUpdatedPayload{
-		SubscriptionID: sub.ID,
-		UserID:         sub.UserID,
-	}, now, sub.ID))
 
 	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		if err := s.subs.Update(txCtx, sub); err != nil {
@@ -343,26 +334,9 @@ func (s *BillingService) RemoveSubscriptionAddon(ctx context.Context, subID, add
 		return fmt.Errorf("get subscription: %w", err)
 	}
 
-	found := false
-	newAddons := make([]string, 0, len(sub.AddonIDs))
-	for _, id := range sub.AddonIDs {
-		if id == addonID {
-			found = true
-			continue
-		}
-		newAddons = append(newAddons, id)
+	if err := sub.RemoveAddon(addonID, s.clock.Now()); err != nil {
+		return err
 	}
-	if !found {
-		return billing.ErrAddonNotOnSubscription
-	}
-
-	now := s.clock.Now()
-	sub.AddonIDs = newAddons
-	sub.UpdatedAt = now
-	sub.RecordEvent(domainevent.NewAtWithEntity(aggregate.EventSubUpdated, aggregate.SubUpdatedPayload{
-		SubscriptionID: sub.ID,
-		UserID:         sub.UserID,
-	}, now, sub.ID))
 
 	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		if err := s.subs.Update(txCtx, sub); err != nil {
