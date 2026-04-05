@@ -23,11 +23,12 @@ type deprovisioningState struct {
 // the saga logs the failure, marks the binding as failed, and continues with
 // the remaining bindings. Progress is checkpointed after each step.
 type DeprovisioningSaga struct {
-	bindings multisubdomain.BindingRepository
-	gateway  multisubdomain.RemnawaveGateway
+	bindings  multisubdomain.BindingRepository
+	gateway   multisubdomain.RemnawaveGateway
 	publisher domainevent.Publisher
 	sagaRepo  multisubdomain.SagaRepository
 	clock     clock.Clock
+	logger    *slog.Logger
 }
 
 // NewDeprovisioningSaga creates a DeprovisioningSaga with its dependencies.
@@ -37,6 +38,7 @@ func NewDeprovisioningSaga(
 	publisher domainevent.Publisher,
 	sagaRepo multisubdomain.SagaRepository,
 	clk clock.Clock,
+	logger *slog.Logger,
 ) *DeprovisioningSaga {
 	return &DeprovisioningSaga{
 		bindings:  bindings,
@@ -44,6 +46,7 @@ func NewDeprovisioningSaga(
 		publisher: publisher,
 		sagaRepo:  sagaRepo,
 		clock:     clk,
+		logger:    logger,
 	}
 }
 
@@ -68,7 +71,7 @@ func (s *DeprovisioningSaga) Deprovision(ctx context.Context, subscriptionID str
 		StateData:     []byte("{}"),
 	})
 	if err != nil {
-		slog.Warn("failed to create saga instance, proceeding without persistence",
+		s.logger.Warn("failed to create saga instance, proceeding without persistence",
 			slog.String("subscription_id", subscriptionID),
 			slog.Any("error", err),
 		)
@@ -79,10 +82,20 @@ func (s *DeprovisioningSaga) Deprovision(ctx context.Context, subscriptionID str
 	for i, binding := range bindings {
 		s.deprovisionOne(ctx, binding)
 		deprovisionedIDs = append(deprovisionedIDs, binding.ID)
-		s.checkpointDeprovisionProgress(ctx, sagaInstance, i+1, deprovisionedIDs)
+		if sagaInstance != nil {
+			stateData, err := json.Marshal(deprovisioningState{DeprovisionedBindingIDs: deprovisionedIDs})
+			if err != nil {
+				s.logger.Warn("failed to marshal deprovisioning saga state",
+					slog.String("saga_id", sagaInstance.ID),
+					slog.Any("error", err),
+				)
+			} else {
+				checkpointSaga(ctx, s.sagaRepo, sagaInstance, i+1, stateData, s.logger)
+			}
+		}
 	}
 
-	s.completeSaga(ctx, sagaInstance)
+	completeSaga(ctx, s.sagaRepo, sagaInstance, s.logger)
 
 	return nil
 }
@@ -97,13 +110,13 @@ func (s *DeprovisioningSaga) deprovisionOne(ctx context.Context, binding *aggreg
 		if err := s.gateway.DeleteUser(ctx, binding.RemnawaveUUID); err != nil {
 			// Mark binding as failed and persist — do not stop the saga.
 			if failErr := binding.MarkFailed(fmt.Sprintf("remnawave delete: %s", err.Error()), now); failErr != nil {
-				slog.Warn("failed to transition binding to failed",
+				s.logger.Warn("failed to transition binding to failed",
 					slog.String("binding_id", binding.ID),
 					slog.Any("error", failErr),
 				)
 			}
 			if updateErr := s.bindings.Update(ctx, binding); updateErr != nil {
-				slog.Warn("failed to update binding after remnawave delete failure",
+				s.logger.Warn("failed to update binding after remnawave delete failure",
 					slog.String("binding_id", binding.ID),
 					slog.Any("error", updateErr),
 				)
@@ -114,14 +127,14 @@ func (s *DeprovisioningSaga) deprovisionOne(ctx context.Context, binding *aggreg
 
 	// 2. Mark binding as deprovisioned
 	if err := binding.Deprovision(now); err != nil {
-		slog.Warn("failed to transition binding to deprovisioned",
+		s.logger.Warn("failed to transition binding to deprovisioned",
 			slog.String("binding_id", binding.ID),
 			slog.Any("error", err),
 		)
 		return
 	}
 	if err := s.bindings.Update(ctx, binding); err != nil {
-		slog.Warn("failed to update binding after deprovision",
+		s.logger.Warn("failed to update binding after deprovision",
 			slog.String("binding_id", binding.ID),
 			slog.Any("error", err),
 		)
@@ -130,7 +143,7 @@ func (s *DeprovisioningSaga) deprovisionOne(ctx context.Context, binding *aggreg
 	// 3. Publish binding's self-recorded events
 	for _, evt := range binding.DomainEvents() {
 		if err := s.publisher.Publish(ctx, evt); err != nil {
-			slog.Warn("failed to publish binding event",
+			s.logger.Warn("failed to publish binding event",
 				slog.String("binding_id", binding.ID),
 				slog.String("event_type", string(evt.Type)),
 				slog.Any("error", err),
@@ -139,38 +152,3 @@ func (s *DeprovisioningSaga) deprovisionOne(ctx context.Context, binding *aggreg
 	}
 }
 
-// checkpointDeprovisionProgress persists the current deprovisioning step.
-func (s *DeprovisioningSaga) checkpointDeprovisionProgress(ctx context.Context, saga *multisubdomain.SagaInstance, step int, deprovisionedIDs []string) {
-	if saga == nil {
-		return
-	}
-	stateData, err := json.Marshal(deprovisioningState{DeprovisionedBindingIDs: deprovisionedIDs})
-	if err != nil {
-		slog.Warn("failed to marshal deprovisioning saga state",
-			slog.String("saga_id", saga.ID),
-			slog.Any("error", err),
-		)
-		return
-	}
-	if err := s.sagaRepo.UpdateProgress(ctx, saga.ID, step, stateData); err != nil {
-		slog.Warn("failed to checkpoint deprovisioning saga progress",
-			slog.String("saga_id", saga.ID),
-			slog.Int("step", step),
-			slog.Any("error", err),
-		)
-	}
-}
-
-// completeSaga marks the saga as completed. Failures are logged but do not
-// abort the operation.
-func (s *DeprovisioningSaga) completeSaga(ctx context.Context, saga *multisubdomain.SagaInstance) {
-	if saga == nil {
-		return
-	}
-	if err := s.sagaRepo.Complete(ctx, saga.ID); err != nil {
-		slog.Warn("failed to mark deprovisioning saga as completed",
-			slog.String("saga_id", saga.ID),
-			slog.Any("error", err),
-		)
-	}
-}

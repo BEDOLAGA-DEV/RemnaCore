@@ -58,9 +58,15 @@ type OutboxRelay struct {
 	workerCount int
 }
 
-// MinOutboxRelayWorkers is the lower bound for worker count to ensure at
-// least one goroutine always processes the outbox.
-const MinOutboxRelayWorkers = 1
+const (
+	// MinOutboxRelayWorkers is the lower bound for worker count to ensure at
+	// least one goroutine always processes the outbox.
+	MinOutboxRelayWorkers = 1
+
+	// MaxOutboxRelayWorkers caps the number of parallel relay goroutines to
+	// prevent exhausting the database connection pool.
+	MaxOutboxRelayWorkers = 16
+)
 
 // NewOutboxRelay creates an OutboxRelay with the given dependencies.
 // workerCount controls the number of parallel relay goroutines; values
@@ -74,6 +80,9 @@ func NewOutboxRelay(
 ) *OutboxRelay {
 	if workerCount < MinOutboxRelayWorkers {
 		workerCount = MinOutboxRelayWorkers
+	}
+	if workerCount > MaxOutboxRelayWorkers {
+		workerCount = MaxOutboxRelayWorkers
 	}
 	return &OutboxRelay{
 		outbox:      outbox,
@@ -191,7 +200,7 @@ func (r *OutboxRelay) relay(ctx context.Context, logger *slog.Logger) int {
 		}
 
 		for _, event := range events {
-			if err := r.publisher.Publish(ctx, event.EventType, event.Payload); err != nil {
+			if err := r.publisher.Publish(txCtx, event.EventType, event.Payload); err != nil {
 				logger.Warn("outbox relay: failed to publish event, will retry",
 					slog.String("event_id", event.ID),
 					slog.String("event_type", event.EventType),

@@ -7,10 +7,11 @@
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS multisub.saga_instances (
-    id               UUID          NOT NULL DEFAULT gen_random_uuid(),
+    id               UUID          NOT NULL DEFAULT uuidv7(),
     saga_type        TEXT          NOT NULL,
     correlation_id   TEXT          NOT NULL,
-    status           TEXT          NOT NULL DEFAULT 'running',
+    status           TEXT          NOT NULL DEFAULT 'running'
+                     CHECK (status IN ('running', 'completed', 'failed', 'compensating')),
     current_step     INT           NOT NULL DEFAULT 0,
     total_steps      INT           NOT NULL DEFAULT 0,
     state_data       JSONB         NOT NULL DEFAULT '{}',

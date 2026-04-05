@@ -16,6 +16,10 @@ type Upcaster interface {
 
 // SchemaRegistry holds registered upcasters per event type and provides a
 // single Upcast method that brings any event to the latest schema version.
+//
+// Thread safety: Register must only be called during application initialisation
+// (e.g., inside an fx.Provide closure) before any concurrent Upcast calls.
+// Upcast is safe for concurrent use once registration is complete.
 type SchemaRegistry struct {
 	upcasters map[EventType][]Upcaster // sorted by FromVersion
 }

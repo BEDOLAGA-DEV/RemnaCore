@@ -61,6 +61,7 @@ type ProvisioningSaga struct {
 	calculator *BindingCalculator
 	sagaRepo   multisubdomain.SagaRepository
 	clock      clock.Clock
+	logger     *slog.Logger
 }
 
 // NewProvisioningSaga creates a ProvisioningSaga with its dependencies.
@@ -71,6 +72,7 @@ func NewProvisioningSaga(
 	calculator *BindingCalculator,
 	sagaRepo multisubdomain.SagaRepository,
 	clk clock.Clock,
+	logger *slog.Logger,
 ) *ProvisioningSaga {
 	return &ProvisioningSaga{
 		bindings:   bindings,
@@ -79,6 +81,7 @@ func NewProvisioningSaga(
 		calculator: calculator,
 		sagaRepo:   sagaRepo,
 		clock:      clk,
+		logger:     logger,
 	}
 }
 
@@ -107,7 +110,7 @@ func (s *ProvisioningSaga) Provision(ctx context.Context, req ProvisionRequest) 
 		StateData:     []byte("{}"),
 	})
 	if err != nil {
-		slog.Warn("failed to create saga instance, proceeding without persistence",
+		s.logger.Warn("failed to create saga instance, proceeding without persistence",
 			slog.String("subscription_id", req.SubscriptionID),
 			slog.Any("error", err),
 		)
@@ -127,11 +130,11 @@ func (s *ProvisioningSaga) Provision(ctx context.Context, req ProvisionRequest) 
 			now,
 		)
 		if err != nil {
-			s.failSaga(ctx, sagaInstance, fmt.Sprintf("create binding aggregate: %s", err.Error()))
+			failSaga(ctx, s.sagaRepo, sagaInstance, fmt.Sprintf("create binding aggregate: %s", err.Error()), s.logger)
 			return results, fmt.Errorf("create binding aggregate: %w", err)
 		}
 		if err := s.bindings.Create(ctx, binding); err != nil {
-			s.failSaga(ctx, sagaInstance, fmt.Sprintf("persist binding: %s", err.Error()))
+			failSaga(ctx, s.sagaRepo, sagaInstance, fmt.Sprintf("persist binding: %s", err.Error()), s.logger)
 			return results, fmt.Errorf("persist binding: %w", err)
 		}
 
@@ -146,27 +149,27 @@ func (s *ProvisioningSaga) Provision(ctx context.Context, req ProvisionRequest) 
 			// COMPENSATION: mark binding as failed
 			_ = binding.MarkFailed(err.Error(), now)
 			_ = s.bindings.Update(ctx, binding)
-			s.failSaga(ctx, sagaInstance, fmt.Sprintf("remnawave create user: %s", err.Error()))
+			failSaga(ctx, s.sagaRepo, sagaInstance, fmt.Sprintf("remnawave create user: %s", err.Error()), s.logger)
 			return results, fmt.Errorf("remnawave create user: %w", err)
 		}
 
 		// 3. Mark binding as provisioned
 		if err := binding.MarkProvisioned(rwUser.UUID, rwUser.ShortUUID, now); err != nil {
-			s.failSaga(ctx, sagaInstance, fmt.Sprintf("mark provisioned: %s", err.Error()))
+			failSaga(ctx, s.sagaRepo, sagaInstance, fmt.Sprintf("mark provisioned: %s", err.Error()), s.logger)
 			return results, fmt.Errorf("mark provisioned: %w", err)
 		}
 		if err := s.bindings.Update(ctx, binding); err != nil {
 			// COMPENSATION: delete Remnawave user since our DB update failed.
 			// Uses exponential backoff to avoid leaving ghost users in Remnawave.
 			s.compensateDeleteUser(ctx, rwUser.UUID, binding.ID)
-			s.failSaga(ctx, sagaInstance, fmt.Sprintf("update binding: %s", err.Error()))
+			failSaga(ctx, s.sagaRepo, sagaInstance, fmt.Sprintf("update binding: %s", err.Error()), s.logger)
 			return results, fmt.Errorf("update binding: %w", err)
 		}
 
 		// 4. Publish binding's self-recorded events
 		for _, evt := range binding.DomainEvents() {
 			if err := s.publisher.Publish(ctx, evt); err != nil {
-				slog.Warn("failed to publish binding event",
+				s.logger.Warn("failed to publish binding event",
 					slog.String("binding_id", binding.ID),
 					slog.String("event_type", string(evt.Type)),
 					slog.Any("error", err),
@@ -182,65 +185,23 @@ func (s *ProvisioningSaga) Provision(ctx context.Context, req ProvisionRequest) 
 		})
 
 		// 5. Checkpoint progress after each successful binding
-		s.checkpointProgress(ctx, sagaInstance, i+1, results)
+		if sagaInstance != nil {
+			stateData, err := json.Marshal(provisioningState{Results: results})
+			if err != nil {
+				s.logger.Warn("failed to marshal saga state",
+					slog.String("saga_id", sagaInstance.ID),
+					slog.Any("error", err),
+				)
+			} else {
+				checkpointSaga(ctx, s.sagaRepo, sagaInstance, i+1, stateData, s.logger)
+			}
+		}
 	}
 
 	// Mark saga as completed.
-	s.completeSaga(ctx, sagaInstance)
+	completeSaga(ctx, s.sagaRepo, sagaInstance, s.logger)
 
 	return results, nil
-}
-
-// checkpointProgress persists the current saga step and accumulated results.
-// Failures are logged but do not abort the saga — persistence is best-effort.
-func (s *ProvisioningSaga) checkpointProgress(ctx context.Context, saga *multisubdomain.SagaInstance, step int, results []ProvisionResult) {
-	if saga == nil {
-		return
-	}
-	stateData, err := json.Marshal(provisioningState{Results: results})
-	if err != nil {
-		slog.Warn("failed to marshal saga state",
-			slog.String("saga_id", saga.ID),
-			slog.Any("error", err),
-		)
-		return
-	}
-	if err := s.sagaRepo.UpdateProgress(ctx, saga.ID, step, stateData); err != nil {
-		slog.Warn("failed to checkpoint saga progress",
-			slog.String("saga_id", saga.ID),
-			slog.Int("step", step),
-			slog.Any("error", err),
-		)
-	}
-}
-
-// completeSaga marks the saga as completed. Failures are logged but do not
-// abort the provisioning operation — the bindings themselves are the source
-// of truth.
-func (s *ProvisioningSaga) completeSaga(ctx context.Context, saga *multisubdomain.SagaInstance) {
-	if saga == nil {
-		return
-	}
-	if err := s.sagaRepo.Complete(ctx, saga.ID); err != nil {
-		slog.Warn("failed to mark saga as completed",
-			slog.String("saga_id", saga.ID),
-			slog.Any("error", err),
-		)
-	}
-}
-
-// failSaga marks the saga as failed with an error message. Failures are
-// logged but do not affect the saga's compensation logic.
-func (s *ProvisioningSaga) failSaga(ctx context.Context, saga *multisubdomain.SagaInstance, errMsg string) {
-	if saga == nil {
-		return
-	}
-	if err := s.sagaRepo.Fail(ctx, saga.ID, errMsg); err != nil {
-		slog.Warn("failed to mark saga as failed",
-			slog.String("saga_id", saga.ID),
-			slog.Any("error", err),
-		)
-	}
 }
 
 // compensateDeleteUser attempts to delete an orphaned Remnawave user with
@@ -251,14 +212,14 @@ func (s *ProvisioningSaga) compensateDeleteUser(ctx context.Context, remnawaveUU
 	for attempt := range CompensationMaxRetries {
 		err := s.gateway.DeleteUser(ctx, remnawaveUUID)
 		if err == nil {
-			slog.Info("compensation: deleted remnawave user",
+			s.logger.Info("compensation: deleted remnawave user",
 				slog.String("remnawave_uuid", remnawaveUUID),
 				slog.Int("attempt", attempt+1),
 			)
 			return
 		}
 
-		slog.Warn("compensation: failed to delete remnawave user, retrying",
+		s.logger.Warn("compensation: failed to delete remnawave user, retrying",
 			slog.String("remnawave_uuid", remnawaveUUID),
 			slog.String("binding_id", bindingID),
 			slog.Any("error", err),
@@ -276,7 +237,7 @@ func (s *ProvisioningSaga) compensateDeleteUser(ctx context.Context, remnawaveUU
 	}
 
 	// All retries exhausted -- log error for manual cleanup / reconciler.
-	slog.Error("compensation: FAILED to delete remnawave user after all retries -- manual cleanup required",
+	s.logger.Error("compensation: FAILED to delete remnawave user after all retries -- manual cleanup required",
 		slog.String("remnawave_uuid", remnawaveUUID),
 		slog.String("binding_id", bindingID),
 	)

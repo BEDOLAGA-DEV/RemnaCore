@@ -23,11 +23,12 @@ type syncState struct {
 // the Remnawave panel. It is called during periodic sync runs and when
 // webhook events arrive. Progress is checkpointed to the SagaRepository.
 type SyncSaga struct {
-	bindings multisubdomain.BindingRepository
-	gateway  multisubdomain.RemnawaveGateway
+	bindings  multisubdomain.BindingRepository
+	gateway   multisubdomain.RemnawaveGateway
 	publisher domainevent.Publisher
 	sagaRepo  multisubdomain.SagaRepository
 	clock     clock.Clock
+	logger    *slog.Logger
 }
 
 // NewSyncSaga creates a SyncSaga with its dependencies.
@@ -37,6 +38,7 @@ func NewSyncSaga(
 	publisher domainevent.Publisher,
 	sagaRepo multisubdomain.SagaRepository,
 	clk clock.Clock,
+	logger *slog.Logger,
 ) *SyncSaga {
 	return &SyncSaga{
 		bindings:  bindings,
@@ -44,6 +46,7 @@ func NewSyncSaga(
 		publisher: publisher,
 		sagaRepo:  sagaRepo,
 		clock:     clk,
+		logger:    logger,
 	}
 }
 
@@ -76,7 +79,7 @@ func (s *SyncSaga) SyncBinding(ctx context.Context, bindingID string) error {
 		StateData:     []byte("{}"),
 	})
 	if err != nil {
-		slog.Warn("failed to create sync saga instance, proceeding without persistence",
+		s.logger.Warn("failed to create sync saga instance, proceeding without persistence",
 			slog.String("binding_id", bindingID),
 			slog.Any("error", err),
 		)
@@ -92,15 +95,25 @@ func (s *SyncSaga) SyncBinding(ctx context.Context, bindingID string) error {
 			s.clock.Now(),
 		)
 		if pubErr := s.publisher.Publish(ctx, syncFailedEvent); pubErr != nil {
-			slog.Warn("failed to publish event",
+			s.logger.Warn("failed to publish event",
 				slog.String("event_type", string(syncFailedEvent.Type)),
 				slog.Any("error", pubErr),
 			)
 		}
-		s.failSyncSaga(ctx, sagaInstance, fmt.Sprintf("remnawave get user: %s", err.Error()))
+		failSaga(ctx, s.sagaRepo, sagaInstance, fmt.Sprintf("remnawave get user: %s", err.Error()), s.logger)
 		return fmt.Errorf("remnawave get user: %w", err)
 	}
-	s.checkpointSyncProgress(ctx, sagaInstance, 1, bindingID, "fetched_remote")
+	if sagaInstance != nil {
+		stateData, err := json.Marshal(syncState{BindingID: bindingID, Phase: "fetched_remote"})
+		if err != nil {
+			s.logger.Warn("failed to marshal sync saga state",
+				slog.String("saga_id", sagaInstance.ID),
+				slog.Any("error", err),
+			)
+		} else {
+			checkpointSaga(ctx, s.sagaRepo, sagaInstance, 1, stateData, s.logger)
+		}
+	}
 
 	// Step 2: Reconcile remote status with local binding.
 	now := s.clock.Now()
@@ -110,10 +123,20 @@ func (s *SyncSaga) SyncBinding(ctx context.Context, bindingID string) error {
 	binding.SyncedAt = &now
 
 	if err := s.bindings.Update(ctx, binding); err != nil {
-		s.failSyncSaga(ctx, sagaInstance, fmt.Sprintf("update binding: %s", err.Error()))
+		failSaga(ctx, s.sagaRepo, sagaInstance, fmt.Sprintf("update binding: %s", err.Error()), s.logger)
 		return fmt.Errorf("update binding: %w", err)
 	}
-	s.checkpointSyncProgress(ctx, sagaInstance, 2, bindingID, "reconciled")
+	if sagaInstance != nil {
+		stateData, err := json.Marshal(syncState{BindingID: bindingID, Phase: "reconciled"})
+		if err != nil {
+			s.logger.Warn("failed to marshal sync saga state",
+				slog.String("saga_id", sagaInstance.ID),
+				slog.Any("error", err),
+			)
+		} else {
+			checkpointSaga(ctx, s.sagaRepo, sagaInstance, 2, stateData, s.logger)
+		}
+	}
 
 	// Step 3: Publish sync completed event.
 	syncCompletedEvent := multisubdomain.NewBindingSyncCompletedEvent(
@@ -122,13 +145,13 @@ func (s *SyncSaga) SyncBinding(ctx context.Context, bindingID string) error {
 		s.clock.Now(),
 	)
 	if err := s.publisher.Publish(ctx, syncCompletedEvent); err != nil {
-		slog.Warn("failed to publish event",
+		s.logger.Warn("failed to publish event",
 			slog.String("event_type", string(syncCompletedEvent.Type)),
 			slog.Any("error", err),
 		)
 	}
 
-	s.completeSyncSaga(ctx, sagaInstance)
+	completeSaga(ctx, s.sagaRepo, sagaInstance, s.logger)
 
 	return nil
 }
@@ -138,21 +161,21 @@ func (s *SyncSaga) reconcileStatus(binding *aggregate.RemnawaveBinding, status *
 	switch {
 	case status.Expired:
 		if err := binding.Disable(now); err != nil {
-			slog.Warn("sync reconcile: disable transition failed",
+			s.logger.Warn("sync reconcile: disable transition failed",
 				slog.String("binding_id", binding.ID),
 				slog.Any("error", err),
 			)
 		}
 	case !status.Enabled && binding.Status == aggregate.BindingActive:
 		if err := binding.Disable(now); err != nil {
-			slog.Warn("sync reconcile: disable transition failed",
+			s.logger.Warn("sync reconcile: disable transition failed",
 				slog.String("binding_id", binding.ID),
 				slog.Any("error", err),
 			)
 		}
 	case status.Enabled && binding.Status == aggregate.BindingDisabled:
 		if err := binding.Enable(now); err != nil {
-			slog.Warn("sync reconcile: enable transition failed",
+			s.logger.Warn("sync reconcile: enable transition failed",
 				slog.String("binding_id", binding.ID),
 				slog.Any("error", err),
 			)
@@ -173,14 +196,14 @@ func (s *SyncSaga) HandleWebhookEvent(ctx context.Context, remnawaveUUID string,
 	switch domainEventType {
 	case multisubdomain.EventBindingTrafficExceeded:
 		if err := binding.Disable(now); err != nil {
-			slog.Warn("webhook: disable transition failed",
+			s.logger.Warn("webhook: disable transition failed",
 				slog.String("binding_id", binding.ID),
 				slog.Any("error", err),
 			)
 		}
 	case multisubdomain.EventBindingSyncFailed:
 		if err := binding.MarkFailed("webhook: sync failed", now); err != nil {
-			slog.Warn("webhook: mark failed transition failed",
+			s.logger.Warn("webhook: mark failed transition failed",
 				slog.String("binding_id", binding.ID),
 				slog.Any("error", err),
 			)
@@ -201,7 +224,7 @@ func (s *SyncSaga) HandleWebhookEvent(ctx context.Context, remnawaveUUID string,
 		RemnawaveUUID:  binding.RemnawaveUUID,
 	}, s.clock.Now())
 	if err := s.publisher.Publish(ctx, webhookEvent); err != nil {
-		slog.Warn("failed to publish event",
+		s.logger.Warn("failed to publish event",
 			slog.String("event_type", string(webhookEvent.Type)),
 			slog.Any("error", err),
 		)
@@ -210,50 +233,3 @@ func (s *SyncSaga) HandleWebhookEvent(ctx context.Context, remnawaveUUID string,
 	return nil
 }
 
-// checkpointSyncProgress persists the current sync saga step.
-func (s *SyncSaga) checkpointSyncProgress(ctx context.Context, saga *multisubdomain.SagaInstance, step int, bindingID, phase string) {
-	if saga == nil {
-		return
-	}
-	stateData, err := json.Marshal(syncState{BindingID: bindingID, Phase: phase})
-	if err != nil {
-		slog.Warn("failed to marshal sync saga state",
-			slog.String("saga_id", saga.ID),
-			slog.Any("error", err),
-		)
-		return
-	}
-	if err := s.sagaRepo.UpdateProgress(ctx, saga.ID, step, stateData); err != nil {
-		slog.Warn("failed to checkpoint sync saga progress",
-			slog.String("saga_id", saga.ID),
-			slog.Int("step", step),
-			slog.Any("error", err),
-		)
-	}
-}
-
-// completeSyncSaga marks the sync saga as completed.
-func (s *SyncSaga) completeSyncSaga(ctx context.Context, saga *multisubdomain.SagaInstance) {
-	if saga == nil {
-		return
-	}
-	if err := s.sagaRepo.Complete(ctx, saga.ID); err != nil {
-		slog.Warn("failed to mark sync saga as completed",
-			slog.String("saga_id", saga.ID),
-			slog.Any("error", err),
-		)
-	}
-}
-
-// failSyncSaga marks the sync saga as failed.
-func (s *SyncSaga) failSyncSaga(ctx context.Context, saga *multisubdomain.SagaInstance, errMsg string) {
-	if saga == nil {
-		return
-	}
-	if err := s.sagaRepo.Fail(ctx, saga.ID, errMsg); err != nil {
-		slog.Warn("failed to mark sync saga as failed",
-			slog.String("saga_id", saga.ID),
-			slog.Any("error", err),
-		)
-	}
-}

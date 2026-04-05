@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -22,7 +23,7 @@ func TestHandleWebhookEvent_TrafficExceeded(t *testing.T) {
 	pub := new(multisubtest.MockEventPublisher)
 	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewSyncSaga(repo, gw, pub, sagaRepo, clock.NewReal())
+	saga := service.NewSyncSaga(repo, gw, pub, sagaRepo, clock.NewReal(), slog.Default())
 
 	binding := &aggregate.RemnawaveBinding{
 		ID:             "b-1",
@@ -55,7 +56,7 @@ func TestHandleWebhookEvent_UnknownBinding(t *testing.T) {
 	pub := new(multisubtest.MockEventPublisher)
 	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewSyncSaga(repo, gw, pub, sagaRepo, clock.NewReal())
+	saga := service.NewSyncSaga(repo, gw, pub, sagaRepo, clock.NewReal(), slog.Default())
 
 	repo.On("GetByRemnawaveUUID", mock.Anything, "rw-unknown").
 		Return(nil, multisub.ErrBindingNotFound)
@@ -75,7 +76,7 @@ func TestSyncBinding_Success(t *testing.T) {
 	pub := new(multisubtest.MockEventPublisher)
 	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewSyncSaga(repo, gw, pub, sagaRepo, clock.NewReal())
+	saga := service.NewSyncSaga(repo, gw, pub, sagaRepo, clock.NewReal(), slog.Default())
 
 	binding := &aggregate.RemnawaveBinding{
 		ID:             "b-1",
@@ -115,7 +116,7 @@ func TestSyncBinding_DisabledRemotely(t *testing.T) {
 	pub := new(multisubtest.MockEventPublisher)
 	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewSyncSaga(repo, gw, pub, sagaRepo, clock.NewReal())
+	saga := service.NewSyncSaga(repo, gw, pub, sagaRepo, clock.NewReal(), slog.Default())
 
 	binding := &aggregate.RemnawaveBinding{
 		ID:             "b-1",

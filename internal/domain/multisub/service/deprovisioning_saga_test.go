@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -37,7 +38,7 @@ func TestDeprovision_Success(t *testing.T) {
 	pub := new(multisubtest.MockEventPublisher)
 	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, clock.NewReal())
+	saga := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, clock.NewReal(), slog.Default())
 
 	bindings := []*aggregate.RemnawaveBinding{
 		activeBinding("b-1", "sub-1", "rw-1", aggregate.PurposeBase),
@@ -72,7 +73,7 @@ func TestDeprovision_PartialFailure(t *testing.T) {
 	pub := new(multisubtest.MockEventPublisher)
 	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, clock.NewReal())
+	saga := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, clock.NewReal(), slog.Default())
 
 	bindings := []*aggregate.RemnawaveBinding{
 		activeBinding("b-1", "sub-1", "rw-1", aggregate.PurposeBase),
@@ -122,7 +123,7 @@ func TestDeprovision_NoBindings(t *testing.T) {
 	pub := new(multisubtest.MockEventPublisher)
 	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, clock.NewReal())
+	saga := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, clock.NewReal(), slog.Default())
 
 	repo.On("GetActiveBySubscriptionID", mock.Anything, "sub-empty").
 		Return([]*aggregate.RemnawaveBinding{}, nil)
@@ -143,7 +144,7 @@ func TestDeprovision_SagaPersistence(t *testing.T) {
 	pub := new(multisubtest.MockEventPublisher)
 	sagaRepo := new(multisubtest.MockSagaRepo)
 
-	saga := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, clock.NewReal())
+	saga := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, clock.NewReal(), slog.Default())
 
 	bindings := []*aggregate.RemnawaveBinding{
 		activeBinding("b-1", "sub-saga-d", "rw-1", aggregate.PurposeBase),

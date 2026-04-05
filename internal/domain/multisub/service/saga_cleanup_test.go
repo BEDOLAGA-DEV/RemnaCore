@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/multisubtest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/service"
@@ -80,7 +79,6 @@ func TestSagaCleanup_ReportStaleOnStartup(t *testing.T) {
 			cleanup.ReportStaleOnStartup(context.Background())
 
 			sagaRepo.AssertExpectations(t)
-			_ = require.NoError // keep import
 		})
 	}
 }

@@ -26,7 +26,8 @@ WHERE id = $1;
 SELECT id, saga_type, correlation_id, status, current_step, total_steps, state_data, error_message, created_at, updated_at
 FROM multisub.saga_instances
 WHERE status = 'running'
-ORDER BY created_at;
+ORDER BY created_at
+LIMIT 1000;
 
 -- name: GetSagaByCorrelation :one
 SELECT id, saga_type, correlation_id, status, current_step, total_steps, state_data, error_message, created_at, updated_at

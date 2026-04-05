@@ -35,9 +35,10 @@ func newOrchestrator(
 	clk := clock.NewReal()
 	calc := service.NewBindingCalculator()
 	sagaRepo := newPermissiveSagaRepo()
-	provisioning := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, clk)
-	deprovisioning := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, clk)
-	syncSaga := service.NewSyncSaga(repo, gw, pub, sagaRepo, clk)
+	logger := testLogger()
+	provisioning := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, clk, logger)
+	deprovisioning := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, clk, logger)
+	syncSaga := service.NewSyncSaga(repo, gw, pub, sagaRepo, clk, logger)
 	syncService := service.NewSyncService(repo, syncSaga, pub)
 
 	return service.NewMultiSubOrchestrator(
