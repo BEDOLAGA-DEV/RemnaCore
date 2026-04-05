@@ -183,9 +183,9 @@ func (p *PluginInstancePool) Drain(ctx context.Context) error {
 		return nil
 	}
 	p.draining = true
-	p.drained = make(chan struct{})
-	// Check-and-signal under the same lock that set draining=true to
-	// eliminate the TOCTOU window between loading active and closing drained.
+	// Use the drained channel created in newPluginInstancePool — never
+	// reinitialize it. Replacing the channel would race with Release callers
+	// that already hold a reference to the original channel.
 	if atomic.LoadInt32(&p.active) <= 0 {
 		close(p.drained)
 	}

@@ -12,7 +12,7 @@ SELECT * FROM plugins.plugin_registry WHERE slug = $1;
 SELECT * FROM plugins.plugin_registry ORDER BY installed_at DESC;
 
 -- name: GetEnabledPlugins :many
-SELECT * FROM plugins.plugin_registry WHERE status = 'enabled' ORDER BY installed_at DESC;
+SELECT * FROM plugins.plugin_registry WHERE status = $1 ORDER BY installed_at DESC;
 
 -- name: UpdatePluginStatus :exec
 UPDATE plugins.plugin_registry SET status = $2, error_log = $3, enabled_at = $4, updated_at = now() WHERE id = $1;

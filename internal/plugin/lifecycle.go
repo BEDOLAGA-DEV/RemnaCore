@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -184,7 +185,7 @@ func (lm *LifecycleManager) Disable(ctx context.Context, pluginID string) error 
 	lm.dispatcher.UnregisterHooks(p.Slug)
 
 	// Unload from runtime pool (ignore not-found if not loaded).
-	if unloadErr := lm.runtime.UnloadPlugin(p.Slug); unloadErr != nil && unloadErr != ErrPluginNotFound {
+	if unloadErr := lm.runtime.UnloadPlugin(p.Slug); unloadErr != nil && !errors.Is(unloadErr, ErrPluginNotFound) {
 		return fmt.Errorf("unloading plugin from runtime: %w", unloadErr)
 	}
 
@@ -258,12 +259,8 @@ func (lm *LifecycleManager) UpdateConfig(ctx context.Context, pluginID string, c
 
 	// Validate required config fields against manifest schema.
 	if p.Manifest != nil {
-		for key, field := range p.Manifest.Config {
-			if field.Required {
-				if _, ok := config[key]; !ok {
-					return fmt.Errorf("%w: missing required config key %q", ErrInvalidManifest, key)
-				}
-			}
+		if err := validateRequiredConfig(p.Manifest.Config, config); err != nil {
+			return fmt.Errorf("config validation: %w", err)
 		}
 	}
 
@@ -477,7 +474,12 @@ func (lm *LifecycleManager) LoadAllEnabled(ctx context.Context) error {
 					slog.String("sdk_version", p.Manifest.Plugin.SDKVersion),
 					slog.String("error", err.Error()),
 				)
-				lm.repo.UpdateStatus(ctx, p.ID, StatusError, "incompatible SDK version: "+err.Error(), nil)
+				if statusErr := lm.repo.UpdateStatus(ctx, p.ID, StatusError, "incompatible SDK version: "+err.Error(), nil); statusErr != nil {
+					lm.logger.Error("failed to set plugin error status",
+						slog.String("slug", p.Slug),
+						slog.Any("error", statusErr),
+					)
+				}
 				continue
 			}
 		}

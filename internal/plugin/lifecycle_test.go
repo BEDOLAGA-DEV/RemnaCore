@@ -432,7 +432,7 @@ required = true
 	// Pass empty config — should fail because api_key is required.
 	err = lm.UpdateConfig(ctx, p.ID, map[string]string{})
 	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrInvalidManifest)
+	assert.ErrorIs(t, err, ErrMissingConfig)
 }
 
 func TestInstall_ManifestMissingHooks(t *testing.T) {

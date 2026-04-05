@@ -151,7 +151,7 @@ func (r *PluginRepository) GetAll(ctx context.Context) ([]*plugin.Plugin, error)
 }
 
 func (r *PluginRepository) GetEnabled(ctx context.Context) ([]*plugin.Plugin, error) {
-	rows, err := r.queries.GetEnabledPlugins(ctx)
+	rows, err := r.queries.GetEnabledPlugins(ctx, string(plugin.StatusEnabled))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get enabled plugins", plugin.ErrPluginNotFound)
 	}

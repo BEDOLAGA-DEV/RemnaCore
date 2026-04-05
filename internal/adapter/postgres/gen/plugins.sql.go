@@ -115,11 +115,11 @@ func (q *Queries) GetAllPlugins(ctx context.Context) ([]PluginsPluginRegistry, e
 }
 
 const getEnabledPlugins = `-- name: GetEnabledPlugins :many
-SELECT id, slug, name, version, description, author, license, sdk_version, lang, wasm_bytes, manifest, status, config, permissions, error_log, installed_at, enabled_at, updated_at, wasm_hash FROM plugins.plugin_registry WHERE status = 'enabled' ORDER BY installed_at DESC
+SELECT id, slug, name, version, description, author, license, sdk_version, lang, wasm_bytes, manifest, status, config, permissions, error_log, installed_at, enabled_at, updated_at, wasm_hash FROM plugins.plugin_registry WHERE status = $1 ORDER BY installed_at DESC
 `
 
-func (q *Queries) GetEnabledPlugins(ctx context.Context) ([]PluginsPluginRegistry, error) {
-	rows, err := q.db.Query(ctx, getEnabledPlugins)
+func (q *Queries) GetEnabledPlugins(ctx context.Context, status string) ([]PluginsPluginRegistry, error) {
+	rows, err := q.db.Query(ctx, getEnabledPlugins, status)
 	if err != nil {
 		return nil, err
 	}
