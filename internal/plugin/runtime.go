@@ -317,19 +317,30 @@ type RuntimePool struct {
 	retiredPools  map[string]*PluginInstancePool // keyed by "slug:version" — old pools kept alive for flow-pinned calls
 	logger        *slog.Logger
 	runnerFactory WASMRunnerFactory
-	nextVersion   atomic.Uint64 // monotonic counter for pool version generation
+	nextVersion   atomic.Uint64      // monotonic counter for pool version generation
+	stopCtx       context.Context    // cancelled on Shutdown to interrupt grace-period goroutines
+	stopCancel    context.CancelFunc // cancels stopCtx
 }
 
 // NewRuntimePool creates an empty runtime pool. If factory is nil, LoadPlugin
 // will store metadata but skip WASM compilation (useful only in tests).
 func NewRuntimePool(logger *slog.Logger, factory WASMRunnerFactory) *RuntimePool {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &RuntimePool{
 		plugins:       make(map[string]*PluginInstancePool),
 		metadata:      make(map[string]*PluginInstance),
 		retiredPools:  make(map[string]*PluginInstancePool),
 		logger:        logger,
 		runnerFactory: factory,
+		stopCtx:       ctx,
+		stopCancel:    cancel,
 	}
+}
+
+// Shutdown cancels all grace-period goroutines, causing retired pools to drain
+// immediately. Call this during application shutdown (e.g., Fx OnStop).
+func (rp *RuntimePool) Shutdown() {
+	rp.stopCancel()
 }
 
 // LoadPlugin creates a pool of WASM instances for the plugin and stores
@@ -641,12 +652,21 @@ func (rp *RuntimePool) drainAndRemoveRetired(key string, pool *PluginInstancePoo
 		rp.mu.Unlock()
 	}()
 
-	// Grace period: allow flow-pinned callers to complete before draining.
+	// Wait grace period or shutdown, whichever comes first.
 	timer := time.NewTimer(RetiredPoolGracePeriod)
 	defer timer.Stop()
-	<-timer.C
+	select {
+	case <-timer.C:
+	case <-rp.stopCtx.Done():
+		// Shutdown requested — skip grace period and drain immediately.
+	}
 
-	_ = pool.Drain(context.Background())
+	if err := pool.Drain(context.Background()); err != nil {
+		rp.logger.Warn("retired pool drain error",
+			slog.String("key", key),
+			slog.Any("error", err),
+		)
+	}
 	rp.logger.Info("retired pool drained and removed", slog.String("key", key))
 }
 

@@ -112,31 +112,31 @@ func (m *Manifest) Validate() error {
 }
 
 // EffectiveLimits returns a ManifestLimits with platform defaults applied for
-// any field that was left at zero by the plugin author.
+// any field that was left at zero or negative by the plugin author.
 func (m *Manifest) EffectiveLimits() ManifestLimits {
 	l := m.Limits
-	if l.MaxMemoryMB == 0 {
+	if l.MaxMemoryMB <= 0 {
 		l.MaxMemoryMB = DefaultMaxMemoryMB
 	}
 	if l.MaxMemoryMB > MaxMemoryMB {
 		l.MaxMemoryMB = MaxMemoryMB
 	}
-	if l.MaxFuel == 0 {
+	if l.MaxFuel <= 0 {
 		l.MaxFuel = DefaultMaxFuel
 	}
-	if l.MaxStorageMB == 0 {
+	if l.MaxStorageMB <= 0 {
 		l.MaxStorageMB = DefaultMaxStorageMB
 	}
-	if l.MaxHTTPCallsPerMin == 0 {
+	if l.MaxHTTPCallsPerMin <= 0 {
 		l.MaxHTTPCallsPerMin = DefaultMaxHTTPCallsPerMin
 	}
-	if l.TimeoutSyncMs == 0 {
+	if l.TimeoutSyncMs <= 0 {
 		l.TimeoutSyncMs = DefaultSyncTimeoutMs
 	}
-	if l.TimeoutAsyncMs == 0 {
+	if l.TimeoutAsyncMs <= 0 {
 		l.TimeoutAsyncMs = DefaultAsyncTimeoutMs
 	}
-	if l.PoolSize == 0 {
+	if l.PoolSize <= 0 {
 		l.PoolSize = DefaultPoolSize
 	}
 	if l.PoolSize > MaxPoolSize {
