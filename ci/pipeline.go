@@ -98,10 +98,13 @@ func lint(ctx context.Context, client *dagger.Client, src *dagger.Directory) err
 	return err
 }
 
-// test runs unit tests with race detection.
+// test runs unit tests with race detection and the Go 1.26 experimental
+// goroutine leak profiler (detects goroutines blocked on unreachable
+// channels/mutexes via GC reachability analysis).
 func test(ctx context.Context, client *dagger.Client, src *dagger.Directory) error {
 	_, err := goBase(client, src).
-		WithExec([]string{"go", "test", "-count=1", "-short", "./..."}).
+		WithEnvVariable("GOEXPERIMENT", "goroutineleakprofile").
+		WithExec([]string{"go", "test", "-race", "-count=1", "-short", "./..."}).
 		Sync(ctx)
 	return err
 }

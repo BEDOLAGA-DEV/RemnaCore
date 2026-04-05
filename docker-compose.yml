@@ -22,6 +22,10 @@ services:
       NATS_URL: "nats://nats:4222"
       JWT_PRIVATE_KEY_PATH: "${JWT_PRIVATE_KEY_PATH:-/etc/remnacore/keys/private.pem}"
       JWT_PUBLIC_KEY_PATH: "${JWT_PUBLIC_KEY_PATH:-/etc/remnacore/keys/public.pem}"
+      # Go 1.26 Green Tea GC tuning (enabled by default).
+      # GOGC controls GC frequency; GOMEMLIMIT sets a soft memory ceiling.
+      GOGC: "${GOGC:-100}"
+      GOMEMLIMIT: "${GOMEMLIMIT:-512MiB}"
       REMNAWAVE_URL: "http://remnawave-backend:3000"
       REMNAWAVE_API_TOKEN: "${REMNAWAVE_API_TOKEN:-changeme}"
       REMNAWAVE_WEBHOOK_SECRET: "${REMNAWAVE_WEBHOOK_SECRET:-changeme}"

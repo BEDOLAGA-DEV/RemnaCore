@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	nc "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"go.uber.org/fx"
@@ -15,13 +17,20 @@ import (
 // MaxReconnects is set to -1 so the client retries indefinitely.
 const MaxReconnects = -1
 
-// Module provides the NATS connection, event publisher, and stream
-// provisioning to the Fx dependency graph.
+// Module provides the NATS connection, event publisher, stream provisioning,
+// and Prometheus metrics collector to the Fx dependency graph.
 var Module = fx.Module("nats",
 	fx.Provide(NewConnection),
 	fx.Provide(NewEventPublisher),
 	fx.Invoke(EnsureStreams),
+	fx.Invoke(registerMetrics),
 )
+
+// registerMetrics creates and registers the NATS connection stats collector
+// with the default Prometheus registry.
+func registerMetrics(conn *nc.Conn) {
+	prometheus.MustRegister(NewMetricsCollector(conn))
+}
 
 // NewConnection dials the NATS server described in cfg and registers lifecycle
 // hooks to close the connection on shutdown.
