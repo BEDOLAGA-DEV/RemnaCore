@@ -12,6 +12,9 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pgutil"
 )
 
+// BytesPerMB is the number of bytes in one megabyte, used for storage quota conversion.
+const BytesPerMB = 1024 * 1024
+
 // PluginStorageRepository implements plugin.StorageService using a shared
 // plugins.plugin_storage table with composite key (plugin_slug, key).
 type PluginStorageRepository struct {
@@ -62,7 +65,7 @@ func (r *PluginStorageRepository) Set(ctx context.Context, pluginSlug, key strin
 		return pgutil.MapErr(err, "storage get size", plugin.ErrPluginNotFound)
 	}
 
-	maxBytes := int64(r.maxStorageMB) * 1024 * 1024
+	maxBytes := int64(r.maxStorageMB) * BytesPerMB
 	if usedBytes+int64(len(value)) > maxBytes {
 		return plugin.ErrStorageQuotaExceeded
 	}
