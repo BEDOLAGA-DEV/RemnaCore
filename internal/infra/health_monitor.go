@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/remnawave"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
 
@@ -46,6 +47,7 @@ type HealthMonitor struct {
 	cache           *NodeHealthCache
 	publisher       domainevent.Publisher
 	logger          *slog.Logger
+	clock           clock.Clock
 	interval        time.Duration
 	maxConcurrent   int
 }
@@ -56,12 +58,14 @@ func NewHealthMonitor(
 	cache *NodeHealthCache,
 	publisher domainevent.Publisher,
 	logger *slog.Logger,
+	clk clock.Clock,
 ) *HealthMonitor {
 	return &HealthMonitor{
 		remnawaveClient: client,
 		cache:           cache,
 		publisher:       publisher,
 		logger:          logger,
+		clock:           clk,
 		interval:        DefaultHealthCheckInterval,
 		maxConcurrent:   DefaultMaxConcurrentChecks,
 	}
@@ -119,7 +123,7 @@ func (hm *HealthMonitor) checkAll(ctx context.Context) {
 				IsOnline:    n.IsConnected,
 				CountryCode: extractCountryCode(n.Name),
 				TrafficUsed: n.TrafficUsed,
-				UpdatedAt:   time.Now(),
+				UpdatedAt:   hm.clock.Now(),
 			}
 
 			mu.Lock()
@@ -147,12 +151,12 @@ func (hm *HealthMonitor) publishTransition(ctx context.Context, node NodeHealth)
 		status = NodeStatusOnline
 	}
 
-	event := domainevent.New(EventNodeHealthChanged, map[string]any{
+	event := domainevent.NewAt(EventNodeHealthChanged, map[string]any{
 		"node_id": node.NodeID,
 		"name":    node.Name,
 		"status":  status,
 		"country": node.CountryCode,
-	})
+	}, hm.clock.Now())
 
 	if err := hm.publisher.Publish(ctx, event); err != nil {
 		hm.logger.Error("failed to publish node health event",

@@ -15,6 +15,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/remnawave"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
 )
 
@@ -52,6 +53,7 @@ type SubscriptionProxy struct {
 	l1Cache         *sync.Map
 	valkeyClient    *redis.Client
 	logger          *slog.Logger
+	clock           clock.Clock
 }
 
 // NewSubscriptionProxy creates a SubscriptionProxy wired to the given backends.
@@ -59,6 +61,7 @@ func NewSubscriptionProxy(
 	client *remnawave.Client,
 	valkeyClient *redis.Client,
 	logger *slog.Logger,
+	clk clock.Clock,
 ) *SubscriptionProxy {
 	return &SubscriptionProxy{
 		remnawaveClient: client,
@@ -68,6 +71,7 @@ func NewSubscriptionProxy(
 		l1Cache:      &sync.Map{},
 		valkeyClient: valkeyClient,
 		logger:       logger,
+		clock:        clk,
 	}
 }
 
@@ -83,7 +87,7 @@ func (sp *SubscriptionProxy) ServeSubscription(w http.ResponseWriter, r *http.Re
 	// L1: in-memory cache.
 	if cached, ok := sp.l1Cache.Load(shortUUID); ok {
 		entry := cached.(l1Entry)
-		if time.Now().Before(entry.expiresAt) {
+		if sp.clock.Now().Before(entry.expiresAt) {
 			sp.writeSubscriptionResponse(w, entry.body)
 			return
 		}
@@ -97,7 +101,7 @@ func (sp *SubscriptionProxy) ServeSubscription(w http.ResponseWriter, r *http.Re
 		// Populate L1 from L2.
 		sp.l1Cache.Store(shortUUID, l1Entry{
 			body:      l2Data,
-			expiresAt: time.Now().Add(L1CacheTTL),
+			expiresAt: sp.clock.Now().Add(L1CacheTTL),
 		})
 		sp.writeSubscriptionResponse(w, l2Data)
 		return
@@ -118,7 +122,7 @@ func (sp *SubscriptionProxy) ServeSubscription(w http.ResponseWriter, r *http.Re
 	sp.valkeyClient.Set(r.Context(), l2Key, body, L2CacheTTL)
 	sp.l1Cache.Store(shortUUID, l1Entry{
 		body:      body,
-		expiresAt: time.Now().Add(L1CacheTTL),
+		expiresAt: sp.clock.Now().Add(L1CacheTTL),
 	})
 
 	sp.writeSubscriptionResponse(w, body)

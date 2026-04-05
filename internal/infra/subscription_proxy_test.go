@@ -14,12 +14,14 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/remnawave"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 )
 
 func TestSubscriptionProxy_L1CacheHit(t *testing.T) {
 	proxy := &SubscriptionProxy{
 		l1Cache: &sync.Map{},
 		logger:  slog.Default(),
+		clock:   clock.NewReal(),
 	}
 
 	// Pre-populate L1 cache.
@@ -53,7 +55,7 @@ func TestSubscriptionProxy_L1CacheExpired(t *testing.T) {
 	// Use a Valkey client that will fail (no real Redis), forcing L3 fetch.
 	valkeyClient := redis.NewClient(&redis.Options{Addr: "localhost:0"})
 
-	proxy := NewSubscriptionProxy(client, valkeyClient, slog.Default())
+	proxy := NewSubscriptionProxy(client, valkeyClient, slog.Default(), clock.NewReal())
 
 	// Pre-populate L1 with an expired entry.
 	proxy.l1Cache.Store("expired123", l1Entry{
@@ -77,6 +79,7 @@ func TestSubscriptionProxy_MissingShortUUID(t *testing.T) {
 	proxy := &SubscriptionProxy{
 		l1Cache: &sync.Map{},
 		logger:  slog.Default(),
+		clock:   clock.NewReal(),
 	}
 
 	// Directly call handler without chi URL param set.
@@ -97,7 +100,7 @@ func TestSubscriptionProxy_UpstreamError(t *testing.T) {
 	client := remnawave.NewClient(mockServer.URL, "test-token")
 	valkeyClient := redis.NewClient(&redis.Options{Addr: "localhost:0"})
 
-	proxy := NewSubscriptionProxy(client, valkeyClient, slog.Default())
+	proxy := NewSubscriptionProxy(client, valkeyClient, slog.Default(), clock.NewReal())
 
 	r := chi.NewRouter()
 	r.Get("/{shortUuid}", proxy.ServeSubscription)
@@ -120,7 +123,7 @@ func TestSubscriptionProxy_L3PopulatesL1(t *testing.T) {
 	client := remnawave.NewClient(mockServer.URL, "test-token")
 	valkeyClient := redis.NewClient(&redis.Options{Addr: "localhost:0"})
 
-	proxy := NewSubscriptionProxy(client, valkeyClient, slog.Default())
+	proxy := NewSubscriptionProxy(client, valkeyClient, slog.Default(), clock.NewReal())
 
 	r := chi.NewRouter()
 	r.Get("/{shortUuid}", proxy.ServeSubscription)
@@ -144,7 +147,7 @@ func TestNewSubscriptionProxy(t *testing.T) {
 	client := remnawave.NewClient("http://localhost:3000", "token")
 	valkeyClient := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
 
-	proxy := NewSubscriptionProxy(client, valkeyClient, slog.Default())
+	proxy := NewSubscriptionProxy(client, valkeyClient, slog.Default(), clock.NewReal())
 
 	assert.NotNil(t, proxy)
 	assert.NotNil(t, proxy.l1Cache)

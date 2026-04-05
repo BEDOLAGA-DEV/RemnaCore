@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 )
 
 const (
@@ -108,15 +110,17 @@ type SlidingWindowRateLimiter struct {
 	client *redis.Client
 	limit  int
 	window time.Duration
+	clock  clock.Clock
 }
 
 // NewSlidingWindowRateLimiter returns a RateLimiter that uses sorted sets for
 // sliding window rate limiting.
-func NewSlidingWindowRateLimiter(client *redis.Client, limit int, window time.Duration) *SlidingWindowRateLimiter {
+func NewSlidingWindowRateLimiter(client *redis.Client, limit int, window time.Duration, clk clock.Clock) *SlidingWindowRateLimiter {
 	return &SlidingWindowRateLimiter{
 		client: client,
 		limit:  limit,
 		window: window,
+		clock:  clk,
 	}
 }
 
@@ -125,7 +129,7 @@ func NewSlidingWindowRateLimiter(client *redis.Client, limit int, window time.Du
 // current entries, conditionally adds the new request, and sets a TTL — all in
 // a single Lua script execution for true atomicity.
 func (r *SlidingWindowRateLimiter) Allow(ctx context.Context, key string) (bool, error) {
-	now := time.Now()
+	now := r.clock.Now()
 	windowStart := now.Add(-r.window)
 	fullKey := RateLimitKeyPrefix + key
 	member := fmt.Sprintf("%d:%x", now.UnixNano(), rand.Uint64())

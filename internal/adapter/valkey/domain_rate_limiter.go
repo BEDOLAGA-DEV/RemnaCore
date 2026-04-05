@@ -7,6 +7,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 )
 
 const (
@@ -29,14 +30,14 @@ type DomainRateLimiter struct {
 // NewDomainRateLimiter creates a DomainRateLimiter backed by the given Valkey
 // client. The checkout rate limit threshold is read from cfg; if zero, the
 // platform default is used.
-func NewDomainRateLimiter(client *redis.Client, cfg *config.Config) *DomainRateLimiter {
+func NewDomainRateLimiter(client *redis.Client, cfg *config.Config, clk clock.Clock) *DomainRateLimiter {
 	checkoutMax := cfg.RateLimit.CheckoutMaxPerHour
 	if checkoutMax == 0 {
 		checkoutMax = config.DefaultCheckoutMaxPerHour
 	}
 
 	return &DomainRateLimiter{
-		checkoutLimiter: NewSlidingWindowRateLimiter(client, checkoutMax, CheckoutRateLimitWindow),
+		checkoutLimiter: NewSlidingWindowRateLimiter(client, checkoutMax, CheckoutRateLimitWindow, clk),
 	}
 }
 
