@@ -29,7 +29,7 @@ func NewEventSubscriber(conn *nc.Conn, consumerGroup string) (*EventSubscriber, 
 			SubjectCalculator: wmnats.DefaultSubjectCalculator,
 			QueueGroupPrefix:  consumerGroup,
 			JetStream: wmnats.JetStreamConfig{
-				AutoProvision: true, // consumers auto-provisioned; streams pre-created by EnsureStreams
+				AutoProvision: false, // streams + consumers managed by EnsureStreams and NATS
 				DurablePrefix: consumerGroup,
 				// DurableCalculator generates a unique consumer name per subject.
 				// Without this, Watermill reuses the same DurablePrefix for all
