@@ -1,0 +1,64 @@
+:80 {
+    @cors_preflight method OPTIONS
+    handle @cors_preflight {
+        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type, X-Request-ID"
+        header Access-Control-Max-Age "300"
+        respond 204
+    }
+    handle /api/* {
+        reverse_proxy remnacore:4000 {
+            header_down Access-Control-Allow-Origin "*"
+        }
+    }
+    handle /healthz {
+        reverse_proxy remnacore:4000
+    }
+    handle /metrics {
+        reverse_proxy remnacore:4000
+    }
+    handle /sub/* {
+        reverse_proxy remnacore:4100
+    }
+    handle {
+        root * /srv/cabinet
+        try_files {path} /index.html
+        file_server
+    }
+}
+
+:8081 {
+    @cors_preflight method OPTIONS
+    handle @cors_preflight {
+        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type, X-Request-ID"
+        header Access-Control-Max-Age "300"
+        respond 204
+    }
+    handle /api/* {
+        reverse_proxy remnacore:4000 {
+            header_down Access-Control-Allow-Origin "*"
+        }
+    }
+    handle {
+        root * /srv/admin
+        try_files {path} /index.html
+        file_server
+    }
+}
+
+:8080 {
+    reverse_proxy remnawave-backend:3000 {
+        header_up X-Forwarded-Proto https
+        header_up X-Forwarded-For {remote_host}
+        header_up Host {upstream_hostport}
+    }
+    header -Content-Security-Policy
+    header -Content-Security-Policy-Report-Only
+    header -Strict-Transport-Security
+    header -Cross-Origin-Opener-Policy
+    header -Origin-Agent-Cluster
+    header -X-Content-Type-Options
+}
