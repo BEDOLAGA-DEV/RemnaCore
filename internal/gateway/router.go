@@ -102,6 +102,7 @@ func NewRouter(p RouterParams) http.Handler {
 	r.Use(chimiddleware.Recoverer)
 	r.Use(chimiddleware.RealIP)
 	r.Use(middleware.RequestID)
+	r.Use(middleware.MaxBodySize(middleware.DefaultMaxBodyBytes))
 	r.Use(middleware.RequestLogger)
 	r.Use(chimiddleware.Compress(GzipCompressionLevel))
 	r.Use(middleware.RateLimit(p.RateLimiter))
