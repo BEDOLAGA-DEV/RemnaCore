@@ -268,26 +268,9 @@ func extractSubFields[T subRow](row T) subFields {
 	}
 }
 
-// subRowToDomain converts any subscription row type to a domain Subscription.
+// subRowToDomain converts any sqlc-generated subscription row type to domain.
 func subRowToDomain[T subRow](row T) *aggregate.Subscription {
-	f := extractSubFields(row)
-	return &aggregate.Subscription{
-		ID:     pgutil.PgtypeToUUID(f.ID),
-		UserID: pgutil.PgtypeToUUID(f.UserID),
-		PlanID: pgutil.PgtypeToUUID(f.PlanID),
-		Status: aggregate.SubscriptionStatus(f.Status),
-		Period: vo.BillingPeriod{
-			Start:    pgutil.PgtypeToTime(f.PeriodStart),
-			End:      pgutil.PgtypeToTime(f.PeriodEnd),
-			Interval: vo.BillingInterval(f.PeriodInterval),
-		},
-		AddonIDs:    pgutil.PgtypeUUIDsToStrings(f.AddonIds),
-		AssignedTo:  pgutil.DerefStr(f.AssignedTo),
-		CancelledAt: pgutil.PgtypeToOptTime(f.CancelledAt),
-		PausedAt:    pgutil.PgtypeToOptTime(f.PausedAt),
-		CreatedAt:   pgutil.PgtypeToTime(f.CreatedAt),
-		UpdatedAt:   pgutil.PgtypeToTime(f.UpdatedAt),
-	}
+	return subFieldsToDomain(extractSubFields(row))
 }
 
 func (r *SubscriptionRepository) GetByID(ctx context.Context, id string) (*aggregate.Subscription, error) {
@@ -393,9 +376,11 @@ func (r *SubscriptionRepository) UpdateStatus(ctx context.Context, id string, ne
 }
 
 // getActiveSubscriptionByUserAtTimeSQL uses the GiST index on billing_period
-// via the @> containment operator to find the single active subscription whose
-// billing period contains the given point in time. This bypasses sqlc, which
-// does not support the @> operator on tstzrange.
+// via the @> containment operator to find the subscription whose billing period
+// contains the given point in time. Includes 'past_due' because a past-due
+// subscription still has a valid billing period (unlike the stricter
+// GetActiveSubscriptionsByUserID which only returns 'trial'/'active').
+// This bypasses sqlc, which does not support the @> operator on tstzrange.
 const getActiveSubscriptionByUserAtTimeSQL = `
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
        addon_ids, assigned_to, cancelled_at, paused_at, created_at, updated_at
@@ -426,8 +411,10 @@ func (r *SubscriptionRepository) GetActiveByUserAtTime(ctx context.Context, user
 
 // getOverlappingSubscriptionsSQL uses the GiST index on billing_period via the
 // && overlap operator to find subscriptions whose billing period overlaps the
-// given [start, end) range. This bypasses sqlc, which does not support the &&
-// operator on tstzrange.
+// given [start, end) range. Includes 'paused' because paused subscriptions
+// still occupy their billing period and must block overlapping subscriptions
+// (matches the EXCLUDE constraint filter in migration 011).
+// This bypasses sqlc, which does not support the && operator on tstzrange.
 const getOverlappingSubscriptionsSQL = `
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
        addon_ids, assigned_to, cancelled_at, paused_at, created_at, updated_at

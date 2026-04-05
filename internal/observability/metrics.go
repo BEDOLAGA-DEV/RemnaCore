@@ -1,6 +1,8 @@
 package observability
 
 import (
+	"sync"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -76,20 +78,24 @@ type Metrics struct {
 //   - go_gc_gomemlimit_bytes (current GOMEMLIMIT)
 //   - go_memstats_* (heap, stack, GC stats)
 //   - go_sched_* (scheduler latency)
-func registerRuntimeCollectors() {
-	// Unregister the default collectors so we can replace them with the
-	// extended versions that include runtime/metrics GC and scheduler data.
-	prometheus.Unregister(collectors.NewGoCollector())
-	prometheus.Unregister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+var runtimeCollectorsOnce sync.Once
 
-	prometheus.MustRegister(collectors.NewGoCollector(
-		collectors.WithGoCollectorRuntimeMetrics(
-			collectors.MetricsGC,
-			collectors.MetricsMemory,
-			collectors.MetricsScheduler,
-		),
-	))
-	prometheus.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+func registerRuntimeCollectors() {
+	runtimeCollectorsOnce.Do(func() {
+		// Unregister the default collectors so we can replace them with the
+		// extended versions that include runtime/metrics GC and scheduler data.
+		prometheus.Unregister(collectors.NewGoCollector())
+		prometheus.Unregister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+
+		prometheus.MustRegister(collectors.NewGoCollector(
+			collectors.WithGoCollectorRuntimeMetrics(
+				collectors.MetricsGC,
+				collectors.MetricsMemory,
+				collectors.MetricsScheduler,
+			),
+		))
+		prometheus.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	})
 }
 
 // NewMetrics registers and returns the platform Prometheus metrics.

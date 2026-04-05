@@ -17,7 +17,7 @@ readonly CLIENTS=10
 readonly THREADS=4
 readonly DURATION_SECONDS=30
 
-DB_URL="${1:-postgres://platform:secret@localhost:5432/remnacore?sslmode=disable}"
+DB_URL="${PGBENCH_DATABASE_URL:-${1:?Usage: $0 <database_url> or set PGBENCH_DATABASE_URL}}"
 
 echo "=== pgbench I/O Method Benchmark ==="
 echo "Database: ${DB_URL%%@*}@***"
