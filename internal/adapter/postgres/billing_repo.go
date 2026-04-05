@@ -380,7 +380,8 @@ const updateSubscriptionStatusSQL = `UPDATE billing.subscriptions SET status = $
 // the old and new values for audit trail and event payloads.
 func (r *SubscriptionRepository) UpdateStatus(ctx context.Context, id string, newStatus aggregate.SubscriptionStatus) (*billing.StatusTransition, error) {
 	var prev, curr string
-	err := r.pool.QueryRow(ctx, updateSubscriptionStatusSQL, pgutil.UUIDToPgtype(id), string(newStatus)).Scan(&prev, &curr)
+	db := DBFromContext(ctx, r.pool)
+	err := db.QueryRow(ctx, updateSubscriptionStatusSQL, pgutil.UUIDToPgtype(id), string(newStatus)).Scan(&prev, &curr)
 	if err != nil {
 		return nil, pgutil.MapErr(err, "update subscription status", billing.ErrSubscriptionNotFound)
 	}

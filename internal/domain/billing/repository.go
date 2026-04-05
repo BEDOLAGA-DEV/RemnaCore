@@ -32,7 +32,8 @@ type SubscriptionRepository interface {
 	Create(ctx context.Context, sub *aggregate.Subscription) error
 	Update(ctx context.Context, sub *aggregate.Subscription) error
 	// UpdateStatus atomically transitions a subscription's status and returns
-	// both the old and new values. Uses PG18 native OLD/NEW RETURNING.
+	// both the previous and new values in a single operation for audit trail
+	// and domain event payloads.
 	UpdateStatus(ctx context.Context, id string, newStatus aggregate.SubscriptionStatus) (*StatusTransition, error)
 }
 
