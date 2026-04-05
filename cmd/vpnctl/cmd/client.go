@@ -14,6 +14,9 @@ import (
 
 const (
 	clientTimeout = 30 * time.Second
+
+	// maxCLIResponseBytes is the maximum allowed size for CLI API responses.
+	maxCLIResponseBytes = 10 << 20 // 10 MB
 )
 
 // apiClient is a thin wrapper around http.Client that manages base URL and
@@ -67,7 +70,7 @@ func (c *apiClient) do(method, path string, body any) ([]byte, int, error) {
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxCLIResponseBytes))
 	if err != nil {
 		return nil, resp.StatusCode, fmt.Errorf("reading response body: %w", err)
 	}

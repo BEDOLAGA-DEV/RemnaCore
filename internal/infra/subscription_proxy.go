@@ -37,6 +37,10 @@ const (
 	L2CacheKeyPrefix = "sub:"
 	// RemnawaveSubPath is the URL path segment for Remnawave subscription endpoints.
 	RemnawaveSubPath = "/sub/"
+
+	// MaxSubscriptionConfigBytes is the maximum allowed size for a subscription
+	// configuration response from Remnawave.
+	MaxSubscriptionConfigBytes = 1 << 20 // 1 MB
 )
 
 // l1Entry holds a cached subscription response with its expiration time.
@@ -147,7 +151,7 @@ func (sp *SubscriptionProxy) fetchFromRemnawave(ctx context.Context, shortUUID s
 		return nil, fmt.Errorf("upstream returned status %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxSubscriptionConfigBytes))
 	if err != nil {
 		return nil, fmt.Errorf("read body: %w", err)
 	}

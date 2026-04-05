@@ -23,6 +23,10 @@ const (
 	// ForwardedLoopbackIP is the loopback IP used when RemnaCore calls
 	// Remnawave directly (same host / Docker network).
 	ForwardedLoopbackIP = "127.0.0.1"
+
+	// MaxResponseBytes is the maximum allowed size for Remnawave API responses.
+	// Prevents OOM if the upstream returns an unexpectedly large body.
+	MaxResponseBytes = 10 << 20 // 10 MB
 )
 
 // Remnawave API path constants.
@@ -99,7 +103,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any, dest any
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, MaxResponseBytes))
 	if err != nil {
 		return fmt.Errorf("read response body: %w", err)
 	}
