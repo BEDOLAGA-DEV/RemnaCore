@@ -43,6 +43,17 @@ func writeErrorFromDomain(w http.ResponseWriter, err error) {
 	writeAPIError(w, mapDomainError(err))
 }
 
+// writeValidationError writes a structured validation error, detecting
+// MaxBytesError to return COMMON.BODY_TOO_LARGE instead of generic validation.
+func writeValidationError(w http.ResponseWriter, err error) {
+	var maxBytesErr *http.MaxBytesError
+	if errors.As(err, &maxBytesErr) {
+		writeAPIError(w, apierror.BodyTooLarge)
+		return
+	}
+	writeAPIError(w, apierror.ValidationFailed)
+}
+
 // mapDomainError converts a domain sentinel error to a structured API error.
 // Unknown errors are mapped to COMMON.INTERNAL without leaking details.
 func mapDomainError(err error) *apierror.Error {

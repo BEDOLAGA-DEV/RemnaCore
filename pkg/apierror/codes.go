@@ -117,6 +117,11 @@ var (
 	PluginMissingConfig   = New("PLUGIN.MISSING_CONFIG", "plugin missing required configuration", http.StatusBadRequest)
 )
 
+// Routing error codes.
+var (
+	RoutingNoNodes = New("ROUTING.NO_NODES_AVAILABLE", "no suitable node available", http.StatusServiceUnavailable)
+)
+
 // Common error codes used across all domains.
 var (
 	ValidationFailed = New("COMMON.VALIDATION_ERROR", "invalid request body", http.StatusUnprocessableEntity)

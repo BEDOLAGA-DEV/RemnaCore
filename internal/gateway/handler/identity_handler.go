@@ -2,7 +2,6 @@ package handler
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
@@ -294,17 +293,6 @@ func (h *IdentityHandler) ResetPassword(w http.ResponseWriter, r *http.Request) 
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "password reset successful"})
-}
-
-// writeValidationError writes a structured validation error, detecting
-// MaxBytesError to return COMMON.BODY_TOO_LARGE instead of generic validation.
-func writeValidationError(w http.ResponseWriter, err error) {
-	var maxBytesErr *http.MaxBytesError
-	if errors.As(err, &maxBytesErr) {
-		writeAPIError(w, apierror.BodyTooLarge)
-		return
-	}
-	writeAPIError(w, apierror.ValidationFailed)
 }
 
 // userToResponse converts a PlatformUser to a JSON-friendly map.

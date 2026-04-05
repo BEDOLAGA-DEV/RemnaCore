@@ -29,7 +29,7 @@ func (h *RoutingHandler) SelectNode(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := h.router.SelectNode(r.Context(), req)
 	if err != nil {
-		writeAPIError(w, apierror.New("ROUTING.NO_NODES_AVAILABLE", err.Error(), http.StatusServiceUnavailable))
+		writeAPIError(w, apierror.RoutingNoNodes)
 		return
 	}
 
