@@ -71,7 +71,7 @@ func (h *HealthHandler) Readyz(w http.ResponseWriter, r *http.Request) {
 		readyStatus = "not ready"
 	}
 
-	writeJSON(w, code, map[string]interface{}{
+	writeJSON(w, code, map[string]any{
 		"status": readyStatus,
 		"checks": status,
 	})

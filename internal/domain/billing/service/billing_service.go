@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
@@ -26,15 +27,15 @@ type CreateSubscriptionCmd struct {
 
 // BillingService implements CQRS command handlers for the billing domain.
 type BillingService struct {
-	plans    billing.PlanRepository
-	subs     billing.SubscriptionRepository
-	invoices billing.InvoiceRepository
-	families billing.FamilyRepository
+	plans     billing.PlanRepository
+	subs      billing.SubscriptionRepository
+	invoices  billing.InvoiceRepository
+	families  billing.FamilyRepository
 	publisher domainevent.Publisher
-	prorate  *ProrateCalculator
-	trial    *TrialManager
-	txRunner txmanager.Runner
-	clock    clock.Clock
+	prorate   *ProrateCalculator
+	trial     *TrialManager
+	txRunner  txmanager.Runner
+	clock     clock.Clock
 }
 
 // NewBillingService creates a BillingService with the given dependencies.
@@ -50,15 +51,15 @@ func NewBillingService(
 	clk clock.Clock,
 ) *BillingService {
 	return &BillingService{
-		plans:    plans,
-		subs:     subs,
-		invoices: invoices,
-		families: families,
+		plans:     plans,
+		subs:      subs,
+		invoices:  invoices,
+		families:  families,
 		publisher: publisher,
-		prorate:  prorate,
-		trial:    trial,
-		txRunner: txRunner,
-		clock:    clk,
+		prorate:   prorate,
+		trial:     trial,
+		txRunner:  txRunner,
+		clock:     clk,
 	}
 }
 
@@ -314,10 +315,8 @@ func (s *BillingService) AddSubscriptionAddon(ctx context.Context, subID, addonI
 		return fmt.Errorf("get subscription: %w", err)
 	}
 
-	for _, id := range sub.AddonIDs {
-		if id == addonID {
-			return billing.ErrAddonAlreadyOnSubscription
-		}
+	if slices.Contains(sub.AddonIDs, addonID) {
+		return billing.ErrAddonAlreadyOnSubscription
 	}
 
 	now := s.clock.Now()

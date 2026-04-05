@@ -111,7 +111,7 @@ func TestIdentityFlow(t *testing.T) {
 
 		assert.Equal(t, http.StatusCreated, rec.Code)
 
-		var resp map[string]interface{}
+		var resp map[string]any
 		err := json.NewDecoder(rec.Body).Decode(&resp)
 		require.NoError(t, err)
 		assert.NotEmpty(t, resp["user_id"])
@@ -140,7 +140,7 @@ func TestIdentityFlow(t *testing.T) {
 
 		assert.Equal(t, http.StatusConflict, rec.Code)
 
-		var resp map[string]interface{}
+		var resp map[string]any
 		err := json.NewDecoder(rec.Body).Decode(&resp)
 		require.NoError(t, err)
 		assert.Contains(t, resp["error"], "already taken")
@@ -175,7 +175,7 @@ func TestIdentityFlow(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, rec.Code)
 
-		var resp map[string]interface{}
+		var resp map[string]any
 		err = json.NewDecoder(rec.Body).Decode(&resp)
 		require.NoError(t, err)
 		assert.NotEmpty(t, resp["access_token"])
@@ -214,7 +214,7 @@ func TestIdentityFlow(t *testing.T) {
 
 		assert.Equal(t, http.StatusUnauthorized, rec.Code)
 
-		var resp map[string]interface{}
+		var resp map[string]any
 		err = json.NewDecoder(rec.Body).Decode(&resp)
 		require.NoError(t, err)
 		assert.Contains(t, resp["error"], "invalid credentials")
@@ -251,7 +251,7 @@ func TestIdentityFlow(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, rec.Code)
 
-		var resp map[string]interface{}
+		var resp map[string]any
 		err = json.NewDecoder(rec.Body).Decode(&resp)
 		require.NoError(t, err)
 		assert.Equal(t, userID, resp["id"])
@@ -270,7 +270,7 @@ func TestIdentityFlow(t *testing.T) {
 
 		assert.Equal(t, http.StatusUnauthorized, rec.Code)
 
-		var resp map[string]interface{}
+		var resp map[string]any
 		err := json.NewDecoder(rec.Body).Decode(&resp)
 		require.NoError(t, err)
 		assert.NotEmpty(t, resp["error"])
@@ -326,7 +326,7 @@ func TestIdentityFlow(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, rec.Code)
 
-		var resp map[string]interface{}
+		var resp map[string]any
 		err := json.NewDecoder(rec.Body).Decode(&resp)
 		require.NoError(t, err)
 		assert.Equal(t, "verified", resp["status"])
@@ -395,7 +395,7 @@ func TestIdentityFlow(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, rec.Code)
 
-		var resp map[string]interface{}
+		var resp map[string]any
 		err := json.NewDecoder(rec.Body).Decode(&resp)
 		require.NoError(t, err)
 		assert.NotEmpty(t, resp["access_token"])

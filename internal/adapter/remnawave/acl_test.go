@@ -23,7 +23,7 @@ func TestBuildUsername(t *testing.T) {
 	})
 
 	t.Run("multiple indexes", func(t *testing.T) {
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			got := BuildUsername("user1234abcd", "vpn", i)
 			assert.Contains(t, got, "p_user1234_vpn_")
 		}

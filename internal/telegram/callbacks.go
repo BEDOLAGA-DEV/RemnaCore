@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"strings"
 
 	tgbot "github.com/go-telegram/bot"
@@ -179,8 +180,8 @@ func parseSelectedAddons(cb *models.CallbackQuery) []string {
 	}
 	for _, row := range cb.Message.Message.ReplyMarkup.InlineKeyboard {
 		for _, btn := range row {
-			if strings.HasPrefix(btn.CallbackData, CallbackPrefixConfirm) {
-				data := strings.TrimPrefix(btn.CallbackData, CallbackPrefixConfirm)
+			if after, ok := strings.CutPrefix(btn.CallbackData, CallbackPrefixConfirm); ok {
+				data := after
 				parts := strings.SplitN(data, ":", 2)
 				if len(parts) > 1 && parts[1] != "" {
 					return strings.Split(parts[1], ",")
@@ -193,12 +194,7 @@ func parseSelectedAddons(cb *models.CallbackQuery) []string {
 
 // containsAddon checks if addonID exists in the list.
 func containsAddon(addons []string, addonID string) bool {
-	for _, a := range addons {
-		if a == addonID {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(addons, addonID)
 }
 
 // removeAddon removes addonID from the list.

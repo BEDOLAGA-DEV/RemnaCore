@@ -66,23 +66,19 @@ func TestNodeHealthCache_ConcurrentAccess(t *testing.T) {
 	now := time.Now()
 
 	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 100 {
+		wg.Go(func() {
 			cache.Update([]NodeHealth{
 				{NodeID: "a", IsOnline: true, UpdatedAt: now},
 			})
-		}()
+		})
 	}
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 100 {
+		wg.Go(func() {
 			_ = cache.GetAll()
 			_ = cache.GetHealthy()
 			cache.Get("a")
-		}()
+		})
 	}
 	wg.Wait()
 

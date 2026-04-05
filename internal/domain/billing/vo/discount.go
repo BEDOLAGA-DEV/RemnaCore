@@ -69,10 +69,7 @@ func (d Discount) Apply(price Money, now time.Time) (Money, error) {
 		discounted := price.Amount * (maxPercent - d.Value) / maxPercent
 		return NewMoney(discounted, price.Currency), nil
 	case DiscountFixed:
-		result := price.Amount - d.Value
-		if result < 0 {
-			result = 0
-		}
+		result := max(price.Amount-d.Value, 0)
 		return NewMoney(result, price.Currency), nil
 	default:
 		return price, nil
@@ -87,4 +84,3 @@ func (d Discount) IsExpiredAt(now time.Time) bool {
 	}
 	return now.After(*d.ExpiresAt)
 }
-

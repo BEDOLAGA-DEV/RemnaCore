@@ -41,7 +41,7 @@ func NewEventPublisher(conn *nc.Conn) (*EventPublisher, error) {
 }
 
 // Publish serializes payload to JSON and publishes it to the given topic.
-func (p *EventPublisher) Publish(_ context.Context, topic string, payload interface{}) error {
+func (p *EventPublisher) Publish(_ context.Context, topic string, payload any) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshalling event payload: %w", err)

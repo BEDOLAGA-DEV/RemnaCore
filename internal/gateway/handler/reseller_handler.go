@@ -60,7 +60,7 @@ func (h *ResellerHandler) CreateTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]interface{}{
+	writeJSON(w, http.StatusCreated, map[string]any{
 		"tenant":  tenantToResponse(tenant),
 		"api_key": plainKey,
 	})
@@ -76,7 +76,7 @@ func (h *ResellerHandler) ListTenants(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items := make([]map[string]interface{}, 0, len(tenants))
+	items := make([]map[string]any, 0, len(tenants))
 	for _, t := range tenants {
 		items = append(items, tenantToResponse(t))
 	}
@@ -143,7 +143,7 @@ func (h *ResellerHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"tenant_id":   tenant.ID,
 		"tenant_name": tenant.Name,
 		"branding":    tenant.BrandingConfig,
@@ -155,8 +155,8 @@ func (h *ResellerHandler) Commissions(w http.ResponseWriter, r *http.Request) {
 	// For now, commissions endpoint returns a placeholder.
 	// Full implementation requires resolving the reseller account from the
 	// claims user ID and tenant context.
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"commissions": []interface{}{},
+	writeJSON(w, http.StatusOK, map[string]any{
+		"commissions": []any{},
 	})
 }
 
@@ -169,15 +169,15 @@ func (h *ResellerHandler) Customers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Scoped customer list -- placeholder for Phase 6 iteration.
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"tenant_id": tenant.ID,
-		"customers": []interface{}{},
+		"customers": []any{},
 	})
 }
 
 // tenantToResponse converts a Tenant to a JSON-friendly map.
-func tenantToResponse(t *reseller.Tenant) map[string]interface{} {
-	return map[string]interface{}{
+func tenantToResponse(t *reseller.Tenant) map[string]any {
+	return map[string]any{
 		"id":              t.ID,
 		"name":            t.Name,
 		"domain":          t.Domain,

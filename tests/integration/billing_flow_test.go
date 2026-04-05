@@ -158,7 +158,7 @@ func TestBillingFlow(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, rec.Code)
 
-		var resp []map[string]interface{}
+		var resp []map[string]any
 		err := json.NewDecoder(rec.Body).Decode(&resp)
 		require.NoError(t, err)
 		assert.Len(t, resp, 2)
@@ -183,7 +183,7 @@ func TestBillingFlow(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, rec.Code)
 
-		var resp map[string]interface{}
+		var resp map[string]any
 		err := json.NewDecoder(rec.Body).Decode(&resp)
 		require.NoError(t, err)
 		assert.Equal(t, "plan-1", resp["ID"])
@@ -230,7 +230,7 @@ func TestBillingFlow(t *testing.T) {
 
 		assert.Equal(t, http.StatusCreated, rec.Code)
 
-		var resp map[string]interface{}
+		var resp map[string]any
 		err := json.NewDecoder(rec.Body).Decode(&resp)
 		require.NoError(t, err)
 		assert.NotNil(t, resp["subscription"])
@@ -303,7 +303,7 @@ func TestBillingFlow(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, rec.Code)
 
-		var resp map[string]interface{}
+		var resp map[string]any
 		err := json.NewDecoder(rec.Body).Decode(&resp)
 		require.NoError(t, err)
 		assert.Equal(t, "cancelled", resp["status"])

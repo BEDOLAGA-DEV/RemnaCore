@@ -58,10 +58,7 @@ func (pc *ProrateCalculator) CalculateUpgradeCost(
 	daysRemaining := daysRemainingFrom(currentPeriod, now)
 	proratedAmount := newPlan.BasePrice.Amount * int64(daysRemaining) / int64(totalDays)
 
-	cost := proratedAmount - credit.Amount
-	if cost < 0 {
-		cost = 0
-	}
+	cost := max(proratedAmount-credit.Amount, 0)
 
 	return vo.NewMoney(cost, newPlan.BasePrice.Currency), nil
 }

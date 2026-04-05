@@ -5,14 +5,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/billingtest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 func newTestBillingService() (
@@ -294,7 +294,7 @@ func TestPayInvoice_ActiveSubscription_NoActivation(t *testing.T) {
 	invoices.On("Update", mock.Anything, inv).Return(nil)
 	subs.On("GetByID", mock.Anything, "sub-1").Return(sub, nil)
 	// Only invoice.paid event, no subscription.activated
-	publisher.On("Publish", mock.Anything, mock.MatchedBy(func(e interface{}) bool {
+	publisher.On("Publish", mock.Anything, mock.MatchedBy(func(e any) bool {
 		return true
 	})).Return(nil)
 
@@ -407,4 +407,3 @@ func TestRemoveFamilyMember_Success(t *testing.T) {
 	families.AssertExpectations(t)
 	publisher.AssertExpectations(t)
 }
-

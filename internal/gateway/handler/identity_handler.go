@@ -95,7 +95,7 @@ func (h *IdentityHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"access_token":  result.AccessToken,
 		"refresh_token": result.RefreshToken,
 		"user":          userToResponse(result.User),
@@ -144,7 +144,7 @@ func (h *IdentityHandler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"access_token":  result.AccessToken,
 		"refresh_token": result.RefreshToken,
 	})
@@ -305,8 +305,8 @@ func (h *IdentityHandler) ResetPassword(w http.ResponseWriter, r *http.Request) 
 }
 
 // userToResponse converts a PlatformUser to a JSON-friendly map.
-func userToResponse(u *identity.PlatformUser) map[string]interface{} {
-	return map[string]interface{}{
+func userToResponse(u *identity.PlatformUser) map[string]any {
+	return map[string]any{
 		"id":             u.ID,
 		"email":          u.Email,
 		"display_name":   u.DisplayName,

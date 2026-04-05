@@ -68,8 +68,8 @@ func rateLimitKey(r *http.Request) string {
 func clientIP(r *http.Request) string {
 	if xff := r.Header.Get(httpconst.HeaderForwardedFor); xff != "" {
 		// X-Forwarded-For may contain a comma-separated list; take the first.
-		if idx := strings.IndexByte(xff, ','); idx != -1 {
-			return strings.TrimSpace(xff[:idx])
+		if before, _, ok := strings.Cut(xff, ","); ok {
+			return strings.TrimSpace(before)
 		}
 		return strings.TrimSpace(xff)
 	}

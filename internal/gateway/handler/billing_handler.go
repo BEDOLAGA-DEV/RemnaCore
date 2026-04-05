@@ -104,7 +104,7 @@ func (h *BillingHandler) CreateSubscription(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]interface{}{
+	writeJSON(w, http.StatusCreated, map[string]any{
 		"subscription": sub,
 		"invoice":      inv,
 	})

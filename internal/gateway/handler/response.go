@@ -16,7 +16,7 @@ import (
 )
 
 // writeJSON marshals data as JSON and writes it with the given HTTP status code.
-func writeJSON(w http.ResponseWriter, status int, data interface{}) {
+func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set(httpconst.HeaderContentType, httpconst.ContentTypeJSON)
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(data)

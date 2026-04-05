@@ -98,7 +98,7 @@ func (cs *CheckoutService) StartCheckout(ctx context.Context, req CheckoutReques
 	// 2. Run pricing plugins (can modify final price). Best-effort: if no
 	//    handler is registered or the hook errors, proceed with the original price.
 	if cs.dispatcher != nil {
-		pricingPayload, _ := json.Marshal(map[string]interface{}{
+		pricingPayload, _ := json.Marshal(map[string]any{
 			"invoice_id": inv.ID,
 			"user_id":    req.UserID,
 			"plan_id":    req.PlanID,

@@ -93,7 +93,7 @@ func TestProvisioningFlow(t *testing.T) {
 
 		assert.Equal(t, http.StatusUnauthorized, rec.Code)
 
-		var resp map[string]interface{}
+		var resp map[string]any
 		err := json.NewDecoder(rec.Body).Decode(&resp)
 		require.NoError(t, err)
 		assert.NotEmpty(t, resp["error"])
@@ -165,7 +165,7 @@ func TestProvisioningFlow(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, rec.Code)
 
-		var resp []map[string]interface{}
+		var resp []map[string]any
 		err := json.NewDecoder(rec.Body).Decode(&resp)
 		require.NoError(t, err)
 		assert.Len(t, resp, 2)
@@ -242,7 +242,7 @@ func TestProvisioningFlow(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, rec.Code)
 
-		var resp []map[string]interface{}
+		var resp []map[string]any
 		err := json.NewDecoder(rec.Body).Decode(&resp)
 		require.NoError(t, err)
 		assert.Len(t, resp, 1)
@@ -278,7 +278,7 @@ func TestProvisioningFlow(t *testing.T) {
 
 		assert.Equal(t, http.StatusForbidden, rec.Code)
 
-		var resp map[string]interface{}
+		var resp map[string]any
 		err := json.NewDecoder(rec.Body).Decode(&resp)
 		require.NoError(t, err)
 		assert.Contains(t, resp["error"], "does not belong to you")

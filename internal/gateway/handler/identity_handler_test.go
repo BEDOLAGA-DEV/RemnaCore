@@ -12,15 +12,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/identitytest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 // --- Test Helpers ---
@@ -65,7 +65,7 @@ func TestRegister_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusCreated, rec.Code)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	err := json.NewDecoder(rec.Body).Decode(&resp)
 	require.NoError(t, err)
 	assert.NotEmpty(t, resp["user_id"])
@@ -90,7 +90,7 @@ func TestRegister_DuplicateEmail(t *testing.T) {
 
 	assert.Equal(t, http.StatusConflict, rec.Code)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	err := json.NewDecoder(rec.Body).Decode(&resp)
 	require.NoError(t, err)
 	assert.Contains(t, resp["error"], "already taken")
@@ -124,7 +124,7 @@ func TestLogin_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	err = json.NewDecoder(rec.Body).Decode(&resp)
 	require.NoError(t, err)
 	assert.NotEmpty(t, resp["access_token"])
@@ -159,7 +159,7 @@ func TestLogin_WrongPassword(t *testing.T) {
 
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	err = json.NewDecoder(rec.Body).Decode(&resp)
 	require.NoError(t, err)
 	assert.Contains(t, resp["error"], "invalid credentials")
@@ -192,7 +192,7 @@ func TestMe_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	err := json.NewDecoder(rec.Body).Decode(&resp)
 	require.NoError(t, err)
 	assert.Equal(t, "user-1", resp["id"])
@@ -242,7 +242,7 @@ func TestForgotPassword_Success(t *testing.T) {
 
 			assert.Equal(t, http.StatusOK, rec.Code)
 
-			var resp map[string]interface{}
+			var resp map[string]any
 			err := json.NewDecoder(rec.Body).Decode(&resp)
 			require.NoError(t, err)
 			assert.Contains(t, resp["status"], "reset link")
@@ -289,7 +289,7 @@ func TestResetPassword_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	err = json.NewDecoder(rec.Body).Decode(&resp)
 	require.NoError(t, err)
 	assert.Equal(t, "password reset successful", resp["status"])
@@ -348,7 +348,7 @@ func TestResetPassword_WeakPassword(t *testing.T) {
 
 			assert.Equal(t, tt.wantStatus, rec.Code, "weak password should return 400, not 500")
 
-			var resp map[string]interface{}
+			var resp map[string]any
 			err := json.NewDecoder(rec.Body).Decode(&resp)
 			require.NoError(t, err)
 			assert.Contains(t, resp["error"], tt.wantError)
@@ -372,7 +372,7 @@ func TestResetPassword_InvalidToken(t *testing.T) {
 	// ErrPasswordResetNotFound maps to 404 in mapServiceError.
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	err := json.NewDecoder(rec.Body).Decode(&resp)
 	require.NoError(t, err)
 	assert.Contains(t, resp["error"], "password reset token not found")
@@ -402,7 +402,7 @@ func TestResetPassword_ExpiredToken(t *testing.T) {
 
 	assert.Equal(t, http.StatusGone, rec.Code)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	err := json.NewDecoder(rec.Body).Decode(&resp)
 	require.NoError(t, err)
 	assert.Contains(t, resp["error"], "expired")

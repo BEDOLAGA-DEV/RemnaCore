@@ -24,7 +24,7 @@ const (
 // Speed test server constants.
 const (
 	SpeedTestPort          = 4203
-	SpeedTestRandomBufSize = 1 << 20  // 1 MB pre-allocated buffer
+	SpeedTestRandomBufSize = 1 << 20   // 1 MB pre-allocated buffer
 	MaxDownloadSize        = 100 << 20 // 100 MB max download
 	DefaultChunkSize       = 64 << 10  // 64 KB write chunks
 	SpeedTestReadTimeout   = 30 * time.Second
@@ -87,10 +87,7 @@ func (s *SpeedTestServer) Download(w http.ResponseWriter, r *http.Request) {
 
 		// Wrap around the pre-allocated buffer.
 		offset := written % bufLen
-		end := offset + chunk
-		if end > bufLen {
-			end = bufLen
-		}
+		end := min(offset+chunk, bufLen)
 
 		n, err := w.Write(s.randomBuf[offset:end])
 		written += n

@@ -72,7 +72,7 @@ const ScoreRoundingFactor = 100.0
 const (
 	PurposeBrowsing  = "browsing"
 	PurposeGaming    = "gaming"
-	PurposeStreaming  = "streaming"
+	PurposeStreaming = "streaming"
 )
 
 // Subscription tier that qualifies for the premium score bonus.
@@ -200,10 +200,7 @@ func (r *SmartRouter) SelectNode(ctx context.Context, req RouteRequest) (*RouteR
 		PrimaryNode: scored[0],
 	}
 
-	fallbackEnd := len(scored)
-	if fallbackEnd > maxFallbackNodes+1 {
-		fallbackEnd = maxFallbackNodes + 1
-	}
+	fallbackEnd := min(len(scored), maxFallbackNodes+1)
 	if fallbackEnd > 1 {
 		resp.FallbackNodes = scored[1:fallbackEnd]
 	}

@@ -17,18 +17,18 @@ const (
 
 // CreateUserRequest is the payload sent to Remnawave to provision a new VPN user.
 type CreateUserRequest struct {
-	Username         string    `json:"username"`
-	TrafficLimitBytes   float64   `json:"trafficLimitBytes"`
-	ExpireAt         time.Time `json:"expireAt"`
-	ActiveUserInbounds []string `json:"activeUserInbounds,omitempty"`
+	Username           string    `json:"username"`
+	TrafficLimitBytes  float64   `json:"trafficLimitBytes"`
+	ExpireAt           time.Time `json:"expireAt"`
+	ActiveUserInbounds []string  `json:"activeUserInbounds,omitempty"`
 }
 
 // UpdateUserRequest is the payload sent to Remnawave to modify an existing VPN user.
 type UpdateUserRequest struct {
-	UUID             string    `json:"uuid"`
-	Username         string    `json:"username,omitempty"`
-	TrafficLimitBytes   float64   `json:"trafficLimitBytes,omitempty"`
-	ExpireAt         time.Time `json:"expireAt,omitempty"`
+	UUID              string    `json:"uuid"`
+	Username          string    `json:"username,omitempty"`
+	TrafficLimitBytes float64   `json:"trafficLimitBytes,omitempty"`
+	ExpireAt          time.Time `json:"expireAt"`
 }
 
 // APIResponse is the generic envelope returned by Remnawave REST endpoints.
@@ -40,15 +40,15 @@ type APIResponse[T any] struct {
 
 // RemnawaveUser represents a VPN user as returned by Remnawave.
 type RemnawaveUser struct {
-	UUID             string    `json:"uuid"`
-	Username         string    `json:"username"`
-	Status           string    `json:"status"`
-	TrafficLimitBytes   float64   `json:"trafficLimitBytes"`
-	ExpireAt         time.Time `json:"expireAt"`
-	CreatedAt        time.Time `json:"createdAt"`
-	UpdatedAt        time.Time `json:"updatedAt"`
-	SubscriptionURL  string    `json:"subscriptionUrl"`
-	ShortUUID        string    `json:"shortUuid"`
+	UUID              string    `json:"uuid"`
+	Username          string    `json:"username"`
+	Status            string    `json:"status"`
+	TrafficLimitBytes float64   `json:"trafficLimitBytes"`
+	ExpireAt          time.Time `json:"expireAt"`
+	CreatedAt         time.Time `json:"createdAt"`
+	UpdatedAt         time.Time `json:"updatedAt"`
+	SubscriptionURL   string    `json:"subscriptionUrl"`
+	ShortUUID         string    `json:"shortUuid"`
 }
 
 // RemnawaveUserWithTraffic extends RemnawaveUser with traffic consumption data.
@@ -64,12 +64,12 @@ type RemnawaveUserWithTraffic struct {
 
 // RemnawaveNode represents a proxy node in the Remnawave infrastructure.
 type RemnawaveNode struct {
-	UUID      string `json:"uuid"`
-	Name      string `json:"name"`
-	Address   string `json:"address"`
-	Port      int    `json:"port"`
-	IsConnected bool `json:"isConnected"`
-	TrafficUsed int64 `json:"trafficUsedBytes"`
+	UUID        string `json:"uuid"`
+	Name        string `json:"name"`
+	Address     string `json:"address"`
+	Port        int    `json:"port"`
+	IsConnected bool   `json:"isConnected"`
+	TrafficUsed int64  `json:"trafficUsedBytes"`
 }
 
 // WebhookPayload is the top-level structure Remnawave sends to webhook endpoints.
