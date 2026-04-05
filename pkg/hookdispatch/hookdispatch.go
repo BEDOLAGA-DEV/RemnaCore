@@ -9,6 +9,17 @@ import (
 	"encoding/json"
 )
 
+// FailedCompensation records a plugin whose compensation hook failed.
+// Callers can inspect these to trigger manual investigation or alerting.
+type FailedCompensation struct {
+	// PluginSlug is the slug of the plugin that failed to compensate.
+	PluginSlug string
+	// HookName is the compensation hook that was invoked (e.g., "order.finalized.compensate").
+	HookName string
+	// Error is the string representation of the compensation failure.
+	Error string
+}
+
 // ChainResult holds the outcome of a compensating dispatch chain.
 type ChainResult struct {
 	// Payload is the final payload after all successful plugins executed.
@@ -23,6 +34,9 @@ type ChainResult struct {
 	Err error
 	// Compensated is true if compensation hooks were called successfully.
 	Compensated bool
+	// FailedCompensations records plugins whose compensation hooks failed.
+	// Empty if all compensations succeeded or no compensation was needed.
+	FailedCompensations []FailedCompensation
 }
 
 // Dispatcher is the port for synchronous hook dispatch. It is implemented by

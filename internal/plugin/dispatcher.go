@@ -348,7 +348,7 @@ func (d *HookDispatcher) DispatchSyncSafe(ctx context.Context, hookName string, 
 			result.Err = step.err
 			result.Payload = currentPayload
 			result.ExecutedPlugins = executedPlugins
-			d.compensateChain(hookName, executedPlugins, payload)
+			result.FailedCompensations = d.compensateChain(hookName, executedPlugins, payload)
 			result.Compensated = true
 			return result
 		}
@@ -369,7 +369,7 @@ func (d *HookDispatcher) DispatchSyncSafe(ctx context.Context, hookName string, 
 			result.Err = fmt.Errorf("%w: %s (plugin: %s)", ErrHookHalted, errMsg, reg.PluginSlug)
 			result.Payload = currentPayload
 			result.ExecutedPlugins = executedPlugins
-			d.compensateChain(hookName, executedPlugins, payload)
+			result.FailedCompensations = d.compensateChain(hookName, executedPlugins, payload)
 			result.Compensated = true
 			return result
 		case sdk.ActionRollback:
@@ -398,8 +398,10 @@ func (d *HookDispatcher) DispatchSyncSafe(ctx context.Context, hookName string, 
 // Uses a detached context (context.Background) because the original request
 // context may already be cancelled, but compensation must still run to undo
 // side-effects.
-func (d *HookDispatcher) compensateChain(hookName string, executedPlugins []string, originalPayload json.RawMessage) {
+func (d *HookDispatcher) compensateChain(hookName string, executedPlugins []string, originalPayload json.RawMessage) []hookdispatch.FailedCompensation {
 	compensateHook := hookName + compensateHookSuffix
+
+	var failures []hookdispatch.FailedCompensation
 
 	// Reverse order — last executed first.
 	for i := len(executedPlugins) - 1; i >= 0; i-- {
@@ -436,6 +438,11 @@ func (d *HookDispatcher) compensateChain(hookName string, executedPlugins []stri
 		if err != nil {
 			d.logger.Error("failed to marshal compensation context",
 				"hook", compensateHook, "plugin", slug, "error", err)
+			failures = append(failures, hookdispatch.FailedCompensation{
+				PluginSlug: slug,
+				HookName:   compensateHook,
+				Error:      fmt.Errorf("marshal compensation context: %w", err).Error(),
+			})
 			continue
 		}
 
@@ -447,11 +454,18 @@ func (d *HookDispatcher) compensateChain(hookName string, executedPlugins []stri
 		if err != nil {
 			d.logger.Error("compensation hook failed",
 				"hook", compensateHook, "plugin", slug, "error", err)
+			failures = append(failures, hookdispatch.FailedCompensation{
+				PluginSlug: slug,
+				HookName:   compensateHook,
+				Error:      err.Error(),
+			})
 		} else {
 			d.logger.Info("compensation hook executed",
 				"hook", compensateHook, "plugin", slug)
 		}
 	}
+
+	return failures
 }
 
 // hasHandlers returns true if at least one handler is registered for the given

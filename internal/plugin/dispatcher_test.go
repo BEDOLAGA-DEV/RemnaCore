@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/sdk"
 )
 
@@ -485,6 +486,8 @@ func TestDispatchSyncSafe_PluginFails_CompensationCalled(t *testing.T) {
 	assert.Equal(t, []string{"plugin-a"}, result.ExecutedPlugins)
 	// plugin-a's compensation hook should have been called.
 	assert.Equal(t, []string{"plugin-a"}, compensatedSlugs)
+	// All compensations succeeded — no failures recorded.
+	assert.Empty(t, result.FailedCompensations)
 	// Payload should be the last successfully modified payload (plugin-a's modification).
 	assert.JSONEq(t, `{"amount":200}`, string(result.Payload))
 	// Original payload preserved.
@@ -544,6 +547,8 @@ func TestDispatchSyncSafe_NoCompensateHook(t *testing.T) {
 	// compensate hook exists — the dispatcher silently skips missing hooks.
 	assert.True(t, result.Compensated)
 	assert.Equal(t, []string{"plugin-a"}, result.ExecutedPlugins)
+	// No compensate hook registered — nothing to fail.
+	assert.Empty(t, result.FailedCompensations)
 }
 
 func TestDispatchSyncSafe_NoHandlers(t *testing.T) {
@@ -593,4 +598,44 @@ func TestDispatchSyncSafe_HaltTriggersCompensation(t *testing.T) {
 	assert.True(t, result.Compensated)
 	assert.Equal(t, []string{"plugin-a"}, result.ExecutedPlugins)
 	assert.Equal(t, []string{"plugin-a"}, compensatedSlugs)
+	// All compensations succeeded — no failures recorded.
+	assert.Empty(t, result.FailedCompensations)
+}
+
+func TestDispatchSyncSafe_CompensationFails_RecordedInResult(t *testing.T) {
+	d, _ := dispatcherWithMock(t, map[string]func(ctx context.Context, funcName string, input []byte) ([]byte, error){
+		"plugin-a": func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+			var hookCtx sdk.HookContext
+			_ = json.Unmarshal(input, &hookCtx)
+			if hookCtx.HookName == "order.finalized.compensate" {
+				return nil, fmt.Errorf("compensation DB unavailable")
+			}
+			return hookResultBytes(sdk.ActionModify, json.RawMessage(`{"amount":200}`), ""), nil
+		},
+		"plugin-b": func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+			return nil, fmt.Errorf("plugin-b crashed")
+		},
+	})
+
+	d.RegisterHooks([]HookRegistration{
+		{PluginID: "id-a", PluginSlug: "plugin-a", HookName: "order.finalized", HookType: HookSync, Priority: 10, FuncName: "order.finalized"},
+		{PluginID: "id-b", PluginSlug: "plugin-b", HookName: "order.finalized", HookType: HookSync, Priority: 20, FuncName: "order.finalized"},
+		{PluginID: "id-a", PluginSlug: "plugin-a", HookName: "order.finalized.compensate", HookType: HookSync, Priority: 10, FuncName: "order.finalized.compensate"},
+	})
+
+	payload := json.RawMessage(`{"amount":100}`)
+	result := d.DispatchSyncSafe(context.Background(), "order.finalized", payload)
+
+	require.Error(t, result.Err)
+	assert.Contains(t, result.Err.Error(), "plugin-b crashed")
+	assert.True(t, result.Compensated)
+	assert.Equal(t, []string{"plugin-a"}, result.ExecutedPlugins)
+
+	// Compensation for plugin-a failed — should be recorded.
+	require.Len(t, result.FailedCompensations, 1)
+	assert.Equal(t, hookdispatch.FailedCompensation{
+		PluginSlug: "plugin-a",
+		HookName:   "order.finalized.compensate",
+		Error:      "compensation DB unavailable",
+	}, result.FailedCompensations[0])
 }
