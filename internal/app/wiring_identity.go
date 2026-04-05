@@ -19,6 +19,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
 // identityWiring provides all identity-domain bindings: JWT issuer, identity
@@ -31,8 +32,8 @@ var identityWiring = fx.Options(
 	fx.Provide(provideJWTIssuer),
 
 	// Identity domain service
-	fx.Provide(func(repo identity.Repository, pub domainevent.Publisher, jwt *authutil.JWTIssuer, clk clock.Clock, cfg *config.Config) *identity.Service {
-		return identity.NewService(repo, pub, jwt, clk, cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL)
+	fx.Provide(func(repo identity.Repository, pub domainevent.Publisher, txRunner txmanager.Runner, jwt *authutil.JWTIssuer, clk clock.Clock, cfg *config.Config) *identity.Service {
+		return identity.NewService(repo, pub, txRunner, jwt, clk, cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL)
 	}),
 
 	// Bindings: interface -> implementation (identity)

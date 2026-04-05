@@ -15,6 +15,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/identitytest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager/txmanagertest"
 )
 
 // --- Test Helpers ---
@@ -29,7 +30,7 @@ func newTestService(t *testing.T) (*identity.Service, *identitytest.MockReposito
 	repo := new(identitytest.MockRepository)
 	pub := new(identitytest.MockPublisher)
 
-	svc := identity.NewService(repo, pub, jwtIssuer, clock.NewReal(), 15*time.Minute, 7*24*time.Hour)
+	svc := identity.NewService(repo, pub, txmanagertest.NoopTxRunner{}, jwtIssuer, clock.NewReal(), 15*time.Minute, 7*24*time.Hour)
 	return svc, repo, pub
 }
 

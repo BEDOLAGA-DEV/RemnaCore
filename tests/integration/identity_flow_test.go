@@ -23,6 +23,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager/txmanagertest"
 )
 
 const (
@@ -54,7 +55,7 @@ func newIdentityTestHarness(t *testing.T) *identityTestHarness {
 	repo := new(identitytest.MockRepository)
 	pub := new(identitytest.MockPublisher)
 
-	svc := identity.NewService(repo, pub, jwtIssuer, clock.NewReal(), testAccessTTL, testRefreshTTL)
+	svc := identity.NewService(repo, pub, txmanagertest.NoopTxRunner{}, jwtIssuer, clock.NewReal(), testAccessTTL, testRefreshTTL)
 	h := handler.NewIdentityHandler(svc)
 
 	r := chi.NewRouter()

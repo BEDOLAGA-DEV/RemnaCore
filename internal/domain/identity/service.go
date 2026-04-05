@@ -6,13 +6,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
 // EventPublisher is an alias for the shared domainevent.Publisher so that
@@ -24,6 +24,7 @@ type EventPublisher = domainevent.Publisher
 type Service struct {
 	repo       Repository
 	publisher  domainevent.Publisher
+	txRunner   txmanager.Runner
 	jwt        *authutil.JWTIssuer
 	clock      clock.Clock
 	accessTTL  time.Duration
@@ -33,10 +34,11 @@ type Service struct {
 // NewService creates a Service with the given dependencies. accessTTL and
 // refreshTTL control token lifetimes and must be supplied by the caller
 // (typically from configuration).
-func NewService(repo Repository, publisher domainevent.Publisher, jwt *authutil.JWTIssuer, clk clock.Clock, accessTTL, refreshTTL time.Duration) *Service {
+func NewService(repo Repository, publisher domainevent.Publisher, txRunner txmanager.Runner, jwt *authutil.JWTIssuer, clk clock.Clock, accessTTL, refreshTTL time.Duration) *Service {
 	return &Service{
 		repo:       repo,
 		publisher:  publisher,
+		txRunner:   txRunner,
 		jwt:        jwt,
 		clock:      clk,
 		accessTTL:  accessTTL,
@@ -87,23 +89,24 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (*RegisterR
 		return nil, fmt.Errorf("creating user: %w", err)
 	}
 
-	if err := s.repo.CreateUser(ctx, user); err != nil {
-		return nil, fmt.Errorf("persisting user: %w", err)
-	}
-
 	verification, err := NewEmailVerification(user.ID, user.Email, now)
 	if err != nil {
 		return nil, fmt.Errorf("creating email verification: %w", err)
 	}
-	if err := s.repo.CreateEmailVerification(ctx, verification); err != nil {
-		return nil, fmt.Errorf("persisting email verification: %w", err)
-	}
 
-	if err := s.publisher.Publish(ctx, NewUserRegisteredEvent(user.ID, user.Email, s.clock.Now())); err != nil {
-		slog.Warn("failed to publish event",
-			slog.String("event_type", string(EventUserRegistered)),
-			slog.Any("error", err),
-		)
+	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		if err := s.repo.CreateUser(txCtx, user); err != nil {
+			return fmt.Errorf("persisting user: %w", err)
+		}
+		if err := s.repo.CreateEmailVerification(txCtx, verification); err != nil {
+			return fmt.Errorf("persisting email verification: %w", err)
+		}
+		if err := s.publisher.Publish(txCtx, NewUserRegisteredEvent(user.ID, user.Email, now)); err != nil {
+			return fmt.Errorf("publishing %s: %w", EventUserRegistered, err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	return &RegisterResult{
@@ -154,15 +157,17 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (*LoginResult, er
 		ExpiresAt:    now.Add(s.refreshTTL),
 		CreatedAt:    now,
 	}
-	if err := s.repo.CreateSession(ctx, session); err != nil {
-		return nil, fmt.Errorf("persisting session: %w", err)
-	}
 
-	if err := s.publisher.Publish(ctx, NewUserLoggedInEvent(user.ID, s.clock.Now())); err != nil {
-		slog.Warn("failed to publish event",
-			slog.String("event_type", string(EventUserLoggedIn)),
-			slog.Any("error", err),
-		)
+	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		if err := s.repo.CreateSession(txCtx, session); err != nil {
+			return fmt.Errorf("persisting session: %w", err)
+		}
+		if err := s.publisher.Publish(txCtx, NewUserLoggedInEvent(user.ID, now)); err != nil {
+			return fmt.Errorf("publishing %s: %w", EventUserLoggedIn, err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	return &LoginResult{
@@ -189,23 +194,21 @@ func (s *Service) VerifyEmail(ctx context.Context, token string) error {
 		return fmt.Errorf("finding user: %w", err)
 	}
 
-	user.VerifyEmail(s.clock.Now())
-	if err := s.repo.UpdateUser(ctx, user); err != nil {
-		return fmt.Errorf("updating user: %w", err)
-	}
+	now := s.clock.Now()
+	user.VerifyEmail(now)
 
-	if err := s.repo.DeleteEmailVerification(ctx, verification.ID); err != nil {
-		return fmt.Errorf("deleting verification: %w", err)
-	}
-
-	if err := s.publisher.Publish(ctx, NewEmailVerifiedEvent(user.ID, user.Email, s.clock.Now())); err != nil {
-		slog.Warn("failed to publish event",
-			slog.String("event_type", string(EventEmailVerified)),
-			slog.Any("error", err),
-		)
-	}
-
-	return nil
+	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		if err := s.repo.UpdateUser(txCtx, user); err != nil {
+			return fmt.Errorf("updating user: %w", err)
+		}
+		if err := s.repo.DeleteEmailVerification(txCtx, verification.ID); err != nil {
+			return fmt.Errorf("deleting verification: %w", err)
+		}
+		if err := s.publisher.Publish(txCtx, NewEmailVerifiedEvent(user.ID, user.Email, now)); err != nil {
+			return fmt.Errorf("publishing %s: %w", EventEmailVerified, err)
+		}
+		return nil
+	})
 }
 
 // RefreshToken validates the existing session, rotates the refresh token, and
@@ -346,28 +349,26 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 		return fmt.Errorf("finding user by email: %w", err)
 	}
 
-	// Remove any existing reset tokens for this user.
-	if err := s.repo.DeleteUserPasswordResets(ctx, user.ID); err != nil {
-		return fmt.Errorf("clearing existing resets: %w", err)
-	}
-
-	reset, err := NewPasswordReset(user.ID, user.Email, s.clock.Now())
+	now := s.clock.Now()
+	reset, err := NewPasswordReset(user.ID, user.Email, now)
 	if err != nil {
 		return fmt.Errorf("creating password reset: %w", err)
 	}
-	if err := s.repo.CreatePasswordReset(ctx, reset); err != nil {
-		return fmt.Errorf("persisting password reset: %w", err)
-	}
 
-	// Notification plugins listen for this event to send the actual email.
-	if err := s.publisher.Publish(ctx, NewPasswordResetRequestedEvent(user.ID, user.Email, reset.Token, s.clock.Now())); err != nil {
-		slog.Warn("failed to publish event",
-			slog.String("event_type", string(EventPasswordResetRequested)),
-			slog.Any("error", err),
-		)
-	}
-
-	return nil
+	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		// Remove any existing reset tokens for this user.
+		if err := s.repo.DeleteUserPasswordResets(txCtx, user.ID); err != nil {
+			return fmt.Errorf("clearing existing resets: %w", err)
+		}
+		if err := s.repo.CreatePasswordReset(txCtx, reset); err != nil {
+			return fmt.Errorf("persisting password reset: %w", err)
+		}
+		// Notification plugins listen for this event to send the actual email.
+		if err := s.publisher.Publish(txCtx, NewPasswordResetRequestedEvent(user.ID, user.Email, reset.Token, now)); err != nil {
+			return fmt.Errorf("publishing %s: %w", EventPasswordResetRequested, err)
+		}
+		return nil
+	})
 }
 
 // ResetPassword validates the reset token, sets the new password, invalidates
@@ -402,28 +403,24 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 	now := s.clock.Now()
 	user.PasswordHash = hash
 	user.UpdatedAt = now
-	if err := s.repo.UpdateUser(ctx, user); err != nil {
-		return fmt.Errorf("updating user: %w", err)
-	}
 
-	// Invalidate all sessions so stolen tokens cannot be reused.
-	if err := s.repo.DeleteUserSessions(ctx, user.ID); err != nil {
-		return fmt.Errorf("invalidating sessions: %w", err)
-	}
-
-	// Clean up the used reset token.
-	if err := s.repo.DeletePasswordReset(ctx, reset.ID); err != nil {
-		return fmt.Errorf("deleting password reset: %w", err)
-	}
-
-	if err := s.publisher.Publish(ctx, NewPasswordResetEvent(user.ID, s.clock.Now())); err != nil {
-		slog.Warn("failed to publish event",
-			slog.String("event_type", string(EventPasswordReset)),
-			slog.Any("error", err),
-		)
-	}
-
-	return nil
+	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		if err := s.repo.UpdateUser(txCtx, user); err != nil {
+			return fmt.Errorf("updating user: %w", err)
+		}
+		// Invalidate all sessions so stolen tokens cannot be reused.
+		if err := s.repo.DeleteUserSessions(txCtx, user.ID); err != nil {
+			return fmt.Errorf("invalidating sessions: %w", err)
+		}
+		// Clean up the used reset token.
+		if err := s.repo.DeletePasswordReset(txCtx, reset.ID); err != nil {
+			return fmt.Errorf("deleting password reset: %w", err)
+		}
+		if err := s.publisher.Publish(txCtx, NewPasswordResetEvent(user.ID, now)); err != nil {
+			return fmt.Errorf("publishing %s: %w", EventPasswordReset, err)
+		}
+		return nil
+	})
 }
 
 // RefreshTokenLen is the number of random bytes used for refresh tokens.
