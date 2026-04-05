@@ -27,7 +27,7 @@ func NewEventPublisher(conn *nc.Conn) (*EventPublisher, error) {
 			Marshaler:         &wmnats.NATSMarshaler{},
 			SubjectCalculator: wmnats.DefaultSubjectCalculator,
 			JetStream: wmnats.JetStreamConfig{
-				AutoProvision: true,
+				AutoProvision: false, // Streams are pre-created by EnsureStreams on startup.
 				TrackMsgId:    true,
 			},
 		},
