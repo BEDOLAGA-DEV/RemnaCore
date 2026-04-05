@@ -331,6 +331,9 @@ func (lm *LifecycleManager) HotReload(ctx context.Context, pluginID string, mani
 		}
 	}
 
+	// Keep a copy of wasmBytes for the runtime (LoadPlugin needs it),
+	// but clear inline bytes on the persisted struct below after building it.
+
 	// 4. Build updated plugin (preserving ID, config, enabled state).
 	now := lm.clock.Now()
 	updated := &Plugin{
@@ -362,6 +365,17 @@ func (lm *LifecycleManager) HotReload(ctx context.Context, pluginID string, mani
 	if err := lm.runtime.LoadPlugin(updated); err != nil {
 		// Rollback: re-install old plugin if the old pool was detached.
 		if oldPool != nil {
+			// Resolve WASM from CAS for rollback (Install clears WASMBytes).
+			if old.WASMBytes == nil && old.WASMHash != "" {
+				oldWasm, wasmErr := lm.repo.GetWASMByHash(ctx, old.WASMHash)
+				if wasmErr != nil {
+					lm.logger.Error("hot reload rollback: failed to fetch old WASM from CAS",
+						slog.String("slug", old.Slug), slog.Any("error", wasmErr))
+					lm.repo.UpdateStatus(ctx, old.ID, StatusError, "rollback failed: WASM not in CAS", nil)
+					return fmt.Errorf("hot reload rollback: old WASM unavailable: %w", err)
+				}
+				old.WASMBytes = oldWasm
+			}
 			if loadErr := lm.runtime.LoadPlugin(old); loadErr != nil {
 				lm.logger.Error("failed to restore old pool after load failure",
 					slog.String("slug", old.Slug),
@@ -371,6 +385,10 @@ func (lm *LifecycleManager) HotReload(ctx context.Context, pluginID string, mani
 		}
 		return fmt.Errorf("load new plugin version: %w", err)
 	}
+
+	// Clear inline bytes now that the runtime has the WASM compiled. This
+	// prevents double-storing the binary (inline in plugin_registry + CAS).
+	updated.WASMBytes = nil
 
 	// 7. Atomic hook swap: replace old hooks with new hooks under a single lock.
 	newRegs := newManifest.HookRegistrations(old.ID)
@@ -385,6 +403,17 @@ func (lm *LifecycleManager) HotReload(ctx context.Context, pluginID string, mani
 		}
 		lm.dispatcher.SwapHooks(old.Slug, oldRegs)
 
+		// Resolve WASM from CAS for rollback (Install clears WASMBytes).
+		if old.WASMBytes == nil && old.WASMHash != "" {
+			oldWasm, wasmErr := lm.repo.GetWASMByHash(ctx, old.WASMHash)
+			if wasmErr != nil {
+				lm.logger.Error("hot reload rollback: failed to fetch old WASM from CAS",
+					slog.String("slug", old.Slug), slog.Any("error", wasmErr))
+				lm.repo.UpdateStatus(ctx, old.ID, StatusError, "rollback failed: WASM not in CAS", nil)
+				return fmt.Errorf("persist hot reload: %w", err)
+			}
+			old.WASMBytes = oldWasm
+		}
 		if loadErr := lm.runtime.LoadPlugin(old); loadErr != nil {
 			lm.logger.Error("hot reload rollback failed — plugin in broken state",
 				slog.String("slug", old.Slug),

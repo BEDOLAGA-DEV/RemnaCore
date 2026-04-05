@@ -296,3 +296,32 @@ func TestHTTPRequest_ContextCancellation(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "context canceled")
 }
+
+func TestNormalizeURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{"clean path", "https://api.stripe.com/v1/charges", "https://api.stripe.com/v1/charges", false},
+		{"traversal segment", "https://api.stripe.com/v1/../../admin", "", true},
+		{"traversal at start", "https://api.stripe.com/../secret", "", true},
+		{"double dot in segment name", "https://api.stripe.com/files/report..v2/data", "https://api.stripe.com/files/report..v2/data", false},
+		{"empty path", "https://api.stripe.com", "https://api.stripe.com/", false},
+		{"query with dots", "https://api.stripe.com/v1?q=a..b", "https://api.stripe.com/v1?q=a..b", false},
+		{"trailing slash", "https://api.stripe.com/v1/", "https://api.stripe.com/v1", false},
+		{"root path", "https://api.stripe.com/", "https://api.stripe.com/", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := normalizeURL(tt.input)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}

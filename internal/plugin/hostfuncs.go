@@ -89,10 +89,14 @@ func normalizeURL(rawURL string) (string, error) {
 		return rawURL, nil
 	}
 
-	// Reject explicit path traversal sequences before normalizing, since
-	// path.Clean silently resolves them.
-	if strings.Contains(u.Path, "..") {
-		return "", fmt.Errorf("%w: path traversal detected in URL %s", ErrPermissionDenied, rawURL)
+	// Check for ".." as a path segment (not substring). Only reject when ".."
+	// appears as an entire segment between "/" delimiters, which is what path
+	// traversal actually requires. Legitimate paths like "/files/report..v2/data"
+	// must not be blocked.
+	for _, segment := range strings.Split(u.Path, "/") {
+		if segment == ".." {
+			return "", fmt.Errorf("%w: path traversal detected", ErrPermissionDenied)
+		}
 	}
 
 	u.Path = path.Clean(u.Path)

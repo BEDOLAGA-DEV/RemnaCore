@@ -10,6 +10,7 @@ import (
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres/gen"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pgutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
@@ -23,12 +24,13 @@ type PluginStorageRepository struct {
 	pool         *pgxpool.Pool
 	queries      *gen.Queries
 	txRunner     txmanager.Runner
+	clock        clock.Clock
 	maxStorageMB int // default quota per plugin in MB
 }
 
 // NewPluginStorageRepository returns a new PluginStorageRepository.
 // maxStorageMB sets the default storage quota per plugin in megabytes.
-func NewPluginStorageRepository(pool *pgxpool.Pool, txRunner txmanager.Runner, maxStorageMB int) *PluginStorageRepository {
+func NewPluginStorageRepository(pool *pgxpool.Pool, txRunner txmanager.Runner, clk clock.Clock, maxStorageMB int) *PluginStorageRepository {
 	if maxStorageMB <= 0 {
 		maxStorageMB = plugin.DefaultMaxStorageMB
 	}
@@ -36,6 +38,7 @@ func NewPluginStorageRepository(pool *pgxpool.Pool, txRunner txmanager.Runner, m
 		pool:         pool,
 		queries:      gen.New(pool),
 		txRunner:     txRunner,
+		clock:        clk,
 		maxStorageMB: maxStorageMB,
 	}
 }
@@ -51,7 +54,7 @@ func (r *PluginStorageRepository) Get(ctx context.Context, pluginSlug, key strin
 
 	// Check expiry: if the row has an expiration in the past, treat it as
 	// not found and clean it up asynchronously.
-	if row.ExpiresAt.Valid && row.ExpiresAt.Time.Before(time.Now()) {
+	if row.ExpiresAt.Valid && row.ExpiresAt.Time.Before(r.clock.Now()) {
 		_ = r.queries.StorageDelete(ctx, gen.StorageDeleteParams{
 			PluginSlug: pluginSlug,
 			Key:        key,
@@ -84,7 +87,7 @@ func (r *PluginStorageRepository) Set(ctx context.Context, pluginSlug, key strin
 
 		var expiresAt pgtype.Timestamptz
 		if ttlSeconds > 0 {
-			t := time.Now().Add(time.Duration(ttlSeconds) * time.Second)
+			t := r.clock.Now().Add(time.Duration(ttlSeconds) * time.Second)
 			expiresAt = pgutil.TimeToPgtype(t)
 		}
 
