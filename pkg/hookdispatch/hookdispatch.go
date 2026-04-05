@@ -32,7 +32,7 @@ type ChainResult struct {
 	ExecutedPlugins []string
 	// Err is non-nil if the chain was interrupted by a failure or rollback.
 	Err error
-	// Compensated is true if compensation hooks were called successfully.
+	// Compensated is true if compensation was attempted (check FailedCompensations for failures).
 	Compensated bool
 	// FailedCompensations records plugins whose compensation hooks failed.
 	// Empty if all compensations succeeded or no compensation was needed.
