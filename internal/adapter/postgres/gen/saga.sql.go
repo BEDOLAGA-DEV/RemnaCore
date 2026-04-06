@@ -95,7 +95,7 @@ func (q *Queries) FailSaga(ctx context.Context, arg FailSagaParams) error {
 const getRunningSagas = `-- name: GetRunningSagas :many
 SELECT id, saga_type, correlation_id, status, current_step, total_steps, state_data, error_message, created_at, updated_at
 FROM multisub.saga_instances
-WHERE status = 'running'
+WHERE status IN ('running', 'compensating')
 ORDER BY created_at
 LIMIT 1000
 `
@@ -158,6 +158,17 @@ func (q *Queries) GetSagaByCorrelation(ctx context.Context, arg GetSagaByCorrela
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const markSagaCompensating = `-- name: MarkSagaCompensating :exec
+UPDATE multisub.saga_instances
+SET status = 'compensating', updated_at = now()
+WHERE id = $1
+`
+
+func (q *Queries) MarkSagaCompensating(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, markSagaCompensating, id)
+	return err
 }
 
 const updateSagaProgress = `-- name: UpdateSagaProgress :exec

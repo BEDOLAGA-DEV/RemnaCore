@@ -180,6 +180,11 @@ func (m *MockSagaRepo) Fail(ctx context.Context, id string, errMsg string) error
 	return args.Error(0)
 }
 
+func (m *MockSagaRepo) MarkCompensating(ctx context.Context, id string) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
 func (m *MockSagaRepo) GetRunning(ctx context.Context) ([]*multisub.SagaInstance, error) {
 	args := m.Called(ctx)
 	if args.Get(0) == nil {

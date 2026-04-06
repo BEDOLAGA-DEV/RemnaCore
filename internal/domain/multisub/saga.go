@@ -54,7 +54,12 @@ type SagaRepository interface {
 	// Fail marks a saga as failed with an error message.
 	Fail(ctx context.Context, id string, errMsg string) error
 
-	// GetRunning returns all sagas in 'running' status for resume on startup.
+	// MarkCompensating transitions a saga to 'compensating' status, indicating
+	// that compensation actions are in progress.
+	MarkCompensating(ctx context.Context, id string) error
+
+	// GetRunning returns all sagas in 'running' or 'compensating' status for
+	// resume on startup.
 	GetRunning(ctx context.Context) ([]*SagaInstance, error)
 
 	// GetByCorrelation looks up a saga by type and correlation ID.

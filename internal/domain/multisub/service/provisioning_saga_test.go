@@ -43,6 +43,7 @@ func newPermissiveSagaRepo() *multisubtest.MockSagaRepo {
 	sagaRepo.On("UpdateProgress", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	sagaRepo.On("Complete", mock.Anything, mock.Anything).Return(nil)
 	sagaRepo.On("Fail", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	sagaRepo.On("MarkCompensating", mock.Anything, mock.Anything).Return(nil)
 	return sagaRepo
 }
 

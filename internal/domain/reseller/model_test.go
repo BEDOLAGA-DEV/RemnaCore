@@ -1,6 +1,7 @@
 package reseller
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -86,7 +87,8 @@ func TestNewResellerAccount_RateTooHigh(t *testing.T) {
 }
 
 func TestNewCommission(t *testing.T) {
-	commission := NewCommission("reseller-1", "sale-abc", 10000, 15, "USD", time.Now())
+	commission, err := NewCommission("reseller-1", "sale-abc", 10000, 15, "USD", time.Now())
+	require.NoError(t, err)
 
 	assert.NotEmpty(t, commission.ID)
 	assert.Equal(t, "reseller-1", commission.ResellerID)
@@ -99,23 +101,61 @@ func TestNewCommission(t *testing.T) {
 }
 
 func TestNewCommission_ZeroRate(t *testing.T) {
-	commission := NewCommission("reseller-1", "sale-abc", 10000, 0, "USD", time.Now())
+	commission, err := NewCommission("reseller-1", "sale-abc", 10000, 0, "USD", time.Now())
+	require.NoError(t, err)
 	assert.Equal(t, int64(0), commission.Amount)
 }
 
 func TestNewCommission_FullRate(t *testing.T) {
-	commission := NewCommission("reseller-1", "sale-abc", 10000, 100, "USD", time.Now())
+	commission, err := NewCommission("reseller-1", "sale-abc", 10000, 100, "USD", time.Now())
+	require.NoError(t, err)
 	assert.Equal(t, int64(10000), commission.Amount)
 }
 
 func TestNewCommission_RoundsDown(t *testing.T) {
 	// 33% of 100 cents = 33 cents (integer division rounds down).
-	commission := NewCommission("reseller-1", "sale-abc", 100, 33, "USD", time.Now())
+	commission, err := NewCommission("reseller-1", "sale-abc", 100, 33, "USD", time.Now())
+	require.NoError(t, err)
 	assert.Equal(t, int64(33), commission.Amount)
 }
 
+func TestNewCommission_Overflow(t *testing.T) {
+	tests := []struct {
+		name       string
+		saleAmount int64
+		rate       int
+	}{
+		{
+			name:       "MaxInt64 with rate 50",
+			saleAmount: math.MaxInt64,
+			rate:       50,
+		},
+		{
+			name:       "large amount with rate 100",
+			saleAmount: math.MaxInt64,
+			rate:       100,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewCommission("reseller-1", "sale-abc", tt.saleAmount, tt.rate, "USD", time.Now())
+			require.Error(t, err)
+			assert.ErrorIs(t, err, ErrCommissionOverflow)
+		})
+	}
+}
+
+func TestNewCommission_NoOverflowForSafeValues(t *testing.T) {
+	// A large but safe sale amount that fits in int64 after multiplication.
+	commission, err := NewCommission("reseller-1", "sale-abc", 1_000_000_000_00, 50, "USD", time.Now())
+	require.NoError(t, err)
+	assert.Equal(t, int64(500_000_000_00), commission.Amount)
+}
+
 func TestNewCommission_RecordsCreationEvent(t *testing.T) {
-	commission := NewCommission("reseller-1", "sale-abc", 10000, 15, "USD", time.Now())
+	commission, err := NewCommission("reseller-1", "sale-abc", 10000, 15, "USD", time.Now())
+	require.NoError(t, err)
 
 	events := commission.DomainEvents()
 	require.Len(t, events, 1)

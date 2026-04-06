@@ -12,6 +12,7 @@ var (
 	ErrTenantInactive        = errors.New("tenant is inactive")
 	ErrDuplicateDomain       = errors.New("domain already in use")
 	ErrCommissionAlreadyPaid = errors.New("commission already paid")
+	ErrCommissionOverflow    = errors.New("commission amount overflow")
 	ErrTenantAlreadyInactive = errors.New("tenant already inactive")
 	ErrTenantAlreadyActive   = errors.New("tenant already active")
 )

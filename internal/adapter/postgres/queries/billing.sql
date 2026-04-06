@@ -79,7 +79,7 @@ FROM billing.plan_addons WHERE plan_id = $1 ORDER BY created_at;
 DELETE FROM billing.plan_addons WHERE plan_id = $1;
 
 -- name: DeleteRemovedAddons :exec
-DELETE FROM billing.plan_addons WHERE plan_id = $1 AND id != ALL($2::uuid[]);
+DELETE FROM billing.plan_addons WHERE plan_id = $1 AND id != ALL(sqlc.arg(ids)::uuid[]);
 
 -- ============================================================================
 -- Subscriptions

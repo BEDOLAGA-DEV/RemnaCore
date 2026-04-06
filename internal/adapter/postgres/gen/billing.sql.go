@@ -293,65 +293,6 @@ func (q *Queries) DeleteAddonsByPlanID(ctx context.Context, planID pgtype.UUID) 
 	return err
 }
 
-const deleteRemovedAddons = `-- name: DeleteRemovedAddons :exec
-DELETE FROM billing.plan_addons WHERE plan_id = $1 AND id != ALL($2::uuid[])
-`
-
-type DeleteRemovedAddonsParams struct {
-	PlanID pgtype.UUID   `json:"plan_id"`
-	Ids    []pgtype.UUID `json:"ids"`
-}
-
-func (q *Queries) DeleteRemovedAddons(ctx context.Context, arg DeleteRemovedAddonsParams) error {
-	_, err := q.db.Exec(ctx, deleteRemovedAddons, arg.PlanID, arg.Ids)
-	return err
-}
-
-const upsertPlanAddon = `-- name: UpsertPlanAddon :exec
-
-INSERT INTO billing.plan_addons (
-    id, plan_id, name, price_amount, price_currency,
-    addon_type, extra_traffic_bytes, extra_nodes, extra_feature_flags, created_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-ON CONFLICT (id) DO UPDATE SET
-    name              = EXCLUDED.name,
-    price_amount      = EXCLUDED.price_amount,
-    price_currency    = EXCLUDED.price_currency,
-    addon_type        = EXCLUDED.addon_type,
-    extra_traffic_bytes = EXCLUDED.extra_traffic_bytes,
-    extra_nodes       = EXCLUDED.extra_nodes,
-    extra_feature_flags = EXCLUDED.extra_feature_flags
-`
-
-type UpsertPlanAddonParams struct {
-	ID                pgtype.UUID        `json:"id"`
-	PlanID            pgtype.UUID        `json:"plan_id"`
-	Name              string             `json:"name"`
-	PriceAmount       int64              `json:"price_amount"`
-	PriceCurrency     string             `json:"price_currency"`
-	AddonType         string             `json:"addon_type"`
-	ExtraTrafficBytes int64              `json:"extra_traffic_bytes"`
-	ExtraNodes        []string           `json:"extra_nodes"`
-	ExtraFeatureFlags []string           `json:"extra_feature_flags"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) UpsertPlanAddon(ctx context.Context, arg UpsertPlanAddonParams) error {
-	_, err := q.db.Exec(ctx, upsertPlanAddon,
-		arg.ID,
-		arg.PlanID,
-		arg.Name,
-		arg.PriceAmount,
-		arg.PriceCurrency,
-		arg.AddonType,
-		arg.ExtraTrafficBytes,
-		arg.ExtraNodes,
-		arg.ExtraFeatureFlags,
-		arg.CreatedAt,
-	)
-	return err
-}
-
 const deleteFamilyGroup = `-- name: DeleteFamilyGroup :exec
 DELETE FROM billing.family_groups WHERE id = $1
 `
@@ -376,6 +317,20 @@ DELETE FROM billing.invoice_line_items WHERE invoice_id = $1
 
 func (q *Queries) DeleteLineItemsByInvoiceID(ctx context.Context, invoiceID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteLineItemsByInvoiceID, invoiceID)
+	return err
+}
+
+const deleteRemovedAddons = `-- name: DeleteRemovedAddons :exec
+DELETE FROM billing.plan_addons WHERE plan_id = $1 AND id != ALL($2::uuid[])
+`
+
+type DeleteRemovedAddonsParams struct {
+	PlanID pgtype.UUID   `json:"plan_id"`
+	Ids    []pgtype.UUID `json:"ids"`
+}
+
+func (q *Queries) DeleteRemovedAddons(ctx context.Context, arg DeleteRemovedAddonsParams) error {
+	_, err := q.db.Exec(ctx, deleteRemovedAddons, arg.PlanID, arg.Ids)
 	return err
 }
 
@@ -1260,6 +1215,50 @@ func (q *Queries) UpdateSubscription(ctx context.Context, arg UpdateSubscription
 		arg.AssignedTo,
 		arg.CancelledAt,
 		arg.PausedAt,
+	)
+	return err
+}
+
+const upsertPlanAddon = `-- name: UpsertPlanAddon :exec
+INSERT INTO billing.plan_addons (
+    id, plan_id, name, price_amount, price_currency,
+    addon_type, extra_traffic_bytes, extra_nodes, extra_feature_flags, created_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+ON CONFLICT (id) DO UPDATE SET
+    name              = EXCLUDED.name,
+    price_amount      = EXCLUDED.price_amount,
+    price_currency    = EXCLUDED.price_currency,
+    addon_type        = EXCLUDED.addon_type,
+    extra_traffic_bytes = EXCLUDED.extra_traffic_bytes,
+    extra_nodes       = EXCLUDED.extra_nodes,
+    extra_feature_flags = EXCLUDED.extra_feature_flags
+`
+
+type UpsertPlanAddonParams struct {
+	ID                pgtype.UUID        `json:"id"`
+	PlanID            pgtype.UUID        `json:"plan_id"`
+	Name              string             `json:"name"`
+	PriceAmount       int64              `json:"price_amount"`
+	PriceCurrency     string             `json:"price_currency"`
+	AddonType         string             `json:"addon_type"`
+	ExtraTrafficBytes int64              `json:"extra_traffic_bytes"`
+	ExtraNodes        []string           `json:"extra_nodes"`
+	ExtraFeatureFlags []string           `json:"extra_feature_flags"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) UpsertPlanAddon(ctx context.Context, arg UpsertPlanAddonParams) error {
+	_, err := q.db.Exec(ctx, upsertPlanAddon,
+		arg.ID,
+		arg.PlanID,
+		arg.Name,
+		arg.PriceAmount,
+		arg.PriceCurrency,
+		arg.AddonType,
+		arg.ExtraTrafficBytes,
+		arg.ExtraNodes,
+		arg.ExtraFeatureFlags,
+		arg.CreatedAt,
 	)
 	return err
 }

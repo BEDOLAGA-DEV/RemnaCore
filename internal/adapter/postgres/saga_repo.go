@@ -91,7 +91,16 @@ func (r *SagaRepository) Fail(ctx context.Context, id string, errMsg string) err
 	return nil
 }
 
-// GetRunning returns all sagas in 'running' status for resume on startup.
+// MarkCompensating transitions a saga to 'compensating' status.
+func (r *SagaRepository) MarkCompensating(ctx context.Context, id string) error {
+	err := r.queries(ctx).MarkSagaCompensating(ctx, pgutil.UUIDToPgtype(id))
+	if err != nil {
+		return fmt.Errorf("mark saga compensating: %w", err)
+	}
+	return nil
+}
+
+// GetRunning returns all sagas in 'running' or 'compensating' status for resume on startup.
 func (r *SagaRepository) GetRunning(ctx context.Context) ([]*multisub.SagaInstance, error) {
 	rows, err := r.queries(ctx).GetRunningSagas(ctx)
 	if err != nil {

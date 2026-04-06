@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/google/uuid"
@@ -193,11 +194,31 @@ func NewResellerAccount(tenantID, userID string, commissionRate int, now time.Ti
 	}, nil
 }
 
+// safeCommissionAmount calculates the commission amount with overflow protection.
+// It returns ErrCommissionOverflow if the multiplication would exceed int64 range.
+func safeCommissionAmount(saleAmount int64, rate int) (int64, error) {
+	if saleAmount == 0 || rate == 0 {
+		return 0, nil
+	}
+	r := int64(rate)
+	if r > 0 && saleAmount > math.MaxInt64/r {
+		return 0, ErrCommissionOverflow
+	}
+	if r < 0 && saleAmount < math.MaxInt64/r {
+		return 0, ErrCommissionOverflow
+	}
+	return saleAmount * r / PercentBase, nil
+}
+
 // NewCommission calculates and creates a commission record for a sale.
 // The creation event is recorded on the aggregate; callers must flush
-// via DomainEvents() after persisting.
-func NewCommission(resellerID, saleID string, saleAmount int64, commissionRate int, currency string, now time.Time) *Commission {
-	amount := saleAmount * int64(commissionRate) / PercentBase
+// via DomainEvents() after persisting. Returns ErrCommissionOverflow if
+// the sale amount and rate would cause integer overflow.
+func NewCommission(resellerID, saleID string, saleAmount int64, commissionRate int, currency string, now time.Time) (*Commission, error) {
+	amount, err := safeCommissionAmount(saleAmount, commissionRate)
+	if err != nil {
+		return nil, fmt.Errorf("commission for sale %s: %w", saleID, err)
+	}
 
 	c := &Commission{
 		ID:         uuid.Must(uuid.NewV7()).String(),
@@ -213,5 +234,5 @@ func NewCommission(resellerID, saleID string, saleAmount int64, commissionRate i
 		ResellerID:   resellerID,
 		Amount:       amount,
 	}, now, c.ID))
-	return c
+	return c, nil
 }

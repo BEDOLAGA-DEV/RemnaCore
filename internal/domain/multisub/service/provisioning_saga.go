@@ -177,6 +177,7 @@ func (s *ProvisioningSaga) Provision(ctx context.Context, req ProvisionRequest) 
 		if err != nil {
 			// COMPENSATION: delete Remnawave user since the transaction failed.
 			// Uses exponential backoff to avoid leaving ghost users in Remnawave.
+			compensateSaga(ctx, s.sagaRepo, sagaInstance, s.logger)
 			s.compensateDeleteUser(ctx, rwUser.UUID, binding.ID)
 			failSaga(ctx, s.sagaRepo, sagaInstance, fmt.Sprintf("transactional update: %s", err.Error()), s.logger)
 			return results, fmt.Errorf("transactional update: %w", err)

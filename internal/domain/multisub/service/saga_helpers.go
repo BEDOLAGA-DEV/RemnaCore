@@ -34,6 +34,20 @@ func failSaga(ctx context.Context, repo multisubdomain.SagaRepository, saga *mul
 	}
 }
 
+// compensateSaga marks a saga instance as compensating. Best-effort: failures
+// are logged but do not affect the calling operation.
+func compensateSaga(ctx context.Context, repo multisubdomain.SagaRepository, saga *multisubdomain.SagaInstance, logger *slog.Logger) {
+	if saga == nil {
+		return
+	}
+	if err := repo.MarkCompensating(ctx, saga.ID); err != nil {
+		logger.Warn("failed to mark saga as compensating",
+			slog.String("saga_id", saga.ID),
+			slog.Any("error", err),
+		)
+	}
+}
+
 // checkpointSaga persists the saga's current step and serialized state data.
 // Best-effort: failures are logged but do not abort the saga.
 func checkpointSaga(ctx context.Context, repo multisubdomain.SagaRepository, saga *multisubdomain.SagaInstance, step int, stateData []byte, logger *slog.Logger) {
