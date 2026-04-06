@@ -373,3 +373,130 @@ func TestMarkPublishedBatchSingleEventPartitioned(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, remaining)
 }
+
+const (
+	// crossPartitionQ1Quarter is the quarter index for Q1 (Jan-Mar).
+	crossPartitionQ1Quarter = 1
+
+	// crossPartitionQ2Quarter is the quarter index for Q2 (Apr-Jun).
+	crossPartitionQ2Quarter = 2
+
+	// crossPartitionQ3Quarter is the quarter index for Q3 (Jul-Sep).
+	crossPartitionQ3Quarter = 3
+
+	// crossPartitionQ4Quarter is the quarter index for Q4 (Oct-Dec).
+	crossPartitionQ4Quarter = 4
+
+	// crossPartitionSeedCount is the number of events seeded per quarter
+	// for cross-partition tests.
+	crossPartitionSeedCount = 10
+
+	// crossPartitionExpectedMax is the maximum number of partitions
+	// expected when the date range spans exactly two adjacent quarters
+	// (Q1 + Q2 + possibly the default partition).
+	crossPartitionExpectedMax = 3
+
+	// crossPartitionExpectedMin is the minimum number of partitions
+	// expected: at least both targeted quarters must be scanned.
+	crossPartitionExpectedMin = 2
+
+	// crossPartitionDatePadding is subtracted from the min timestamp and
+	// added to the max timestamp to create a date range hint that
+	// comfortably covers the boundary between Q1 and Q2.
+	crossPartitionDatePadding = 1 * time.Hour
+
+	// crossPartitionQ1Partition is the partition table name for Q1 2026.
+	crossPartitionQ1Partition = "outbox_2026_q1"
+
+	// crossPartitionQ2Partition is the partition table name for Q2 2026.
+	crossPartitionQ2Partition = "outbox_2026_q2"
+
+	// crossPartitionQ3Partition is the partition table name for Q3 2026.
+	crossPartitionQ3Partition = "outbox_2026_q3"
+
+	// crossPartitionQ4Partition is the partition table name for Q4 2026.
+	crossPartitionQ4Partition = "outbox_2026_q4"
+)
+
+// TestExplainMergeCrossPartitionPruning verifies that MERGE with date range
+// hints spanning two adjacent partitions correctly scans both while pruning
+// unrelated partitions. Events are seeded at the Q1/Q2 boundary: the last
+// day of Q1 (March 31) and the first day of Q2 (April 1). The date range
+// hint covers [March 31 - padding, April 1 + padding], which should cause
+// the planner to scan both Q1 and Q2 but prune Q3, Q4, and 2027 partitions.
+func TestExplainMergeCrossPartitionPruning(t *testing.T) {
+	pool := setupFullDB(t)
+
+	// Seed events in Q1 (near the end of March) and Q2 (start of April).
+	q1IDs, q1Times := seedOutboxInQuarter(t, pool, 2026, crossPartitionQ1Quarter, crossPartitionSeedCount)
+	q2IDs, q2Times := seedOutboxInQuarter(t, pool, 2026, crossPartitionQ2Quarter, crossPartitionSeedCount)
+	require.NotEmpty(t, q1IDs)
+	require.NotEmpty(t, q2IDs)
+
+	// Combine both quarter's data into a single batch.
+	allIDs := append(q1IDs, q2IDs...)
+	allTimes := append(q1Times, q2Times...)
+
+	// Compute date range spanning both quarters.
+	minTime := allTimes[0]
+	maxTime := allTimes[0]
+	for _, ts := range allTimes[1:] {
+		if ts.Before(minTime) {
+			minTime = ts
+		}
+		if ts.After(maxTime) {
+			maxTime = ts
+		}
+	}
+	minTimeWithPadding := minTime.Add(-crossPartitionDatePadding)
+	maxTimeWithPadding := maxTime.Add(crossPartitionDatePadding)
+
+	pgIDs := pgutil.StringsToPgtypeUUIDs(allIDs)
+
+	// EXPLAIN ANALYZE the MERGE with date range hints spanning Q1-Q2 boundary.
+	mergeSQL := `
+MERGE INTO public.outbox AS o
+USING (
+    SELECT unnest($1::uuid[]) AS id, unnest($2::timestamptz[]) AS created_at
+) AS input ON o.id = input.id AND o.created_at = input.created_at
+WHEN MATCHED AND o.published = false
+    AND o.created_at >= $3 AND o.created_at < $4
+THEN
+    UPDATE SET published = true, published_at = now()
+RETURNING o.id`
+
+	plan := ExplainPlan(t, pool, mergeSQL,
+		pgIDs, allTimes,
+		pgutil.TimeToPgtype(minTimeWithPadding), pgutil.TimeToPgtype(maxTimeWithPadding),
+	)
+
+	t.Logf("MERGE cross-partition pruning plan:\n%s", plan)
+
+	nodeType, execTime := PlanSummary(t, plan)
+	t.Logf("Top node: %s, execution time: %.3fms", nodeType, execTime)
+
+	partitionCount := countPartitionsInPlan(t, plan)
+	t.Logf("Partitions scanned: %d", partitionCount)
+
+	// With date range hints spanning Q1 and Q2, the planner should scan
+	// both Q1 and Q2 partitions (and possibly the default). Q3, Q4, and
+	// all 2027 partitions should be pruned.
+	assert.GreaterOrEqual(t, partitionCount, crossPartitionExpectedMin,
+		"expected at least %d partitions (Q1 + Q2), got %d",
+		crossPartitionExpectedMin, partitionCount)
+	assert.LessOrEqual(t, partitionCount, crossPartitionExpectedMax,
+		"expected at most %d partitions (Q1 + Q2 + default), got %d",
+		crossPartitionExpectedMax, partitionCount)
+
+	// Verify Q1 and Q2 are both present in the plan.
+	assert.Contains(t, plan, crossPartitionQ1Partition,
+		"expected plan to reference Q1 partition %q", crossPartitionQ1Partition)
+	assert.Contains(t, plan, crossPartitionQ2Partition,
+		"expected plan to reference Q2 partition %q", crossPartitionQ2Partition)
+
+	// Verify Q3 and Q4 are pruned (not referenced in the plan).
+	assert.NotContains(t, plan, crossPartitionQ3Partition,
+		"expected Q3 partition %q to be pruned from plan", crossPartitionQ3Partition)
+	assert.NotContains(t, plan, crossPartitionQ4Partition,
+		"expected Q4 partition %q to be pruned from plan", crossPartitionQ4Partition)
+}

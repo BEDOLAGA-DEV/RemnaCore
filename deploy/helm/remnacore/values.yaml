@@ -76,6 +76,11 @@ config:
   # ---------------------------------------------------------------------------
   # Database (PostgreSQL)
   # ---------------------------------------------------------------------------
+  # NOTE: Requires the following PostgreSQL server configuration:
+  #   shared_preload_libraries = 'pg_stat_statements'
+  # Without this, migration 020 (CREATE EXTENSION pg_stat_statements) will fail.
+  # For Docker Compose deployments, this is configured in docker-compose.yml.
+  # ---------------------------------------------------------------------------
   database:
     # -- PostgreSQL host
     host: "remnacore-postgresql"

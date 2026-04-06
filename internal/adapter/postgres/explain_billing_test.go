@@ -189,9 +189,29 @@ func TestExplainBillingPeriodOverlap(t *testing.T) {
 	AssertNoSeqScan(t, plan)
 }
 
-// TestExplainSkipScanUserStatus verifies that the composite (user_id, status)
-// index is used for queries filtering on user_id.
-func TestExplainSkipScanUserStatus(t *testing.T) {
+// TestExplainCompositeIndexUserStatus verifies that the composite
+// (user_id, status) index is used for queries filtering on both columns.
+//
+// Skip scan analysis (audit point 2):
+// All production queries on billing.subscriptions include user_id as the
+// leading column — PG18 skip scan is NOT needed for this table. The
+// single-column idx_subs_status was correctly removed in migration 011 and
+// the composite idx_subs_user_status covers all current query patterns.
+//
+// Queries checked (all include user_id):
+//   - GetSubscriptionsByUserID:          WHERE user_id = $1
+//   - GetActiveSubscriptionsByUserID:    WHERE user_id = $1 AND status IN (...)
+//   - GetActiveByUserAtTime (raw pgx):   WHERE user_id = $1 AND billing_period @> ...
+//   - GetOverlapping (raw pgx):          WHERE user_id = $1 AND plan_id = $2 AND billing_period && ...
+//   - UpdateSubscriptionStatus (raw pgx): WHERE id = $1 (PK lookup, no index needed)
+//   - GetSubscriptionByID:               WHERE id = $1 (PK lookup)
+//   - GetAllSubscriptions:               ORDER BY created_at (no status filter)
+//   - GetRecentlyUpdatedSubscriptions:   ORDER BY updated_at (no status filter)
+//
+// Note: multisub.remnawave_bindings DOES have status-only queries
+// (GetAllActiveBindings, GetFailedForReconciliation) that could benefit
+// from skip scan on idx_bindings_user_status. Those are tested separately.
+func TestExplainCompositeIndexUserStatus(t *testing.T) {
 	pool := setupBillingDB(t)
 	_, lastUserID := seedBillingSubscriptions(t, pool, seedSubscriptionCount)
 

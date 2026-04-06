@@ -11,6 +11,25 @@
 -- NOTE: CONCURRENTLY cannot run inside a transaction block.
 -- Atlas runs each top-level statement as a separate implicit transaction
 -- when not wrapped in BEGIN/COMMIT, which is required here.
+--
+-- ============================================================================
+-- Covering indexes decision (audit point 7)
+-- ============================================================================
+-- Covering indexes (INCLUDE clause) are intentionally not used at this stage.
+-- Current table sizes (< 100K rows) do not benefit measurably from
+-- index-only scans — heap fetches are cheap with small tables and warm
+-- buffer cache.
+--
+-- When to add covering indexes:
+--   - subscriptions table exceeds 500K rows
+--   - pg_stat_user_indexes shows high idx_scan but low idx_tup_fetch
+--     (indicating frequent heap fetches after index scan)
+--   - GetActiveSubscriptionsByUserID becomes a latency bottleneck
+--
+-- Candidate covering index:
+--   CREATE INDEX CONCURRENTLY idx_subs_user_status_covering
+--       ON billing.subscriptions (user_id, status)
+--       INCLUDE (plan_id, period_start, period_end, addon_ids, created_at);
 -- ============================================================================
 
 -- billing.subscriptions (user_id, status)

@@ -13,6 +13,7 @@ import (
 	"go.uber.org/fx"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
 )
 
 // ioMethodIOURing is the recommended io_method value for best I/O performance
@@ -24,6 +25,7 @@ const ioMethodIOURing = "io_uring"
 var Module = fx.Module("postgres",
 	fx.Provide(NewPool),
 	fx.Invoke(registerPoolMetrics),
+	fx.Invoke(registerPgStatMetrics),
 )
 
 // NewPool creates a pgxpool.Pool configured from the application's database
@@ -82,4 +84,11 @@ func logIOMethod(pool *pgxpool.Pool, logger *slog.Logger) {
 // that construct the Fx graph multiple times) are silently ignored.
 func registerPoolMetrics(pool *pgxpool.Pool) {
 	_ = prometheus.Register(NewMetricsCollector(pool))
+}
+
+// registerPgStatMetrics creates and registers the pg_stat_statements collector
+// with the default Prometheus registry. Duplicate registrations are silently
+// ignored to support tests that construct the Fx graph multiple times.
+func registerPgStatMetrics(pool *pgxpool.Pool, logger *slog.Logger) {
+	_ = prometheus.Register(observability.NewPgStatCollector(pool, logger))
 }

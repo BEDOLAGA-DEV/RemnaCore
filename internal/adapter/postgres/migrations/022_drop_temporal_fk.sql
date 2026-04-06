@@ -1,0 +1,25 @@
+-- ============================================================================
+-- Migration 022: Drop temporal FK on invoices → subscriptions billing period
+-- ============================================================================
+-- The temporal FK fk_invoice_sub_period (added in migration 012) enforces that
+-- each invoice's created_at falls within its subscription's billing_period.
+-- However, billing_period is mutable: Renew(), Upgrade(), and Downgrade() all
+-- update period_start/period_end. When the subscription period changes, old
+-- invoices created under the previous period violate the containment check,
+-- causing FK errors on the UPDATE.
+--
+-- Integrity is maintained by:
+--   1. Regular FK: invoices.subscription_id → subscriptions.id
+--   2. Exclusion constraint: uq_subs_user_plan_no_overlap (prevents overlapping
+--      active subscriptions for the same user+plan)
+--   3. Application-level validation in NewInvoice (created_at within current
+--      billing period)
+--
+-- The unique constraint uq_subs_id_period is kept because:
+--   - It supports the exclusion constraint (separate concern)
+--   - Removing it would require rebuilding the GiST index
+--
+-- The invoice_period generated column is kept (useful for analytics queries).
+-- ============================================================================
+
+ALTER TABLE billing.invoices DROP CONSTRAINT IF EXISTS fk_invoice_sub_period;

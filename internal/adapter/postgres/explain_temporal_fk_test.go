@@ -4,8 +4,8 @@ package postgres_test
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -19,9 +19,9 @@ import (
 )
 
 // allMigrations lists every migration file in sequential order. The full set
-// is required because temporal FK constraints (migration 012) depend on schemas
-// and objects created by earlier migrations, and later migrations add indexes
-// and UUIDv7 defaults.
+// is required because constraints depend on schemas and objects created by
+// earlier migrations, and later migrations add indexes, UUIDv7 defaults,
+// and the temporal FK drop (022).
 var allMigrations = []string{
 	"001_identity.sql",
 	"002_billing.sql",
@@ -41,15 +41,17 @@ var allMigrations = []string{
 	"016_updated_at_indexes.sql",
 	"017_recreate_indexes_concurrently.sql",
 	"018_row_level_security.sql",
+	"022_drop_temporal_fk.sql",
 }
 
-// temporalFKConstraintName is the foreign key constraint that enforces invoices
-// fall within their subscription's billing period.
-const temporalFKConstraintName = "fk_invoice_sub_period"
-
 // temporalUniqueConstraintName is the unique constraint on subscriptions
-// (id, billing_period WITHOUT OVERLAPS) that serves as the FK target.
+// (id, billing_period WITHOUT OVERLAPS). Kept after the temporal FK drop
+// because it supports the exclusion constraint (separate concern).
 const temporalUniqueConstraintName = "uq_subs_id_period"
+
+// droppedTemporalFKName is the name of the temporal FK that was dropped in
+// migration 022. Used to verify the constraint no longer exists.
+const droppedTemporalFKName = "fk_invoice_sub_period"
 
 // setupFullDB starts a PostgreSQL 18 container with ALL migrations applied.
 // Returns a connected pool. The container is terminated when the test finishes.
@@ -188,7 +190,45 @@ func insertTestInvoice(
 	return invoiceID, err
 }
 
-func TestTemporalFK_InvoiceWithinPeriod_Succeeds(t *testing.T) {
+// TestTemporalFK_Dropped_ConstraintAbsent verifies that migration 022
+// successfully dropped the temporal FK constraint fk_invoice_sub_period.
+// The unique constraint uq_subs_id_period is intentionally kept.
+func TestTemporalFK_Dropped_ConstraintAbsent(t *testing.T) {
+	pool := setupFullDB(t)
+	ctx := context.Background()
+
+	// Verify the temporal FK no longer exists.
+	var fkExists bool
+	err := pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM pg_constraint
+			WHERE conname = $1
+			  AND conrelid = 'billing.invoices'::regclass
+		)
+	`, droppedTemporalFKName).Scan(&fkExists)
+	require.NoError(t, err)
+	assert.False(t, fkExists,
+		"temporal FK %q should have been dropped by migration 022", droppedTemporalFKName)
+
+	// Verify the unique constraint on subscriptions is still present.
+	var uqExists bool
+	err = pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM pg_constraint
+			WHERE conname = $1
+			  AND conrelid = 'billing.subscriptions'::regclass
+		)
+	`, temporalUniqueConstraintName).Scan(&uqExists)
+	require.NoError(t, err)
+	assert.True(t, uqExists,
+		"unique constraint %q should still exist", temporalUniqueConstraintName)
+}
+
+// TestTemporalFK_Dropped_InvoiceOutsidePeriodSucceeds verifies that after the
+// temporal FK is dropped, invoices outside the subscription billing period are
+// accepted at the database level. Containment is now enforced at the
+// application level in NewInvoice.
+func TestTemporalFK_Dropped_InvoiceOutsidePeriodSucceeds(t *testing.T) {
 	pool := setupFullDB(t)
 	ctx := context.Background()
 
@@ -198,82 +238,87 @@ func TestTemporalFK_InvoiceWithinPeriod_Succeeds(t *testing.T) {
 	planID := insertTestPlan(t, ctx, pool)
 	subID := insertTestSubscription(t, ctx, pool, planID, testSubscriptionStatus, periodStart, periodEnd)
 
-	// Invoice created_at mid-period should succeed.
-	midPeriod := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
-	invoiceID, err := insertTestInvoice(t, ctx, pool, subID, midPeriod)
-	require.NoError(t, err, "invoice within period should succeed")
-	assert.NotEmpty(t, invoiceID)
+	tests := []struct {
+		name      string
+		createdAt time.Time
+	}{
+		{
+			name:      "within_period",
+			createdAt: time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC),
+		},
+		{
+			name:      "at_period_start",
+			createdAt: periodStart,
+		},
+		{
+			name:      "at_period_end",
+			createdAt: periodEnd,
+		},
+		{
+			name:      "outside_period_after",
+			createdAt: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name:      "outside_period_before",
+			createdAt: time.Date(2025, 12, 31, 23, 59, 59, 0, time.UTC),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			invoiceID, err := insertTestInvoice(t, ctx, pool, subID, tt.createdAt)
+			require.NoError(t, err,
+				"with temporal FK dropped, invoice at %v should succeed", tt.createdAt)
+			assert.NotEmpty(t, invoiceID)
+		})
+	}
 }
 
-func TestTemporalFK_InvoiceAtPeriodStart_Succeeds(t *testing.T) {
+// TestTemporalFK_Dropped_RenewalDoesNotBreakInvoices is the regression test
+// for the original problem: Renew() changes billing_period, and old invoices
+// must not cause FK violations. With the temporal FK dropped, updating the
+// subscription period succeeds even when old invoices exist outside the new
+// period.
+func TestTemporalFK_Dropped_RenewalDoesNotBreakInvoices(t *testing.T) {
 	pool := setupFullDB(t)
 	ctx := context.Background()
 
-	periodStart := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	periodEnd := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	// Original period: January 2026.
+	originalStart := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	originalEnd := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
 
 	planID := insertTestPlan(t, ctx, pool)
-	subID := insertTestSubscription(t, ctx, pool, planID, testSubscriptionStatus, periodStart, periodEnd)
+	subID := insertTestSubscription(t, ctx, pool, planID, testSubscriptionStatus, originalStart, originalEnd)
 
-	// Invoice at exactly period_start should succeed (half-open '[)' includes start).
-	invoiceID, err := insertTestInvoice(t, ctx, pool, subID, periodStart)
-	require.NoError(t, err, "invoice at period start should succeed (inclusive)")
-	assert.NotEmpty(t, invoiceID)
+	// Create invoice in original period.
+	midJanuary := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
+	_, err := insertTestInvoice(t, ctx, pool, subID, midJanuary)
+	require.NoError(t, err, "invoice within original period should succeed")
+
+	// Simulate Renew(): update period to February 2026.
+	renewedStart := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	renewedEnd := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+
+	_, err = pool.Exec(ctx, `
+		UPDATE billing.subscriptions
+		SET period_start = $1, period_end = $2
+		WHERE id = $3
+	`, renewedStart, renewedEnd, subID)
+	require.NoError(t, err,
+		"updating subscription period should succeed even with old invoices outside new period")
+
+	// Verify the old invoice still exists.
+	var invoiceCount int
+	err = pool.QueryRow(ctx, `
+		SELECT count(*) FROM billing.invoices WHERE subscription_id = $1
+	`, subID).Scan(&invoiceCount)
+	require.NoError(t, err)
+	assert.Equal(t, 1, invoiceCount, "old invoice should still exist after renewal")
 }
 
-func TestTemporalFK_InvoiceOutsidePeriod_Fails(t *testing.T) {
-	pool := setupFullDB(t)
-	ctx := context.Background()
-
-	periodStart := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	periodEnd := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
-
-	planID := insertTestPlan(t, ctx, pool)
-	subID := insertTestSubscription(t, ctx, pool, planID, testSubscriptionStatus, periodStart, periodEnd)
-
-	// Invoice created_at well outside the period should fail.
-	outsidePeriod := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
-	_, err := insertTestInvoice(t, ctx, pool, subID, outsidePeriod)
-	require.Error(t, err, "invoice outside period should be rejected by temporal FK")
-	assert.True(t, strings.Contains(err.Error(), temporalFKConstraintName),
-		"expected error to reference constraint %q, got: %v", temporalFKConstraintName, err)
-}
-
-func TestTemporalFK_InvoiceAtPeriodEnd_Fails(t *testing.T) {
-	pool := setupFullDB(t)
-	ctx := context.Background()
-
-	periodStart := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	periodEnd := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
-
-	planID := insertTestPlan(t, ctx, pool)
-	subID := insertTestSubscription(t, ctx, pool, planID, testSubscriptionStatus, periodStart, periodEnd)
-
-	// Invoice at exactly period_end should fail (half-open '[)' excludes end).
-	_, err := insertTestInvoice(t, ctx, pool, subID, periodEnd)
-	require.Error(t, err, "invoice at period_end should be rejected (half-open interval excludes end)")
-	assert.True(t, strings.Contains(err.Error(), temporalFKConstraintName),
-		"expected error to reference constraint %q, got: %v", temporalFKConstraintName, err)
-}
-
-func TestTemporalFK_InvoiceBeforePeriodStart_Fails(t *testing.T) {
-	pool := setupFullDB(t)
-	ctx := context.Background()
-
-	periodStart := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	periodEnd := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
-
-	planID := insertTestPlan(t, ctx, pool)
-	subID := insertTestSubscription(t, ctx, pool, planID, testSubscriptionStatus, periodStart, periodEnd)
-
-	// Invoice before period_start should fail.
-	beforePeriod := time.Date(2025, 12, 31, 23, 59, 59, 0, time.UTC)
-	_, err := insertTestInvoice(t, ctx, pool, subID, beforePeriod)
-	require.Error(t, err, "invoice before period_start should be rejected by temporal FK")
-	assert.True(t, strings.Contains(err.Error(), temporalFKConstraintName),
-		"expected error to reference constraint %q, got: %v", temporalFKConstraintName, err)
-}
-
+// TestTemporalExclusion_OverlappingSubscriptions_Fails verifies that the
+// exclusion constraint (separate from the dropped temporal FK) still prevents
+// overlapping active subscriptions for the same user+plan.
 func TestTemporalExclusion_OverlappingSubscriptions_Fails(t *testing.T) {
 	pool := setupFullDB(t)
 	ctx := context.Background()
@@ -299,7 +344,7 @@ func TestTemporalExclusion_OverlappingSubscriptions_Fails(t *testing.T) {
 	`, subID2, userID, planID, testSubscriptionStatus, periodStart2, periodEnd2)
 
 	require.Error(t, err, "overlapping active subscriptions for same user+plan should be rejected")
-	assert.True(t, strings.Contains(err.Error(), billingPlanGistIndex),
+	assert.Contains(t, err.Error(), billingPlanGistIndex,
 		"expected error to reference exclusion constraint %q, got: %v", billingPlanGistIndex, err)
 }
 
@@ -339,4 +384,61 @@ func TestTemporalExclusion_AdjacentPeriodsSucceed(t *testing.T) {
 	periodEnd2 := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
 	subID2 := insertTestSubscriptionWithUser(t, ctx, pool, userID, planID, testSubscriptionStatus, periodStart2, periodEnd2)
 	assert.NotEmpty(t, subID2, "adjacent non-overlapping periods should succeed")
+}
+
+// TestTemporalFK_Dropped_InvoicePeriodColumnRetained verifies that the
+// invoice_period generated column still exists after the FK is dropped.
+// The column remains useful for analytics and reporting queries.
+func TestTemporalFK_Dropped_InvoicePeriodColumnRetained(t *testing.T) {
+	pool := setupFullDB(t)
+	ctx := context.Background()
+
+	var columnExists bool
+	err := pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_schema = 'billing'
+			  AND table_name = 'invoices'
+			  AND column_name = 'invoice_period'
+		)
+	`).Scan(&columnExists)
+	require.NoError(t, err)
+	assert.True(t, columnExists,
+		"invoice_period generated column should be retained after FK drop")
+}
+
+// invoicePeriodGeneratedColumnValue is the expected lower/upper format for a
+// point-in-time range: [ts, ts].
+const invoicePeriodGeneratedColumnValue = "[%s,%s]"
+
+// TestTemporalFK_Dropped_InvoicePeriodColumnValueCorrect verifies that the
+// invoice_period generated column produces the expected point-in-time range.
+func TestTemporalFK_Dropped_InvoicePeriodColumnValueCorrect(t *testing.T) {
+	pool := setupFullDB(t)
+	ctx := context.Background()
+
+	periodStart := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	periodEnd := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+
+	planID := insertTestPlan(t, ctx, pool)
+	subID := insertTestSubscription(t, ctx, pool, planID, testSubscriptionStatus, periodStart, periodEnd)
+
+	createdAt := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
+	invoiceID, err := insertTestInvoice(t, ctx, pool, subID, createdAt)
+	require.NoError(t, err)
+
+	var invoicePeriod string
+	err = pool.QueryRow(ctx, `
+		SELECT invoice_period::text FROM billing.invoices WHERE id = $1
+	`, invoiceID).Scan(&invoicePeriod)
+	require.NoError(t, err)
+
+	// The generated column creates a closed range [created_at, created_at].
+	// PG normalizes the text representation; verify it contains the timestamp.
+	assert.Contains(t, invoicePeriod, "2026-01-15",
+		"invoice_period should contain the created_at date, got: %s", invoicePeriod)
+
+	t.Logf("invoice_period value: %s", invoicePeriod)
+
+	_ = fmt.Sprintf(invoicePeriodGeneratedColumnValue, createdAt, createdAt)
 }

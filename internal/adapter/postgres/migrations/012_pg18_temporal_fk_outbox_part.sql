@@ -9,6 +9,11 @@
 -- ============================================================================
 -- 9. Temporal FK: invoices → subscriptions billing period
 -- ============================================================================
+-- NOTE: The temporal FK fk_invoice_sub_period created below was dropped in
+-- migration 022_drop_temporal_fk.sql. billing_period is mutable (Renew,
+-- Upgrade, Downgrade change it), so old invoices violate containment after
+-- period changes. See migration 022 for full rationale.
+-- ============================================================================
 
 -- Point-in-time range from invoice created_at. Temporal FK checks containment:
 -- the invoice's instant must fall within the subscription's billing period.
