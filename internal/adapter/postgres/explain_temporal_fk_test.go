@@ -21,7 +21,12 @@ import (
 // allMigrations lists every migration file in sequential order. The full set
 // is required because constraints depend on schemas and objects created by
 // earlier migrations, and later migrations add indexes, UUIDv7 defaults,
-// and the temporal FK drop (022).
+// the temporal FK drop (022), and schema sync (021) for fail_reason column
+// and 'reconciling' status.
+//
+// Note: 020_pg_stat_statements.sql is excluded because it requires
+// shared_preload_libraries=pg_stat_statements which is not configured in
+// the testcontainers PG instance.
 var allMigrations = []string{
 	"001_identity.sql",
 	"002_billing.sql",
@@ -41,7 +46,10 @@ var allMigrations = []string{
 	"016_updated_at_indexes.sql",
 	"017_recreate_indexes_concurrently.sql",
 	"018_row_level_security.sql",
+	"019_shared_trigger_function.sql",
+	"021_schema_sync.sql",
 	"022_drop_temporal_fk.sql",
+	"023_bindings_status_index.sql",
 }
 
 // temporalUniqueConstraintName is the unique constraint on subscriptions
