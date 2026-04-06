@@ -88,16 +88,12 @@ func (f *PaymentFacade) CreateCharge(ctx context.Context, req CreateChargeReques
 		return nil, fmt.Errorf("persist payment record: %w", err)
 	}
 
-	if f.publisher != nil {
-		chargeEvent := NewChargeCreatedEvent(
-			record.ID, record.InvoiceID, record.Provider, record.ExternalID, record.Amount, f.clock.Now(),
+	// Aggregate already recorded its own creation event in NewPaymentRecord.
+	if err := f.publishAggregateEvents(ctx, record); err != nil {
+		f.logger.Warn("failed to publish aggregate events",
+			slog.String("payment_id", record.ID),
+			slog.Any("error", err),
 		)
-		if err := f.publisher.Publish(ctx, chargeEvent); err != nil {
-			f.logger.Warn("failed to publish event",
-				slog.String("event_type", string(chargeEvent.Type)),
-				slog.Any("error", err),
-			)
-		}
 	}
 
 	f.logger.Info("payment charge created",
@@ -177,7 +173,7 @@ func (f *PaymentFacade) Refund(ctx context.Context, paymentID string, amount int
 		return fmt.Errorf("%w: %v", ErrRefundFailed, err)
 	}
 
-	if err := record.MarkRefunded(f.clock.Now()); err != nil {
+	if err := record.MarkRefunded(amount, f.clock.Now()); err != nil {
 		return fmt.Errorf("mark payment refunded: %w", err)
 	}
 
@@ -185,16 +181,12 @@ func (f *PaymentFacade) Refund(ctx context.Context, paymentID string, amount int
 		return fmt.Errorf("persist refunded payment: %w", err)
 	}
 
-	if f.publisher != nil {
-		refundEvent := NewRefundCompletedEvent(
-			record.ID, record.InvoiceID, record.Provider, amount, f.clock.Now(),
+	// Aggregate already recorded its own refund event in MarkRefunded.
+	if err := f.publishAggregateEvents(ctx, record); err != nil {
+		f.logger.Warn("failed to publish aggregate events",
+			slog.String("payment_id", record.ID),
+			slog.Any("error", err),
 		)
-		if err := f.publisher.Publish(ctx, refundEvent); err != nil {
-			f.logger.Warn("failed to publish event",
-				slog.String("event_type", string(refundEvent.Type)),
-				slog.Any("error", err),
-			)
-		}
 	}
 
 	f.logger.Info("payment refunded",
@@ -221,16 +213,12 @@ func (f *PaymentFacade) CompletePayment(ctx context.Context, provider, externalI
 		return nil, fmt.Errorf("persist completed payment: %w", err)
 	}
 
-	if f.publisher != nil {
-		completedEvent := NewChargeCompletedEvent(
-			record.ID, record.InvoiceID, record.Provider, record.Amount, f.clock.Now(),
+	// Aggregate already recorded its own completed event in MarkCompleted.
+	if err := f.publishAggregateEvents(ctx, record); err != nil {
+		f.logger.Warn("failed to publish aggregate events",
+			slog.String("payment_id", record.ID),
+			slog.Any("error", err),
 		)
-		if err := f.publisher.Publish(ctx, completedEvent); err != nil {
-			f.logger.Warn("failed to publish event",
-				slog.String("event_type", string(completedEvent.Type)),
-				slog.Any("error", err),
-			)
-		}
 	}
 
 	return record, nil
@@ -273,4 +261,24 @@ func (f *PaymentFacade) MarkWebhookFailed(ctx context.Context, provider, externa
 // isWebhookDuplicate checks if the error indicates a duplicate webhook.
 func isWebhookDuplicate(err error) bool {
 	return errors.Is(err, ErrWebhookDuplicate)
+}
+
+// eventSource is implemented by aggregates that embed domainevent.EventRecorder.
+type eventSource interface {
+	DomainEvents() []domainevent.Event
+}
+
+// publishAggregateEvents flushes all pending events from the aggregate and
+// publishes them through the publisher. This centralises the flush-and-publish
+// pattern so individual facade methods cannot forget to publish.
+func (f *PaymentFacade) publishAggregateEvents(ctx context.Context, src eventSource) error {
+	if f.publisher == nil {
+		return nil
+	}
+	for _, event := range src.DomainEvents() {
+		if err := f.publisher.Publish(ctx, event); err != nil {
+			return fmt.Errorf("publish %s: %w", event.Type, err)
+		}
+	}
+	return nil
 }

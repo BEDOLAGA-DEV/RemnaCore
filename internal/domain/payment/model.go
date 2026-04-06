@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
 
 // PaymentStatus represents the current state of a payment record.
@@ -27,7 +28,12 @@ const (
 )
 
 // PaymentRecord represents a payment attempt against an invoice.
+// It embeds EventRecorder to accumulate domain events during mutations.
+// Services must call DomainEvents() after persisting the aggregate to
+// retrieve and publish all pending events.
 type PaymentRecord struct {
+	domainevent.EventRecorder
+
 	ID         string
 	InvoiceID  string
 	Provider   string
@@ -39,9 +45,10 @@ type PaymentRecord struct {
 	UpdatedAt  time.Time
 }
 
-// NewPaymentRecord creates a new PaymentRecord in pending status.
+// NewPaymentRecord creates a new PaymentRecord in pending status and records
+// a ChargeCreated event.
 func NewPaymentRecord(invoiceID, provider, externalID string, amount int64, currency string, now time.Time) *PaymentRecord {
-	return &PaymentRecord{
+	p := &PaymentRecord{
 		ID:         uuid.Must(uuid.NewV7()).String(),
 		InvoiceID:  invoiceID,
 		Provider:   provider,
@@ -52,6 +59,14 @@ func NewPaymentRecord(invoiceID, provider, externalID string, amount int64, curr
 		CreatedAt:  now,
 		UpdatedAt:  now,
 	}
+	p.RecordEvent(domainevent.NewAtWithEntity(EventChargeCreated, ChargeCreatedPayload{
+		PaymentID:  p.ID,
+		InvoiceID:  p.InvoiceID,
+		Provider:   p.Provider,
+		ExternalID: p.ExternalID,
+		Amount:     p.Amount,
+	}, now, p.ID))
+	return p
 }
 
 // MarkCompleted transitions a pending payment to completed.
@@ -61,26 +76,44 @@ func (p *PaymentRecord) MarkCompleted(now time.Time) error {
 	}
 	p.Status = PaymentCompleted
 	p.UpdatedAt = now
+	p.RecordEvent(domainevent.NewAtWithEntity(EventChargeCompleted, ChargeCompletedPayload{
+		PaymentID: p.ID,
+		InvoiceID: p.InvoiceID,
+		Provider:  p.Provider,
+		Amount:    p.Amount,
+	}, now, p.ID))
 	return nil
 }
 
 // MarkFailed transitions a pending payment to failed.
-func (p *PaymentRecord) MarkFailed(now time.Time) error {
+func (p *PaymentRecord) MarkFailed(reason string, now time.Time) error {
 	if p.Status != PaymentPending {
 		return ErrInvalidPaymentState
 	}
 	p.Status = PaymentFailed
 	p.UpdatedAt = now
+	p.RecordEvent(domainevent.NewAtWithEntity(EventChargeFailed, ChargeFailedPayload{
+		PaymentID: p.ID,
+		InvoiceID: p.InvoiceID,
+		Provider:  p.Provider,
+		Reason:    reason,
+	}, now, p.ID))
 	return nil
 }
 
 // MarkRefunded transitions a completed payment to refunded.
-func (p *PaymentRecord) MarkRefunded(now time.Time) error {
+func (p *PaymentRecord) MarkRefunded(amount int64, now time.Time) error {
 	if p.Status != PaymentCompleted {
 		return ErrInvalidPaymentState
 	}
 	p.Status = PaymentRefunded
 	p.UpdatedAt = now
+	p.RecordEvent(domainevent.NewAtWithEntity(EventRefundCompleted, RefundCompletedPayload{
+		PaymentID: p.ID,
+		InvoiceID: p.InvoiceID,
+		Provider:  p.Provider,
+		Amount:    amount,
+	}, now, p.ID))
 	return nil
 }
 
