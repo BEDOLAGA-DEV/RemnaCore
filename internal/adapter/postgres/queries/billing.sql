@@ -96,6 +96,11 @@ SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
        addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
 FROM billing.subscriptions WHERE id = $1;
 
+-- name: GetSubscriptionByIDForUpdate :one
+SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
+       addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
+FROM billing.subscriptions WHERE id = $1 FOR UPDATE;
+
 -- name: GetSubscriptionsByUserID :many
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
        addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
@@ -154,6 +159,11 @@ SELECT id, subscription_id, user_id, subtotal_amount, total_discount_amount,
        total_amount, currency, pricing_reason, discounts, status, paid_at, created_at, updated_at
 FROM billing.invoices WHERE id = $1;
 
+-- name: GetInvoiceByIDForUpdate :one
+SELECT id, subscription_id, user_id, subtotal_amount, total_discount_amount,
+       total_amount, currency, pricing_reason, discounts, status, paid_at, created_at, updated_at
+FROM billing.invoices WHERE id = $1 FOR UPDATE;
+
 -- name: GetInvoicesBySubscriptionID :many
 SELECT id, subscription_id, user_id, subtotal_amount, total_discount_amount,
        total_amount, currency, pricing_reason, discounts, status, paid_at, created_at, updated_at
@@ -206,6 +216,10 @@ FROM billing.family_groups WHERE id = $1;
 -- name: GetFamilyGroupByOwnerID :one
 SELECT id, owner_id, max_members, created_at, updated_at
 FROM billing.family_groups WHERE owner_id = $1;
+
+-- name: GetFamilyGroupByOwnerIDForUpdate :one
+SELECT id, owner_id, max_members, created_at, updated_at
+FROM billing.family_groups WHERE owner_id = $1 FOR UPDATE;
 
 -- name: UpdateFamilyGroup :exec
 UPDATE billing.family_groups SET max_members = $2 WHERE id = $1;

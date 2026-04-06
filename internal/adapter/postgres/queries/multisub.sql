@@ -15,6 +15,12 @@ SELECT id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uu
        allowed_nodes, inbound_tags, fail_reason, synced_at, created_at, updated_at
 FROM multisub.remnawave_bindings WHERE id = $1;
 
+-- name: GetBindingByIDForUpdate :one
+SELECT id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uuid,
+       remnawave_username, purpose, status, traffic_limit_bytes,
+       allowed_nodes, inbound_tags, fail_reason, synced_at, created_at, updated_at
+FROM multisub.remnawave_bindings WHERE id = $1 FOR UPDATE;
+
 -- name: GetBindingsBySubscriptionID :many
 SELECT id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uuid,
        remnawave_username, purpose, status, traffic_limit_bytes,

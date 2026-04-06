@@ -33,7 +33,23 @@ func (m *MockPaymentRepo) GetPaymentByID(ctx context.Context, id string) (*payme
 	return args.Get(0).(*payment.PaymentRecord), args.Error(1)
 }
 
+func (m *MockPaymentRepo) GetPaymentByIDForUpdate(ctx context.Context, id string) (*payment.PaymentRecord, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*payment.PaymentRecord), args.Error(1)
+}
+
 func (m *MockPaymentRepo) GetPaymentByExternalID(ctx context.Context, provider, externalID string) (*payment.PaymentRecord, error) {
+	args := m.Called(ctx, provider, externalID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*payment.PaymentRecord), args.Error(1)
+}
+
+func (m *MockPaymentRepo) GetPaymentByExternalIDForUpdate(ctx context.Context, provider, externalID string) (*payment.PaymentRecord, error) {
 	args := m.Called(ctx, provider, externalID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)

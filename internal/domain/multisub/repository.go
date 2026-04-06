@@ -10,6 +10,10 @@ import (
 // BindingRepository defines persistence operations for the RemnawaveBinding aggregate.
 type BindingRepository interface {
 	GetByID(ctx context.Context, id string) (*aggregate.RemnawaveBinding, error)
+	// GetByIDForUpdate retrieves a binding by ID with a SELECT FOR UPDATE row
+	// lock. Must be called within a RunInTx transaction to prevent TOCTOU races
+	// during read-modify-write cycles.
+	GetByIDForUpdate(ctx context.Context, id string) (*aggregate.RemnawaveBinding, error)
 	GetBySubscriptionID(ctx context.Context, subID string) ([]*aggregate.RemnawaveBinding, error)
 	GetByPlatformUserID(ctx context.Context, userID string) ([]*aggregate.RemnawaveBinding, error)
 	GetByRemnawaveUUID(ctx context.Context, rwUUID string) (*aggregate.RemnawaveBinding, error)

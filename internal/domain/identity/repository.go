@@ -6,6 +6,10 @@ import "context"
 type Repository interface {
 	CreateUser(ctx context.Context, user *PlatformUser) error
 	GetUserByID(ctx context.Context, id string) (*PlatformUser, error)
+	// GetUserByIDForUpdate retrieves a user by ID with a SELECT FOR UPDATE row
+	// lock. Must be called within a RunInTx transaction to prevent TOCTOU races
+	// during read-modify-write cycles.
+	GetUserByIDForUpdate(ctx context.Context, id string) (*PlatformUser, error)
 	GetUserByEmail(ctx context.Context, email string) (*PlatformUser, error)
 	GetUserByTelegramID(ctx context.Context, telegramID int64) (*PlatformUser, error)
 	UpdateUser(ctx context.Context, user *PlatformUser) error

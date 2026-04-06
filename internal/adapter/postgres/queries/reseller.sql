@@ -11,6 +11,10 @@ INSERT INTO reseller.tenants (
 SELECT id, name, domain, owner_user_id, branding_config, api_key_hash, is_active, created_at, updated_at
 FROM reseller.tenants WHERE id = $1;
 
+-- name: GetTenantByIDForUpdate :one
+SELECT id, name, domain, owner_user_id, branding_config, api_key_hash, is_active, created_at, updated_at
+FROM reseller.tenants WHERE id = $1 FOR UPDATE;
+
 -- name: GetTenantByDomain :one
 SELECT id, name, domain, owner_user_id, branding_config, api_key_hash, is_active, created_at, updated_at
 FROM reseller.tenants WHERE domain = $1;
@@ -43,6 +47,10 @@ INSERT INTO reseller.reseller_accounts (
 SELECT id, tenant_id, user_id, commission_rate, balance, created_at
 FROM reseller.reseller_accounts WHERE id = $1;
 
+-- name: GetResellerAccountByIDForUpdate :one
+SELECT id, tenant_id, user_id, commission_rate, balance, created_at
+FROM reseller.reseller_accounts WHERE id = $1 FOR UPDATE;
+
 -- name: GetResellerAccountByUserAndTenant :one
 SELECT id, tenant_id, user_id, commission_rate, balance, created_at
 FROM reseller.reseller_accounts WHERE user_id = $1 AND tenant_id = $2;
@@ -64,6 +72,10 @@ INSERT INTO reseller.commissions (
 -- name: GetCommissionByID :one
 SELECT id, reseller_id, sale_id, amount, currency, status, created_at, paid_at
 FROM reseller.commissions WHERE id = $1;
+
+-- name: GetCommissionByIDForUpdate :one
+SELECT id, reseller_id, sale_id, amount, currency, status, created_at, paid_at
+FROM reseller.commissions WHERE id = $1 FOR UPDATE;
 
 -- name: GetPendingCommissions :many
 SELECT id, reseller_id, sale_id, amount, currency, status, created_at, paid_at

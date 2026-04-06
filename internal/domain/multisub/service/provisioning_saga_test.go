@@ -439,7 +439,7 @@ func TestProvision_PublishFail_RollbackAndCompensate(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "publish binding event")
+	assert.Contains(t, err.Error(), "transactional update")
 	assert.Empty(t, results)
 
 	// Verify compensation fired

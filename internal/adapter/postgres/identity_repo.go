@@ -103,6 +103,29 @@ func (r *IdentityRepository) GetUserByID(ctx context.Context, id string) (*ident
 	return rowToUser(row), nil
 }
 
+// getUserByIDForUpdateSQL is identical to GetUserByID but acquires a FOR UPDATE
+// row lock. Must be called within a transaction.
+const getUserByIDForUpdateSQL = `
+SELECT id, email, password_hash, display_name, email_verified, telegram_id, role, tenant_id, created_at, updated_at
+FROM identity.platform_users WHERE id = $1 FOR UPDATE
+`
+
+func (r *IdentityRepository) GetUserByIDForUpdate(ctx context.Context, id string) (*identity.PlatformUser, error) {
+	db := DBFromContext(ctx, r.pool)
+	row := db.QueryRow(ctx, getUserByIDForUpdateSQL, pgutil.UUIDToPgtype(id))
+
+	var rawRow gen.IdentityPlatformUser
+	err := row.Scan(
+		&rawRow.ID, &rawRow.Email, &rawRow.PasswordHash, &rawRow.DisplayName,
+		&rawRow.EmailVerified, &rawRow.TelegramID, &rawRow.Role, &rawRow.TenantID,
+		&rawRow.CreatedAt, &rawRow.UpdatedAt,
+	)
+	if err != nil {
+		return nil, pgutil.MapErr(err, "get user by id for update", identity.ErrNotFound)
+	}
+	return rowToUser(rawRow), nil
+}
+
 func (r *IdentityRepository) GetUserByEmail(ctx context.Context, email string) (*identity.PlatformUser, error) {
 	row, err := r.q(ctx).GetUserByEmail(ctx, email)
 	if err != nil {

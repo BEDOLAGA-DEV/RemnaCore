@@ -131,23 +131,24 @@ func (s *ResellerService) ListTenants(ctx context.Context, limit, offset int) ([
 	return tenants, nil
 }
 
-// UpdateBranding updates the branding configuration for a tenant.
+// UpdateBranding updates the branding configuration for a tenant. The read
+// (with FOR UPDATE lock), mutation, update, and event publish are all inside a
+// single transaction to prevent TOCTOU races.
 func (s *ResellerService) UpdateBranding(ctx context.Context, tenantID string, branding BrandingConfig) (*Tenant, error) {
-	tenant, err := s.tenants.GetTenantByID(ctx, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("finding tenant: %w", err)
-	}
-
-	tenant.SetBranding(branding, s.clock.Now())
-
+	var tenant *Tenant
 	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		var err error
+		tenant, err = s.tenants.GetTenantByIDForUpdate(txCtx, tenantID)
+		if err != nil {
+			return fmt.Errorf("finding tenant: %w", err)
+		}
+
+		tenant.SetBranding(branding, s.clock.Now())
+
 		if err := s.tenants.UpdateTenant(txCtx, tenant); err != nil {
 			return fmt.Errorf("updating tenant branding: %w", err)
 		}
-		if err := domainevent.PublishAll(txCtx, s.publisher, tenant); err != nil {
-			return err
-		}
-		return nil
+		return domainevent.PublishAll(txCtx, s.publisher, tenant)
 	}); err != nil {
 		return nil, err
 	}
@@ -225,30 +226,30 @@ func (s *ResellerService) RecordCommission(ctx context.Context, resellerID, sale
 }
 
 // MarkCommissionPaid transitions a pending commission to paid and publishes
-// the resulting domain event.
+// the resulting domain event. The read (with FOR UPDATE lock), mutation,
+// update, and event publish are all inside a single transaction to prevent
+// TOCTOU races.
 func (s *ResellerService) MarkCommissionPaid(ctx context.Context, commissionID string) (*Commission, error) {
-	now := s.clock.Now()
+	var commission *Commission
+	err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		var err error
+		commission, err = s.commissions.GetCommissionByIDForUpdate(txCtx, commissionID)
+		if err != nil {
+			return fmt.Errorf("finding commission: %w", err)
+		}
 
-	commission, err := s.commissions.GetCommissionByID(ctx, commissionID)
+		if err := commission.MarkPaid(s.clock.Now()); err != nil {
+			return err
+		}
+
+		if err := s.commissions.UpdateCommission(txCtx, commission); err != nil {
+			return fmt.Errorf("updating commission: %w", err)
+		}
+
+		return domainevent.PublishAll(txCtx, s.publisher, commission)
+	})
 	if err != nil {
-		return nil, fmt.Errorf("finding commission: %w", err)
-	}
-
-	if err := commission.MarkPaid(now); err != nil {
 		return nil, err
-	}
-
-	// Aggregate already recorded its own paid event in MarkPaid().
-
-	if err := s.commissions.UpdateCommission(ctx, commission); err != nil {
-		return nil, fmt.Errorf("updating commission: %w", err)
-	}
-
-	if err := domainevent.PublishAll(ctx, s.publisher, commission); err != nil {
-		s.logger.Warn("failed to publish aggregate events",
-			slog.String("event_type", string(EventCommissionPaid)),
-			slog.Any("error", err),
-		)
 	}
 
 	s.logger.Info("commission marked as paid",

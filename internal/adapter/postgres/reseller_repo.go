@@ -118,6 +118,29 @@ func (r *ResellerRepository) GetTenantByID(ctx context.Context, id string) (*res
 	return tenantRowToDomain(row), nil
 }
 
+// getTenantByIDForUpdateSQL is identical to GetTenantByID but acquires a
+// FOR UPDATE row lock. Must be called within a transaction.
+const getTenantByIDForUpdateSQL = `
+SELECT id, name, domain, owner_user_id, branding_config, api_key_hash, is_active, created_at, updated_at
+FROM reseller.tenants WHERE id = $1 FOR UPDATE
+`
+
+func (r *ResellerRepository) GetTenantByIDForUpdate(ctx context.Context, id string) (*reseller.Tenant, error) {
+	db := DBFromContext(ctx, r.pool)
+	row := db.QueryRow(ctx, getTenantByIDForUpdateSQL, pgutil.UUIDToPgtype(id))
+
+	var rawRow gen.ResellerTenant
+	err := row.Scan(
+		&rawRow.ID, &rawRow.Name, &rawRow.Domain, &rawRow.OwnerUserID,
+		&rawRow.BrandingConfig, &rawRow.ApiKeyHash, &rawRow.IsActive,
+		&rawRow.CreatedAt, &rawRow.UpdatedAt,
+	)
+	if err != nil {
+		return nil, pgutil.MapErr(err, "get tenant by id for update", reseller.ErrTenantNotFound)
+	}
+	return tenantRowToDomain(rawRow), nil
+}
+
 func (r *ResellerRepository) GetTenantByDomain(ctx context.Context, domain string) (*reseller.Tenant, error) {
 	row, err := r.q(ctx).GetTenantByDomain(ctx, &domain)
 	if err != nil {
@@ -207,6 +230,28 @@ func (r *ResellerRepository) GetCommissionByID(ctx context.Context, id string) (
 		return nil, pgutil.MapErr(err, "get commission by id", reseller.ErrCommissionNotFound)
 	}
 	return commissionRowToDomain(row), nil
+}
+
+// getCommissionByIDForUpdateSQL is identical to GetCommissionByID but acquires
+// a FOR UPDATE row lock. Must be called within a transaction.
+const getCommissionByIDForUpdateSQL = `
+SELECT id, reseller_id, sale_id, amount, currency, status, created_at, paid_at
+FROM reseller.commissions WHERE id = $1 FOR UPDATE
+`
+
+func (r *ResellerRepository) GetCommissionByIDForUpdate(ctx context.Context, id string) (*reseller.Commission, error) {
+	db := DBFromContext(ctx, r.pool)
+	row := db.QueryRow(ctx, getCommissionByIDForUpdateSQL, pgutil.UUIDToPgtype(id))
+
+	var rawRow gen.ResellerCommission
+	err := row.Scan(
+		&rawRow.ID, &rawRow.ResellerID, &rawRow.SaleID, &rawRow.Amount,
+		&rawRow.Currency, &rawRow.Status, &rawRow.CreatedAt, &rawRow.PaidAt,
+	)
+	if err != nil {
+		return nil, pgutil.MapErr(err, "get commission by id for update", reseller.ErrCommissionNotFound)
+	}
+	return commissionRowToDomain(rawRow), nil
 }
 
 func (r *ResellerRepository) CreateCommission(ctx context.Context, commission *reseller.Commission) error {

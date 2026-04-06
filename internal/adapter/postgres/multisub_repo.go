@@ -57,6 +57,33 @@ func (r *BindingRepository) GetByID(ctx context.Context, id string) (*aggregate.
 	return bindingRowToDomain(row), nil
 }
 
+// getBindingByIDForUpdateSQL is identical to GetBindingByID but acquires a
+// FOR UPDATE row lock. Must be called within a transaction.
+const getBindingByIDForUpdateSQL = `
+SELECT id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uuid,
+       remnawave_username, purpose, status, traffic_limit_bytes,
+       allowed_nodes, inbound_tags, fail_reason, synced_at, created_at, updated_at
+FROM multisub.remnawave_bindings WHERE id = $1 FOR UPDATE
+`
+
+func (r *BindingRepository) GetByIDForUpdate(ctx context.Context, id string) (*aggregate.RemnawaveBinding, error) {
+	db := DBFromContext(ctx, r.pool)
+	row := db.QueryRow(ctx, getBindingByIDForUpdateSQL, pgutil.UUIDToPgtype(id))
+
+	var rawRow gen.MultisubRemnawaveBinding
+	err := row.Scan(
+		&rawRow.ID, &rawRow.SubscriptionID, &rawRow.PlatformUserID,
+		&rawRow.RemnawaveUuid, &rawRow.RemnawaveShortUuid,
+		&rawRow.RemnawaveUsername, &rawRow.Purpose, &rawRow.Status,
+		&rawRow.TrafficLimitBytes, &rawRow.AllowedNodes, &rawRow.InboundTags,
+		&rawRow.FailReason, &rawRow.SyncedAt, &rawRow.CreatedAt, &rawRow.UpdatedAt,
+	)
+	if err != nil {
+		return nil, pgutil.MapErr(err, "get binding by id for update", multisub.ErrBindingNotFound)
+	}
+	return bindingRowToDomain(rawRow), nil
+}
+
 func (r *BindingRepository) GetBySubscriptionID(ctx context.Context, subID string) ([]*aggregate.RemnawaveBinding, error) {
 	rows, err := r.q(ctx).GetBindingsBySubscriptionID(ctx, pgutil.UUIDToPgtype(subID))
 	if err != nil {

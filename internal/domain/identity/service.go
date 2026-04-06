@@ -210,8 +210,11 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (*LoginResult, er
 }
 
 // VerifyEmail validates the token, marks the user's email as verified, removes
-// the verification record, and publishes an EmailVerified event.
+// the verification record, and publishes an EmailVerified event. The user read
+// (with FOR UPDATE lock), mutation, update, and event publish are all inside a
+// single transaction to prevent TOCTOU races.
 func (s *Service) VerifyEmail(ctx context.Context, token string) error {
+	// Verification token lookup is read-only and not subject to concurrent mutation.
 	verification, err := s.repo.GetEmailVerification(ctx, token)
 	if err != nil {
 		return fmt.Errorf("finding verification: %w", err)
@@ -221,25 +224,22 @@ func (s *Service) VerifyEmail(ctx context.Context, token string) error {
 		return ErrTokenExpired
 	}
 
-	user, err := s.repo.GetUserByID(ctx, verification.UserID)
-	if err != nil {
-		return fmt.Errorf("finding user: %w", err)
-	}
-
-	now := s.clock.Now()
-	user.VerifyEmail(now)
-
 	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		user, err := s.repo.GetUserByIDForUpdate(txCtx, verification.UserID)
+		if err != nil {
+			return fmt.Errorf("finding user: %w", err)
+		}
+
+		now := s.clock.Now()
+		user.VerifyEmail(now)
+
 		if err := s.repo.UpdateUser(txCtx, user); err != nil {
 			return fmt.Errorf("updating user: %w", err)
 		}
 		if err := s.repo.DeleteEmailVerification(txCtx, verification.ID); err != nil {
 			return fmt.Errorf("deleting verification: %w", err)
 		}
-		if err := domainevent.PublishAll(txCtx, s.publisher, user); err != nil {
-			return err
-		}
-		return nil
+		return domainevent.PublishAll(txCtx, s.publisher, user)
 	})
 }
 
@@ -324,31 +324,34 @@ func (s *Service) GetByTelegramID(ctx context.Context, telegramID int64) (*Platf
 	return user, nil
 }
 
-// UpdateDisplayName updates the user's display name.
+// UpdateDisplayName updates the user's display name. The read (with FOR UPDATE
+// lock), mutation, and update are all inside a single transaction to prevent
+// TOCTOU races.
 func (s *Service) UpdateDisplayName(ctx context.Context, userID, displayName string) error {
-	user, err := s.repo.GetUserByID(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("finding user: %w", err)
-	}
-	if err := user.ChangeDisplayName(displayName, s.clock.Now()); err != nil {
-		return err
-	}
-	if err := s.repo.UpdateUser(ctx, user); err != nil {
-		return fmt.Errorf("updating user: %w", err)
-	}
-	return nil
+	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		user, err := s.repo.GetUserByIDForUpdate(txCtx, userID)
+		if err != nil {
+			return fmt.Errorf("finding user: %w", err)
+		}
+		if err := user.ChangeDisplayName(displayName, s.clock.Now()); err != nil {
+			return err
+		}
+		return s.repo.UpdateUser(txCtx, user)
+	})
 }
 
-// LinkTelegram links a Telegram ID to the user's account.
+// LinkTelegram links a Telegram ID to the user's account. The read (with FOR
+// UPDATE lock), mutation, update, and event publish are all inside a single
+// transaction to prevent TOCTOU races.
 func (s *Service) LinkTelegram(ctx context.Context, userID string, telegramID int64) error {
-	user, err := s.repo.GetUserByID(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("finding user: %w", err)
-	}
-	if err := user.LinkTelegram(telegramID, s.clock.Now()); err != nil {
-		return err
-	}
 	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		user, err := s.repo.GetUserByIDForUpdate(txCtx, userID)
+		if err != nil {
+			return fmt.Errorf("finding user: %w", err)
+		}
+		if err := user.LinkTelegram(telegramID, s.clock.Now()); err != nil {
+			return err
+		}
 		if err := s.repo.UpdateUser(txCtx, user); err != nil {
 			return fmt.Errorf("updating user: %w", err)
 		}
@@ -356,16 +359,18 @@ func (s *Service) LinkTelegram(ctx context.Context, userID string, telegramID in
 	})
 }
 
-// UnlinkTelegram removes the Telegram ID from the user's account.
+// UnlinkTelegram removes the Telegram ID from the user's account. The read
+// (with FOR UPDATE lock), mutation, update, and event publish are all inside a
+// single transaction to prevent TOCTOU races.
 func (s *Service) UnlinkTelegram(ctx context.Context, userID string) error {
-	user, err := s.repo.GetUserByID(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("finding user: %w", err)
-	}
-	if err := user.UnlinkTelegram(s.clock.Now()); err != nil {
-		return err
-	}
 	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		user, err := s.repo.GetUserByIDForUpdate(txCtx, userID)
+		if err != nil {
+			return fmt.Errorf("finding user: %w", err)
+		}
+		if err := user.UnlinkTelegram(s.clock.Now()); err != nil {
+			return err
+		}
 		if err := s.repo.UpdateUser(txCtx, user); err != nil {
 			return fmt.Errorf("updating user: %w", err)
 		}
@@ -418,8 +423,11 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 }
 
 // ResetPassword validates the reset token, sets the new password, invalidates
-// all existing sessions, and publishes a PasswordReset event.
+// all existing sessions, and publishes a PasswordReset event. The user read
+// (with FOR UPDATE lock), mutation, update, session invalidation, and event
+// publish are all inside a single transaction to prevent TOCTOU races.
 func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) error {
+	// Token lookup and validation are read-only and not subject to concurrent mutation.
 	reset, err := s.repo.GetPasswordResetByToken(ctx, token)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
@@ -441,35 +449,28 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 		return fmt.Errorf("hashing password: %w", err)
 	}
 
-	user, err := s.repo.GetUserByID(ctx, reset.UserID)
-	if err != nil {
-		return fmt.Errorf("finding user: %w", err)
-	}
-
-	now := s.clock.Now()
-	user.ChangePassword(hash, now)
-
 	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		user, err := s.repo.GetUserByIDForUpdate(txCtx, reset.UserID)
+		if err != nil {
+			return fmt.Errorf("finding user: %w", err)
+		}
+
+		now := s.clock.Now()
+		user.ChangePassword(hash, now)
+
 		if err := s.repo.UpdateUser(txCtx, user); err != nil {
 			return fmt.Errorf("updating user: %w", err)
 		}
-		// Invalidate all sessions so stolen tokens cannot be reused.
 		if err := s.repo.DeleteUserSessions(txCtx, user.ID); err != nil {
 			return fmt.Errorf("invalidating sessions: %w", err)
 		}
-		// Clean up the used reset token.
 		if err := s.repo.DeletePasswordReset(txCtx, reset.ID); err != nil {
 			return fmt.Errorf("deleting password reset: %w", err)
 		}
-		// Publish PasswordReset event (service-level, not aggregate-recorded)
 		if err := s.publisher.Publish(txCtx, NewPasswordResetEvent(user.ID, now)); err != nil {
 			return fmt.Errorf("publishing %s: %w", EventPasswordReset, err)
 		}
-		// Publish aggregate-recorded events (PasswordChanged from ChangePassword).
-		if err := domainevent.PublishAll(txCtx, s.publisher, user); err != nil {
-			return err
-		}
-		return nil
+		return domainevent.PublishAll(txCtx, s.publisher, user)
 	})
 }
 

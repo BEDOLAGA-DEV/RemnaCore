@@ -11,9 +11,17 @@ INSERT INTO payment.payment_records (
 SELECT id, invoice_id, provider, external_id, amount, currency, status, created_at, updated_at
 FROM payment.payment_records WHERE id = $1;
 
+-- name: GetPaymentRecordByIDForUpdate :one
+SELECT id, invoice_id, provider, external_id, amount, currency, status, created_at, updated_at
+FROM payment.payment_records WHERE id = $1 FOR UPDATE;
+
 -- name: GetPaymentRecordByExternalID :one
 SELECT id, invoice_id, provider, external_id, amount, currency, status, created_at, updated_at
 FROM payment.payment_records WHERE provider = $1 AND external_id = $2;
+
+-- name: GetPaymentRecordByExternalIDForUpdate :one
+SELECT id, invoice_id, provider, external_id, amount, currency, status, created_at, updated_at
+FROM payment.payment_records WHERE provider = $1 AND external_id = $2 FOR UPDATE;
 
 -- name: UpdatePaymentRecord :exec
 UPDATE payment.payment_records

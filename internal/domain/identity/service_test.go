@@ -168,7 +168,7 @@ func TestService_VerifyEmail_Success(t *testing.T) {
 	}
 
 	repo.On("GetEmailVerification", ctx, "abc123").Return(verification, nil)
-	repo.On("GetUserByID", ctx, "user-1").Return(user, nil)
+	repo.On("GetUserByIDForUpdate", ctx, "user-1").Return(user, nil)
 	repo.On("UpdateUser", ctx, mock.AnythingOfType("*identity.PlatformUser")).Return(nil)
 	repo.On("DeleteEmailVerification", ctx, "v-1").Return(nil)
 	pub.On("Publish", ctx, mock.AnythingOfType("domainevent.Event")).Return(nil)

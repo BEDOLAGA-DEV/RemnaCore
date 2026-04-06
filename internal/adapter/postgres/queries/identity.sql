@@ -6,6 +6,10 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
 SELECT id, email, password_hash, display_name, email_verified, telegram_id, role, tenant_id, created_at, updated_at
 FROM identity.platform_users WHERE id = $1;
 
+-- name: GetUserByIDForUpdate :one
+SELECT id, email, password_hash, display_name, email_verified, telegram_id, role, tenant_id, created_at, updated_at
+FROM identity.platform_users WHERE id = $1 FOR UPDATE;
+
 -- name: GetUserByEmail :one
 SELECT id, email, password_hash, display_name, email_verified, telegram_id, role, tenant_id, created_at, updated_at
 FROM identity.platform_users WHERE lower(email) = lower($1);

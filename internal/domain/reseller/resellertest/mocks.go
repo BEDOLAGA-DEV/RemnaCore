@@ -30,6 +30,14 @@ func (m *MockTenantRepository) GetTenantByID(ctx context.Context, id string) (*r
 	return args.Get(0).(*reseller.Tenant), args.Error(1)
 }
 
+func (m *MockTenantRepository) GetTenantByIDForUpdate(ctx context.Context, id string) (*reseller.Tenant, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*reseller.Tenant), args.Error(1)
+}
+
 func (m *MockTenantRepository) GetTenantByDomain(ctx context.Context, domain string) (*reseller.Tenant, error) {
 	args := m.Called(ctx, domain)
 	if args.Get(0) == nil {
@@ -94,6 +102,14 @@ func (m *MockCommissionRepository) CreateCommission(ctx context.Context, commiss
 }
 
 func (m *MockCommissionRepository) GetCommissionByID(ctx context.Context, id string) (*reseller.Commission, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*reseller.Commission), args.Error(1)
+}
+
+func (m *MockCommissionRepository) GetCommissionByIDForUpdate(ctx context.Context, id string) (*reseller.Commission, error) {
 	args := m.Called(ctx, id)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)

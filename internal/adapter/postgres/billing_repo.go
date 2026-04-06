@@ -312,6 +312,31 @@ func (r *SubscriptionRepository) GetByID(ctx context.Context, id string) (*aggre
 	return subRowToDomain(row), nil
 }
 
+// getSubscriptionByIDForUpdateSQL is identical to GetSubscriptionByID but
+// acquires a FOR UPDATE row lock. Must be called within a transaction.
+const getSubscriptionByIDForUpdateSQL = `
+SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
+       addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
+FROM billing.subscriptions WHERE id = $1 FOR UPDATE
+`
+
+func (r *SubscriptionRepository) GetByIDForUpdate(ctx context.Context, id string) (*aggregate.Subscription, error) {
+	db := DBFromContext(ctx, r.pool)
+	row := db.QueryRow(ctx, getSubscriptionByIDForUpdateSQL, pgutil.UUIDToPgtype(id))
+
+	var f subFields
+	err := row.Scan(
+		&f.ID, &f.UserID, &f.PlanID, &f.Status,
+		&f.PeriodStart, &f.PeriodEnd, &f.PeriodInterval,
+		&f.AddonIds, &f.AssignedTo, &f.PendingPlanID, &f.CancelledAt, &f.PausedAt,
+		&f.CreatedAt, &f.UpdatedAt,
+	)
+	if err != nil {
+		return nil, pgutil.MapErr(err, "get subscription by id for update", billing.ErrSubscriptionNotFound)
+	}
+	return subFieldsToDomain(f), nil
+}
+
 func (r *SubscriptionRepository) GetByUserID(ctx context.Context, userID string) ([]*aggregate.Subscription, error) {
 	rows, err := r.q(ctx).GetSubscriptionsByUserID(ctx, pgutil.UUIDToPgtype(userID))
 	if err != nil {
@@ -575,7 +600,12 @@ func extractInvFields[T invRow](row T) invFields {
 }
 
 func invoiceRowToDomain[T invRow](row T) *aggregate.Invoice {
-	f := extractInvFields(row)
+	return invFieldsToDomain(extractInvFields(row))
+}
+
+// invFieldsToDomain converts a raw invFields struct to a domain Invoice. Used
+// by both the generic invoiceRowToDomain and raw pgx FOR UPDATE queries.
+func invFieldsToDomain(f invFields) *aggregate.Invoice {
 	var discounts []vo.Discount
 	if len(f.Discounts) > 0 {
 		_ = json.Unmarshal(f.Discounts, &discounts)
@@ -624,6 +654,34 @@ func (r *InvoiceRepository) GetByID(ctx context.Context, id string) (*aggregate.
 		return nil, pgutil.MapErr(err, "get invoice by id", billing.ErrInvoiceNotFound)
 	}
 	inv := invoiceRowToDomain(row)
+	if err := r.loadLineItems(ctx, inv); err != nil {
+		return nil, err
+	}
+	return inv, nil
+}
+
+// getInvoiceByIDForUpdateSQL is identical to GetInvoiceByID but acquires a
+// FOR UPDATE row lock. Must be called within a transaction.
+const getInvoiceByIDForUpdateSQL = `
+SELECT id, subscription_id, user_id, subtotal_amount, total_discount_amount,
+       total_amount, currency, pricing_reason, discounts, status, paid_at, created_at, updated_at
+FROM billing.invoices WHERE id = $1 FOR UPDATE
+`
+
+func (r *InvoiceRepository) GetByIDForUpdate(ctx context.Context, id string) (*aggregate.Invoice, error) {
+	db := DBFromContext(ctx, r.pool)
+	row := db.QueryRow(ctx, getInvoiceByIDForUpdateSQL, pgutil.UUIDToPgtype(id))
+
+	var f invFields
+	err := row.Scan(
+		&f.ID, &f.SubscriptionID, &f.UserID, &f.SubtotalAmount, &f.TotalDiscountAmount,
+		&f.TotalAmount, &f.Currency, &f.PricingReason, &f.Discounts, &f.Status,
+		&f.PaidAt, &f.CreatedAt, &f.UpdatedAt,
+	)
+	if err != nil {
+		return nil, pgutil.MapErr(err, "get invoice by id for update", billing.ErrInvoiceNotFound)
+	}
+	inv := invFieldsToDomain(f)
 	if err := r.loadLineItems(ctx, inv); err != nil {
 		return nil, err
 	}
@@ -810,6 +868,29 @@ func (r *FamilyRepository) GetByOwnerID(ctx context.Context, ownerID string) (*a
 		return nil, pgutil.MapErr(err, "get family group by owner id", billing.ErrFamilyGroupNotFound)
 	}
 	fg := familyGroupRowToDomain(row)
+	if err := r.loadMembers(ctx, fg); err != nil {
+		return nil, err
+	}
+	return fg, nil
+}
+
+// getFamilyGroupByOwnerIDForUpdateSQL is identical to GetFamilyGroupByOwnerID
+// but acquires a FOR UPDATE row lock. Must be called within a transaction.
+const getFamilyGroupByOwnerIDForUpdateSQL = `
+SELECT id, owner_id, max_members, created_at, updated_at
+FROM billing.family_groups WHERE owner_id = $1 FOR UPDATE
+`
+
+func (r *FamilyRepository) GetByOwnerIDForUpdate(ctx context.Context, ownerID string) (*aggregate.FamilyGroup, error) {
+	db := DBFromContext(ctx, r.pool)
+	row := db.QueryRow(ctx, getFamilyGroupByOwnerIDForUpdateSQL, pgutil.UUIDToPgtype(ownerID))
+
+	var rawRow gen.BillingFamilyGroup
+	err := row.Scan(&rawRow.ID, &rawRow.OwnerID, &rawRow.MaxMembers, &rawRow.CreatedAt, &rawRow.UpdatedAt)
+	if err != nil {
+		return nil, pgutil.MapErr(err, "get family group by owner id for update", billing.ErrFamilyGroupNotFound)
+	}
+	fg := familyGroupRowToDomain(rawRow)
 	if err := r.loadMembers(ctx, fg); err != nil {
 		return nil, err
 	}

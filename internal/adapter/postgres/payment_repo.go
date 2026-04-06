@@ -78,6 +78,28 @@ func (r *PaymentRepository) GetPaymentByID(ctx context.Context, id string) (*pay
 	return paymentRowToDomain(row), nil
 }
 
+// getPaymentRecordByIDForUpdateSQL is identical to GetPaymentRecordByID but
+// acquires a FOR UPDATE row lock. Must be called within a transaction.
+const getPaymentRecordByIDForUpdateSQL = `
+SELECT id, invoice_id, provider, external_id, amount, currency, status, created_at, updated_at
+FROM payment.payment_records WHERE id = $1 FOR UPDATE
+`
+
+func (r *PaymentRepository) GetPaymentByIDForUpdate(ctx context.Context, id string) (*payment.PaymentRecord, error) {
+	db := DBFromContext(ctx, r.pool)
+	row := db.QueryRow(ctx, getPaymentRecordByIDForUpdateSQL, pgutil.UUIDToPgtype(id))
+
+	var rawRow gen.PaymentPaymentRecord
+	err := row.Scan(
+		&rawRow.ID, &rawRow.InvoiceID, &rawRow.Provider, &rawRow.ExternalID,
+		&rawRow.Amount, &rawRow.Currency, &rawRow.Status, &rawRow.CreatedAt, &rawRow.UpdatedAt,
+	)
+	if err != nil {
+		return nil, pgutil.MapErr(err, "get payment by id for update", payment.ErrPaymentNotFound)
+	}
+	return paymentRowToDomain(rawRow), nil
+}
+
 func (r *PaymentRepository) GetPaymentByExternalID(ctx context.Context, provider, externalID string) (*payment.PaymentRecord, error) {
 	row, err := r.q(ctx).GetPaymentRecordByExternalID(ctx, gen.GetPaymentRecordByExternalIDParams{
 		Provider:   provider,
@@ -87,6 +109,28 @@ func (r *PaymentRepository) GetPaymentByExternalID(ctx context.Context, provider
 		return nil, pgutil.MapErr(err, "get payment by external id", payment.ErrPaymentNotFound)
 	}
 	return paymentRowToDomain(row), nil
+}
+
+// getPaymentRecordByExternalIDForUpdateSQL is identical to
+// GetPaymentRecordByExternalID but acquires a FOR UPDATE row lock.
+const getPaymentRecordByExternalIDForUpdateSQL = `
+SELECT id, invoice_id, provider, external_id, amount, currency, status, created_at, updated_at
+FROM payment.payment_records WHERE provider = $1 AND external_id = $2 FOR UPDATE
+`
+
+func (r *PaymentRepository) GetPaymentByExternalIDForUpdate(ctx context.Context, provider, externalID string) (*payment.PaymentRecord, error) {
+	db := DBFromContext(ctx, r.pool)
+	row := db.QueryRow(ctx, getPaymentRecordByExternalIDForUpdateSQL, provider, externalID)
+
+	var rawRow gen.PaymentPaymentRecord
+	err := row.Scan(
+		&rawRow.ID, &rawRow.InvoiceID, &rawRow.Provider, &rawRow.ExternalID,
+		&rawRow.Amount, &rawRow.Currency, &rawRow.Status, &rawRow.CreatedAt, &rawRow.UpdatedAt,
+	)
+	if err != nil {
+		return nil, pgutil.MapErr(err, "get payment by external id for update", payment.ErrPaymentNotFound)
+	}
+	return paymentRowToDomain(rawRow), nil
 }
 
 func (r *PaymentRepository) UpdatePayment(ctx context.Context, record *payment.PaymentRecord) error {

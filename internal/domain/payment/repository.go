@@ -11,8 +11,17 @@ type PaymentRepository interface {
 	// GetPaymentByID retrieves a payment record by its domain ID.
 	GetPaymentByID(ctx context.Context, id string) (*PaymentRecord, error)
 
+	// GetPaymentByIDForUpdate retrieves a payment record by ID with a SELECT
+	// FOR UPDATE row lock. Must be called within a RunInTx transaction to
+	// prevent TOCTOU races during read-modify-write cycles.
+	GetPaymentByIDForUpdate(ctx context.Context, id string) (*PaymentRecord, error)
+
 	// GetPaymentByExternalID retrieves a payment record by provider + external ID.
 	GetPaymentByExternalID(ctx context.Context, provider, externalID string) (*PaymentRecord, error)
+
+	// GetPaymentByExternalIDForUpdate retrieves a payment record by provider +
+	// external ID with a SELECT FOR UPDATE row lock.
+	GetPaymentByExternalIDForUpdate(ctx context.Context, provider, externalID string) (*PaymentRecord, error)
 
 	// UpdatePayment persists status changes on an existing payment record.
 	UpdatePayment(ctx context.Context, record *PaymentRecord) error

@@ -74,6 +74,14 @@ func (m *MockSubscriptionRepo) GetByID(ctx context.Context, id string) (*aggrega
 	return args.Get(0).(*aggregate.Subscription), args.Error(1)
 }
 
+func (m *MockSubscriptionRepo) GetByIDForUpdate(ctx context.Context, id string) (*aggregate.Subscription, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*aggregate.Subscription), args.Error(1)
+}
+
 func (m *MockSubscriptionRepo) GetByUserID(ctx context.Context, userID string) ([]*aggregate.Subscription, error) {
 	args := m.Called(ctx, userID)
 	if args.Get(0) == nil {
@@ -147,6 +155,14 @@ func (m *MockInvoiceRepo) GetByID(ctx context.Context, id string) (*aggregate.In
 	return args.Get(0).(*aggregate.Invoice), args.Error(1)
 }
 
+func (m *MockInvoiceRepo) GetByIDForUpdate(ctx context.Context, id string) (*aggregate.Invoice, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*aggregate.Invoice), args.Error(1)
+}
+
 func (m *MockInvoiceRepo) GetBySubscriptionID(ctx context.Context, subID string) ([]*aggregate.Invoice, error) {
 	args := m.Called(ctx, subID)
 	if args.Get(0) == nil {
@@ -197,6 +213,14 @@ func (m *MockFamilyRepo) GetByID(ctx context.Context, id string) (*aggregate.Fam
 }
 
 func (m *MockFamilyRepo) GetByOwnerID(ctx context.Context, ownerID string) (*aggregate.FamilyGroup, error) {
+	args := m.Called(ctx, ownerID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*aggregate.FamilyGroup), args.Error(1)
+}
+
+func (m *MockFamilyRepo) GetByOwnerIDForUpdate(ctx context.Context, ownerID string) (*aggregate.FamilyGroup, error) {
 	args := m.Called(ctx, ownerID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)

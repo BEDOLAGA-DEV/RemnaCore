@@ -153,62 +153,56 @@ func (s *BillingService) CreateSubscription(
 	return sub, inv, nil
 }
 
-// CancelSubscription cancels an existing subscription. The status update and
-// outbox event are persisted in a single database transaction.
+// CancelSubscription cancels an existing subscription. The read, status
+// transition, update, and outbox event are all performed inside a single
+// database transaction with a FOR UPDATE lock to prevent TOCTOU races.
 func (s *BillingService) CancelSubscription(ctx context.Context, subID string) error {
-	sub, err := s.subs.GetByID(ctx, subID)
-	if err != nil {
-		return fmt.Errorf("get subscription: %w", err)
-	}
-
-	if err := sub.Cancel(s.clock.Now()); err != nil {
-		return fmt.Errorf("cancel subscription: %w", err)
-	}
-
-	// Aggregate already recorded its own cancelled event in Cancel().
-
 	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		sub, err := s.subs.GetByIDForUpdate(txCtx, subID)
+		if err != nil {
+			return fmt.Errorf("get subscription: %w", err)
+		}
+
+		if err := sub.Cancel(s.clock.Now()); err != nil {
+			return fmt.Errorf("cancel subscription: %w", err)
+		}
+
 		if err := s.subs.Update(txCtx, sub); err != nil {
 			return fmt.Errorf("update subscription: %w", err)
 		}
 
-		if err := domainevent.PublishAll(txCtx, s.publisher, sub); err != nil {
-			return err
-		}
-
-		return nil
+		return domainevent.PublishAll(txCtx, s.publisher, sub)
 	})
 }
 
 // PayInvoice marks an invoice as paid and activates the associated subscription
-// if it is in trial or past_due status. All writes and outbox events are
-// persisted in a single database transaction.
+// if it is in trial or past_due status. All reads, state transitions, writes,
+// and outbox events are performed inside a single database transaction with
+// FOR UPDATE locks to prevent TOCTOU races.
 func (s *BillingService) PayInvoice(ctx context.Context, invoiceID string) error {
-	inv, err := s.invoices.GetByID(ctx, invoiceID)
-	if err != nil {
-		return fmt.Errorf("get invoice: %w", err)
-	}
-
-	if inv.Status == aggregate.InvoicePaid {
-		return billing.ErrInvoiceAlreadyPaid
-	}
-
-	now := s.clock.Now()
-
-	// Transition draft -> pending if still in draft
-	if inv.Status == aggregate.InvoiceDraft {
-		if err := inv.MarkPending(now); err != nil {
-			return fmt.Errorf("mark pending: %w", err)
-		}
-	}
-
-	if err := inv.MarkPaid(now); err != nil {
-		return fmt.Errorf("mark paid: %w", err)
-	}
-
-	// Aggregate already recorded its own paid event in MarkPaid().
-
 	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		inv, err := s.invoices.GetByIDForUpdate(txCtx, invoiceID)
+		if err != nil {
+			return fmt.Errorf("get invoice: %w", err)
+		}
+
+		if inv.Status == aggregate.InvoicePaid {
+			return billing.ErrInvoiceAlreadyPaid
+		}
+
+		now := s.clock.Now()
+
+		// Transition draft -> pending if still in draft
+		if inv.Status == aggregate.InvoiceDraft {
+			if err := inv.MarkPending(now); err != nil {
+				return fmt.Errorf("mark pending: %w", err)
+			}
+		}
+
+		if err := inv.MarkPaid(now); err != nil {
+			return fmt.Errorf("mark paid: %w", err)
+		}
+
 		if err := s.invoices.Update(txCtx, inv); err != nil {
 			return fmt.Errorf("update invoice: %w", err)
 		}
@@ -218,7 +212,7 @@ func (s *BillingService) PayInvoice(ctx context.Context, invoiceID string) error
 		}
 
 		// Activate subscription if it is in trial or past_due
-		sub, err := s.subs.GetByID(txCtx, inv.SubscriptionID)
+		sub, err := s.subs.GetByIDForUpdate(txCtx, inv.SubscriptionID)
 		if err != nil {
 			return fmt.Errorf("get subscription for activation: %w", err)
 		}
@@ -227,8 +221,6 @@ func (s *BillingService) PayInvoice(ctx context.Context, invoiceID string) error
 			if err := sub.Activate(now); err != nil {
 				return fmt.Errorf("activate subscription: %w", err)
 			}
-
-			// Aggregate already recorded its own activated event in Activate().
 
 			if err := s.subs.Update(txCtx, sub); err != nil {
 				return fmt.Errorf("update subscription: %w", err)
@@ -245,11 +237,14 @@ func (s *BillingService) PayInvoice(ctx context.Context, invoiceID string) error
 
 // AddFamilyMember adds a member to the subscription owner's family group.
 // The subscription's plan must have family sharing enabled. The family group
-// update and outbox event are persisted in a single database transaction.
+// read (with FOR UPDATE lock), mutation, update, and outbox event are all
+// performed inside a single database transaction to prevent TOCTOU races.
 func (s *BillingService) AddFamilyMember(
 	ctx context.Context,
 	subID, memberUserID, nickname string,
 ) error {
+	// Subscription and plan are read-only here (no mutation), so they can
+	// safely be read outside the transaction.
 	sub, err := s.subs.GetByID(ctx, subID)
 	if err != nil {
 		return fmt.Errorf("get subscription: %w", err)
@@ -262,8 +257,8 @@ func (s *BillingService) AddFamilyMember(
 
 	now := s.clock.Now()
 	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
-		// Get or create family group
-		fg, err := s.families.GetByOwnerID(txCtx, sub.UserID)
+		// Get or create family group (with FOR UPDATE lock when it exists)
+		fg, err := s.families.GetByOwnerIDForUpdate(txCtx, sub.UserID)
 		if err != nil {
 			if !errors.Is(err, billing.ErrFamilyGroupNotFound) {
 				return fmt.Errorf("get family group: %w", err)
@@ -291,69 +286,60 @@ func (s *BillingService) AddFamilyMember(
 			return fmt.Errorf("add family member: %w", err)
 		}
 
-		// Aggregate already recorded its own member_added event in AddMember().
-
 		if err := s.families.Update(txCtx, fg); err != nil {
 			return fmt.Errorf("update family group: %w", err)
 		}
 
-		if err := domainevent.PublishAll(txCtx, s.publisher, fg); err != nil {
-			return err
-		}
-
-		return nil
+		return domainevent.PublishAll(txCtx, s.publisher, fg)
 	})
 }
 
-// RemoveFamilyMember removes a member from the subscription owner's family group.
-// The family group update and outbox event are persisted in a single database
-// transaction.
+// RemoveFamilyMember removes a member from the subscription owner's family
+// group. The family group read (with FOR UPDATE lock), mutation, update, and
+// outbox event are all performed inside a single database transaction to
+// prevent TOCTOU races.
 func (s *BillingService) RemoveFamilyMember(
 	ctx context.Context,
 	subID, memberUserID string,
 ) error {
+	// Subscription is read-only here (used only to find the owner).
 	sub, err := s.subs.GetByID(ctx, subID)
 	if err != nil {
 		return fmt.Errorf("get subscription: %w", err)
 	}
 
-	fg, err := s.families.GetByOwnerID(ctx, sub.UserID)
-	if err != nil {
-		return fmt.Errorf("get family group: %w", err)
-	}
-
-	if err := fg.RemoveMember(memberUserID, s.clock.Now()); err != nil {
-		return fmt.Errorf("remove family member: %w", err)
-	}
-
-	// Aggregate already recorded its own member_removed event in RemoveMember().
-
 	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		fg, err := s.families.GetByOwnerIDForUpdate(txCtx, sub.UserID)
+		if err != nil {
+			return fmt.Errorf("get family group: %w", err)
+		}
+
+		if err := fg.RemoveMember(memberUserID, s.clock.Now()); err != nil {
+			return fmt.Errorf("remove family member: %w", err)
+		}
+
 		if err := s.families.Update(txCtx, fg); err != nil {
 			return fmt.Errorf("update family group: %w", err)
 		}
 
-		if err := domainevent.PublishAll(txCtx, s.publisher, fg); err != nil {
-			return err
-		}
-
-		return nil
+		return domainevent.PublishAll(txCtx, s.publisher, fg)
 	})
 }
 
-// AddSubscriptionAddon adds an addon to a subscription. The update and outbox
-// event are persisted in a single database transaction.
+// AddSubscriptionAddon adds an addon to a subscription. The read (with FOR
+// UPDATE lock), mutation, update, and outbox event are all performed inside a
+// single database transaction to prevent TOCTOU races.
 func (s *BillingService) AddSubscriptionAddon(ctx context.Context, subID, addonID string) error {
-	sub, err := s.subs.GetByID(ctx, subID)
-	if err != nil {
-		return fmt.Errorf("get subscription: %w", err)
-	}
-
-	if err := sub.AddAddon(addonID, s.clock.Now()); err != nil {
-		return err
-	}
-
 	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		sub, err := s.subs.GetByIDForUpdate(txCtx, subID)
+		if err != nil {
+			return fmt.Errorf("get subscription: %w", err)
+		}
+
+		if err := sub.AddAddon(addonID, s.clock.Now()); err != nil {
+			return err
+		}
+
 		if err := s.subs.Update(txCtx, sub); err != nil {
 			return fmt.Errorf("update subscription: %w", err)
 		}
@@ -361,19 +347,20 @@ func (s *BillingService) AddSubscriptionAddon(ctx context.Context, subID, addonI
 	})
 }
 
-// RemoveSubscriptionAddon removes an addon from a subscription. The update and
-// outbox event are persisted in a single database transaction.
+// RemoveSubscriptionAddon removes an addon from a subscription. The read (with
+// FOR UPDATE lock), mutation, update, and outbox event are all performed inside
+// a single database transaction to prevent TOCTOU races.
 func (s *BillingService) RemoveSubscriptionAddon(ctx context.Context, subID, addonID string) error {
-	sub, err := s.subs.GetByID(ctx, subID)
-	if err != nil {
-		return fmt.Errorf("get subscription: %w", err)
-	}
-
-	if err := sub.RemoveAddon(addonID, s.clock.Now()); err != nil {
-		return err
-	}
-
 	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		sub, err := s.subs.GetByIDForUpdate(txCtx, subID)
+		if err != nil {
+			return fmt.Errorf("get subscription: %w", err)
+		}
+
+		if err := sub.RemoveAddon(addonID, s.clock.Now()); err != nil {
+			return err
+		}
+
 		if err := s.subs.Update(txCtx, sub); err != nil {
 			return fmt.Errorf("update subscription: %w", err)
 		}

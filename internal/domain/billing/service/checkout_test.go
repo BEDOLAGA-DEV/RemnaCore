@@ -117,9 +117,9 @@ func TestCompleteCheckout_Success(t *testing.T) {
 	sub := trialSub("user-1", "plan-premium")
 	inv := sampleDraftInvoice("sub-1")
 
-	invoices.On("GetByID", mock.Anything, "inv-1").Return(inv, nil)
+	invoices.On("GetByIDForUpdate", mock.Anything, "inv-1").Return(inv, nil)
 	invoices.On("Update", mock.Anything, inv).Return(nil)
-	subs.On("GetByID", mock.Anything, "sub-1").Return(sub, nil)
+	subs.On("GetByIDForUpdate", mock.Anything, "sub-1").Return(sub, nil)
 	subs.On("Update", mock.Anything, sub).Return(nil)
 	publisher.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 

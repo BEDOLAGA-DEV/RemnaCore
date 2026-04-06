@@ -27,6 +27,10 @@ type StatusTransition struct {
 // SubscriptionRepository defines persistence operations for the Subscription aggregate.
 type SubscriptionRepository interface {
 	GetByID(ctx context.Context, id string) (*aggregate.Subscription, error)
+	// GetByIDForUpdate retrieves a subscription by ID with a SELECT FOR UPDATE
+	// row lock. Must be called within a RunInTx transaction to prevent TOCTOU
+	// races during read-modify-write cycles.
+	GetByIDForUpdate(ctx context.Context, id string) (*aggregate.Subscription, error)
 	GetByUserID(ctx context.Context, userID string) ([]*aggregate.Subscription, error)
 	GetActiveByUserID(ctx context.Context, userID string) ([]*aggregate.Subscription, error)
 	GetAll(ctx context.Context, limit, offset int) ([]*aggregate.Subscription, error)
@@ -48,6 +52,10 @@ type SubscriptionRepository interface {
 // InvoiceRepository defines persistence operations for the Invoice aggregate.
 type InvoiceRepository interface {
 	GetByID(ctx context.Context, id string) (*aggregate.Invoice, error)
+	// GetByIDForUpdate retrieves an invoice by ID with a SELECT FOR UPDATE
+	// row lock. Must be called within a RunInTx transaction to prevent TOCTOU
+	// races during read-modify-write cycles.
+	GetByIDForUpdate(ctx context.Context, id string) (*aggregate.Invoice, error)
 	GetBySubscriptionID(ctx context.Context, subID string) ([]*aggregate.Invoice, error)
 	GetPendingByUserID(ctx context.Context, userID string) ([]*aggregate.Invoice, error)
 	GetAll(ctx context.Context, limit, offset int) ([]*aggregate.Invoice, error)
@@ -58,6 +66,10 @@ type InvoiceRepository interface {
 // FamilyRepository defines persistence operations for the FamilyGroup aggregate.
 type FamilyRepository interface {
 	GetByID(ctx context.Context, id string) (*aggregate.FamilyGroup, error)
+	// GetByOwnerIDForUpdate retrieves a family group by owner ID with a SELECT
+	// FOR UPDATE row lock. Must be called within a RunInTx transaction to
+	// prevent TOCTOU races during read-modify-write cycles.
+	GetByOwnerIDForUpdate(ctx context.Context, ownerID string) (*aggregate.FamilyGroup, error)
 	GetByOwnerID(ctx context.Context, ownerID string) (*aggregate.FamilyGroup, error)
 	Create(ctx context.Context, fg *aggregate.FamilyGroup) error
 	Update(ctx context.Context, fg *aggregate.FamilyGroup) error

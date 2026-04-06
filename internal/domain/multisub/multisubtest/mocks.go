@@ -31,6 +31,14 @@ func (m *MockBindingRepo) GetByID(ctx context.Context, id string) (*aggregate.Re
 	return args.Get(0).(*aggregate.RemnawaveBinding), args.Error(1)
 }
 
+func (m *MockBindingRepo) GetByIDForUpdate(ctx context.Context, id string) (*aggregate.RemnawaveBinding, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*aggregate.RemnawaveBinding), args.Error(1)
+}
+
 func (m *MockBindingRepo) GetBySubscriptionID(ctx context.Context, subID string) ([]*aggregate.RemnawaveBinding, error) {
 	args := m.Called(ctx, subID)
 	if args.Get(0) == nil {

@@ -11,6 +11,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tracing"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
 // Hook names dispatched by the payment facade. All payment logic is delegated
@@ -61,6 +62,7 @@ type PaymentFacade struct {
 	dispatcher hookdispatch.Dispatcher
 	repo       PaymentRepository
 	publisher  domainevent.Publisher
+	txRunner   txmanager.Runner
 	logger     *slog.Logger
 	clock      clock.Clock
 }
@@ -70,6 +72,7 @@ func NewPaymentFacade(
 	dispatcher hookdispatch.Dispatcher,
 	repo PaymentRepository,
 	publisher domainevent.Publisher,
+	txRunner txmanager.Runner,
 	logger *slog.Logger,
 	clk clock.Clock,
 ) *PaymentFacade {
@@ -77,6 +80,7 @@ func NewPaymentFacade(
 		dispatcher: dispatcher,
 		repo:       repo,
 		publisher:  publisher,
+		txRunner:   txRunner,
 		logger:     logger,
 		clock:      clk,
 	}
@@ -185,8 +189,12 @@ func (f *PaymentFacade) VerifyWebhook(ctx context.Context, provider string, head
 	return &verified, nil
 }
 
-// Refund dispatches a refund request to the registered payment plugin.
+// Refund dispatches a refund request to the registered payment plugin. The
+// external plugin call happens outside the transaction (to avoid holding row
+// locks during I/O), then the record is re-read with FOR UPDATE inside a
+// transaction before mutation and persistence.
 func (f *PaymentFacade) Refund(ctx context.Context, paymentID string, amount int64, reason string) error {
+	// Read without lock to get provider/externalID for the external call.
 	record, err := f.repo.GetPaymentByID(ctx, paymentID)
 	if err != nil {
 		return fmt.Errorf("get payment for refund: %w", err)
@@ -207,20 +215,25 @@ func (f *PaymentFacade) Refund(ctx context.Context, paymentID string, amount int
 		return fmt.Errorf("%w: %v", ErrRefundFailed, err)
 	}
 
-	if err := record.MarkRefunded(amount, f.clock.Now()); err != nil {
-		return fmt.Errorf("mark payment refunded: %w", err)
-	}
+	// Re-read with FOR UPDATE inside tx to prevent TOCTOU races.
+	err = f.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		locked, err := f.repo.GetPaymentByIDForUpdate(txCtx, paymentID)
+		if err != nil {
+			return fmt.Errorf("get payment for refund (locked): %w", err)
+		}
 
-	if err := f.repo.UpdatePayment(ctx, record); err != nil {
-		return fmt.Errorf("persist refunded payment: %w", err)
-	}
+		if err := locked.MarkRefunded(amount, f.clock.Now()); err != nil {
+			return fmt.Errorf("mark payment refunded: %w", err)
+		}
 
-	// Aggregate already recorded its own refund event in MarkRefunded.
-	if err := f.publishAggregateEvents(ctx, record); err != nil {
-		f.logger.Warn("failed to publish aggregate events",
-			slog.String("payment_id", record.ID),
-			slog.Any("error", err),
-		)
+		if err := f.repo.UpdatePayment(txCtx, locked); err != nil {
+			return fmt.Errorf("persist refunded payment: %w", err)
+		}
+
+		return f.publishAggregateEvents(txCtx, locked)
+	})
+	if err != nil {
+		return err
 	}
 
 	f.logger.Info("payment refunded",
@@ -232,27 +245,30 @@ func (f *PaymentFacade) Refund(ctx context.Context, paymentID string, amount int
 	return nil
 }
 
-// CompletePayment marks a payment record as completed after webhook confirmation.
+// CompletePayment marks a payment record as completed after webhook
+// confirmation. The read (with FOR UPDATE lock), mutation, update, and event
+// publish are all inside a single transaction to prevent TOCTOU races.
 func (f *PaymentFacade) CompletePayment(ctx context.Context, provider, externalID string) (*PaymentRecord, error) {
-	record, err := f.repo.GetPaymentByExternalID(ctx, provider, externalID)
+	var record *PaymentRecord
+	err := f.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		var err error
+		record, err = f.repo.GetPaymentByExternalIDForUpdate(txCtx, provider, externalID)
+		if err != nil {
+			return fmt.Errorf("get payment by external id: %w", err)
+		}
+
+		if err := record.MarkCompleted(f.clock.Now()); err != nil {
+			return fmt.Errorf("mark payment completed: %w", err)
+		}
+
+		if err := f.repo.UpdatePayment(txCtx, record); err != nil {
+			return fmt.Errorf("persist completed payment: %w", err)
+		}
+
+		return f.publishAggregateEvents(txCtx, record)
+	})
 	if err != nil {
-		return nil, fmt.Errorf("get payment by external id: %w", err)
-	}
-
-	if err := record.MarkCompleted(f.clock.Now()); err != nil {
-		return nil, fmt.Errorf("mark payment completed: %w", err)
-	}
-
-	if err := f.repo.UpdatePayment(ctx, record); err != nil {
-		return nil, fmt.Errorf("persist completed payment: %w", err)
-	}
-
-	// Aggregate already recorded its own completed event in MarkCompleted.
-	if err := f.publishAggregateEvents(ctx, record); err != nil {
-		f.logger.Warn("failed to publish aggregate events",
-			slog.String("payment_id", record.ID),
-			slog.Any("error", err),
-		)
+		return nil, err
 	}
 
 	return record, nil

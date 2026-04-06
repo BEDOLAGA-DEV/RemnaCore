@@ -15,6 +15,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch/hookdispatchtest"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager/txmanagertest"
 )
 
 // --- test helpers ---
@@ -49,7 +50,7 @@ func TestCreateCharge_Success(t *testing.T) {
 
 	repo := &paymenttest.MockPaymentRepo{}
 	pub := &eventCollector{}
-	facade := payment.NewPaymentFacade(dispatcher, repo, pub, testLogger(), clock.NewReal())
+	facade := payment.NewPaymentFacade(dispatcher, repo, pub, txmanagertest.NoopTxRunner{}, testLogger(), clock.NewReal())
 
 	repo.On("CreatePayment", mock.Anything, mock.AnythingOfType("*payment.PaymentRecord")).Return(nil)
 
@@ -85,7 +86,7 @@ func TestCreateCharge_NoHandler(t *testing.T) {
 
 	repo := &paymenttest.MockPaymentRepo{}
 	pub := &eventCollector{}
-	facade := payment.NewPaymentFacade(dispatcher, repo, pub, testLogger(), clock.NewReal())
+	facade := payment.NewPaymentFacade(dispatcher, repo, pub, txmanagertest.NoopTxRunner{}, testLogger(), clock.NewReal())
 
 	_, err := facade.CreateCharge(context.Background(), payment.CreateChargeRequest{
 		InvoiceID: "inv-1",
@@ -103,7 +104,7 @@ func TestCreateCharge_ValidationErrors(t *testing.T) {
 	dispatcher := &hookdispatchtest.MockDispatcher{}
 	repo := &paymenttest.MockPaymentRepo{}
 	pub := &eventCollector{}
-	facade := payment.NewPaymentFacade(dispatcher, repo, pub, testLogger(), clock.NewReal())
+	facade := payment.NewPaymentFacade(dispatcher, repo, pub, txmanagertest.NoopTxRunner{}, testLogger(), clock.NewReal())
 
 	_, err := facade.CreateCharge(context.Background(), payment.CreateChargeRequest{
 		Amount:   999,
@@ -142,7 +143,7 @@ func TestVerifyWebhook_Success(t *testing.T) {
 
 	repo := &paymenttest.MockPaymentRepo{}
 	pub := &eventCollector{}
-	facade := payment.NewPaymentFacade(dispatcher, repo, pub, testLogger(), clock.NewReal())
+	facade := payment.NewPaymentFacade(dispatcher, repo, pub, txmanagertest.NoopTxRunner{}, testLogger(), clock.NewReal())
 
 	result, err := facade.VerifyWebhook(context.Background(), "stripe", map[string]string{
 		"stripe-signature": "sig_abc",
@@ -163,7 +164,7 @@ func TestVerifyWebhook_InvalidProvider(t *testing.T) {
 	dispatcher := &hookdispatchtest.MockDispatcher{}
 	repo := &paymenttest.MockPaymentRepo{}
 	pub := &eventCollector{}
-	facade := payment.NewPaymentFacade(dispatcher, repo, pub, testLogger(), clock.NewReal())
+	facade := payment.NewPaymentFacade(dispatcher, repo, pub, txmanagertest.NoopTxRunner{}, testLogger(), clock.NewReal())
 
 	_, err := facade.VerifyWebhook(context.Background(), "", nil, nil)
 	assert.ErrorIs(t, err, payment.ErrInvalidProvider)
@@ -173,7 +174,7 @@ func TestCheckIdempotency_NewWebhook(t *testing.T) {
 	repo := &paymenttest.MockPaymentRepo{}
 	pub := &eventCollector{}
 	dispatcher := &hookdispatchtest.MockDispatcher{}
-	facade := payment.NewPaymentFacade(dispatcher, repo, pub, testLogger(), clock.NewReal())
+	facade := payment.NewPaymentFacade(dispatcher, repo, pub, txmanagertest.NoopTxRunner{}, testLogger(), clock.NewReal())
 
 	repo.On("CreateWebhookLog", mock.Anything, mock.AnythingOfType("*payment.WebhookLog")).Return(nil)
 
@@ -188,7 +189,7 @@ func TestCheckIdempotency_DuplicateWebhook(t *testing.T) {
 	repo := &paymenttest.MockPaymentRepo{}
 	pub := &eventCollector{}
 	dispatcher := &hookdispatchtest.MockDispatcher{}
-	facade := payment.NewPaymentFacade(dispatcher, repo, pub, testLogger(), clock.NewReal())
+	facade := payment.NewPaymentFacade(dispatcher, repo, pub, txmanagertest.NoopTxRunner{}, testLogger(), clock.NewReal())
 
 	repo.On("CreateWebhookLog", mock.Anything, mock.AnythingOfType("*payment.WebhookLog")).Return(payment.ErrWebhookDuplicate)
 
@@ -200,7 +201,18 @@ func TestCheckIdempotency_DuplicateWebhook(t *testing.T) {
 }
 
 func TestRefund_Success(t *testing.T) {
-	record := &payment.PaymentRecord{
+	// Initial read (outside tx) for provider/externalID.
+	initialRecord := &payment.PaymentRecord{
+		ID:         "pay-1",
+		InvoiceID:  "inv-1",
+		Provider:   "stripe",
+		ExternalID: "pi_123",
+		Amount:     999,
+		Currency:   "usd",
+		Status:     payment.PaymentCompleted,
+	}
+	// Re-read inside tx with FOR UPDATE lock.
+	lockedRecord := &payment.PaymentRecord{
 		ID:         "pay-1",
 		InvoiceID:  "inv-1",
 		Provider:   "stripe",
@@ -219,15 +231,16 @@ func TestRefund_Success(t *testing.T) {
 
 	repo := &paymenttest.MockPaymentRepo{}
 	pub := &eventCollector{}
-	facade := payment.NewPaymentFacade(dispatcher, repo, pub, testLogger(), clock.NewReal())
+	facade := payment.NewPaymentFacade(dispatcher, repo, pub, txmanagertest.NoopTxRunner{}, testLogger(), clock.NewReal())
 
-	repo.On("GetPaymentByID", mock.Anything, "pay-1").Return(record, nil)
-	repo.On("UpdatePayment", mock.Anything, record).Return(nil)
+	repo.On("GetPaymentByID", mock.Anything, "pay-1").Return(initialRecord, nil)
+	repo.On("GetPaymentByIDForUpdate", mock.Anything, "pay-1").Return(lockedRecord, nil)
+	repo.On("UpdatePayment", mock.Anything, lockedRecord).Return(nil)
 
 	err := facade.Refund(context.Background(), "pay-1", 999, "customer request")
 
 	require.NoError(t, err)
-	assert.Equal(t, payment.PaymentRefunded, record.Status)
+	assert.Equal(t, payment.PaymentRefunded, lockedRecord.Status)
 	assert.Len(t, pub.events, 1)
 	assert.Equal(t, payment.EventRefundCompleted, pub.events[0].Type)
 

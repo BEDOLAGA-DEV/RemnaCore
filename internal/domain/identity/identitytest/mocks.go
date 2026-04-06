@@ -30,6 +30,14 @@ func (m *MockRepository) GetUserByID(ctx context.Context, id string) (*identity.
 	return args.Get(0).(*identity.PlatformUser), args.Error(1)
 }
 
+func (m *MockRepository) GetUserByIDForUpdate(ctx context.Context, id string) (*identity.PlatformUser, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*identity.PlatformUser), args.Error(1)
+}
+
 func (m *MockRepository) GetUserByEmail(ctx context.Context, email string) (*identity.PlatformUser, error) {
 	args := m.Called(ctx, email)
 	if args.Get(0) == nil {
