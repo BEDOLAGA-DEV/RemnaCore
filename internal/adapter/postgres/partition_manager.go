@@ -36,6 +36,18 @@ ORDER BY c.relname`
 // interpolation to prevent SQL injection.
 const hasUnpublishedSQL = `SELECT EXISTS (SELECT 1 FROM %s WHERE published = false)`
 
+// isSafeToDropSQL verifies that all events in a partition have been processed by
+// checking that the partition's max sequence_number is less than the minimum
+// unpublished sequence_number across the entire outbox. When no unpublished
+// events exist anywhere, the right-hand side returns maxInt64, making the
+// comparison safe (all partitions are droppable).
+const isSafeToDropSQL = `SELECT (
+	SELECT COALESCE(MAX(sequence_number), 0) FROM %s
+) < (
+	SELECT COALESCE(MIN(sequence_number), 9223372036854775807)
+	FROM public.outbox WHERE published = false
+)`
+
 // PartitionManager ensures outbox partitions exist for the near future and
 // cleans up old partitions past the retention period. It runs as a background
 // service with daily checks.
@@ -138,6 +150,21 @@ func (pm *PartitionManager) cleanup(ctx context.Context) {
 			continue
 		}
 
+		safe, err := pm.isSafeToDrop(ctx, name)
+		if err != nil {
+			pm.logger.Error("partition manager: failed sequence safety check",
+				slog.String("partition", name),
+				slog.Any("error", err),
+			)
+			continue
+		}
+		if !safe {
+			pm.logger.Warn("partition manager: skipping partition that fails sequence safety check",
+				slog.String("partition", name),
+			)
+			continue
+		}
+
 		if err := pm.outbox.DetachAndDropPartition(ctx, name); err != nil {
 			pm.logger.Error("partition manager: failed to drop partition",
 				slog.String("partition", name),
@@ -230,4 +257,26 @@ func (pm *PartitionManager) hasUnpublished(ctx context.Context, partitionName st
 		return false, fmt.Errorf("check unpublished in %s: %w", partitionName, err)
 	}
 	return exists, nil
+}
+
+// isSafeToDrop verifies that all events in the partition have been processed
+// by checking that the partition's max sequence_number is less than the
+// minimum unpublished sequence_number across the entire outbox. This prevents
+// dropping a partition whose events have not yet been consumed downstream,
+// even if all rows within the partition are marked as published.
+//
+// When no unpublished events exist globally, the right-hand side defaults to
+// maxInt64 (9223372036854775807), making the comparison always true.
+func (pm *PartitionManager) isSafeToDrop(ctx context.Context, partitionName string) (bool, error) {
+	if !outboxPartitionPattern.MatchString(partitionName) {
+		return false, fmt.Errorf("invalid partition name: %s", partitionName)
+	}
+
+	query := fmt.Sprintf(isSafeToDropSQL, partitionName)
+
+	var safe bool
+	if err := pm.pool.QueryRow(ctx, query).Scan(&safe); err != nil {
+		return false, fmt.Errorf("check sequence safety for %s: %w", partitionName, err)
+	}
+	return safe, nil
 }

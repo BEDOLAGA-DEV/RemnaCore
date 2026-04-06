@@ -27,6 +27,8 @@ const (
 	MetricDLQPublishedTotal      = "platform_dlq_published_total"
 	MetricIdempotencyHitTotal    = "platform_idempotency_hit_total"
 
+	MetricDLQDepth                 = "platform_dlq_depth"
+
 	MetricOutboxRelayBatchSize     = "platform_outbox_relay_batch_size"
 	MetricOutboxRelayBatchLatency  = "platform_outbox_relay_batch_duration_seconds"
 	MetricOutboxRelayPublishErrors = "platform_outbox_relay_publish_errors_total"
@@ -54,6 +56,8 @@ const (
 	helpEntityLockWaitLatency  = "Duration spent waiting for per-entity lock in seconds."
 	helpDLQPublishedTotal      = "Total number of messages published to the dead-letter queue."
 	helpIdempotencyHitTotal    = "Total number of duplicate events detected by idempotency check."
+
+	helpDLQDepth                 = "Current number of unprocessed messages in the dead-letter queue."
 
 	helpOutboxRelayBatchSize     = "Number of events in each outbox relay batch."
 	helpOutboxRelayBatchLatency  = "Duration of outbox relay batch processing in seconds."
@@ -121,6 +125,9 @@ type Metrics struct {
 	OutboxRelayBatchLatency  *prometheus.HistogramVec
 	OutboxRelayPublishErrors prometheus.Counter
 	OutboxRelayEmptyPolls    prometheus.Counter
+
+	// DLQ metrics
+	DLQDepth prometheus.Gauge
 
 	// Consumer metrics
 	EventsProcessedTotal   *prometheus.CounterVec
@@ -212,6 +219,11 @@ func NewMetrics() *Metrics {
 			Name: MetricEventPublishFailures,
 			Help: helpEventPublishFailures,
 		}, []string{LabelEventType}),
+
+		DLQDepth: promauto.NewGauge(prometheus.GaugeOpts{
+			Name: MetricDLQDepth,
+			Help: helpDLQDepth,
+		}),
 
 		OutboxRelayBatchSize: promauto.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    MetricOutboxRelayBatchSize,

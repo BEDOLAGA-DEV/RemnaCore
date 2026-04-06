@@ -267,7 +267,7 @@ func (c *BillingEventConsumer) handleMessage(ctx context.Context, subject string
 			slog.String("subject", subject),
 			slog.Any("error", err),
 		)
-		c.sendToDLQ(subject, msg, err, 0)
+		c.sendToDLQ(subject, msg, err, 0, nil)
 		msg.Ack()
 		return
 	}
@@ -376,7 +376,7 @@ func (c *BillingEventConsumer) handleMessage(ctx context.Context, subject string
 	}
 
 	// Max retries exceeded — send to DLQ and acknowledge to stop redelivery.
-	c.sendToDLQ(subject, msg, handleErr, retryCount)
+	c.sendToDLQ(subject, msg, handleErr, retryCount, &event)
 	c.logger.Error("event processing failed permanently, sent to DLQ",
 		slog.String("subject", subject),
 		slog.String("msg_id", msg.UUID),
@@ -416,8 +416,10 @@ func (c *BillingEventConsumer) processEvent(ctx context.Context, subject string,
 }
 
 // sendToDLQ publishes a failed message to the dead-letter queue stream. The DLQ
-// message preserves the original payload and adds diagnostic metadata.
-func (c *BillingEventConsumer) sendToDLQ(subject string, msg *message.Message, processingErr error, retryCount int) {
+// message preserves the original payload and adds diagnostic metadata. The
+// optional event parameter enriches the DLQ payload with entity ID and event
+// type when the event was successfully parsed before the failure occurred.
+func (c *BillingEventConsumer) sendToDLQ(subject string, msg *message.Message, processingErr error, retryCount int, event *domainevent.Event) {
 	dlqSubject := DLQSubjectPrefix + subject
 	dlqPayload := DLQPayload{
 		OriginalSubject: subject,
@@ -426,6 +428,11 @@ func (c *BillingEventConsumer) sendToDLQ(subject string, msg *message.Message, p
 		MsgID:           msg.UUID,
 		FailedAt:        c.clock.Now().Format(time.RFC3339),
 		RetryCount:      retryCount,
+	}
+
+	if event != nil {
+		dlqPayload.EntityID = event.EntityID
+		dlqPayload.EventType = string(event.Type)
 	}
 
 	data, err := json.Marshal(dlqPayload)
@@ -461,6 +468,8 @@ type DLQPayload struct {
 	MsgID           string `json:"msg_id"`
 	FailedAt        string `json:"failed_at"`
 	RetryCount      int    `json:"retry_count"`
+	EntityID        string `json:"entity_id,omitempty"`
+	EventType       string `json:"event_type,omitempty"`
 }
 
 // handleActivated enriches the sparse activated event with subscription, plan,

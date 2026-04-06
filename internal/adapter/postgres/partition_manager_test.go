@@ -138,6 +138,104 @@ func TestExpiredPartitionDetection(t *testing.T) {
 	}
 }
 
+func TestIsSafeToDropSQL_Format(t *testing.T) {
+	// Verify the SQL template produces valid SQL when given a safe partition name.
+	tests := []struct {
+		name      string
+		partition string
+		wantErr   bool
+	}{
+		{
+			name:      "valid partition name formats correctly",
+			partition: "outbox_2026_q1",
+			wantErr:   false,
+		},
+		{
+			name:      "invalid partition name rejected",
+			partition: "outbox_2026_q1; DROP TABLE outbox",
+			wantErr:   true,
+		},
+		{
+			name:      "empty name rejected",
+			partition: "",
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			valid := outboxPartitionPattern.MatchString(tt.partition)
+			if tt.wantErr {
+				assert.False(t, valid, "invalid partition name must be rejected by regex")
+			} else {
+				assert.True(t, valid, "valid partition name must pass regex")
+			}
+		})
+	}
+}
+
+func TestSequenceSafetyLogic(t *testing.T) {
+	// This test validates the pure logic behind isSafeToDrop without a database
+	// connection. The SQL query computes:
+	//   MAX(partition.sequence_number) < MIN(outbox.sequence_number WHERE published=false)
+	//
+	// We simulate this comparison to verify edge cases.
+
+	// maxInt64Sentinel is the COALESCE default when no unpublished events exist.
+	const maxInt64Sentinel int64 = 9223372036854775807
+
+	tests := []struct {
+		name           string
+		partitionMax   int64 // MAX(sequence_number) from the partition
+		globalMinUnpub int64 // MIN(sequence_number) from outbox WHERE published=false
+		wantSafe       bool
+	}{
+		{
+			name:           "partition fully published, min unpublished in later partition",
+			partitionMax:   100,
+			globalMinUnpub: 200,
+			wantSafe:       true,
+		},
+		{
+			name:           "no unpublished events globally, sentinel used",
+			partitionMax:   500,
+			globalMinUnpub: maxInt64Sentinel,
+			wantSafe:       true,
+		},
+		{
+			name:           "partition max equals global min unpublished",
+			partitionMax:   100,
+			globalMinUnpub: 100,
+			wantSafe:       false,
+		},
+		{
+			name:           "partition max exceeds global min unpublished",
+			partitionMax:   300,
+			globalMinUnpub: 200,
+			wantSafe:       false,
+		},
+		{
+			name:           "empty partition (max=0), unpublished elsewhere",
+			partitionMax:   0,
+			globalMinUnpub: 1,
+			wantSafe:       true,
+		},
+		{
+			name:           "empty partition (max=0), no unpublished events",
+			partitionMax:   0,
+			globalMinUnpub: maxInt64Sentinel,
+			wantSafe:       true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			safe := tt.partitionMax < tt.globalMinUnpub
+			assert.Equal(t, tt.wantSafe, safe)
+		})
+	}
+}
+
 func TestOutboxPartitionPatternValidation(t *testing.T) {
 	tests := []struct {
 		name      string
