@@ -16,7 +16,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
@@ -555,4 +559,106 @@ func TestHandleMessage_RedeliveryAfterFailureIsProcessed(t *testing.T) {
 
 	assert.Equal(t, int32(2), callCount.Load(),
 		"redelivered message must be processed after failure release")
+}
+
+// newTestConsumerMetrics returns an isolated observability.Metrics containing
+// only the consumer-relevant counters and histograms. Using prometheus.New*
+// (not promauto) avoids global registry conflicts between parallel tests.
+func newTestConsumerMetrics() *observability.Metrics {
+	return &observability.Metrics{
+		EventsProcessedTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "test_events_processed_total",
+			Help: "test metric",
+		}, []string{observability.LabelEventType, observability.LabelStatus}),
+		EventProcessingLatency: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "test_event_processing_duration_seconds",
+			Help:    "test metric",
+			Buckets: observability.EventProcessingBuckets,
+		}, []string{observability.LabelEventType}),
+		EntityLockWaitLatency: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "test_entity_lock_wait_duration_seconds",
+			Help:    "test metric",
+			Buckets: observability.EventProcessingBuckets,
+		}, []string{observability.LabelEventType}),
+		DLQPublishedTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "test_dlq_published_total",
+			Help: "test metric",
+		}),
+		IdempotencyHitTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "test_idempotency_hit_total",
+			Help: "test metric",
+		}, []string{observability.LabelEventType}),
+	}
+}
+
+func TestHandleMessage_SuccessIncrementsProcessedCounter(t *testing.T) {
+	metrics := newTestConsumerMetrics()
+	handler := &recordingHandler{}
+
+	consumer := &BillingEventConsumer{
+		handler:        handler,
+		idempotency:    &alwaysNewIdempotencyChecker{},
+		schemaRegistry: domainevent.NewSchemaRegistry(),
+		logger:         discardLogger(),
+		clock:          clock.NewReal(),
+		metrics:        metrics,
+	}
+
+	event := domainevent.NewWithEntity(
+		"subscription.cancelled",
+		map[string]any{"subscription_id": "sub-m1", "user_id": "u-1", "reason": "test"},
+		"sub-m1",
+	)
+
+	msg := buildEventMessage(t, event)
+	consumer.handleMessage(context.Background(), "subscription.cancelled", msg)
+
+	successCounter := metrics.EventsProcessedTotal.WithLabelValues(
+		"subscription.cancelled", observability.StatusSuccess,
+	)
+	assert.Equal(t, float64(1), testutil.ToFloat64(successCounter),
+		"EventsProcessedTotal with status=success must be incremented after successful processing")
+
+	// Latency histogram must have recorded exactly one observation.
+	assert.Equal(t, 1, testutil.CollectAndCount(metrics.EventProcessingLatency),
+		"EventProcessingLatency must record exactly one observation")
+}
+
+func TestHandleMessage_DuplicateIncrementsIdempotencyHitCounter(t *testing.T) {
+	metrics := newTestConsumerMetrics()
+	idem := newStubIdempotencyChecker()
+	handler := &recordingHandler{}
+
+	consumer := &BillingEventConsumer{
+		handler:        handler,
+		idempotency:    idem,
+		schemaRegistry: domainevent.NewSchemaRegistry(),
+		logger:         discardLogger(),
+		clock:          clock.NewReal(),
+		metrics:        metrics,
+	}
+
+	event := domainevent.NewWithEntity(
+		"subscription.paused",
+		map[string]any{"subscription_id": "sub-m2", "user_id": "u-2"},
+		"sub-m2",
+	)
+
+	// First message — processed, not a duplicate.
+	msg1 := buildEventMessage(t, event)
+	consumer.handleMessage(context.Background(), "subscription.paused", msg1)
+
+	// Second message — same business event, should be detected as duplicate.
+	msg2 := buildEventMessage(t, event)
+	consumer.handleMessage(context.Background(), "subscription.paused", msg2)
+
+	idempotencyCounter := metrics.IdempotencyHitTotal.WithLabelValues("subscription.paused")
+	assert.Equal(t, float64(1), testutil.ToFloat64(idempotencyCounter),
+		"IdempotencyHitTotal must be incremented when a duplicate event is detected")
+
+	duplicateCounter := metrics.EventsProcessedTotal.WithLabelValues(
+		"subscription.paused", observability.StatusSkippedDuplicate,
+	)
+	assert.Equal(t, float64(1), testutil.ToFloat64(duplicateCounter),
+		"EventsProcessedTotal with status=skipped_duplicate must be incremented for duplicates")
 }

@@ -15,6 +15,7 @@ import (
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
@@ -119,6 +120,7 @@ type BillingEventConsumer struct {
 	schemaRegistry *domainevent.SchemaRegistry
 	logger         *slog.Logger
 	clock          clock.Clock
+	metrics        *observability.Metrics
 	entityLocks    sync.Map // map[string]*entityLock — per-entity serialisation
 }
 
@@ -137,6 +139,7 @@ func NewBillingEventConsumer(
 	schemaRegistry *domainevent.SchemaRegistry,
 	logger *slog.Logger,
 	clk clock.Clock,
+	metrics *observability.Metrics,
 ) *BillingEventConsumer {
 	return &BillingEventConsumer{
 		subscriber:     subscriber,
@@ -148,6 +151,7 @@ func NewBillingEventConsumer(
 		schemaRegistry: schemaRegistry,
 		logger:         logger,
 		clock:          clk,
+		metrics:        metrics,
 	}
 }
 
@@ -254,6 +258,8 @@ func (c *BillingEventConsumer) consumeLoop(ctx context.Context, subject string, 
 // times. Messages that exceed the retry limit are sent to the dead-letter queue
 // and Ack'd to prevent infinite redelivery.
 func (c *BillingEventConsumer) handleMessage(ctx context.Context, subject string, msg *message.Message) {
+	start := time.Now()
+
 	// Parse the event first so we can extract EntityID for idempotency.
 	var event domainevent.Event
 	if err := json.Unmarshal(msg.Payload, &event); err != nil {
@@ -295,6 +301,10 @@ func (c *BillingEventConsumer) handleMessage(ctx context.Context, subject string
 			slog.String("subject", subject),
 			slog.String("idempotency_key", idempotencyKey),
 		)
+		c.recordMetric(func(m *observability.Metrics) {
+			m.EventsProcessedTotal.WithLabelValues(string(event.Type), observability.StatusSkippedDuplicate).Inc()
+			m.IdempotencyHitTotal.WithLabelValues(string(event.Type)).Inc()
+		})
 		msg.Ack()
 		return
 	}
@@ -302,13 +312,21 @@ func (c *BillingEventConsumer) handleMessage(ctx context.Context, subject string
 	// Serialise processing for the same entity to guarantee ordering.
 	// Events for different entities run concurrently.
 	if entityID != "" {
+		lockStart := time.Now()
 		lock := c.getEntityLock(entityID)
 		lock.mu.Lock()
 		defer lock.mu.Unlock()
+		c.recordMetric(func(m *observability.Metrics) {
+			m.EntityLockWaitLatency.WithLabelValues(string(event.Type)).Observe(time.Since(lockStart).Seconds())
+		})
 	}
 
 	handleErr := c.processEvent(ctx, subject, event)
 	if handleErr == nil {
+		c.recordMetric(func(m *observability.Metrics) {
+			m.EventsProcessedTotal.WithLabelValues(string(event.Type), observability.StatusSuccess).Inc()
+			m.EventProcessingLatency.WithLabelValues(string(event.Type)).Observe(time.Since(start).Seconds())
+		})
 		msg.Ack()
 		return
 	}
@@ -334,6 +352,9 @@ func (c *BillingEventConsumer) handleMessage(ctx context.Context, subject string
 			slog.String("retry_key", retryKey),
 			slog.Any("error", retryErr),
 		)
+		c.recordMetric(func(m *observability.Metrics) {
+			m.EventsProcessedTotal.WithLabelValues(string(event.Type), observability.StatusFailed).Inc()
+		})
 		// Fail open: allow retry even if we cannot track the count.
 		msg.Nack()
 		return
@@ -347,6 +368,9 @@ func (c *BillingEventConsumer) handleMessage(ctx context.Context, subject string
 			slog.Int("max_retries", MaxMessageRetries),
 			slog.String("error", handleErr.Error()),
 		)
+		c.recordMetric(func(m *observability.Metrics) {
+			m.EventsProcessedTotal.WithLabelValues(string(event.Type), observability.StatusFailed).Inc()
+		})
 		msg.Nack()
 		return
 	}
@@ -359,7 +383,19 @@ func (c *BillingEventConsumer) handleMessage(ctx context.Context, subject string
 		slog.Int("retries_exhausted", retryCount),
 		slog.String("error", handleErr.Error()),
 	)
+	c.recordMetric(func(m *observability.Metrics) {
+		m.EventsProcessedTotal.WithLabelValues(string(event.Type), observability.StatusDLQ).Inc()
+		m.DLQPublishedTotal.Inc()
+	})
 	msg.Ack()
+}
+
+// recordMetric is a nil-safe helper that executes metric recording only when
+// the metrics dependency is present. Tests pass nil for metrics.
+func (c *BillingEventConsumer) recordMetric(fn func(*observability.Metrics)) {
+	if c.metrics != nil {
+		fn(c.metrics)
+	}
 }
 
 // processEvent routes the parsed event to the appropriate handler.

@@ -20,6 +20,17 @@ const (
 	MetricPluginMemory           = "platform_plugin_memory_bytes"
 	MetricEventPublishFailures   = "platform_event_publish_failures_total"
 	MetricRateLimiterFallback    = "platform_rate_limiter_fallback_total"
+
+	MetricEventsProcessedTotal   = "platform_events_processed_total"
+	MetricEventProcessingLatency = "platform_event_processing_duration_seconds"
+	MetricEntityLockWaitLatency  = "platform_entity_lock_wait_duration_seconds"
+	MetricDLQPublishedTotal      = "platform_dlq_published_total"
+	MetricIdempotencyHitTotal    = "platform_idempotency_hit_total"
+
+	MetricOutboxRelayBatchSize     = "platform_outbox_relay_batch_size"
+	MetricOutboxRelayBatchLatency  = "platform_outbox_relay_batch_duration_seconds"
+	MetricOutboxRelayPublishErrors = "platform_outbox_relay_publish_errors_total"
+	MetricOutboxRelayEmptyPolls    = "platform_outbox_relay_empty_polls_total"
 )
 
 // Metric help string constants.
@@ -37,6 +48,17 @@ const (
 	// HelpRateLimiterFallback is exported so adapter/valkey can register the
 	// counter with a consistent help string.
 	HelpRateLimiterFallback = "Total number of rate limiter requests that fell back to allow due to circuit breaker."
+
+	helpEventsProcessedTotal   = "Total number of consumed events by type and processing status."
+	helpEventProcessingLatency = "Duration of event processing in seconds."
+	helpEntityLockWaitLatency  = "Duration spent waiting for per-entity lock in seconds."
+	helpDLQPublishedTotal      = "Total number of messages published to the dead-letter queue."
+	helpIdempotencyHitTotal    = "Total number of duplicate events detected by idempotency check."
+
+	helpOutboxRelayBatchSize     = "Number of events in each outbox relay batch."
+	helpOutboxRelayBatchLatency  = "Duration of outbox relay batch processing in seconds."
+	helpOutboxRelayPublishErrors = "Total number of NATS publish errors in the outbox relay."
+	helpOutboxRelayEmptyPolls    = "Total number of outbox relay polls that returned zero events."
 )
 
 // Label name constants.
@@ -49,6 +71,7 @@ const (
 	LabelHook     = "hook"
 	LabelAction    = "action"
 	LabelEventType = "event_type"
+	LabelWorkerID  = "worker_id"
 )
 
 // DefaultHTTPBuckets defines histogram buckets for HTTP request durations.
@@ -59,6 +82,27 @@ var RemnawaveAPIBuckets = []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 3
 
 // PluginHookBuckets defines histogram buckets for plugin hook execution durations.
 var PluginHookBuckets = []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 5}
+
+// EventProcessingBuckets defines histogram buckets for event consumer processing
+// and entity lock wait durations. Range covers sub-millisecond dedup skips through
+// multi-second Remnawave provisioning calls.
+var EventProcessingBuckets = []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}
+
+// OutboxRelayBatchBuckets defines histogram buckets for outbox relay batch sizes
+// (event count per batch). Range covers empty through full batches.
+var OutboxRelayBatchBuckets = []float64{1, 5, 10, 25, 50, 100}
+
+// OutboxRelayLatencyBuckets defines histogram buckets for outbox relay batch
+// processing durations. Range covers fast DB-only batches through slow NATS publishes.
+var OutboxRelayLatencyBuckets = []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5}
+
+// Consumer metric status label values.
+const (
+	StatusSuccess          = "success"
+	StatusFailed           = "failed"
+	StatusSkippedDuplicate = "skipped_duplicate"
+	StatusDLQ              = "dlq"
+)
 
 // Metrics holds Prometheus metric collectors for the platform.
 type Metrics struct {
@@ -71,6 +115,19 @@ type Metrics struct {
 	PluginHookTotal      *prometheus.CounterVec
 	PluginMemoryBytes    *prometheus.GaugeVec
 	EventPublishFailures *prometheus.CounterVec
+
+	// Outbox relay metrics
+	OutboxRelayBatchSize     *prometheus.HistogramVec
+	OutboxRelayBatchLatency  *prometheus.HistogramVec
+	OutboxRelayPublishErrors prometheus.Counter
+	OutboxRelayEmptyPolls    prometheus.Counter
+
+	// Consumer metrics
+	EventsProcessedTotal   *prometheus.CounterVec
+	EventProcessingLatency *prometheus.HistogramVec
+	EntityLockWaitLatency  *prometheus.HistogramVec
+	DLQPublishedTotal      prometheus.Counter
+	IdempotencyHitTotal    *prometheus.CounterVec
 }
 
 // registerRuntimeCollectors replaces the default Go and process collectors with
@@ -154,6 +211,55 @@ func NewMetrics() *Metrics {
 		EventPublishFailures: promauto.NewCounterVec(prometheus.CounterOpts{
 			Name: MetricEventPublishFailures,
 			Help: helpEventPublishFailures,
+		}, []string{LabelEventType}),
+
+		OutboxRelayBatchSize: promauto.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    MetricOutboxRelayBatchSize,
+			Help:    helpOutboxRelayBatchSize,
+			Buckets: OutboxRelayBatchBuckets,
+		}, []string{LabelWorkerID}),
+
+		OutboxRelayBatchLatency: promauto.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    MetricOutboxRelayBatchLatency,
+			Help:    helpOutboxRelayBatchLatency,
+			Buckets: OutboxRelayLatencyBuckets,
+		}, []string{LabelWorkerID}),
+
+		OutboxRelayPublishErrors: promauto.NewCounter(prometheus.CounterOpts{
+			Name: MetricOutboxRelayPublishErrors,
+			Help: helpOutboxRelayPublishErrors,
+		}),
+
+		OutboxRelayEmptyPolls: promauto.NewCounter(prometheus.CounterOpts{
+			Name: MetricOutboxRelayEmptyPolls,
+			Help: helpOutboxRelayEmptyPolls,
+		}),
+
+		EventsProcessedTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: MetricEventsProcessedTotal,
+			Help: helpEventsProcessedTotal,
+		}, []string{LabelEventType, LabelStatus}),
+
+		EventProcessingLatency: promauto.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    MetricEventProcessingLatency,
+			Help:    helpEventProcessingLatency,
+			Buckets: EventProcessingBuckets,
+		}, []string{LabelEventType}),
+
+		EntityLockWaitLatency: promauto.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    MetricEntityLockWaitLatency,
+			Help:    helpEntityLockWaitLatency,
+			Buckets: EventProcessingBuckets,
+		}, []string{LabelEventType}),
+
+		DLQPublishedTotal: promauto.NewCounter(prometheus.CounterOpts{
+			Name: MetricDLQPublishedTotal,
+			Help: helpDLQPublishedTotal,
+		}),
+
+		IdempotencyHitTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: MetricIdempotencyHitTotal,
+			Help: helpIdempotencyHitTotal,
 		}, []string{LabelEventType}),
 	}
 }
