@@ -16,6 +16,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/remnawave"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
+	billingaggregate "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
@@ -65,9 +66,8 @@ var natsWiring = fx.Options(
 	// schemas evolve.
 	fx.Provide(func() *domainevent.SchemaRegistry {
 		r := domainevent.NewSchemaRegistry()
-		// Register upcasters here as event schemas evolve.
-		// Example:
-		// r.Register(billing.EventSubActivated, billing.SubActivatedV1ToV2{})
+		// Reference upcasters: subscription.activated v1->v2
+		r.Register(billingaggregate.EventSubActivated, billingaggregate.SubActivatedV1ToV2{})
 		return r
 	}),
 
@@ -169,6 +169,8 @@ func startOutboxRelay(lc fx.Lifecycle, relay *natsadapter.OutboxRelay, logger *s
 
 // startBillingEventConsumer starts the NATS consumer that routes billing
 // subscription events to the MultiSubOrchestrator for provisioning/deprovisioning.
+// On shutdown, the context is cancelled (stopping new message reads) and Drain
+// is called to wait for in-flight handlers to complete before the process exits.
 func startBillingEventConsumer(lc fx.Lifecycle, consumer *natsadapter.BillingEventConsumer, logger *slog.Logger) {
 	lc.Append(fx.Hook{
 		OnStart: func(_ context.Context) error {
@@ -182,6 +184,7 @@ func startBillingEventConsumer(lc fx.Lifecycle, consumer *natsadapter.BillingEve
 				OnStop: func(_ context.Context) error {
 					logger.Info("billing event consumer stopping")
 					cancel()
+					consumer.Drain()
 					return nil
 				},
 			})

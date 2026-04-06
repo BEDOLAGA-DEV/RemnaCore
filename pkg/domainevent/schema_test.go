@@ -273,6 +273,115 @@ func TestSchemaRegistry_PartialUpcast_FromV2(t *testing.T) {
 	assert.True(t, data["v2_applied"].(bool))
 }
 
+func TestSchemaRegistry_MultiStepUpcast_EndToEnd(t *testing.T) {
+	// Simulates a realistic evolution: subscription.activated evolves through
+	// three schema versions:
+	//   v1: {subscription_id, user_id}
+	//   v2: {subscription_id, user_id, plan_tier}        (added plan_tier)
+	//   v3: {subscription_id, user_id, plan_tier, region} (added region)
+	tests := []struct {
+		name        string
+		startVer    int
+		data        map[string]any
+		wantVersion int
+		wantFields  map[string]any
+	}{
+		{
+			name:     "v1 event upcasts through v2 and v3",
+			startVer: 1,
+			data: map[string]any{
+				"subscription_id": "sub-1",
+				"user_id":         "u-1",
+			},
+			wantVersion: 3,
+			wantFields: map[string]any{
+				"subscription_id": "sub-1",
+				"user_id":         "u-1",
+				"plan_tier":       "standard",
+				"region":          "auto",
+			},
+		},
+		{
+			name:     "v2 event upcasts only through v3",
+			startVer: 2,
+			data: map[string]any{
+				"subscription_id": "sub-2",
+				"user_id":         "u-2",
+				"plan_tier":       "premium",
+			},
+			wantVersion: 3,
+			wantFields: map[string]any{
+				"subscription_id": "sub-2",
+				"user_id":         "u-2",
+				"plan_tier":       "premium",
+				"region":          "auto",
+			},
+		},
+		{
+			name:     "v3 event passes through unchanged",
+			startVer: 3,
+			data: map[string]any{
+				"subscription_id": "sub-3",
+				"user_id":         "u-3",
+				"plan_tier":       "enterprise",
+				"region":          "eu-west",
+			},
+			wantVersion: 3,
+			wantFields: map[string]any{
+				"subscription_id": "sub-3",
+				"user_id":         "u-3",
+				"plan_tier":       "enterprise",
+				"region":          "eu-west",
+			},
+		},
+	}
+
+	registry := NewSchemaRegistry()
+
+	// v1->v2: add plan_tier with default
+	registry.Register("subscription.activated", testUpcaster{
+		fromVersion: 1,
+		transform: func(data map[string]any) map[string]any {
+			if _, ok := data["plan_tier"]; !ok {
+				data["plan_tier"] = "standard"
+			}
+			return data
+		},
+	})
+
+	// v2->v3: add region with default
+	registry.Register("subscription.activated", testUpcaster{
+		fromVersion: 2,
+		transform: func(data map[string]any) map[string]any {
+			if _, ok := data["region"]; !ok {
+				data["region"] = "auto"
+			}
+			return data
+		},
+	})
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			event := Event{
+				Type:    "subscription.activated",
+				Version: tt.startVer,
+				Data:    tt.data,
+			}
+
+			got := registry.Upcast(event)
+
+			assert.Equal(t, tt.wantVersion, got.Version)
+			data := got.Data.(map[string]any)
+			for k, v := range tt.wantFields {
+				assert.Equal(t, v, data[k], "field %s mismatch", k)
+			}
+		})
+	}
+
+	// Verify LatestVersion reflects the full chain.
+	assert.Equal(t, 3, registry.LatestVersion("subscription.activated"))
+}
+
 func TestSchemaRegistry_OutOfOrderRegistration(t *testing.T) {
 	registry := NewSchemaRegistry()
 

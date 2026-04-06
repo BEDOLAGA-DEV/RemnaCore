@@ -13,9 +13,11 @@ import (
 
 const deleteOldPublishedOutboxEvents = `-- name: DeleteOldPublishedOutboxEvents :exec
 DELETE FROM public.outbox
-WHERE published = true AND published_at < $1
+WHERE published = true AND published_at < $1 AND created_at < $1
 `
 
+// created_at < $1 enables partition pruning on the range-partitioned outbox.
+// This is safe because created_at <= published_at always holds.
 func (q *Queries) DeleteOldPublishedOutboxEvents(ctx context.Context, publishedAt pgtype.Timestamptz) error {
 	_, err := q.db.Exec(ctx, deleteOldPublishedOutboxEvents, publishedAt)
 	return err
@@ -76,6 +78,26 @@ type InsertOutboxEventParams struct {
 
 func (q *Queries) InsertOutboxEvent(ctx context.Context, arg InsertOutboxEventParams) error {
 	_, err := q.db.Exec(ctx, insertOutboxEvent, arg.EventType, arg.Payload)
+	return err
+}
+
+const insertOutboxEventWithID = `-- name: InsertOutboxEventWithID :exec
+INSERT INTO public.outbox (id, event_type, payload)
+VALUES ($1, $2, $3)
+`
+
+type InsertOutboxEventWithIDParams struct {
+	ID        pgtype.UUID `json:"id"`
+	EventType string      `json:"event_type"`
+	Payload   []byte      `json:"payload"`
+}
+
+// Inserts an outbox event using the domain event's UUIDv7 as the row ID,
+// ensuring the outbox row ID and domain event ID are identical. This enables
+// end-to-end deduplication: the relay uses this ID as the NATS Msg-Id header,
+// and consumers use it as the idempotency key.
+func (q *Queries) InsertOutboxEventWithID(ctx context.Context, arg InsertOutboxEventWithIDParams) error {
+	_, err := q.db.Exec(ctx, insertOutboxEventWithID, arg.ID, arg.EventType, arg.Payload)
 	return err
 }
 

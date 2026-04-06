@@ -20,6 +20,11 @@ type Upcaster interface {
 // Thread safety: Register must only be called during application initialisation
 // (e.g., inside an fx.Provide closure) before any concurrent Upcast calls.
 // Upcast is safe for concurrent use once registration is complete.
+//
+// To add a new upcaster:
+//  1. Create a struct implementing Upcaster in the domain aggregate package
+//  2. Register it in the SchemaRegistry (internal/app/wiring_nats.go)
+//  3. Bump DefaultEventVersion if ALL producers now emit the new version
 type SchemaRegistry struct {
 	upcasters map[EventType][]Upcaster // sorted by FromVersion
 }
