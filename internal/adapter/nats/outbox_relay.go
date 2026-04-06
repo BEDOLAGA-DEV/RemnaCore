@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sony/gobreaker/v2"
+
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
@@ -50,12 +52,24 @@ const (
 // Delivery guarantee: at-least-once. If NATS publish succeeds but
 // MarkPublishedBatch fails, the transaction rolls back and the event is
 // re-published on the next tick. Consumers must be idempotent.
+//
+// Circuit breaker: the relay wraps NATS publishes in a circuit breaker. When
+// NATS is unreachable, the breaker opens after relayCBConsecutiveFailures
+// consecutive failures and the relay skips DB polling entirely until the
+// breaker transitions to half-open after relayCBTimeout. This prevents
+// wasteful DB locks and log spam during NATS outages.
+//
+// JetStream deduplication: each message is published with the outbox event ID
+// as the Watermill message UUID. Because TrackMsgId is enabled on the
+// publisher, Watermill sets the Nats-Msg-Id header to this UUID, enabling
+// server-side deduplication of retransmissions after transaction rollbacks.
 type OutboxRelay struct {
 	outbox      *postgres.OutboxRepository
 	publisher   *EventPublisher
 	txRunner    txmanager.Runner
 	logger      *slog.Logger
 	workerCount int
+	natsBreaker *gobreaker.CircuitBreaker[struct{}]
 }
 
 const (
@@ -66,6 +80,21 @@ const (
 	// MaxOutboxRelayWorkers caps the number of parallel relay goroutines to
 	// prevent exhausting the database connection pool.
 	MaxOutboxRelayWorkers = 16
+
+	// relayCBName is the circuit breaker instance name for the outbox relay.
+	relayCBName = "outbox-relay-nats"
+
+	// relayCBMaxRequests is the number of probe requests allowed in the
+	// half-open state to test whether NATS has recovered.
+	relayCBMaxRequests = 1
+
+	// relayCBTimeout is the duration the circuit stays open before
+	// transitioning to half-open.
+	relayCBTimeout = 10 * time.Second
+
+	// relayCBConsecutiveFailures is the number of consecutive NATS publish
+	// failures required to trip the breaker from closed to open.
+	relayCBConsecutiveFailures = 5
 )
 
 // NewOutboxRelay creates an OutboxRelay with the given dependencies.
@@ -84,12 +113,24 @@ func NewOutboxRelay(
 	if workerCount > MaxOutboxRelayWorkers {
 		workerCount = MaxOutboxRelayWorkers
 	}
+
+	cb := gobreaker.NewCircuitBreaker[struct{}](gobreaker.Settings{
+		Name:        relayCBName,
+		MaxRequests: relayCBMaxRequests,
+		Interval:    0, // Never reset counts in closed state; only consecutive failures matter.
+		Timeout:     relayCBTimeout,
+		ReadyToTrip: func(counts gobreaker.Counts) bool {
+			return counts.ConsecutiveFailures >= relayCBConsecutiveFailures
+		},
+	})
+
 	return &OutboxRelay{
 		outbox:      outbox,
 		publisher:   publisher,
 		txRunner:    txRunner,
 		logger:      logger,
 		workerCount: workerCount,
+		natsBreaker: cb,
 	}
 }
 
@@ -180,14 +221,28 @@ func (r *OutboxRelay) runCleanup(ctx context.Context) {
 // The transaction ensures that locked rows are invisible to other relay
 // instances.
 //
+// Circuit breaker: if the NATS breaker is open, relay returns 0 immediately
+// without polling the database. This prevents wasteful DB locks during NATS
+// outages.
+//
+// JetStream dedup: each event is published with its outbox ID as the
+// Watermill message UUID. Because TrackMsgId is enabled, the NATS publisher
+// sets Nats-Msg-Id to this UUID, enabling server-side deduplication.
+//
 // If a NATS publish fails for a specific event, that event is skipped and
 // will be retried on the next tick (the row lock is released on commit).
 // If MarkPublishedBatch fails, the entire transaction is rolled back; events
-// that were already published to NATS will be re-delivered (at-least-once).
+// that were already published to NATS will be deduplicated by JetStream.
 //
 // The logger parameter carries the worker ID so log lines can be correlated
 // to a specific worker.
 func (r *OutboxRelay) relay(ctx context.Context, logger *slog.Logger) int {
+	// Skip DB polling entirely when NATS is known to be unreachable.
+	if r.natsBreaker.State() == gobreaker.StateOpen {
+		logger.Debug("outbox relay: NATS circuit open, skipping poll")
+		return 0
+	}
+
 	var published int
 
 	err := r.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
@@ -205,11 +260,19 @@ func (r *OutboxRelay) relay(ctx context.Context, logger *slog.Logger) int {
 		publishedTimes := make([]time.Time, 0, len(events))
 
 		for _, event := range events {
-			if err := r.publisher.Publish(txCtx, event.EventType, event.Payload); err != nil {
+			// Wrap publish in the circuit breaker. On success the breaker
+			// records a success; on failure it records a failure and will
+			// trip open after relayCBConsecutiveFailures consecutive errors.
+			// The event ID is used as the Watermill message UUID so
+			// JetStream can deduplicate retransmissions via Nats-Msg-Id.
+			_, cbErr := r.natsBreaker.Execute(func() (struct{}, error) {
+				return struct{}{}, r.publisher.PublishWithID(txCtx, event.ID, event.EventType, event.Payload)
+			})
+			if cbErr != nil {
 				logger.Warn("outbox relay: failed to publish event, will retry",
 					slog.String("event_id", event.ID),
 					slog.String("event_type", event.EventType),
-					slog.Any("error", err),
+					slog.Any("error", cbErr),
 				)
 				// Skip this event — row lock released on commit, retry next tick.
 				continue

@@ -56,6 +56,20 @@ func (p *EventPublisher) Publish(_ context.Context, topic string, payload any) e
 	return nil
 }
 
+// PublishWithID serializes payload to JSON and publishes it with a
+// deterministic message ID. When TrackMsgId is enabled on the publisher,
+// Watermill uses the message UUID as the JetStream Nats-Msg-Id header,
+// enabling server-side deduplication of retransmissions.
+func (p *EventPublisher) PublishWithID(_ context.Context, id string, topic string, payload []byte) error {
+	msg := message.NewMessage(id, payload)
+
+	if err := p.publisher.Publish(topic, msg); err != nil {
+		return fmt.Errorf("publishing to %s: %w", topic, err)
+	}
+
+	return nil
+}
+
 // PublishRaw publishes a pre-serialized Watermill message to a topic.
 func (p *EventPublisher) PublishRaw(topic string, msg *message.Message) error {
 	return p.publisher.Publish(topic, msg)
