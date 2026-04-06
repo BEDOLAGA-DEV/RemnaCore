@@ -13,6 +13,7 @@ import (
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/payment"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
@@ -55,6 +56,13 @@ type SubscriptionEventHandler interface {
 	OnBindingTrafficExceeded(ctx context.Context, bindingID, subscriptionID string, usedBytes, limitBytes int64) error
 	OnBindingTrafficReset(ctx context.Context, bindingID, subscriptionID string) error
 	OnTrafficWarning(ctx context.Context, bindingID, subscriptionID string, usedBytes, limitBytes int64, thresholdPct int)
+}
+
+// CheckoutCompleter abstracts the billing context's CompleteCheckout operation.
+// The BillingEventConsumer uses this to complete checkout asynchronously when
+// it receives a payment.charge_completed event from the payment context.
+type CheckoutCompleter interface {
+	CompleteCheckout(ctx context.Context, invoiceID string) error
 }
 
 // NOTE: Subscription and plan lookup interfaces are defined in the multisub
@@ -135,6 +143,7 @@ type entityLock struct {
 type BillingEventConsumer struct {
 	subscriber     *EventSubscriber
 	handler        SubscriptionEventHandler
+	checkout       CheckoutCompleter
 	plans          multisub.PlanProvider
 	subs           multisub.SubscriptionProvider
 	idempotency    IdempotencyChecker
@@ -152,12 +161,15 @@ type BillingEventConsumer struct {
 // NewBillingEventConsumer creates a BillingEventConsumer with the given
 // dependencies. The publisher is used to route permanently failed messages to
 // the dead-letter queue. Plan and subscription data are resolved through
-// multisub domain ports (PlanProvider + SubscriptionProvider). The schema
-// registry upcasts old event payloads to the latest version before processing.
-// The NATS connection is used for DLQ depth polling via JetStream API.
+// multisub domain ports (PlanProvider + SubscriptionProvider). The checkout
+// completer handles payment.charge_completed events by completing the billing
+// checkout flow. The schema registry upcasts old event payloads to the latest
+// version before processing. The NATS connection is used for DLQ depth polling
+// via JetStream API.
 func NewBillingEventConsumer(
 	subscriber *EventSubscriber,
 	handler SubscriptionEventHandler,
+	checkout CheckoutCompleter,
 	plans multisub.PlanProvider,
 	subs multisub.SubscriptionProvider,
 	idempotency IdempotencyChecker,
@@ -171,6 +183,7 @@ func NewBillingEventConsumer(
 	return &BillingEventConsumer{
 		subscriber:     subscriber,
 		handler:        handler,
+		checkout:       checkout,
 		plans:          plans,
 		subs:           subs,
 		idempotency:    idempotency,
@@ -293,13 +306,15 @@ func (c *BillingEventConsumer) pollDLQDepth(ctx context.Context) {
 }
 
 // billingSubscriptionSubjects returns the NATS subjects this consumer listens to.
-// Includes both billing lifecycle events and traffic lifecycle events.
+// Includes billing lifecycle events, traffic lifecycle events, and payment
+// events that trigger billing-side effects (checkout completion).
 func billingSubscriptionSubjects() []string {
 	return []string{
 		string(billing.EventSubActivated),
 		string(billing.EventSubCancelled),
 		string(billing.EventSubPaused),
 		string(billing.EventSubResumed),
+		string(payment.EventChargeCompleted),
 		subjectBindingTrafficExceeded,
 		subjectTrafficCycleReset,
 		subjectTrafficWarning,

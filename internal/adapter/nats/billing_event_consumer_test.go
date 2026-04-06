@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/payment"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
@@ -119,6 +120,18 @@ func (alwaysNewIdempotencyChecker) Release(_ context.Context, _ string) error {
 
 func (alwaysNewIdempotencyChecker) IncrementRetry(_ context.Context, _ string) (int, error) {
 	return 0, nil
+}
+
+// recordingCheckoutCompleter implements CheckoutCompleter for tests.
+type recordingCheckoutCompleter struct {
+	onCompleteCheckout func(ctx context.Context, invoiceID string) error
+}
+
+func (r *recordingCheckoutCompleter) CompleteCheckout(ctx context.Context, invoiceID string) error {
+	if r.onCompleteCheckout != nil {
+		return r.onCompleteCheckout(ctx, invoiceID)
+	}
+	return nil
 }
 
 // recordingHandler implements SubscriptionEventHandler for tests. Callback
@@ -941,4 +954,119 @@ func TestHandleMessage_BackwardCompat_OldEventWithoutIDUsesTypeEntityKey(t *test
 	require.Len(t, keys, 1)
 	assert.Equal(t, "subscription.cancelled:sub-old", keys[0],
 		"old events without ID must use type:entity_id as idempotency key")
+}
+
+func TestHandleChargeCompleted_Success(t *testing.T) {
+	var capturedInvoiceID string
+	checkout := &recordingCheckoutCompleter{
+		onCompleteCheckout: func(_ context.Context, invoiceID string) error {
+			capturedInvoiceID = invoiceID
+			return nil
+		},
+	}
+
+	consumer := &BillingEventConsumer{
+		handler:        &recordingHandler{},
+		checkout:       checkout,
+		idempotency:    &alwaysNewIdempotencyChecker{},
+		schemaRegistry: domainevent.NewSchemaRegistry(),
+		logger:         discardLogger(),
+		clock:          clock.NewReal(),
+	}
+
+	event := domainevent.NewWithEntity(
+		domainevent.EventType(payment.EventChargeCompleted),
+		map[string]any{
+			"payment_id":  "pay-1",
+			"invoice_id":  "inv-42",
+			"external_id": "pi_123",
+			"provider":    "stripe",
+			"amount":      999,
+		},
+		"pay-1",
+	)
+
+	msg := buildEventMessage(t, event)
+	consumer.handleMessage(context.Background(), string(payment.EventChargeCompleted), msg)
+
+	assert.Equal(t, "inv-42", capturedInvoiceID,
+		"handleChargeCompleted must extract invoice_id and pass it to CompleteCheckout")
+}
+
+func TestHandleChargeCompleted_MissingInvoiceID(t *testing.T) {
+	checkout := &recordingCheckoutCompleter{
+		onCompleteCheckout: func(_ context.Context, _ string) error {
+			t.Fatal("CompleteCheckout must not be called when invoice_id is missing")
+			return nil
+		},
+	}
+
+	idem := newStubIdempotencyChecker()
+
+	consumer := &BillingEventConsumer{
+		handler:        &recordingHandler{},
+		checkout:       checkout,
+		idempotency:    idem,
+		schemaRegistry: domainevent.NewSchemaRegistry(),
+		logger:         discardLogger(),
+		clock:          clock.NewReal(),
+	}
+
+	// Event without invoice_id.
+	event := domainevent.NewWithEntity(
+		domainevent.EventType(payment.EventChargeCompleted),
+		map[string]any{
+			"payment_id": "pay-1",
+			"provider":   "stripe",
+			"amount":     999,
+		},
+		"pay-1",
+	)
+
+	msg := buildEventMessage(t, event)
+	consumer.handleMessage(context.Background(), string(payment.EventChargeCompleted), msg)
+
+	// The idempotency key should have been released since the handler failed.
+	released := idem.releasedKeys()
+	require.Len(t, released, 1,
+		"idempotency key must be released after handleChargeCompleted failure")
+}
+
+func TestHandleChargeCompleted_CompleteCheckoutError(t *testing.T) {
+	idem := newStubIdempotencyChecker()
+
+	checkout := &recordingCheckoutCompleter{
+		onCompleteCheckout: func(_ context.Context, _ string) error {
+			return errors.New("billing service error")
+		},
+	}
+
+	consumer := &BillingEventConsumer{
+		handler:        &recordingHandler{},
+		checkout:       checkout,
+		idempotency:    idem,
+		schemaRegistry: domainevent.NewSchemaRegistry(),
+		logger:         discardLogger(),
+		clock:          clock.NewReal(),
+	}
+
+	event := domainevent.NewWithEntity(
+		domainevent.EventType(payment.EventChargeCompleted),
+		map[string]any{
+			"payment_id":  "pay-1",
+			"invoice_id":  "inv-42",
+			"external_id": "pi_123",
+			"provider":    "stripe",
+			"amount":      999,
+		},
+		"pay-1",
+	)
+
+	msg := buildEventMessage(t, event)
+	consumer.handleMessage(context.Background(), string(payment.EventChargeCompleted), msg)
+
+	// The idempotency key should have been released so the event can be retried.
+	released := idem.releasedKeys()
+	require.Len(t, released, 1,
+		"idempotency key must be released after CompleteCheckout failure for retry")
 }

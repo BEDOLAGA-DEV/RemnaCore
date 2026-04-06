@@ -17,6 +17,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/remnawave"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
 	billingaggregate "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
+	billingservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
@@ -70,6 +71,11 @@ var natsWiring = fx.Options(
 		r.Register(billingaggregate.EventSubActivated, billingaggregate.SubActivatedV1ToV2{})
 		return r
 	}),
+
+	// CheckoutCompleter: billing's CheckoutService satisfies the adapter's
+	// CheckoutCompleter interface, used by the billing event consumer to
+	// handle payment.charge_completed events asynchronously.
+	fx.Provide(func(cs *billingservice.CheckoutService) natsadapter.CheckoutCompleter { return cs }),
 
 	// Billing event consumer
 	fx.Provide(natsadapter.NewBillingEventConsumer),

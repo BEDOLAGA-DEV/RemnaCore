@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/payment"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tracing"
@@ -25,6 +26,10 @@ var errMissingSubscriptionID = errors.New("subscription_id missing from event da
 // errMissingBindingID is returned when a traffic event lacks the required
 // binding_id field in its data payload.
 var errMissingBindingID = errors.New("binding_id missing from event data")
+
+// errMissingInvoiceID is returned when a payment.charge_completed event lacks
+// the required invoice_id field in its data payload.
+var errMissingInvoiceID = errors.New("invoice_id missing from event data")
 
 // Traffic lifecycle NATS subjects. These originate from Remnawave webhooks,
 // are translated by the ACL (SyncSaga.HandleWebhookEvent) into domain events,
@@ -293,6 +298,8 @@ func (c *BillingEventConsumer) processEvent(ctx context.Context, subject string,
 		return c.handleSimple(ctx, event, c.handler.OnSubscriptionPaused)
 	case string(billing.EventSubResumed):
 		return c.handleSimple(ctx, event, c.handler.OnSubscriptionResumed)
+	case string(payment.EventChargeCompleted):
+		return c.handleChargeCompleted(ctx, event)
 	case subjectBindingTrafficExceeded:
 		return c.handleTrafficExceeded(ctx, event)
 	case subjectTrafficCycleReset:
@@ -340,6 +347,21 @@ func (c *BillingEventConsumer) handleActivated(ctx context.Context, event domain
 		subInfo.AddonIDs,
 		familyMemberIDs,
 	)
+}
+
+// handleChargeCompleted handles the payment.charge_completed event published by
+// the payment context after a successful payment. It extracts the invoice_id
+// from the event payload and delegates to the CheckoutCompleter (billing's
+// CheckoutService) to mark the invoice as paid and activate the subscription.
+// This is the asynchronous bridge between the payment and billing contexts,
+// replacing the previous synchronous cross-context call in the webhook handler.
+func (c *BillingEventConsumer) handleChargeCompleted(ctx context.Context, event domainevent.Event) error {
+	invoiceID := extractString(event.Data, "invoice_id")
+	if invoiceID == "" {
+		return errMissingInvoiceID
+	}
+
+	return c.checkout.CompleteCheckout(ctx, invoiceID)
 }
 
 // handleSimple handles events that only require a subscription_id.

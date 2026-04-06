@@ -31,12 +31,13 @@ func NewChargeCreatedEvent(paymentID, invoiceID, provider, externalID string, am
 }
 
 // NewChargeCompletedEvent creates an event for a successfully completed payment.
-func NewChargeCompletedEvent(paymentID, invoiceID, provider string, amount int64, now time.Time) Event {
+func NewChargeCompletedEvent(paymentID, invoiceID, externalID, provider string, amount int64, now time.Time) Event {
 	return domainevent.NewTyped(ChargeCompletedPayload{
-		PaymentID: paymentID,
-		InvoiceID: invoiceID,
-		Provider:  provider,
-		Amount:    amount,
+		PaymentID:  paymentID,
+		InvoiceID:  invoiceID,
+		ExternalID: externalID,
+		Provider:   provider,
+		Amount:     amount,
 	}, now, paymentID)
 }
 

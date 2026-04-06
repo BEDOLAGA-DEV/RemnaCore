@@ -12,11 +12,15 @@ type ChargeCreatedPayload struct {
 }
 
 // ChargeCompletedPayload is the typed payload for EventChargeCompleted.
+// This is the ACL event that formally defines the contract between the payment
+// and billing bounded contexts. Billing subscribes to this event to complete
+// checkout asynchronously after a successful payment.
 type ChargeCompletedPayload struct {
-	PaymentID string `json:"payment_id"`
-	InvoiceID string `json:"invoice_id"`
-	Provider  string `json:"provider"`
-	Amount    int64  `json:"amount"`
+	PaymentID  string `json:"payment_id"`
+	InvoiceID  string `json:"invoice_id"`
+	ExternalID string `json:"external_id"`
+	Provider   string `json:"provider"`
+	Amount     int64  `json:"amount"`
 }
 
 // ChargeFailedPayload is the typed payload for EventChargeFailed.

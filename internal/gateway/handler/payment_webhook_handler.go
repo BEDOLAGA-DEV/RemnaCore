@@ -6,7 +6,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	billingservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/payment"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
@@ -23,20 +22,18 @@ const (
 // PaymentWebhookHandler receives webhooks from payment providers (Stripe,
 // BTCPay, etc.) and dispatches them through the payment facade for
 // verification and processing.
+//
+// The handler talks exclusively to the payment bounded context. Billing-side
+// effects (invoice payment, subscription activation) happen asynchronously:
+// CompletePayment publishes a payment.charge_completed event via the outbox,
+// and BillingEventConsumer subscribes to it to call CompleteCheckout.
 type PaymentWebhookHandler struct {
-	facade   *payment.PaymentFacade
-	checkout *billingservice.CheckoutService
+	facade *payment.PaymentFacade
 }
 
 // NewPaymentWebhookHandler creates a PaymentWebhookHandler.
-func NewPaymentWebhookHandler(
-	facade *payment.PaymentFacade,
-	checkout *billingservice.CheckoutService,
-) *PaymentWebhookHandler {
-	return &PaymentWebhookHandler{
-		facade:   facade,
-		checkout: checkout,
-	}
+func NewPaymentWebhookHandler(facade *payment.PaymentFacade) *PaymentWebhookHandler {
+	return &PaymentWebhookHandler{facade: facade}
 }
 
 // HandlePaymentWebhook receives webhooks from payment providers.
@@ -83,17 +80,11 @@ func (h *PaymentWebhookHandler) HandlePaymentWebhook(w http.ResponseWriter, r *h
 		return
 	}
 
-	// 3. Process based on payment status.
+	// 3. Process based on payment status. CompletePayment publishes a
+	// payment.charge_completed event via the outbox; billing subscribes to it
+	// asynchronously via BillingEventConsumer to call CompleteCheckout.
 	if verified.Status == payment.VerifiedStatusSucceeded {
-		// Complete the payment record.
 		if _, err := h.facade.CompletePayment(r.Context(), provider, verified.ExternalID); err != nil {
-			_ = h.facade.MarkWebhookFailed(r.Context(), provider, verified.ExternalID)
-			writeJSON(w, http.StatusOK, map[string]string{"status": WebhookStatusError})
-			return
-		}
-
-		// Complete checkout (marks invoice paid, activates subscription).
-		if err := h.checkout.CompleteCheckout(r.Context(), verified.InvoiceID); err != nil {
 			_ = h.facade.MarkWebhookFailed(r.Context(), provider, verified.ExternalID)
 			writeJSON(w, http.StatusOK, map[string]string{"status": WebhookStatusError})
 			return

@@ -12,6 +12,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -182,6 +183,125 @@ func TestInfraDoesNotImportGateway(t *testing.T) {
 	checkImports(t, filepath.Join("internal", "infra"), []string{
 		modulePrefix + "/internal/gateway",
 	})
+}
+
+// domainServicePrefix is the common import path prefix for domain service
+// sub-packages (e.g., internal/domain/billing/service).
+const domainServicePrefix = modulePrefix + "/internal/domain/"
+
+// serviceAtRootContexts lists bounded contexts whose service/facade types live
+// at the domain root package rather than in a /service sub-package. Importing
+// these root packages counts as a service-level import for the single-context
+// rule because the handler must be constructing or calling a service.
+//
+// Contexts NOT listed here (billing, multisub) have a /service sub-package;
+// importing their root package provides only repository interfaces, value
+// objects, or error sentinels — not orchestration logic.
+var serviceAtRootContexts = map[string]bool{
+	"identity": true, // identity.Service
+	"payment":  true, // payment.PaymentFacade
+	"reseller": true, // reseller.ResellerService
+}
+
+// gatewayHandlerExcludedFiles lists files in internal/gateway/handler/ that are
+// exempt from the single-context rule because they are shared utilities, not
+// endpoint handlers.
+var gatewayHandlerExcludedFiles = map[string]bool{
+	"response.go": true,
+}
+
+// TestGatewayHandlerSingleContextRule verifies that each file in
+// internal/gateway/handler/ imports at most one domain service package.
+// This prevents synchronous cross-context orchestration from the gateway layer.
+//
+// The rule distinguishes service-level imports from type/error imports:
+//   - internal/domain/{ctx}/service → always counts (ctx = billing, multisub)
+//   - internal/domain/{ctx} where ctx is in serviceAtRootContexts → counts
+//   - internal/domain/{ctx} or internal/domain/{ctx}/aggregate → does NOT count
+//     when ctx has a /service sub-package (e.g., billing root for repo interfaces)
+func TestGatewayHandlerSingleContextRule(t *testing.T) {
+	root := findRepoRoot(t)
+	handlerDir := filepath.Join(root, "internal", "gateway", "handler")
+
+	err := filepath.Walk(handlerDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+		if strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		if gatewayHandlerExcludedFiles[filepath.Base(path)] {
+			return nil
+		}
+
+		fset := token.NewFileSet()
+		f, parseErr := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
+		if parseErr != nil {
+			return nil
+		}
+
+		relPath, _ := filepath.Rel(root, path)
+		if relPath == "" {
+			relPath = path
+		}
+
+		// Collect distinct service contexts imported by this file.
+		contexts := make(map[string]string) // context name → import path
+
+		for _, imp := range f.Imports {
+			importPath := strings.Trim(imp.Path.Value, `"`)
+			if !strings.HasPrefix(importPath, domainServicePrefix) {
+				continue
+			}
+
+			// Strip the common prefix to get e.g. "billing/service",
+			// "payment", "billing/aggregate", "billing".
+			suffix := strings.TrimPrefix(importPath, domainServicePrefix)
+			parts := strings.SplitN(suffix, "/", 2)
+			ctx := parts[0]
+
+			// Case 1: explicit /service sub-package (e.g. billing/service).
+			if len(parts) == 2 && parts[1] == "service" {
+				contexts[ctx] = importPath
+				continue
+			}
+
+			// Case 2: domain root package for a context whose service lives
+			// at root (identity, payment, reseller).
+			if len(parts) == 1 && serviceAtRootContexts[ctx] {
+				contexts[ctx] = importPath
+				continue
+			}
+
+			// Everything else (root imports for billing/multisub, aggregate
+			// sub-packages, etc.) is NOT counted as a service import.
+		}
+
+		if len(contexts) > 1 {
+			var imported []string
+			for ctx, pkg := range contexts {
+				imported = append(imported, ctx+" ("+pkg+")")
+			}
+			// Sort for deterministic output.
+			slices.Sort(imported)
+			t.Errorf(
+				"%s imports services from %d domain contexts; max 1 allowed: %s",
+				relPath, len(contexts), strings.Join(imported, ", "),
+			)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		t.Fatalf("walking handler dir: %v", err)
+	}
 }
 
 // checkImports walks dir, parses each non-test .go file, and fails the test for

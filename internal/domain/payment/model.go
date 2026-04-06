@@ -77,10 +77,11 @@ func (p *PaymentRecord) MarkCompleted(now time.Time) error {
 	p.Status = PaymentCompleted
 	p.UpdatedAt = now
 	p.RecordEvent(domainevent.NewTyped(ChargeCompletedPayload{
-		PaymentID: p.ID,
-		InvoiceID: p.InvoiceID,
-		Provider:  p.Provider,
-		Amount:    p.Amount,
+		PaymentID:  p.ID,
+		InvoiceID:  p.InvoiceID,
+		ExternalID: p.ExternalID,
+		Provider:   p.Provider,
+		Amount:     p.Amount,
 	}, now, p.ID))
 	return nil
 }
