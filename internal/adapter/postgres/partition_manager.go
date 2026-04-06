@@ -16,6 +16,11 @@ import (
 // ensure/cleanup runs. Partitions change quarterly, so daily is sufficient.
 const partitionCheckInterval = 24 * time.Hour
 
+// partitionManagerLockID is the fixed key for pg_try_advisory_lock.
+// Only one pod acquires it at a time, preventing concurrent DDL on
+// outbox partitions.
+const partitionManagerLockID = 847293651
+
 // partitionBoundPattern extracts the TO ('YYYY-MM-DD') upper bound from
 // pg_get_expr output like: FOR VALUES FROM ('2026-01-01') TO ('2026-04-01')
 var partitionBoundPattern = regexp.MustCompile(`TO \('(\d{4}-\d{2}-\d{2})`)
@@ -101,9 +106,37 @@ func (pm *PartitionManager) Run(ctx context.Context) {
 	}
 }
 
+// tryAdvisoryLock attempts to acquire a session-level advisory lock.
+// Returns true if the lock was acquired, false if another pod holds it
+// or the query fails.
+func (pm *PartitionManager) tryAdvisoryLock(ctx context.Context) bool {
+	var acquired bool
+	err := pm.pool.QueryRow(ctx, "SELECT pg_try_advisory_lock($1)", partitionManagerLockID).Scan(&acquired)
+	if err != nil {
+		pm.logger.Warn("partition manager: advisory lock query failed", slog.Any("error", err))
+		return false
+	}
+	return acquired
+}
+
+// releaseAdvisoryLock releases the session-level advisory lock previously
+// acquired by tryAdvisoryLock. Errors are logged but not propagated.
+func (pm *PartitionManager) releaseAdvisoryLock(ctx context.Context) {
+	_, err := pm.pool.Exec(ctx, "SELECT pg_advisory_unlock($1)", partitionManagerLockID)
+	if err != nil {
+		pm.logger.Warn("partition manager: advisory unlock failed", slog.Any("error", err))
+	}
+}
+
 // ensure delegates to OutboxRepository.EnsurePartitions to pre-create future
 // quarterly partitions. Errors are logged but do not stop the manager.
 func (pm *PartitionManager) ensure(ctx context.Context) {
+	if !pm.tryAdvisoryLock(ctx) {
+		pm.logger.Debug("partition manager: another instance holds lock, skipping ensure")
+		return
+	}
+	defer pm.releaseAdvisoryLock(ctx)
+
 	now := pm.clock.Now()
 	if err := pm.outbox.EnsurePartitions(ctx, now, pm.lookahead); err != nil {
 		pm.logger.Error("partition manager: failed to ensure partitions",
@@ -122,6 +155,12 @@ func (pm *PartitionManager) cleanup(ctx context.Context) {
 	if pm.retention == 0 {
 		return
 	}
+
+	if !pm.tryAdvisoryLock(ctx) {
+		pm.logger.Debug("partition manager: another instance holds lock, skipping cleanup")
+		return
+	}
+	defer pm.releaseAdvisoryLock(ctx)
 
 	cutoff := pm.clock.Now().Add(-pm.retention)
 

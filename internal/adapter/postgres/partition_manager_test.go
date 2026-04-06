@@ -8,6 +8,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestPartitionManagerLockID(t *testing.T) {
+	// The lock ID must be a positive int32-range value for pg_try_advisory_lock.
+	// Changing it would break cross-pod coordination — treat as frozen constant.
+	const expectedLockID = 847293651
+	assert.Equal(t, expectedLockID, partitionManagerLockID,
+		"partitionManagerLockID must not change; it is shared across all pods")
+	assert.Greater(t, partitionManagerLockID, 0,
+		"advisory lock ID must be positive")
+}
+
 func TestParseUpperBound(t *testing.T) {
 	tests := []struct {
 		name      string
