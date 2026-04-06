@@ -1,10 +1,6 @@
 package reseller
 
-import (
-	"time"
-
-	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
-)
+import "github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 
 // Reseller-specific event types.
 const (
@@ -15,36 +11,3 @@ const (
 	// EventCommissionPaid is published when a commission is marked as paid.
 	EventCommissionPaid domainevent.EventType = "reseller.commission_paid"
 )
-
-// NewTenantCreatedEvent creates an event for a newly created tenant.
-func NewTenantCreatedEvent(tenantID, ownerUserID string, now time.Time) domainevent.Event {
-	return domainevent.NewTyped(TenantCreatedPayload{
-		TenantID:    tenantID,
-		OwnerUserID: ownerUserID,
-	}, now, tenantID)
-}
-
-// NewTenantUpdatedEvent creates an event for an updated tenant.
-func NewTenantUpdatedEvent(tenantID string, now time.Time) domainevent.Event {
-	return domainevent.NewTyped(TenantUpdatedPayload{
-		TenantID: tenantID,
-	}, now, tenantID)
-}
-
-// NewResellerCreatedEvent creates an event for a newly created reseller account.
-func NewResellerCreatedEvent(resellerID, tenantID, userID string, now time.Time) domainevent.Event {
-	return domainevent.NewTyped(ResellerCreatedPayload{
-		ResellerID: resellerID,
-		TenantID:   tenantID,
-		UserID:     userID,
-	}, now, resellerID)
-}
-
-// NewCommissionCreatedEvent creates an event for a newly recorded commission.
-func NewCommissionCreatedEvent(commissionID, resellerID string, amount int64, now time.Time) domainevent.Event {
-	return domainevent.NewTyped(CommissionCreatedPayload{
-		CommissionID: commissionID,
-		ResellerID:   resellerID,
-		Amount:       amount,
-	}, now, commissionID)
-}

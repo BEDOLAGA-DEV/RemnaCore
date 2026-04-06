@@ -83,15 +83,16 @@ func (s *ResellerService) CreateTenant(ctx context.Context, name, domain, ownerU
 		return nil, "", fmt.Errorf("generating API key: %w", err)
 	}
 
-	if err := s.tenants.CreateTenant(ctx, tenant); err != nil {
-		return nil, "", fmt.Errorf("persisting tenant: %w", err)
-	}
-
-	if err := s.publisher.Publish(ctx, NewTenantCreatedEvent(tenant.ID, ownerUserID, s.clock.Now())); err != nil {
-		s.logger.Warn("failed to publish event",
-			slog.String("event_type", string(EventTenantCreated)),
-			slog.Any("error", err),
-		)
+	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		if err := s.tenants.CreateTenant(txCtx, tenant); err != nil {
+			return fmt.Errorf("persisting tenant: %w", err)
+		}
+		if err := s.publishAggregateEvents(txCtx, tenant); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return nil, "", err
 	}
 
 	s.logger.Info("tenant created",
@@ -137,16 +138,18 @@ func (s *ResellerService) UpdateBranding(ctx context.Context, tenantID string, b
 		return nil, fmt.Errorf("finding tenant: %w", err)
 	}
 
-	tenant.BrandingConfig = branding
-	if err := s.tenants.UpdateTenant(ctx, tenant); err != nil {
-		return nil, fmt.Errorf("updating tenant branding: %w", err)
-	}
+	tenant.SetBranding(branding, s.clock.Now())
 
-	if err := s.publisher.Publish(ctx, NewTenantUpdatedEvent(tenant.ID, s.clock.Now())); err != nil {
-		slog.Warn("failed to publish tenant updated event",
-			slog.String("tenant_id", tenant.ID),
-			slog.Any("error", err),
-		)
+	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		if err := s.tenants.UpdateTenant(txCtx, tenant); err != nil {
+			return fmt.Errorf("updating tenant branding: %w", err)
+		}
+		if err := s.publishAggregateEvents(txCtx, tenant); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	return tenant, nil
@@ -159,15 +162,16 @@ func (s *ResellerService) CreateResellerAccount(ctx context.Context, tenantID, u
 		return nil, err
 	}
 
-	if err := s.commissions.CreateResellerAccount(ctx, account); err != nil {
-		return nil, fmt.Errorf("persisting reseller account: %w", err)
-	}
-
-	if err := s.publisher.Publish(ctx, NewResellerCreatedEvent(account.ID, tenantID, userID, s.clock.Now())); err != nil {
-		s.logger.Warn("failed to publish event",
-			slog.String("event_type", string(EventResellerCreated)),
-			slog.Any("error", err),
-		)
+	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		if err := s.commissions.CreateResellerAccount(txCtx, account); err != nil {
+			return fmt.Errorf("persisting reseller account: %w", err)
+		}
+		if err := s.publishAggregateEvents(txCtx, account); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	s.logger.Info("reseller account created",

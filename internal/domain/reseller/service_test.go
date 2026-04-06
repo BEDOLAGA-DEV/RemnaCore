@@ -194,6 +194,7 @@ func TestUpdateBranding_Success(t *testing.T) {
 	ctx := context.Background()
 
 	tenant := reseller.NewTenant("Acme VPN", "acme.vpn.com", "owner-1", time.Now())
+	tenant.DomainEvents() // flush creation events to simulate DB-loaded aggregate
 	tenantRepo.On("GetTenantByID", ctx, tenant.ID).Return(tenant, nil)
 	tenantRepo.On("UpdateTenant", ctx, mock.AnythingOfType("*reseller.Tenant")).Return(nil)
 	pub.On("Publish", mock.Anything, mock.MatchedBy(func(e domainevent.Event) bool {
