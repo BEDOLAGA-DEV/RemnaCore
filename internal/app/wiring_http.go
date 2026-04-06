@@ -27,8 +27,8 @@ var httpWiring = fx.Options(
 	// Gateway module
 	gateway.Module,
 
-	// Rate limiter: middleware.RateLimiter wraps *valkey.SlidingWindowRateLimiter
-	fx.Provide(func(r *valkey.SlidingWindowRateLimiter) middleware.RateLimiter { return r }),
+	// Rate limiter: middleware.RateLimiter wraps *valkey.ResilientRateLimiter
+	fx.Provide(func(r *valkey.ResilientRateLimiter) middleware.RateLimiter { return r }),
 
 	// HTTP server lifecycle
 	fx.Invoke(startHTTPServer),

@@ -19,6 +19,7 @@ const (
 	MetricPluginHookTotal      = "platform_plugin_hook_invocations_total"
 	MetricPluginMemory           = "platform_plugin_memory_bytes"
 	MetricEventPublishFailures   = "platform_event_publish_failures_total"
+	MetricRateLimiterFallback    = "platform_rate_limiter_fallback_total"
 )
 
 // Metric help string constants.
@@ -32,6 +33,10 @@ const (
 	helpPluginHookTotal      = "Total number of plugin hook invocations."
 	helpPluginMemory           = "Current memory usage of a plugin in bytes."
 	helpEventPublishFailures   = "Total number of failed domain event publish attempts."
+
+	// HelpRateLimiterFallback is exported so adapter/valkey can register the
+	// counter with a consistent help string.
+	HelpRateLimiterFallback = "Total number of rate limiter requests that fell back to allow due to circuit breaker."
 )
 
 // Label name constants.

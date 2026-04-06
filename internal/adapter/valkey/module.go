@@ -1,6 +1,8 @@
 package valkey
 
 import (
+	"log/slog"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/fx"
@@ -14,6 +16,9 @@ var Module = fx.Module("valkey",
 	fx.Provide(NewClient),
 	fx.Provide(func(client *redis.Client, clk clock.Clock) *SlidingWindowRateLimiter {
 		return NewSlidingWindowRateLimiter(client, DefaultRateLimit, DefaultRateLimitWindow, clk)
+	}),
+	fx.Provide(func(inner *SlidingWindowRateLimiter, logger *slog.Logger) *ResilientRateLimiter {
+		return NewResilientRateLimiter(inner, logger)
 	}),
 	fx.Provide(NewDomainRateLimiter),
 	fx.Invoke(registerMetrics),
