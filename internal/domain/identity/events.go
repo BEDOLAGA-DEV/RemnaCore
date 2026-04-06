@@ -13,6 +13,7 @@ const (
 	EventUserLoggedIn           domainevent.EventType = "user.logged_in"
 	// EventProfileUpdated is reserved for future use.
 	EventProfileUpdated domainevent.EventType = "user.profile_updated"
+	EventTokenRefreshed         domainevent.EventType = "user.token_refreshed"
 	EventPasswordResetRequested domainevent.EventType = "user.password_reset_requested"
 	EventPasswordReset          domainevent.EventType = "user.password_reset"
 )
@@ -44,6 +45,13 @@ func NewEmailVerifiedEvent(userID, email string, now time.Time) Event {
 // NewUserLoggedInEvent creates an event for a successful login.
 func NewUserLoggedInEvent(userID string, now time.Time) Event {
 	return domainevent.NewAtWithEntity(EventUserLoggedIn, UserLoggedInPayload{
+		UserID: userID,
+	}, now, userID)
+}
+
+// NewTokenRefreshedEvent creates an event for a successful token rotation.
+func NewTokenRefreshedEvent(userID string, now time.Time) Event {
+	return domainevent.NewAtWithEntity(EventTokenRefreshed, TokenRefreshedPayload{
 		UserID: userID,
 	}, now, userID)
 }

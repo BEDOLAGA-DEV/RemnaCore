@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"errors"
 	"testing"
 	"time"
 
@@ -199,6 +200,38 @@ func TestService_VerifyEmail_Expired(t *testing.T) {
 }
 
 func TestService_RefreshToken_Success(t *testing.T) {
+	svc, repo, pub := newTestService(t)
+	ctx := context.Background()
+
+	user := &identity.PlatformUser{
+		ID:    "user-1",
+		Email: "alice@example.com",
+		Role:  identity.RoleCustomer,
+	}
+	session := &identity.Session{
+		ID:           "s-1",
+		UserID:       "user-1",
+		RefreshToken: "old-refresh-token",
+		ExpiresAt:    time.Now().Add(time.Hour),
+	}
+
+	repo.On("GetSessionByRefreshToken", mock.Anything, "old-refresh-token").Return(session, nil)
+	repo.On("GetUserByID", mock.Anything, "user-1").Return(user, nil)
+	repo.On("DeleteSession", mock.Anything, "s-1").Return(nil)
+	repo.On("CreateSession", mock.Anything, mock.AnythingOfType("*identity.Session")).Return(nil)
+	pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
+
+	result, err := svc.RefreshToken(ctx, "old-refresh-token")
+
+	require.NoError(t, err)
+	assert.NotEmpty(t, result.AccessToken)
+	assert.NotEmpty(t, result.RefreshToken)
+	assert.Equal(t, user, result.User)
+	repo.AssertExpectations(t)
+	pub.AssertExpectations(t)
+}
+
+func TestService_RefreshToken_CreateSessionFails_RollsBack(t *testing.T) {
 	svc, repo, _ := newTestService(t)
 	ctx := context.Background()
 
@@ -214,17 +247,26 @@ func TestService_RefreshToken_Success(t *testing.T) {
 		ExpiresAt:    time.Now().Add(time.Hour),
 	}
 
-	repo.On("GetSessionByRefreshToken", ctx, "old-refresh-token").Return(session, nil)
-	repo.On("GetUserByID", ctx, "user-1").Return(user, nil)
-	repo.On("DeleteSession", ctx, "s-1").Return(nil)
-	repo.On("CreateSession", ctx, mock.AnythingOfType("*identity.Session")).Return(nil)
+	createSessionErr := errors.New("db connection lost")
+
+	repo.On("GetSessionByRefreshToken", mock.Anything, "old-refresh-token").Return(session, nil)
+	repo.On("GetUserByID", mock.Anything, "user-1").Return(user, nil)
+	repo.On("DeleteSession", mock.Anything, "s-1").Return(nil)
+	repo.On("CreateSession", mock.Anything, mock.AnythingOfType("*identity.Session")).Return(createSessionErr)
 
 	result, err := svc.RefreshToken(ctx, "old-refresh-token")
 
-	require.NoError(t, err)
-	assert.NotEmpty(t, result.AccessToken)
-	assert.NotEmpty(t, result.RefreshToken)
-	assert.Equal(t, user, result.User)
+	// CreateSession failed inside the transaction, so the whole tx (including
+	// DeleteSession) is rolled back by txRunner. The caller sees the error.
+	assert.Nil(t, result)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, createSessionErr)
+
+	// DeleteSession was called (it executes before CreateSession inside the tx),
+	// but because the tx rolls back, the deletion is NOT persisted.
+	// With NoopTxRunner the rollback is semantic — the important thing is that
+	// both operations are inside the same RunInTx call, guaranteeing atomicity
+	// with a real transaction manager.
 	repo.AssertExpectations(t)
 }
 

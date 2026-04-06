@@ -19,6 +19,11 @@ type UserLoggedInPayload struct {
 	UserID string `json:"user_id"`
 }
 
+// TokenRefreshedPayload is the typed payload for EventTokenRefreshed.
+type TokenRefreshedPayload struct {
+	UserID string `json:"user_id"`
+}
+
 // PasswordResetRequestedPayload is the typed payload for EventPasswordResetRequested.
 type PasswordResetRequestedPayload struct {
 	UserID string `json:"user_id"`
@@ -35,7 +40,8 @@ type PasswordResetPayload struct {
 
 func (UserRegisteredPayload) EventType() domainevent.EventType { return EventUserRegistered }
 func (EmailVerifiedPayload) EventType() domainevent.EventType  { return EventEmailVerified }
-func (UserLoggedInPayload) EventType() domainevent.EventType   { return EventUserLoggedIn }
+func (UserLoggedInPayload) EventType() domainevent.EventType    { return EventUserLoggedIn }
+func (TokenRefreshedPayload) EventType() domainevent.EventType  { return EventTokenRefreshed }
 func (PasswordResetRequestedPayload) EventType() domainevent.EventType {
 	return EventPasswordResetRequested
 }
@@ -46,6 +52,7 @@ var (
 	_ domainevent.EventPayload = UserRegisteredPayload{}
 	_ domainevent.EventPayload = EmailVerifiedPayload{}
 	_ domainevent.EventPayload = UserLoggedInPayload{}
+	_ domainevent.EventPayload = TokenRefreshedPayload{}
 	_ domainevent.EventPayload = PasswordResetRequestedPayload{}
 	_ domainevent.EventPayload = PasswordResetPayload{}
 )

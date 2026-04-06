@@ -228,11 +228,6 @@ func (s *Service) RefreshToken(ctx context.Context, refreshToken string) (*Login
 		return nil, fmt.Errorf("finding user: %w", err)
 	}
 
-	// Rotate: delete old session, create new one.
-	if err := s.repo.DeleteSession(ctx, session.ID); err != nil {
-		return nil, fmt.Errorf("deleting old session: %w", err)
-	}
-
 	newRefreshToken, err := s.generateRefreshToken()
 	if err != nil {
 		return nil, fmt.Errorf("generating refresh token: %w", err)
@@ -246,8 +241,21 @@ func (s *Service) RefreshToken(ctx context.Context, refreshToken string) (*Login
 		ExpiresAt:    now.Add(s.refreshTTL),
 		CreatedAt:    now,
 	}
-	if err := s.repo.CreateSession(ctx, newSession); err != nil {
-		return nil, fmt.Errorf("persisting new session: %w", err)
+
+	// Rotate atomically: delete old session, create new one, publish event.
+	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		if err := s.repo.DeleteSession(txCtx, session.ID); err != nil {
+			return fmt.Errorf("deleting old session: %w", err)
+		}
+		if err := s.repo.CreateSession(txCtx, newSession); err != nil {
+			return fmt.Errorf("persisting new session: %w", err)
+		}
+		if err := s.publisher.Publish(txCtx, NewTokenRefreshedEvent(user.ID, now)); err != nil {
+			return fmt.Errorf("publishing %s: %w", EventTokenRefreshed, err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	accessToken, err := s.jwt.Sign(authutil.UserClaims{
