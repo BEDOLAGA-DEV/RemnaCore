@@ -317,3 +317,227 @@ func TestInvoice_ApplyPricingModification_NilFields_NoChange(t *testing.T) {
 	assert.Equal(t, originalTotal, inv.Total.Amount, "total should be unchanged")
 	assert.Empty(t, inv.PricingReason)
 }
+
+// --- ApplyDiscount ---
+
+func TestInvoice_ApplyDiscount_Draft_FixedDiscount(t *testing.T) {
+	items := []vo.LineItem{
+		vo.NewLineItem("Premium Plan", vo.LineItemPlan, vo.NewMoney(10000, vo.CurrencyUSD), 1),
+	}
+	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD, time.Now())
+	require.NoError(t, err)
+	// Drain creation event.
+	inv.DomainEvents()
+
+	discount, err := vo.NewFixedDiscount(2500, vo.CurrencyUSD, "FLAT25", nil)
+	require.NoError(t, err)
+
+	now := time.Now()
+	err = inv.ApplyDiscount(discount, now)
+
+	require.NoError(t, err)
+	assert.Len(t, inv.Discounts, 1)
+	assert.Equal(t, int64(10000), inv.Subtotal.Amount)
+	assert.Equal(t, int64(2500), inv.TotalDiscount.Amount)
+	assert.Equal(t, int64(7500), inv.Total.Amount)
+	assert.Equal(t, now, inv.UpdatedAt)
+
+	events := inv.DomainEvents()
+	require.Len(t, events, 1)
+	assert.Equal(t, EventInvDiscountApplied, events[0].Type)
+	payload, ok := events[0].Data.(InvDiscountAppliedPayload)
+	require.True(t, ok)
+	assert.Equal(t, inv.ID, payload.InvoiceID)
+	assert.Equal(t, "FLAT25", payload.DiscountCode)
+	assert.Equal(t, int64(2500), payload.DiscountAmount)
+}
+
+func TestInvoice_ApplyDiscount_Draft_PercentDiscount(t *testing.T) {
+	items := []vo.LineItem{
+		vo.NewLineItem("Plan", vo.LineItemPlan, vo.NewMoney(10000, vo.CurrencyUSD), 1),
+	}
+	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD, time.Now())
+	require.NoError(t, err)
+	inv.DomainEvents()
+
+	discount, err := vo.NewPercentDiscount(5000, "HALF", nil) // 50%
+	require.NoError(t, err)
+
+	err = inv.ApplyDiscount(discount, time.Now())
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(10000), inv.Subtotal.Amount)
+	assert.Equal(t, int64(5000), inv.TotalDiscount.Amount)
+	assert.Equal(t, int64(5000), inv.Total.Amount)
+}
+
+func TestInvoice_ApplyDiscount_Pending_Error(t *testing.T) {
+	items := []vo.LineItem{
+		vo.NewLineItem("Plan", vo.LineItemPlan, vo.NewMoney(1000, vo.CurrencyUSD), 1),
+	}
+	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD, time.Now())
+	require.NoError(t, err)
+	require.NoError(t, inv.MarkPending(time.Now()))
+
+	discount, err := vo.NewFixedDiscount(100, vo.CurrencyUSD, "LATE", nil)
+	require.NoError(t, err)
+
+	err = inv.ApplyDiscount(discount, time.Now())
+
+	require.ErrorIs(t, err, ErrInvoiceNotDraft)
+}
+
+func TestInvoice_ApplyDiscount_Paid_Error(t *testing.T) {
+	items := []vo.LineItem{
+		vo.NewLineItem("Plan", vo.LineItemPlan, vo.NewMoney(1000, vo.CurrencyUSD), 1),
+	}
+	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD, time.Now())
+	require.NoError(t, err)
+	require.NoError(t, inv.MarkPending(time.Now()))
+	require.NoError(t, inv.MarkPaid(time.Now()))
+
+	discount, err := vo.NewFixedDiscount(100, vo.CurrencyUSD, "TOOLATE", nil)
+	require.NoError(t, err)
+
+	err = inv.ApplyDiscount(discount, time.Now())
+
+	require.ErrorIs(t, err, ErrInvoiceNotDraft)
+}
+
+func TestInvoice_ApplyDiscount_StacksWithExistingDiscounts(t *testing.T) {
+	items := []vo.LineItem{
+		vo.NewLineItem("Plan", vo.LineItemPlan, vo.NewMoney(10000, vo.CurrencyUSD), 1),
+	}
+	d1, err := vo.NewFixedDiscount(1000, vo.CurrencyUSD, "FIRST", nil)
+	require.NoError(t, err)
+
+	inv, err := NewInvoice("sub-1", "user-1", items, []vo.Discount{d1}, vo.CurrencyUSD, time.Now())
+	require.NoError(t, err)
+	inv.DomainEvents()
+
+	d2, err := vo.NewFixedDiscount(500, vo.CurrencyUSD, "SECOND", nil)
+	require.NoError(t, err)
+
+	err = inv.ApplyDiscount(d2, time.Now())
+
+	require.NoError(t, err)
+	assert.Len(t, inv.Discounts, 2)
+	assert.Equal(t, int64(10000), inv.Subtotal.Amount)
+	assert.Equal(t, int64(1500), inv.TotalDiscount.Amount)
+	assert.Equal(t, int64(8500), inv.Total.Amount)
+}
+
+func TestInvoice_ApplyDiscount_FloorAtZero(t *testing.T) {
+	items := []vo.LineItem{
+		vo.NewLineItem("Plan", vo.LineItemPlan, vo.NewMoney(500, vo.CurrencyUSD), 1),
+	}
+	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD, time.Now())
+	require.NoError(t, err)
+
+	discount, err := vo.NewFixedDiscount(9999, vo.CurrencyUSD, "HUGE", nil)
+	require.NoError(t, err)
+
+	err = inv.ApplyDiscount(discount, time.Now())
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), inv.Total.Amount, "total must be floored at zero")
+}
+
+// --- OverrideTotal ---
+
+func TestInvoice_OverrideTotal_Draft_Success(t *testing.T) {
+	items := []vo.LineItem{
+		vo.NewLineItem("Plan", vo.LineItemPlan, vo.NewMoney(1000, vo.CurrencyUSD), 1),
+	}
+	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD, time.Now())
+	require.NoError(t, err)
+	inv.DomainEvents()
+
+	newTotal := vo.NewMoney(750, vo.CurrencyUSD)
+	now := time.Now()
+	err = inv.OverrideTotal(newTotal, "plugin_pricing", now)
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(750), inv.Total.Amount)
+	assert.Equal(t, now, inv.UpdatedAt)
+
+	events := inv.DomainEvents()
+	require.Len(t, events, 1)
+	assert.Equal(t, EventInvTotalOverridden, events[0].Type)
+	payload, ok := events[0].Data.(InvTotalOverriddenPayload)
+	require.True(t, ok)
+	assert.Equal(t, inv.ID, payload.InvoiceID)
+	assert.Equal(t, int64(1000), payload.OldAmount)
+	assert.Equal(t, int64(750), payload.NewAmount)
+	assert.Equal(t, "plugin_pricing", payload.Reason)
+}
+
+func TestInvoice_OverrideTotal_ZeroAmount_Success(t *testing.T) {
+	items := []vo.LineItem{
+		vo.NewLineItem("Plan", vo.LineItemPlan, vo.NewMoney(1000, vo.CurrencyUSD), 1),
+	}
+	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD, time.Now())
+	require.NoError(t, err)
+
+	err = inv.OverrideTotal(vo.Zero(vo.CurrencyUSD), "free_trial", time.Now())
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), inv.Total.Amount)
+}
+
+func TestInvoice_OverrideTotal_NegativeAmount_Error(t *testing.T) {
+	items := []vo.LineItem{
+		vo.NewLineItem("Plan", vo.LineItemPlan, vo.NewMoney(1000, vo.CurrencyUSD), 1),
+	}
+	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD, time.Now())
+	require.NoError(t, err)
+
+	negative := vo.NewMoney(-500, vo.CurrencyUSD)
+	err = inv.OverrideTotal(negative, "bad_value", time.Now())
+
+	require.ErrorIs(t, err, ErrNegativeTotal)
+	assert.Equal(t, int64(1000), inv.Total.Amount, "total should remain unchanged")
+}
+
+func TestInvoice_OverrideTotal_CurrencyMismatch_Error(t *testing.T) {
+	items := []vo.LineItem{
+		vo.NewLineItem("Plan", vo.LineItemPlan, vo.NewMoney(1000, vo.CurrencyUSD), 1),
+	}
+	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD, time.Now())
+	require.NoError(t, err)
+
+	eurTotal := vo.NewMoney(900, vo.CurrencyEUR)
+	err = inv.OverrideTotal(eurTotal, "wrong_currency", time.Now())
+
+	require.ErrorIs(t, err, vo.ErrCurrencyMismatch)
+	assert.Equal(t, int64(1000), inv.Total.Amount, "total should remain unchanged")
+}
+
+func TestInvoice_OverrideTotal_Pending_Error(t *testing.T) {
+	items := []vo.LineItem{
+		vo.NewLineItem("Plan", vo.LineItemPlan, vo.NewMoney(1000, vo.CurrencyUSD), 1),
+	}
+	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD, time.Now())
+	require.NoError(t, err)
+	require.NoError(t, inv.MarkPending(time.Now()))
+
+	newTotal := vo.NewMoney(500, vo.CurrencyUSD)
+	err = inv.OverrideTotal(newTotal, "too_late", time.Now())
+
+	require.ErrorIs(t, err, ErrInvoiceNotDraft)
+}
+
+func TestInvoice_OverrideTotal_Paid_Error(t *testing.T) {
+	items := []vo.LineItem{
+		vo.NewLineItem("Plan", vo.LineItemPlan, vo.NewMoney(1000, vo.CurrencyUSD), 1),
+	}
+	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD, time.Now())
+	require.NoError(t, err)
+	require.NoError(t, inv.MarkPending(time.Now()))
+	require.NoError(t, inv.MarkPaid(time.Now()))
+
+	newTotal := vo.NewMoney(500, vo.CurrencyUSD)
+	err = inv.OverrideTotal(newTotal, "too_late", time.Now())
+
+	require.ErrorIs(t, err, ErrInvoiceNotDraft)
+}

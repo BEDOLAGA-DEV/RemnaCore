@@ -2,6 +2,7 @@ package aggregate
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"time"
 
@@ -175,6 +176,63 @@ func (inv *Invoice) Refund(now time.Time) error {
 	return nil
 }
 
+// ApplyDiscount adds a discount to a draft invoice and recalculates totals.
+// The discount is appended to the existing discount list and the subtotal,
+// total discount, and total are recomputed using calculateTotal.
+func (inv *Invoice) ApplyDiscount(discount vo.Discount, now time.Time) error {
+	if inv.Status != InvoiceDraft {
+		return ErrInvoiceNotDraft
+	}
+
+	discounts := append(inv.Discounts, discount)
+	subtotal, totalDiscount, total, err := calculateTotal(inv.LineItems, discounts, inv.Total.Currency)
+	if err != nil {
+		return fmt.Errorf("recalculate total: %w", err)
+	}
+
+	inv.Discounts = discounts
+	inv.Subtotal = subtotal
+	inv.TotalDiscount = totalDiscount
+	inv.Total = total
+	inv.UpdatedAt = now
+
+	inv.RecordEvent(domainevent.NewAtWithEntity(EventInvDiscountApplied, InvDiscountAppliedPayload{
+		InvoiceID:      inv.ID,
+		DiscountCode:   discount.Code,
+		DiscountAmount: totalDiscount.Amount,
+	}, now, inv.ID))
+
+	return nil
+}
+
+// OverrideTotal replaces the invoice total for plugin-calculated pricing.
+// The invoice must be in draft status and the new total must use the same
+// currency as the current total. Negative totals are rejected.
+func (inv *Invoice) OverrideTotal(newTotal vo.Money, reason string, now time.Time) error {
+	if inv.Status != InvoiceDraft {
+		return ErrInvoiceNotDraft
+	}
+	if newTotal.Currency != inv.Total.Currency {
+		return vo.ErrCurrencyMismatch
+	}
+	if newTotal.IsNegative() {
+		return ErrNegativeTotal
+	}
+
+	oldTotal := inv.Total
+	inv.Total = newTotal
+	inv.UpdatedAt = now
+
+	inv.RecordEvent(domainevent.NewAtWithEntity(EventInvTotalOverridden, InvTotalOverriddenPayload{
+		InvoiceID: inv.ID,
+		OldAmount: oldTotal.Amount,
+		NewAmount: newTotal.Amount,
+		Reason:    reason,
+	}, now, inv.ID))
+
+	return nil
+}
+
 // ApplyPricingModification updates the invoice totals based on a pricing
 // plugin's response. Only non-nil fields are applied. The total is
 // recalculated as subtotal minus discount, floored at zero. This must be
@@ -199,7 +257,10 @@ func (inv *Invoice) ApplyPricingModification(subtotal, discount *int64, reason s
 func calculateTotal(items []vo.LineItem, discounts []vo.Discount, currency vo.Currency) (subtotal, discount, total vo.Money, err error) {
 	subtotal = vo.Zero(currency)
 	for _, item := range items {
-		itemTotal := item.Total()
+		itemTotal, err := item.Total()
+		if err != nil {
+			return vo.Money{}, vo.Money{}, vo.Money{}, err
+		}
 		subtotal, err = subtotal.Add(itemTotal)
 		if err != nil {
 			return vo.Money{}, vo.Money{}, vo.Money{}, err

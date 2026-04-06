@@ -23,3 +23,9 @@ var ErrAddonNotOnSubscription = errors.New("addon not found on subscription")
 
 // ErrPeriodNotElapsed indicates a renewal attempt before the current billing period has ended.
 var ErrPeriodNotElapsed = errors.New("current billing period has not elapsed")
+
+// ErrInvoiceNotDraft indicates the invoice must be in draft status to perform this operation.
+var ErrInvoiceNotDraft = errors.New("invoice must be in draft status")
+
+// ErrNegativeTotal indicates the invoice total must not be negative.
+var ErrNegativeTotal = errors.New("invoice total must not be negative")
