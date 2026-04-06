@@ -349,6 +349,29 @@ func (q *Queries) GetFailedBindingsWithRemnawaveUUID(ctx context.Context) ([]Mul
 	return items, nil
 }
 
+const incrementIdempotencyRetry = `-- name: IncrementIdempotencyRetry :one
+INSERT INTO multisub.idempotency_keys (key, retry_count, created_at, expires_at)
+VALUES ($1, 1, now(), now() + interval '24 hours')
+ON CONFLICT (key) DO UPDATE SET retry_count = multisub.idempotency_keys.retry_count + 1
+RETURNING retry_count
+`
+
+func (q *Queries) IncrementIdempotencyRetry(ctx context.Context, key string) (int32, error) {
+	row := q.db.QueryRow(ctx, incrementIdempotencyRetry, key)
+	var retry_count int32
+	err := row.Scan(&retry_count)
+	return retry_count, err
+}
+
+const releaseIdempotencyKey = `-- name: ReleaseIdempotencyKey :exec
+DELETE FROM multisub.idempotency_keys WHERE key = $1
+`
+
+func (q *Queries) ReleaseIdempotencyKey(ctx context.Context, key string) error {
+	_, err := q.db.Exec(ctx, releaseIdempotencyKey, key)
+	return err
+}
+
 const tryAcquireIdempotencyKey = `-- name: TryAcquireIdempotencyKey :execresult
 
 INSERT INTO multisub.idempotency_keys (key, created_at, expires_at)

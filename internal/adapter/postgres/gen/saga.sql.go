@@ -11,7 +11,29 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const cleanupOldSagas = `-- name: CleanupOldSagas :exec
+DELETE FROM multisub.saga_instances
+WHERE status IN ('completed', 'failed') AND updated_at < $1
+`
+
+func (q *Queries) CleanupOldSagas(ctx context.Context, updatedAt pgtype.Timestamptz) error {
+	_, err := q.db.Exec(ctx, cleanupOldSagas, updatedAt)
+	return err
+}
+
+const completeSaga = `-- name: CompleteSaga :exec
+UPDATE multisub.saga_instances
+SET status = 'completed', updated_at = now()
+WHERE id = $1
+`
+
+func (q *Queries) CompleteSaga(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, completeSaga, id)
+	return err
+}
+
 const createSagaInstance = `-- name: CreateSagaInstance :one
+
 INSERT INTO multisub.saga_instances (saga_type, correlation_id, status, current_step, total_steps, state_data)
 VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id, saga_type, correlation_id, status, current_step, total_steps, state_data, error_message, created_at, updated_at
@@ -54,38 +76,6 @@ func (q *Queries) CreateSagaInstance(ctx context.Context, arg CreateSagaInstance
 	return i, err
 }
 
-const updateSagaProgress = `-- name: UpdateSagaProgress :exec
-UPDATE multisub.saga_instances
-SET current_step = $2, state_data = $3, updated_at = now()
-WHERE id = $1
-`
-
-type UpdateSagaProgressParams struct {
-	ID          pgtype.UUID `json:"id"`
-	CurrentStep int32       `json:"current_step"`
-	StateData   []byte      `json:"state_data"`
-}
-
-func (q *Queries) UpdateSagaProgress(ctx context.Context, arg UpdateSagaProgressParams) error {
-	_, err := q.db.Exec(ctx, updateSagaProgress,
-		arg.ID,
-		arg.CurrentStep,
-		arg.StateData,
-	)
-	return err
-}
-
-const completeSaga = `-- name: CompleteSaga :exec
-UPDATE multisub.saga_instances
-SET status = 'completed', updated_at = now()
-WHERE id = $1
-`
-
-func (q *Queries) CompleteSaga(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, completeSaga, id)
-	return err
-}
-
 const failSaga = `-- name: FailSaga :exec
 UPDATE multisub.saga_instances
 SET status = 'failed', error_message = $2, updated_at = now()
@@ -98,10 +88,7 @@ type FailSagaParams struct {
 }
 
 func (q *Queries) FailSaga(ctx context.Context, arg FailSagaParams) error {
-	_, err := q.db.Exec(ctx, failSaga,
-		arg.ID,
-		arg.ErrorMessage,
-	)
+	_, err := q.db.Exec(ctx, failSaga, arg.ID, arg.ErrorMessage)
 	return err
 }
 
@@ -110,6 +97,7 @@ SELECT id, saga_type, correlation_id, status, current_step, total_steps, state_d
 FROM multisub.saga_instances
 WHERE status = 'running'
 ORDER BY created_at
+LIMIT 1000
 `
 
 func (q *Queries) GetRunningSagas(ctx context.Context) ([]MultisubSagaInstance, error) {
@@ -155,10 +143,7 @@ type GetSagaByCorrelationParams struct {
 }
 
 func (q *Queries) GetSagaByCorrelation(ctx context.Context, arg GetSagaByCorrelationParams) (MultisubSagaInstance, error) {
-	row := q.db.QueryRow(ctx, getSagaByCorrelation,
-		arg.SagaType,
-		arg.CorrelationID,
-	)
+	row := q.db.QueryRow(ctx, getSagaByCorrelation, arg.SagaType, arg.CorrelationID)
 	var i MultisubSagaInstance
 	err := row.Scan(
 		&i.ID,
@@ -175,12 +160,19 @@ func (q *Queries) GetSagaByCorrelation(ctx context.Context, arg GetSagaByCorrela
 	return i, err
 }
 
-const cleanupOldSagas = `-- name: CleanupOldSagas :exec
-DELETE FROM multisub.saga_instances
-WHERE status IN ('completed', 'failed') AND updated_at < $1
+const updateSagaProgress = `-- name: UpdateSagaProgress :exec
+UPDATE multisub.saga_instances
+SET current_step = $2, state_data = $3, updated_at = now()
+WHERE id = $1
 `
 
-func (q *Queries) CleanupOldSagas(ctx context.Context, updatedAt pgtype.Timestamptz) error {
-	_, err := q.db.Exec(ctx, cleanupOldSagas, updatedAt)
+type UpdateSagaProgressParams struct {
+	ID          pgtype.UUID `json:"id"`
+	CurrentStep int32       `json:"current_step"`
+	StateData   []byte      `json:"state_data"`
+}
+
+func (q *Queries) UpdateSagaProgress(ctx context.Context, arg UpdateSagaProgressParams) error {
+	_, err := q.db.Exec(ctx, updateSagaProgress, arg.ID, arg.CurrentStep, arg.StateData)
 	return err
 }

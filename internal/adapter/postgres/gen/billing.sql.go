@@ -69,7 +69,6 @@ func (q *Queries) CreateFamilyMember(ctx context.Context, arg CreateFamilyMember
 
 const createInvoice = `-- name: CreateInvoice :exec
 
-
 INSERT INTO billing.invoices (
     id, subscription_id, user_id, subtotal_amount, total_discount_amount,
     total_amount, currency, status, paid_at, created_at, updated_at
@@ -90,9 +89,6 @@ type CreateInvoiceParams struct {
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 }
 
-// NOTE: UpdateSubscriptionStatus uses PG18 native OLD/NEW RETURNING syntax
-// and is implemented as a raw pgx query in billing_repo.go (bypassing sqlc,
-// which does not yet support OLD/NEW). See SubscriptionRepository.UpdateStatus.
 // ============================================================================
 // Invoices
 // ============================================================================
@@ -907,6 +903,83 @@ func (q *Queries) GetPlanByID(ctx context.Context, id pgtype.UUID) (BillingPlan,
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getRecentlyUpdatedSubscriptions = `-- name: GetRecentlyUpdatedSubscriptions :many
+
+
+
+SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
+       addon_ids, assigned_to, cancelled_at, paused_at, created_at, updated_at
+FROM billing.subscriptions
+ORDER BY updated_at DESC
+LIMIT $1 OFFSET $2
+`
+
+type GetRecentlyUpdatedSubscriptionsParams struct {
+	Limit  int32 `json:"limit"`
+	Offset int32 `json:"offset"`
+}
+
+type GetRecentlyUpdatedSubscriptionsRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	PlanID         pgtype.UUID        `json:"plan_id"`
+	Status         string             `json:"status"`
+	PeriodStart    pgtype.Timestamptz `json:"period_start"`
+	PeriodEnd      pgtype.Timestamptz `json:"period_end"`
+	PeriodInterval string             `json:"period_interval"`
+	AddonIds       []pgtype.UUID      `json:"addon_ids"`
+	AssignedTo     *string            `json:"assigned_to"`
+	CancelledAt    pgtype.Timestamptz `json:"cancelled_at"`
+	PausedAt       pgtype.Timestamptz `json:"paused_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+// NOTE: UpdateSubscriptionStatus uses PG18 native OLD/NEW RETURNING syntax
+// and is implemented as a raw pgx query in billing_repo.go (bypassing sqlc,
+// which does not yet support OLD/NEW). See SubscriptionRepository.UpdateStatus.
+// NOTE: GetActiveSubscriptionByUserAtTime uses the GiST index on
+// billing_period via the @> containment operator. sqlc does not support the @>
+// operator on tstzrange, so this query is implemented as raw pgx in
+// billing_repo.go. See SubscriptionRepository.GetActiveByUserAtTime.
+// NOTE: GetOverlappingSubscriptions uses the GiST index on billing_period via
+// the && overlap operator. sqlc does not support the && operator on tstzrange,
+// so this query is implemented as raw pgx in billing_repo.go. See
+// SubscriptionRepository.GetOverlapping.
+func (q *Queries) GetRecentlyUpdatedSubscriptions(ctx context.Context, arg GetRecentlyUpdatedSubscriptionsParams) ([]GetRecentlyUpdatedSubscriptionsRow, error) {
+	rows, err := q.db.Query(ctx, getRecentlyUpdatedSubscriptions, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetRecentlyUpdatedSubscriptionsRow{}
+	for rows.Next() {
+		var i GetRecentlyUpdatedSubscriptionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.PlanID,
+			&i.Status,
+			&i.PeriodStart,
+			&i.PeriodEnd,
+			&i.PeriodInterval,
+			&i.AddonIds,
+			&i.AssignedTo,
+			&i.CancelledAt,
+			&i.PausedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getSubscriptionByID = `-- name: GetSubscriptionByID :one

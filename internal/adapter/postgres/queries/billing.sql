@@ -115,6 +115,13 @@ WHERE id = $1;
 -- so this query is implemented as raw pgx in billing_repo.go. See
 -- SubscriptionRepository.GetOverlapping.
 
+-- name: GetRecentlyUpdatedSubscriptions :many
+SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
+       addon_ids, assigned_to, cancelled_at, paused_at, created_at, updated_at
+FROM billing.subscriptions
+ORDER BY updated_at DESC
+LIMIT $1 OFFSET $2;
+
 -- ============================================================================
 -- Invoices
 -- ============================================================================
