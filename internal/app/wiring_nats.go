@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"go.uber.org/fx"
@@ -76,8 +77,8 @@ var natsWiring = fx.Options(
 	// Async plugin consumer
 	fx.Provide(natsadapter.NewPluginAsyncConsumer),
 
-	// Webhook handler
-	fx.Provide(provideWebhookHandler),
+	// Webhook handler — provided as named http.Handler to avoid gateway→adapter import.
+	fx.Provide(fx.Annotate(provideWebhookHandler, fx.ResultTags(`name:"remnawave_webhook"`))),
 
 	// Partition manager: ensures future partitions + cleans up expired ones.
 	fx.Provide(func(
@@ -103,7 +104,7 @@ var natsWiring = fx.Options(
 
 // provideWebhookHandler creates a Remnawave WebhookHandler that translates
 // incoming webhook payloads into domain events and publishes them to NATS.
-func provideWebhookHandler(cfg *config.Config, pub *natsadapter.EventPublisher, logger *slog.Logger) *remnawave.WebhookHandler {
+func provideWebhookHandler(cfg *config.Config, pub *natsadapter.EventPublisher, logger *slog.Logger) http.Handler {
 	return remnawave.NewWebhookHandler(cfg.Remnawave.WebhookSecret.Expose(), func(payload remnawave.WebhookPayload) {
 		domainEvent := remnawave.MapWebhookEvent(payload.Scope, payload.Event)
 		logger.Info("remnawave webhook received",

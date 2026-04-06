@@ -84,6 +84,40 @@ func TestPluginIsolation(t *testing.T) {
 	checkImports(t, filepath.Join("internal", "plugin"), forbiddenPrefixes)
 }
 
+// TestAdapterDoesNotImportGateway verifies that adapter packages never import
+// gateway packages (and vice versa). These layers communicate only through
+// domain interfaces wired at the composition root.
+func TestAdapterDoesNotImportGateway(t *testing.T) {
+	t.Run("adapter_no_gateway", func(t *testing.T) {
+		checkImports(t, filepath.Join("internal", "adapter"), []string{
+			modulePrefix + "/internal/gateway",
+		})
+	})
+	t.Run("gateway_no_adapter", func(t *testing.T) {
+		checkImports(t, filepath.Join("internal", "gateway"), []string{
+			modulePrefix + "/internal/adapter",
+		})
+	})
+}
+
+// TestPluginDoesNotImportDomainDirectly verifies that the plugin package
+// accesses domain functionality only through pkg/hookdispatch, not by
+// importing internal/domain/ directly.
+func TestPluginDoesNotImportDomainDirectly(t *testing.T) {
+	checkImports(t, filepath.Join("internal", "plugin"), []string{
+		modulePrefix + "/internal/domain",
+	})
+}
+
+// TestInfraDoesNotImportGateway verifies that infra services (health monitor,
+// smart router, speed test, subscription proxy) never import gateway or
+// adapter packages.
+func TestInfraDoesNotImportGateway(t *testing.T) {
+	checkImports(t, filepath.Join("internal", "infra"), []string{
+		modulePrefix + "/internal/gateway",
+	})
+}
+
 // checkImports walks dir, parses each non-test .go file, and fails the test for
 // every import whose path starts with any of the forbiddenPrefixes.
 func checkImports(t *testing.T, dir string, forbiddenPrefixes []string) {

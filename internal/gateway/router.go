@@ -10,7 +10,6 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/fx"
 
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/remnawave"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/handler"
@@ -48,7 +47,7 @@ type RouterParams struct {
 	AuthRateLimiters      *middleware.AuthRateLimiters
 	IdentityHandler       *handler.IdentityHandler
 	HealthHandler         *handler.HealthHandler
-	WebhookHandler        *remnawave.WebhookHandler
+	WebhookHandler        http.Handler `name:"remnawave_webhook"`
 	BillingHandler        *handler.BillingHandler
 	MultiSubHandler       *handler.MultiSubHandler
 	PluginHandler         *handler.PluginHandler
