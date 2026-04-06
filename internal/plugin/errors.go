@@ -9,6 +9,7 @@ var (
 	ErrInvalidPluginSlug     = errors.New("invalid plugin slug")
 	ErrPluginNotEnabled      = errors.New("plugin is not enabled")
 	ErrPluginAlreadyEnabled  = errors.New("plugin is already enabled")
+	ErrInvalidTransition     = errors.New("invalid plugin status transition")
 	ErrHookTimeout           = errors.New("hook execution timed out")
 	ErrHookHalted            = errors.New("hook execution halted by plugin")
 	ErrPermissionDenied      = errors.New("permission denied for plugin")

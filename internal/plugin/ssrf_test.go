@@ -40,6 +40,42 @@ func TestIsBlockedHostname(t *testing.T) {
 			rawURL:  "http://LOCALHOST/admin",
 			blocked: true,
 		},
+		// Cloud metadata endpoints
+		{
+			name:    "GCP metadata hostname",
+			rawURL:  "http://metadata.google.internal/computeMetadata/v1/",
+			blocked: true,
+		},
+		{
+			name:    "GCP alternative metadata hostname",
+			rawURL:  "http://metadata.goog/",
+			blocked: true,
+		},
+		{
+			name:    "AWS/GCP/Azure metadata IP",
+			rawURL:  "http://169.254.169.254/latest/meta-data/",
+			blocked: true,
+		},
+		{
+			name:    "AWS IPv6 metadata",
+			rawURL:  "http://[fd00:ec2::254]/latest/meta-data/",
+			blocked: true,
+		},
+		{
+			name:    "bare metadata hostname",
+			rawURL:  "http://metadata/computeMetadata/v1/",
+			blocked: true,
+		},
+		{
+			name:    "DigitalOcean instance-data",
+			rawURL:  "http://instance-data/latest/meta-data/",
+			blocked: true,
+		},
+		{
+			name:    "GCP metadata uppercase",
+			rawURL:  "http://METADATA.GOOGLE.INTERNAL/foo",
+			blocked: true,
+		},
 		{
 			name:    "external API",
 			rawURL:  "https://api.stripe.com/v1/charges",

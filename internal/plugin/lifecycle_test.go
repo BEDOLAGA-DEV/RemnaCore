@@ -278,7 +278,7 @@ func TestEnable_AlreadyEnabled(t *testing.T) {
 
 	err = lm.Enable(ctx, p.ID)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrPluginAlreadyEnabled)
+	assert.ErrorIs(t, err, ErrInvalidTransition)
 }
 
 func TestDisable_Success(t *testing.T) {

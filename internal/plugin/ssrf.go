@@ -10,13 +10,22 @@ import (
 )
 
 // blockedHostnames are DNS names that always resolve to loopback or local
-// addresses. Checked case-insensitively before any DNS lookup.
+// addresses. Checked case-insensitively before any DNS lookup. Cloud metadata
+// hostnames are included to prevent SSRF attacks that bypass CIDR checks via
+// DNS resolution.
 var blockedHostnames = []string{
 	"localhost",
 	"127.0.0.1",
 	"0.0.0.0",
 	"[::1]",
 	"::1",
+	// Cloud metadata endpoints — DNS-level block before resolution.
+	"metadata.google.internal", // GCP metadata
+	"metadata.goog",           // GCP alternative
+	"169.254.169.254",         // AWS/GCP/Azure metadata IP
+	"fd00:ec2::254",           // AWS IPv6 metadata
+	"metadata",                // bare hostname used in some GCP environments
+	"instance-data",           // DigitalOcean metadata
 }
 
 // blockedCIDRs are private and reserved IP ranges that plugins must never

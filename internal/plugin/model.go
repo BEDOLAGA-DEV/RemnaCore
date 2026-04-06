@@ -3,10 +3,31 @@ package plugin
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+// pluginTransitions defines valid status transitions. A transition not in
+// this map is rejected by canTransitionTo.
+var pluginTransitions = map[PluginStatus][]PluginStatus{
+	StatusInstalled: {StatusEnabled, StatusError},
+	StatusEnabled:   {StatusDisabled, StatusError},
+	StatusDisabled:  {StatusEnabled, StatusError},
+	StatusError:     {StatusEnabled, StatusDisabled}, // recovery paths
+}
+
+// canTransitionTo reports whether the plugin's current status allows a
+// transition to the target status.
+func (p *Plugin) canTransitionTo(target PluginStatus) bool {
+	allowed, ok := pluginTransitions[p.Status]
+	if !ok {
+		return false
+	}
+	return slices.Contains(allowed, target)
+}
 
 // Plugin is the domain entity representing an installed plugin. It corresponds
 // to a row in the plugins.plugin_registry table.
@@ -83,24 +104,33 @@ func NewPlugin(manifest *Manifest, wasmBytes []byte, now time.Time) (*Plugin, er
 
 // Enable transitions the plugin to StatusEnabled.
 func (p *Plugin) Enable(now time.Time) error {
-	if p.Status == StatusEnabled {
-		return ErrPluginAlreadyEnabled
+	if !p.canTransitionTo(StatusEnabled) {
+		return fmt.Errorf("%w: cannot transition from %s to enabled", ErrInvalidTransition, p.Status)
 	}
 	p.Status = StatusEnabled
 	p.EnabledAt = &now
+	p.ErrorLog = "" // clear error on recovery
 	p.UpdatedAt = now
 	return nil
 }
 
 // Disable transitions the plugin to StatusDisabled.
-func (p *Plugin) Disable(now time.Time) {
+func (p *Plugin) Disable(now time.Time) error {
+	if !p.canTransitionTo(StatusDisabled) {
+		return fmt.Errorf("%w: cannot transition from %s to disabled", ErrInvalidTransition, p.Status)
+	}
 	p.Status = StatusDisabled
 	p.UpdatedAt = now
+	return nil
 }
 
 // SetError transitions the plugin to StatusError and records the reason.
-func (p *Plugin) SetError(reason string, now time.Time) {
+func (p *Plugin) SetError(reason string, now time.Time) error {
+	if !p.canTransitionTo(StatusError) {
+		return fmt.Errorf("%w: cannot transition from %s to error", ErrInvalidTransition, p.Status)
+	}
 	p.Status = StatusError
 	p.ErrorLog = reason
 	p.UpdatedAt = now
+	return nil
 }

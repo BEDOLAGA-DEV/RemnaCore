@@ -189,7 +189,9 @@ func (lm *LifecycleManager) Disable(ctx context.Context, pluginID string) error 
 		return fmt.Errorf("unloading plugin from runtime: %w", unloadErr)
 	}
 
-	p.Disable(lm.clock.Now())
+	if err := p.Disable(lm.clock.Now()); err != nil {
+		return fmt.Errorf("transition plugin to disabled: %w", err)
+	}
 
 	if err := lm.repo.UpdateStatus(ctx, p.ID, p.Status, "", nil); err != nil {
 		return fmt.Errorf("persisting disabled status: %w", err)
