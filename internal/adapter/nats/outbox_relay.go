@@ -30,8 +30,15 @@ const (
 	// OutboxRelayBackoffMultiplier doubles the interval on each empty poll.
 	OutboxRelayBackoffMultiplier = 2
 
-	// OutboxRelayBatchSize is the maximum number of events fetched per tick.
+	// OutboxRelayBatchSize is the base number of events fetched per tick.
+	// During burst load the relay dynamically scales this up to
+	// OutboxRelayMaxBatchSize.
 	OutboxRelayBatchSize = 100
+
+	// OutboxRelayMaxBatchSize is the upper bound for dynamic batch scaling.
+	// When consecutive batches are full, the relay doubles the batch size
+	// each tick up to this cap.
+	OutboxRelayMaxBatchSize = 500
 
 	// OutboxCleanupInterval is how often the relay purges old published events.
 	OutboxCleanupInterval = 1 * time.Hour
@@ -184,13 +191,21 @@ func (r *OutboxRelay) Run(ctx context.Context) {
 
 // runWorker is the per-worker relay loop. It executes an immediate catch-up
 // pass, then enters a timer-based loop with exponential backoff on idle.
+//
+// Adaptive batch sizing: when the last batch returned exactly the current
+// batch size (indicating more events are likely waiting), the worker doubles
+// the batch size for the next poll, up to OutboxRelayMaxBatchSize. When the
+// batch returns fewer events or is empty, the batch size resets to
+// OutboxRelayBatchSize.
 func (r *OutboxRelay) runWorker(ctx context.Context, workerID int) {
 	workerLabel := strconv.Itoa(workerID)
 	logger := r.logger.With(slog.Int("worker_id", workerID))
 	logger.Info("outbox relay worker started")
 
+	currentBatchSize := OutboxRelayBatchSize
+
 	// Immediate catch-up for events stuck from a prior crash.
-	r.relay(ctx, logger, workerLabel)
+	r.relay(ctx, logger, workerLabel, currentBatchSize)
 
 	currentInterval := OutboxRelayBaseInterval
 	relayTimer := time.NewTimer(currentInterval)
@@ -202,17 +217,26 @@ func (r *OutboxRelay) runWorker(ctx context.Context, workerID int) {
 			logger.Info("outbox relay worker stopping")
 			return
 		case <-relayTimer.C:
-			published := r.relay(ctx, logger, workerLabel)
-			if published > 0 {
-				// Reset to base interval when events were found.
+			published := r.relay(ctx, logger, workerLabel, currentBatchSize)
+
+			switch {
+			case published == currentBatchSize:
+				// Batch was full — likely more events waiting. Scale up.
+				currentBatchSize = min(currentBatchSize*OutboxRelayBackoffMultiplier, OutboxRelayMaxBatchSize)
 				currentInterval = OutboxRelayBaseInterval
-			} else {
-				// Exponential backoff on empty batch, capped.
+			case published == 0:
+				// Empty — backoff interval, reset batch size.
+				currentBatchSize = OutboxRelayBatchSize
 				currentInterval *= OutboxRelayBackoffMultiplier
 				if currentInterval > OutboxRelayMaxInterval {
 					currentInterval = OutboxRelayMaxInterval
 				}
+			default:
+				// Partial batch — reset batch size and interval.
+				currentBatchSize = OutboxRelayBatchSize
+				currentInterval = OutboxRelayBaseInterval
 			}
+
 			relayTimer.Reset(currentInterval)
 		}
 	}
@@ -255,8 +279,10 @@ func (r *OutboxRelay) runCleanup(ctx context.Context) {
 //
 // The logger parameter carries the worker ID so log lines can be correlated
 // to a specific worker. The workerLabel is the stringified worker ID used as
-// a Prometheus label value.
-func (r *OutboxRelay) relay(ctx context.Context, logger *slog.Logger, workerLabel string) int {
+// a Prometheus label value. The batchSize parameter controls how many events
+// are fetched — the caller (runWorker) adjusts this dynamically based on
+// whether previous batches were full.
+func (r *OutboxRelay) relay(ctx context.Context, logger *slog.Logger, workerLabel string, batchSize int) int {
 	// Skip DB polling entirely when NATS is known to be unreachable.
 	if r.natsBreaker.State() == gobreaker.StateOpen {
 		logger.Debug("outbox relay: NATS circuit open, skipping poll")
@@ -265,17 +291,17 @@ func (r *OutboxRelay) relay(ctx context.Context, logger *slog.Logger, workerLabe
 
 	start := time.Now()
 	var published int
-	var batchSize int
+	var fetchedCount int
 
 	err := r.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
-		events, err := r.outbox.GetUnpublished(txCtx, OutboxRelayBatchSize)
+		events, err := r.outbox.GetUnpublished(txCtx, batchSize)
 		if err != nil {
 			return fmt.Errorf("get unpublished: %w", err)
 		}
 
-		batchSize = len(events)
+		fetchedCount = len(events)
 
-		if batchSize == 0 {
+		if fetchedCount == 0 {
 			if r.metrics != nil {
 				r.metrics.OutboxRelayEmptyPolls.Inc()
 			}
@@ -345,8 +371,8 @@ func (r *OutboxRelay) relay(ctx context.Context, logger *slog.Logger, workerLabe
 	}
 
 	// Record metrics after the transaction completes (success or failure).
-	if r.metrics != nil && batchSize > 0 {
-		r.metrics.OutboxRelayBatchSize.WithLabelValues(workerLabel).Observe(float64(batchSize))
+	if r.metrics != nil && fetchedCount > 0 {
+		r.metrics.OutboxRelayBatchSize.WithLabelValues(workerLabel).Observe(float64(fetchedCount))
 		r.metrics.OutboxRelayBatchLatency.WithLabelValues(workerLabel).Observe(time.Since(start).Seconds())
 	}
 

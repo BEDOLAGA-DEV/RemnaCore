@@ -136,7 +136,7 @@ func TestRelay_SkipsDBPollWhenCircuitOpen(t *testing.T) {
 	require.Equal(t, gobreaker.StateOpen, relay.natsBreaker.State())
 
 	// relay() should return 0 without touching txRunner.
-	published := relay.relay(context.Background(), discardLogger(), "0")
+	published := relay.relay(context.Background(), discardLogger(), "0", OutboxRelayBatchSize)
 
 	assert.Equal(t, 0, published, "relay must return 0 when breaker is open")
 	assert.Equal(t, 0, txRunner.called, "txRunner must not be called when breaker is open")

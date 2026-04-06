@@ -21,6 +21,14 @@ func TestOutboxRelayConstants(t *testing.T) {
 		assert.Greater(t, natsadapter.OutboxRelayBatchSize, 0)
 	})
 
+	t.Run("max batch size >= base batch size", func(t *testing.T) {
+		assert.GreaterOrEqual(t, natsadapter.OutboxRelayMaxBatchSize, natsadapter.OutboxRelayBatchSize)
+	})
+
+	t.Run("max batch size is positive", func(t *testing.T) {
+		assert.Greater(t, natsadapter.OutboxRelayMaxBatchSize, 0)
+	})
+
 	t.Run("cleanup interval is positive", func(t *testing.T) {
 		assert.Greater(t, natsadapter.OutboxCleanupInterval, time.Duration(0))
 	})
