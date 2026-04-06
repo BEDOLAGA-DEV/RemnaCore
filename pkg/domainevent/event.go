@@ -37,13 +37,21 @@ const DefaultEventVersion = 1
 //
 // EntityID identifies the aggregate instance that produced the event. Consumers
 // use it for per-entity serial processing to guarantee ordering.
+//
+// TraceParent carries the W3C traceparent header value from the originating span.
+// It enables distributed tracing correlation across the outbox → NATS → consumer
+// pipeline. The field is set by the OutboxPublisher when an active trace span
+// exists in the publish context, and propagated by the OutboxRelay as NATS
+// message metadata so consumers can link their processing spans to the original
+// business operation that produced the event.
 type Event struct {
-	ID        string    `json:"id"`
-	Type      EventType `json:"type"`
-	Version   int       `json:"version"`
-	Timestamp time.Time `json:"timestamp"`
-	Data      any       `json:"data"`
-	EntityID  string    `json:"entity_id,omitempty"`
+	ID          string    `json:"id"`
+	Type        EventType `json:"type"`
+	Version     int       `json:"version"`
+	Timestamp   time.Time `json:"timestamp"`
+	Data        any       `json:"data"`
+	EntityID    string    `json:"entity_id,omitempty"`
+	TraceParent string    `json:"trace_parent,omitempty"`
 }
 
 // newEventID generates a UUIDv7 string for use as an event instance identifier.

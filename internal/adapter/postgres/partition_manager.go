@@ -174,6 +174,14 @@ func (pm *PartitionManager) ensure(ctx context.Context) {
 
 // cleanup finds partitions whose upper bound is entirely before now - retention
 // and whose rows are all published, then detaches and drops them.
+//
+// This is the PartitionManager side of the two-tier outbox cleanup strategy.
+// It drops entire past-retention partitions (instant O(1) via DETACH + DROP)
+// that contain no unpublished events and pass the sequence safety check.
+//
+// Complementary cleanup by OutboxRelay.cleanup handles intra-partition purging
+// for the active quarter using DELETE WHERE published=true. See the godoc on
+// OutboxRelay.cleanup for the full division of responsibility.
 func (pm *PartitionManager) cleanup(ctx context.Context) {
 	if pm.retention == 0 {
 		return

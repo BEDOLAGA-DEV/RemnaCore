@@ -255,3 +255,42 @@ func TestEvent_JSONRoundTrip_BackwardCompat_EmptyID(t *testing.T) {
 	assert.Equal(t, EventType("subscription.cancelled"), decoded.Type)
 	assert.Equal(t, "sub-1", decoded.EntityID)
 }
+
+func TestEvent_TraceParent_OmittedWhenEmpty(t *testing.T) {
+	e := New("test.event", map[string]any{"key": "val"})
+
+	data, err := json.Marshal(e)
+	require.NoError(t, err)
+
+	assert.NotContains(t, string(data), "trace_parent",
+		"trace_parent must be omitted from JSON when empty")
+}
+
+func TestEvent_TraceParent_SurvivesJSONRoundTrip(t *testing.T) {
+	tp := "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+	e := NewWithEntity("subscription.activated", map[string]any{"sub": "s-1"}, "sub-123")
+	e.TraceParent = tp
+
+	data, err := json.Marshal(e)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"trace_parent":"00-`)
+
+	var decoded Event
+	err = json.Unmarshal(data, &decoded)
+	require.NoError(t, err)
+
+	assert.Equal(t, tp, decoded.TraceParent,
+		"TraceParent must survive JSON round-trip")
+}
+
+func TestEvent_TraceParent_BackwardCompat_MissingField(t *testing.T) {
+	// Old events without trace_parent field must decode without error.
+	oldJSON := `{"id":"abc","type":"test.event","version":1,"timestamp":"2026-01-01T00:00:00Z","data":null}`
+
+	var decoded Event
+	err := json.Unmarshal([]byte(oldJSON), &decoded)
+	require.NoError(t, err)
+
+	assert.Empty(t, decoded.TraceParent,
+		"events without trace_parent must decode with empty TraceParent")
+}

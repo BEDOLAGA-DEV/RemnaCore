@@ -10,6 +10,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres/gen"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pgutil"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tracing"
 )
 
 // OutboxPublisher implements domainevent.Publisher by writing events to the
@@ -40,6 +41,13 @@ func NewOutboxPublisher(pool *pgxpool.Pool) *OutboxPublisher {
 // the same domain event ID. Events without an ID (backward compat) fall back
 // to the DB-generated gen_random_uuid() default.
 func (p *OutboxPublisher) Publish(ctx context.Context, event domainevent.Event) error {
+	// Inject W3C traceparent from the active span so that downstream consumers
+	// (via the outbox relay) can correlate their processing spans with the
+	// originating business operation.
+	if event.TraceParent == "" {
+		event.TraceParent = tracing.FormatTraceParent(ctx)
+	}
+
 	payload, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("marshal outbox event: %w", err)
