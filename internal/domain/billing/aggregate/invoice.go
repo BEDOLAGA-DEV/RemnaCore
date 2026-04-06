@@ -56,6 +56,24 @@ var validInvoiceTransitions = map[InvoiceStatus][]InvoiceStatus{
 
 // Invoice is the aggregate root for a billing invoice.
 // It embeds EventRecorder to accumulate domain events during mutations.
+//
+// Concurrency safety: this aggregate relies on PostgreSQL row-level locking
+// (SELECT FOR UPDATE via txmanager.RunInTx) rather than application-level
+// optimistic concurrency control (version field + WHERE version = N). This
+// is a deliberate architectural choice for the following reasons:
+//
+//   - All mutations go through BillingService which wraps them in RunInTx
+//   - The transactional outbox pattern ensures events are atomic with state
+//   - Single-writer per entity (no concurrent writes to the same invoice)
+//
+// If the system evolves to require CQRS read models, event sourcing, or
+// distributed deployment across multiple databases, add a Version int field
+// and enforce it in the repository's Update method:
+//
+//	UPDATE billing.invoices SET ... WHERE id = $1 AND version = $2
+//
+// This would also require adding version to the sqlc query and incrementing
+// it in every aggregate mutation method.
 type Invoice struct {
 	domainevent.EventRecorder
 
