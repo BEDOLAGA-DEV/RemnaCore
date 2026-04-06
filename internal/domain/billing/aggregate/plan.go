@@ -15,6 +15,7 @@ var (
 	ErrBasePriceNotPositive      = errors.New("base price must be positive")
 	ErrNoCountriesAllowed        = errors.New("at least one country must be allowed")
 	ErrFamilyDisabledWithMembers = errors.New("family is disabled but maxFamilyMembers is set")
+	ErrNegativeTrafficLimit      = errors.New("traffic limit must not be negative")
 	ErrAddonAlreadyExists        = errors.New("addon already exists on this plan")
 	ErrAddonNotFound             = errors.New("addon not found")
 )
@@ -100,6 +101,9 @@ func NewPlan(
 	}
 	if !familyEnabled && maxFamilyMembers > 0 {
 		return nil, ErrFamilyDisabledWithMembers
+	}
+	if trafficLimitBytes < 0 {
+		return nil, ErrNegativeTrafficLimit
 	}
 
 	plan := &Plan{

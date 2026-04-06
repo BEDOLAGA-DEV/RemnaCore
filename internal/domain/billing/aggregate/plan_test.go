@@ -104,6 +104,24 @@ func TestNewPlan_FamilyDisabledButMaxFamilyPositive(t *testing.T) {
 	assert.ErrorContains(t, err, "family")
 }
 
+func TestNewPlan_NegativeTrafficLimit(t *testing.T) {
+	name, desc, price, interval, _, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily := validPlanParams()
+
+	_, err := NewPlan(name, desc, price, interval, -1, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, time.Now())
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrNegativeTrafficLimit)
+}
+
+func TestNewPlan_ZeroTrafficLimit(t *testing.T) {
+	name, desc, price, interval, _, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily := validPlanParams()
+
+	plan, err := NewPlan(name, desc, price, interval, 0, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, time.Now())
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), plan.TrafficLimitBytes)
+}
+
 func TestNewPlan_FamilyEnabled(t *testing.T) {
 	name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, _, _ := validPlanParams()
 

@@ -23,6 +23,9 @@ var (
 
 	// ErrInvalidBindingTransition indicates an invalid binding state transition.
 	ErrInvalidBindingTransition = errors.New("invalid binding state transition")
+
+	// ErrNegativeTrafficLimit indicates that a traffic limit was negative.
+	ErrNegativeTrafficLimit = errors.New("traffic limit must not be negative")
 )
 
 // BindingStatus represents the lifecycle state of a Remnawave binding.
@@ -103,6 +106,9 @@ func NewBinding(subID, platformUserID string, purpose BindingPurpose, index int,
 	}
 	if !validPurposes[purpose] {
 		return nil, ErrInvalidPurpose
+	}
+	if trafficLimit < 0 {
+		return nil, ErrNegativeTrafficLimit
 	}
 
 	return &RemnawaveBinding{

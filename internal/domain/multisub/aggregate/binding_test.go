@@ -48,6 +48,36 @@ func TestNewBinding_EmptyPlatformUserID(t *testing.T) {
 	assert.Nil(t, b)
 }
 
+func TestNewBinding_TrafficLimit(t *testing.T) {
+	now := time.Now()
+
+	tests := []struct {
+		name         string
+		trafficLimit int64
+		wantErr      error
+	}{
+		{name: "negative traffic limit", trafficLimit: -1, wantErr: aggregate.ErrNegativeTrafficLimit},
+		{name: "zero traffic limit (unlimited)", trafficLimit: 0, wantErr: nil},
+		{name: "positive traffic limit", trafficLimit: 100, wantErr: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b, err := aggregate.NewBinding("sub-1", "user-abc12345xyz", aggregate.PurposeBase, 0, tt.trafficLimit, now)
+
+			if tt.wantErr != nil {
+				require.Error(t, err)
+				assert.ErrorIs(t, err, tt.wantErr)
+				assert.Nil(t, b)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, b)
+				assert.Equal(t, tt.trafficLimit, b.TrafficLimitBytes)
+			}
+		})
+	}
+}
+
 func TestNewBinding_InvalidPurpose(t *testing.T) {
 	b, err := aggregate.NewBinding("sub-1", "user-abc12345xyz", aggregate.BindingPurpose("invalid"), 0, 100_000_000_000, time.Now())
 
