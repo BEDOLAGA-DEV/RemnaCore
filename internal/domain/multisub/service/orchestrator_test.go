@@ -16,6 +16,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/multisubtest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager/txmanagertest"
 )
 
 // testLogger returns a slog.Logger that suppresses all output below error
@@ -36,8 +37,9 @@ func newOrchestrator(
 	calc := service.NewBindingCalculator()
 	sagaRepo := newPermissiveSagaRepo()
 	logger := testLogger()
-	provisioning := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, clk, logger)
-	deprovisioning := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, clk, logger)
+	txRunner := txmanagertest.NoopTxRunner{}
+	provisioning := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, txRunner, clk, logger)
+	deprovisioning := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, txRunner, clk, logger)
 	syncSaga := service.NewSyncSaga(repo, gw, pub, sagaRepo, clk, logger)
 	syncService := service.NewSyncService(repo, syncSaga, pub)
 

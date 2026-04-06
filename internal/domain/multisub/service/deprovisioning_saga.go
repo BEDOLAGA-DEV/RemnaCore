@@ -10,6 +10,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
 // deprovisioningState is the JSON-serializable state checkpointed after each
@@ -27,6 +28,7 @@ type DeprovisioningSaga struct {
 	gateway   multisubdomain.RemnawaveGateway
 	publisher domainevent.Publisher
 	sagaRepo  multisubdomain.SagaRepository
+	txRunner  txmanager.Runner
 	clock     clock.Clock
 	logger    *slog.Logger
 }
@@ -37,6 +39,7 @@ func NewDeprovisioningSaga(
 	gateway multisubdomain.RemnawaveGateway,
 	publisher domainevent.Publisher,
 	sagaRepo multisubdomain.SagaRepository,
+	txRunner txmanager.Runner,
 	clk clock.Clock,
 	logger *slog.Logger,
 ) *DeprovisioningSaga {
@@ -45,6 +48,7 @@ func NewDeprovisioningSaga(
 		gateway:   gateway,
 		publisher: publisher,
 		sagaRepo:  sagaRepo,
+		txRunner:  txRunner,
 		clock:     clk,
 		logger:    logger,
 	}
@@ -125,7 +129,8 @@ func (s *DeprovisioningSaga) deprovisionOne(ctx context.Context, binding *aggreg
 		}
 	}
 
-	// 2. Mark binding as deprovisioned
+	// 2. Mark binding as deprovisioned, persist update and publish events
+	// atomically inside a transaction to prevent event loss.
 	if err := binding.Deprovision(now); err != nil {
 		s.logger.Warn("failed to transition binding to deprovisioned",
 			slog.String("binding_id", binding.ID),
@@ -133,22 +138,22 @@ func (s *DeprovisioningSaga) deprovisionOne(ctx context.Context, binding *aggreg
 		)
 		return
 	}
-	if err := s.bindings.Update(ctx, binding); err != nil {
-		s.logger.Warn("failed to update binding after deprovision",
+	err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		if err := s.bindings.Update(txCtx, binding); err != nil {
+			return fmt.Errorf("update binding: %w", err)
+		}
+		for _, evt := range binding.DomainEvents() {
+			if err := s.publisher.Publish(txCtx, evt); err != nil {
+				return fmt.Errorf("publish binding event: %w", err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		s.logger.Warn("failed to persist deprovisioned binding",
 			slog.String("binding_id", binding.ID),
 			slog.Any("error", err),
 		)
-	}
-
-	// 3. Publish binding's self-recorded events
-	for _, evt := range binding.DomainEvents() {
-		if err := s.publisher.Publish(ctx, evt); err != nil {
-			s.logger.Warn("failed to publish binding event",
-				slog.String("binding_id", binding.ID),
-				slog.String("event_type", string(evt.Type)),
-				slog.Any("error", err),
-			)
-		}
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tracing"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
 const (
@@ -60,6 +61,7 @@ type ProvisioningSaga struct {
 	publisher  domainevent.Publisher
 	calculator *BindingCalculator
 	sagaRepo   multisubdomain.SagaRepository
+	txRunner   txmanager.Runner
 	clock      clock.Clock
 	logger     *slog.Logger
 }
@@ -71,6 +73,7 @@ func NewProvisioningSaga(
 	publisher domainevent.Publisher,
 	calculator *BindingCalculator,
 	sagaRepo multisubdomain.SagaRepository,
+	txRunner txmanager.Runner,
 	clk clock.Clock,
 	logger *slog.Logger,
 ) *ProvisioningSaga {
@@ -80,6 +83,7 @@ func NewProvisioningSaga(
 		publisher:  publisher,
 		calculator: calculator,
 		sagaRepo:   sagaRepo,
+		txRunner:   txRunner,
 		clock:      clk,
 		logger:     logger,
 	}
@@ -153,28 +157,29 @@ func (s *ProvisioningSaga) Provision(ctx context.Context, req ProvisionRequest) 
 			return results, fmt.Errorf("remnawave create user: %w", err)
 		}
 
-		// 3. Mark binding as provisioned
+		// 3. Mark binding as provisioned, persist update and publish events
+		// atomically inside a transaction to prevent event loss.
 		if err := binding.MarkProvisioned(rwUser.UUID, rwUser.ShortUUID, now); err != nil {
 			failSaga(ctx, s.sagaRepo, sagaInstance, fmt.Sprintf("mark provisioned: %s", err.Error()), s.logger)
 			return results, fmt.Errorf("mark provisioned: %w", err)
 		}
-		if err := s.bindings.Update(ctx, binding); err != nil {
-			// COMPENSATION: delete Remnawave user since our DB update failed.
+		err = s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+			if err := s.bindings.Update(txCtx, binding); err != nil {
+				return fmt.Errorf("update binding: %w", err)
+			}
+			for _, evt := range binding.DomainEvents() {
+				if err := s.publisher.Publish(txCtx, evt); err != nil {
+					return fmt.Errorf("publish binding event: %w", err)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			// COMPENSATION: delete Remnawave user since the transaction failed.
 			// Uses exponential backoff to avoid leaving ghost users in Remnawave.
 			s.compensateDeleteUser(ctx, rwUser.UUID, binding.ID)
-			failSaga(ctx, s.sagaRepo, sagaInstance, fmt.Sprintf("update binding: %s", err.Error()), s.logger)
-			return results, fmt.Errorf("update binding: %w", err)
-		}
-
-		// 4. Publish binding's self-recorded events
-		for _, evt := range binding.DomainEvents() {
-			if err := s.publisher.Publish(ctx, evt); err != nil {
-				s.logger.Warn("failed to publish binding event",
-					slog.String("binding_id", binding.ID),
-					slog.String("event_type", string(evt.Type)),
-					slog.Any("error", err),
-				)
-			}
+			failSaga(ctx, s.sagaRepo, sagaInstance, fmt.Sprintf("transactional update: %s", err.Error()), s.logger)
+			return results, fmt.Errorf("transactional update: %w", err)
 		}
 
 		results = append(results, ProvisionResult{

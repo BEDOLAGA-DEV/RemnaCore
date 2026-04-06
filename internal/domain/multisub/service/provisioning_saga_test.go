@@ -14,6 +14,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/multisubtest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager/txmanagertest"
 )
 
 func newPlanSnapshotForSaga() multisub.PlanSnapshot {
@@ -53,7 +54,7 @@ func TestProvision_Success(t *testing.T) {
 	calc := service.NewBindingCalculator()
 	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, clock.NewReal(), slog.Default())
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
 	plan := newPlanSnapshotForSaga()
 
 	// Expect 3 bindings: base + gaming + 1 family member
@@ -114,7 +115,7 @@ func TestProvision_RemnawaveFail(t *testing.T) {
 	calc := service.NewBindingCalculator()
 	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, clock.NewReal(), slog.Default())
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
 	plan := newPlanSnapshotForSaga()
 
 	// First binding: base - succeeds fully
@@ -172,7 +173,7 @@ func TestProvision_CompensationOnDBFail(t *testing.T) {
 	calc := service.NewBindingCalculator()
 	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, clock.NewReal(), slog.Default())
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
 	plan := newPlanSnapshotForSaga()
 
 	// Create binding in DB succeeds
@@ -219,7 +220,7 @@ func TestProvision_CompensationRetryOnDeleteFail(t *testing.T) {
 	calc := service.NewBindingCalculator()
 	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, clock.NewReal(), slog.Default())
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
 	plan := newPlanSnapshotForSaga()
 
 	// Create binding in DB succeeds
@@ -268,7 +269,7 @@ func TestProvision_MaxBindingsExceeded(t *testing.T) {
 	calc := service.NewBindingCalculator()
 	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, clock.NewReal(), slog.Default())
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
 
 	// Plan allows only 2 bindings, but base + gaming + 2 family = 4 specs
 	plan := multisub.PlanSnapshot{
@@ -311,7 +312,7 @@ func TestProvision_ZeroMaxBindings_NoLimit(t *testing.T) {
 	calc := service.NewBindingCalculator()
 	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, clock.NewReal(), slog.Default())
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
 
 	// MaxRemnawaveBindings=0 means no limit enforced
 	plan := multisub.PlanSnapshot{
@@ -356,7 +357,7 @@ func TestProvision_SagaPersistence(t *testing.T) {
 	calc := service.NewBindingCalculator()
 	sagaRepo := new(multisubtest.MockSagaRepo)
 
-	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, clock.NewReal(), slog.Default())
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
 
 	plan := multisub.PlanSnapshot{
 		ID:                   "plan-basic",
@@ -392,4 +393,56 @@ func TestProvision_SagaPersistence(t *testing.T) {
 	sagaRepo.AssertExpectations(t)
 	repo.AssertExpectations(t)
 	gw.AssertExpectations(t)
+}
+
+func TestProvision_PublishFail_RollbackAndCompensate(t *testing.T) {
+	ctx := context.Background()
+	repo := new(multisubtest.MockBindingRepo)
+	gw := new(multisubtest.MockRemnawaveGateway)
+	pub := new(multisubtest.MockEventPublisher)
+	calc := service.NewBindingCalculator()
+	sagaRepo := newPermissiveSagaRepo()
+
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
+	plan := multisub.PlanSnapshot{
+		ID:                   "plan-basic",
+		TrafficLimitBytes:    100_000_000_000,
+		MaxRemnawaveBindings: 0,
+	}
+
+	// Create binding in DB succeeds
+	repo.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.RemnawaveBinding")).Return(nil).Once()
+
+	// Create user in Remnawave succeeds
+	gw.On("CreateUser", mock.Anything, mock.MatchedBy(func(req multisub.CreateRemnawaveUserRequest) bool {
+		return true
+	})).Return(&multisub.RemnawaveUserResult{
+		UUID:      "rw-uuid-1",
+		ShortUUID: "rw-short-1",
+	}, nil).Once()
+
+	// DB update succeeds inside transaction
+	repo.On("Update", mock.Anything, mock.AnythingOfType("*aggregate.RemnawaveBinding")).Return(nil).Once()
+
+	// Publish fails inside transaction — causes rollback
+	publishErr := errors.New("nats connection lost")
+	pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(publishErr).Once()
+
+	// COMPENSATION: Remnawave user must be deleted because the transaction failed
+	gw.On("DeleteUser", mock.Anything, "rw-uuid-1").Return(nil).Once()
+
+	results, err := saga.Provision(ctx, service.ProvisionRequest{
+		SubscriptionID: "sub-1",
+		PlatformUserID: "user-abc12345xyz",
+		Plan:           plan,
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "publish binding event")
+	assert.Empty(t, results)
+
+	// Verify compensation fired
+	gw.AssertCalled(t, "DeleteUser", mock.Anything, "rw-uuid-1")
+	repo.AssertExpectations(t)
+	pub.AssertExpectations(t)
 }

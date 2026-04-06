@@ -15,6 +15,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/multisubtest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager/txmanagertest"
 )
 
 func activeBinding(id, subID, rwUUID string, purpose aggregate.BindingPurpose) *aggregate.RemnawaveBinding {
@@ -38,7 +39,7 @@ func TestDeprovision_Success(t *testing.T) {
 	pub := new(multisubtest.MockEventPublisher)
 	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, clock.NewReal(), slog.Default())
+	saga := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
 
 	bindings := []*aggregate.RemnawaveBinding{
 		activeBinding("b-1", "sub-1", "rw-1", aggregate.PurposeBase),
@@ -73,7 +74,7 @@ func TestDeprovision_PartialFailure(t *testing.T) {
 	pub := new(multisubtest.MockEventPublisher)
 	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, clock.NewReal(), slog.Default())
+	saga := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
 
 	bindings := []*aggregate.RemnawaveBinding{
 		activeBinding("b-1", "sub-1", "rw-1", aggregate.PurposeBase),
@@ -123,7 +124,7 @@ func TestDeprovision_NoBindings(t *testing.T) {
 	pub := new(multisubtest.MockEventPublisher)
 	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, clock.NewReal(), slog.Default())
+	saga := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
 
 	repo.On("GetActiveBySubscriptionID", mock.Anything, "sub-empty").
 		Return([]*aggregate.RemnawaveBinding{}, nil)
@@ -144,7 +145,7 @@ func TestDeprovision_SagaPersistence(t *testing.T) {
 	pub := new(multisubtest.MockEventPublisher)
 	sagaRepo := new(multisubtest.MockSagaRepo)
 
-	saga := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, clock.NewReal(), slog.Default())
+	saga := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
 
 	bindings := []*aggregate.RemnawaveBinding{
 		activeBinding("b-1", "sub-saga-d", "rw-1", aggregate.PurposeBase),
