@@ -253,9 +253,15 @@ func (inv *Invoice) OverrideTotal(newTotal vo.Money, reason string, now time.Tim
 
 // ApplyPricingModification updates the invoice totals based on a pricing
 // plugin's response. Only non-nil fields are applied. The total is
-// recalculated as subtotal minus discount, floored at zero. This must be
-// called before the invoice is persisted.
-func (inv *Invoice) ApplyPricingModification(subtotal, discount *int64, reason string, now time.Time) {
+// recalculated as subtotal minus discount, floored at zero. The invoice
+// must be in draft status.
+func (inv *Invoice) ApplyPricingModification(subtotal, discount *int64, reason string, now time.Time) error {
+	if inv.Status != InvoiceDraft {
+		return ErrInvoiceNotDraft
+	}
+
+	oldTotal := inv.Total.Amount
+
 	if subtotal != nil {
 		inv.Subtotal = vo.NewMoney(*subtotal, inv.Subtotal.Currency)
 	}
@@ -268,6 +274,15 @@ func (inv *Invoice) ApplyPricingModification(subtotal, discount *int64, reason s
 	}
 	inv.PricingReason = reason
 	inv.UpdatedAt = now
+
+	inv.RecordEvent(domainevent.NewAtWithEntity(EventInvTotalOverridden, InvTotalOverriddenPayload{
+		InvoiceID: inv.ID,
+		OldAmount: oldTotal,
+		NewAmount: inv.Total.Amount,
+		Reason:    reason,
+	}, now, inv.ID))
+
+	return nil
 }
 
 // calculateTotal computes the subtotal from line items, sums discounts, and

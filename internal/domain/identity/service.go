@@ -204,8 +204,8 @@ func (s *Service) VerifyEmail(ctx context.Context, token string) error {
 		if err := s.repo.DeleteEmailVerification(txCtx, verification.ID); err != nil {
 			return fmt.Errorf("deleting verification: %w", err)
 		}
-		if err := s.publisher.Publish(txCtx, NewEmailVerifiedEvent(user.ID, user.Email, now)); err != nil {
-			return fmt.Errorf("publishing %s: %w", EventEmailVerified, err)
+		if err := s.publishAggregateEvents(txCtx, user); err != nil {
+			return err
 		}
 		return nil
 	})
@@ -316,10 +316,12 @@ func (s *Service) LinkTelegram(ctx context.Context, userID string, telegramID in
 	if err := user.LinkTelegram(telegramID, s.clock.Now()); err != nil {
 		return err
 	}
-	if err := s.repo.UpdateUser(ctx, user); err != nil {
-		return fmt.Errorf("updating user: %w", err)
-	}
-	return nil
+	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		if err := s.repo.UpdateUser(txCtx, user); err != nil {
+			return fmt.Errorf("updating user: %w", err)
+		}
+		return s.publishAggregateEvents(txCtx, user)
+	})
 }
 
 // UnlinkTelegram removes the Telegram ID from the user's account.
@@ -331,10 +333,12 @@ func (s *Service) UnlinkTelegram(ctx context.Context, userID string) error {
 	if err := user.UnlinkTelegram(s.clock.Now()); err != nil {
 		return err
 	}
-	if err := s.repo.UpdateUser(ctx, user); err != nil {
-		return fmt.Errorf("updating user: %w", err)
-	}
-	return nil
+	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		if err := s.repo.UpdateUser(txCtx, user); err != nil {
+			return fmt.Errorf("updating user: %w", err)
+		}
+		return s.publishAggregateEvents(txCtx, user)
+	})
 }
 
 // ListUsers returns a paginated list of all users. Intended for admin endpoints.
@@ -425,11 +429,33 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 		if err := s.repo.DeletePasswordReset(txCtx, reset.ID); err != nil {
 			return fmt.Errorf("deleting password reset: %w", err)
 		}
+		// Publish PasswordReset event (service-level, not aggregate-recorded)
 		if err := s.publisher.Publish(txCtx, NewPasswordResetEvent(user.ID, now)); err != nil {
 			return fmt.Errorf("publishing %s: %w", EventPasswordReset, err)
 		}
+		// Publish aggregate-recorded events (PasswordChanged from ChangePassword).
+		if err := s.publishAggregateEvents(txCtx, user); err != nil {
+			return err
+		}
 		return nil
 	})
+}
+
+// eventSource is implemented by aggregates that embed domainevent.EventRecorder.
+type eventSource interface {
+	DomainEvents() []domainevent.Event
+}
+
+// publishAggregateEvents flushes all pending events from the aggregate and
+// publishes them through the publisher. This centralises the flush-and-publish
+// pattern so individual service methods cannot forget to publish.
+func (s *Service) publishAggregateEvents(ctx context.Context, src eventSource) error {
+	for _, event := range src.DomainEvents() {
+		if err := s.publisher.Publish(ctx, event); err != nil {
+			return fmt.Errorf("publish %s: %w", event.Type, err)
+		}
+	}
+	return nil
 }
 
 // RefreshTokenLen is the number of random bytes used for refresh tokens.

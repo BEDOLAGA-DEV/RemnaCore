@@ -2,11 +2,19 @@ package aggregate
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
+
+// MaxFamilyMembers is the upper bound for a family group's maximum member count.
+const MaxFamilyMembers = 20
+
+// MinFamilyMembers is the lower bound for a family group's maximum member count
+// (owner + at least 1 member).
+const MinFamilyMembers = 2
 
 // compile-time check that FamilyGroup embeds EventRecorder
 var _ interface{ HasEvents() bool } = (*FamilyGroup)(nil)
@@ -52,7 +60,19 @@ type FamilyGroup struct {
 }
 
 // NewFamilyGroup creates a new family group with the owner as the first member.
-func NewFamilyGroup(ownerID string, maxMembers int, now time.Time) *FamilyGroup {
+// Returns an error if the ownerID is empty, maxMembers is below MinFamilyMembers,
+// or maxMembers exceeds MaxFamilyMembers.
+func NewFamilyGroup(ownerID string, maxMembers int, now time.Time) (*FamilyGroup, error) {
+	if ownerID == "" {
+		return nil, errors.New("owner ID must not be empty")
+	}
+	if maxMembers < MinFamilyMembers {
+		return nil, fmt.Errorf("max members must be at least %d (owner + 1 member)", MinFamilyMembers)
+	}
+	if maxMembers > MaxFamilyMembers {
+		return nil, fmt.Errorf("max members must not exceed %d", MaxFamilyMembers)
+	}
+
 	fg := &FamilyGroup{
 		ID:         uuid.Must(uuid.NewV7()).String(),
 		OwnerID:    ownerID,
@@ -73,7 +93,7 @@ func NewFamilyGroup(ownerID string, maxMembers int, now time.Time) *FamilyGroup 
 		OwnerID:       fg.OwnerID,
 		MaxMembers:    fg.MaxMembers,
 	}, now, fg.ID))
-	return fg
+	return fg, nil
 }
 
 // AddMember adds a new member to the family group.

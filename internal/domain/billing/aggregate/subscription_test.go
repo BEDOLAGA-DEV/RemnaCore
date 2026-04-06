@@ -145,3 +145,32 @@ func TestSubscription_RenewWithPendingPlanID(t *testing.T) {
 		assert.Nil(t, sub.PendingPlanID)
 	})
 }
+
+func TestSubscription_Upgrade_ClearsPendingPlanID(t *testing.T) {
+	now := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	newPeriod := vo.NewBillingPeriod(now, vo.IntervalYear)
+
+	t.Run("downgrade then upgrade clears pending and renew keeps upgraded plan", func(t *testing.T) {
+		sub := newActiveSub(t, now)
+
+		// Schedule a deferred downgrade.
+		require.NoError(t, sub.Downgrade("plan-basic", now))
+		require.NotNil(t, sub.PendingPlanID)
+		assert.Equal(t, "plan-basic", *sub.PendingPlanID)
+		sub.DomainEvents() // drain
+
+		// Upgrade overrides the pending downgrade.
+		upgradeTime := now.Add(time.Hour)
+		require.NoError(t, sub.Upgrade("plan-premium", newPeriod, upgradeTime))
+		assert.Nil(t, sub.PendingPlanID, "upgrade must clear pending plan ID")
+		assert.Equal(t, "plan-premium", sub.PlanID)
+		sub.DomainEvents() // drain
+
+		// Renew should keep the upgraded plan, not apply the old downgrade.
+		renewTime := sub.Period.End.Add(time.Second)
+		require.NoError(t, sub.Renew(renewTime))
+
+		assert.Equal(t, "plan-premium", sub.PlanID, "plan must remain upgraded after renew")
+		assert.Nil(t, sub.PendingPlanID)
+	})
+}

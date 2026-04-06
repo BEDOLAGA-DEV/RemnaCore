@@ -237,7 +237,10 @@ func (s *BillingService) AddFamilyMember(
 				return fmt.Errorf("get family group: %w", err)
 			}
 			// Create a new family group if not found
-			fg = aggregate.NewFamilyGroup(sub.UserID, plan.MaxFamilyMembers, now)
+			fg, err = aggregate.NewFamilyGroup(sub.UserID, plan.MaxFamilyMembers, now)
+			if err != nil {
+				return fmt.Errorf("create family group: %w", err)
+			}
 			if err := s.families.Create(txCtx, fg); err != nil {
 				return fmt.Errorf("create family group: %w", err)
 			}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
 
 const (
@@ -27,7 +28,11 @@ const (
 
 type Role string
 
+// PlatformUser is the aggregate root for a platform identity.
+// It embeds EventRecorder to accumulate domain events during mutations.
 type PlatformUser struct {
+	domainevent.EventRecorder
+
 	ID            string
 	Email         string
 	PasswordHash  string
@@ -88,6 +93,10 @@ func NewPlatformUser(email, password string, now time.Time) (*PlatformUser, erro
 func (u *PlatformUser) VerifyEmail(now time.Time) {
 	u.EmailVerified = true
 	u.UpdatedAt = now
+	u.RecordEvent(domainevent.NewTyped(EmailVerifiedPayload{
+		UserID: u.ID,
+		Email:  u.Email,
+	}, now, u.ID))
 }
 
 // ChangeDisplayName validates and sets the user's display name.
@@ -105,6 +114,9 @@ func (u *PlatformUser) ChangeDisplayName(name string, now time.Time) error {
 func (u *PlatformUser) ChangePassword(newHash string, now time.Time) {
 	u.PasswordHash = newHash
 	u.UpdatedAt = now
+	u.RecordEvent(domainevent.NewTyped(PasswordChangedPayload{
+		UserID: u.ID,
+	}, now, u.ID))
 }
 
 // LinkTelegram associates a Telegram account with the user. Returns an error
@@ -115,6 +127,10 @@ func (u *PlatformUser) LinkTelegram(telegramID int64, now time.Time) error {
 	}
 	u.TelegramID = &telegramID
 	u.UpdatedAt = now
+	u.RecordEvent(domainevent.NewTyped(TelegramLinkedPayload{
+		UserID:     u.ID,
+		TelegramID: telegramID,
+	}, now, u.ID))
 	return nil
 }
 
@@ -124,8 +140,13 @@ func (u *PlatformUser) UnlinkTelegram(now time.Time) error {
 	if u.TelegramID == nil {
 		return ErrTelegramNotLinked
 	}
+	oldTelegramID := *u.TelegramID
 	u.TelegramID = nil
 	u.UpdatedAt = now
+	u.RecordEvent(domainevent.NewTyped(TelegramUnlinkedPayload{
+		UserID:     u.ID,
+		TelegramID: oldTelegramID,
+	}, now, u.ID))
 	return nil
 }
 

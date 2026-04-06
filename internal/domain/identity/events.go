@@ -16,6 +16,9 @@ const (
 	EventTokenRefreshed         domainevent.EventType = "user.token_refreshed"
 	EventPasswordResetRequested domainevent.EventType = "user.password_reset_requested"
 	EventPasswordReset          domainevent.EventType = "user.password_reset"
+	EventPasswordChanged        domainevent.EventType = "user.password_changed"
+	EventTelegramLinked         domainevent.EventType = "user.telegram_linked"
+	EventTelegramUnlinked       domainevent.EventType = "user.telegram_unlinked"
 )
 
 // Event is an alias for the shared domainevent.Event so that existing callers

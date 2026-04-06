@@ -138,7 +138,12 @@ func (cs *CheckoutService) StartCheckout(ctx context.Context, req CheckoutReques
 					slog.Any("error", unmarshalErr),
 				)
 			} else {
-				inv.ApplyPricingModification(pricingResult.Subtotal, pricingResult.Discount, pricingResult.Reason, cs.clock.Now())
+				if pricingErr := inv.ApplyPricingModification(pricingResult.Subtotal, pricingResult.Discount, pricingResult.Reason, cs.clock.Now()); pricingErr != nil {
+					cs.logger.Warn("pricing.calculate modification rejected",
+						slog.String("invoice_id", inv.ID),
+						slog.Any("error", pricingErr),
+					)
+				}
 			}
 		}
 	}

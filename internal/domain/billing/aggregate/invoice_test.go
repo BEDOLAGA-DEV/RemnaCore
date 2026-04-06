@@ -238,16 +238,22 @@ func TestInvoice_ApplyPricingModification_SubtotalOnly(t *testing.T) {
 	}
 	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD, time.Now())
 	require.NoError(t, err)
+	inv.DomainEvents() // drain creation event
 
 	newSubtotal := int64(800)
 	now := time.Now()
-	inv.ApplyPricingModification(&newSubtotal, nil, "promo_subtotal", now)
+	err = inv.ApplyPricingModification(&newSubtotal, nil, "promo_subtotal", now)
 
+	require.NoError(t, err)
 	assert.Equal(t, int64(800), inv.Subtotal.Amount)
 	assert.True(t, inv.TotalDiscount.IsZero(), "discount should remain zero")
 	assert.Equal(t, int64(800), inv.Total.Amount)
 	assert.Equal(t, "promo_subtotal", inv.PricingReason)
 	assert.Equal(t, now, inv.UpdatedAt)
+
+	events := inv.DomainEvents()
+	require.Len(t, events, 1)
+	assert.Equal(t, EventInvTotalOverridden, events[0].Type)
 }
 
 func TestInvoice_ApplyPricingModification_DiscountOnly(t *testing.T) {
@@ -259,8 +265,9 @@ func TestInvoice_ApplyPricingModification_DiscountOnly(t *testing.T) {
 
 	discountAmt := int64(300)
 	now := time.Now()
-	inv.ApplyPricingModification(nil, &discountAmt, "loyalty_10pct", now)
+	err = inv.ApplyPricingModification(nil, &discountAmt, "loyalty_10pct", now)
 
+	require.NoError(t, err)
 	assert.Equal(t, int64(1000), inv.Subtotal.Amount, "subtotal should be unchanged")
 	assert.Equal(t, int64(300), inv.TotalDiscount.Amount)
 	assert.Equal(t, int64(700), inv.Total.Amount)
@@ -276,8 +283,9 @@ func TestInvoice_ApplyPricingModification_FloorAtZero(t *testing.T) {
 
 	discountAmt := int64(9999)
 	now := time.Now()
-	inv.ApplyPricingModification(nil, &discountAmt, "massive_discount", now)
+	err = inv.ApplyPricingModification(nil, &discountAmt, "massive_discount", now)
 
+	require.NoError(t, err)
 	assert.Equal(t, int64(500), inv.Subtotal.Amount)
 	assert.Equal(t, int64(9999), inv.TotalDiscount.Amount)
 	assert.Equal(t, int64(0), inv.Total.Amount, "total must be floored at zero")
@@ -293,8 +301,9 @@ func TestInvoice_ApplyPricingModification_BothFields(t *testing.T) {
 	newSubtotal := int64(1200)
 	discountAmt := int64(200)
 	now := time.Now()
-	inv.ApplyPricingModification(&newSubtotal, &discountAmt, "bundle_adjust", now)
+	err = inv.ApplyPricingModification(&newSubtotal, &discountAmt, "bundle_adjust", now)
 
+	require.NoError(t, err)
 	assert.Equal(t, int64(1200), inv.Subtotal.Amount)
 	assert.Equal(t, int64(200), inv.TotalDiscount.Amount)
 	assert.Equal(t, int64(1000), inv.Total.Amount)
@@ -311,11 +320,42 @@ func TestInvoice_ApplyPricingModification_NilFields_NoChange(t *testing.T) {
 	originalSubtotal := inv.Subtotal.Amount
 	originalTotal := inv.Total.Amount
 	now := time.Now()
-	inv.ApplyPricingModification(nil, nil, "", now)
+	err = inv.ApplyPricingModification(nil, nil, "", now)
 
+	require.NoError(t, err)
 	assert.Equal(t, originalSubtotal, inv.Subtotal.Amount, "subtotal should be unchanged")
 	assert.Equal(t, originalTotal, inv.Total.Amount, "total should be unchanged")
 	assert.Empty(t, inv.PricingReason)
+}
+
+func TestInvoice_ApplyPricingModification_Pending_Error(t *testing.T) {
+	items := []vo.LineItem{
+		vo.NewLineItem("Plan", vo.LineItemPlan, vo.NewMoney(1000, vo.CurrencyUSD), 1),
+	}
+	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD, time.Now())
+	require.NoError(t, err)
+	require.NoError(t, inv.MarkPending(time.Now()))
+
+	newSubtotal := int64(500)
+	err = inv.ApplyPricingModification(&newSubtotal, nil, "late_mod", time.Now())
+
+	require.ErrorIs(t, err, ErrInvoiceNotDraft)
+	assert.Equal(t, int64(1000), inv.Subtotal.Amount, "subtotal should remain unchanged")
+}
+
+func TestInvoice_ApplyPricingModification_Paid_Error(t *testing.T) {
+	items := []vo.LineItem{
+		vo.NewLineItem("Plan", vo.LineItemPlan, vo.NewMoney(1000, vo.CurrencyUSD), 1),
+	}
+	inv, err := NewInvoice("sub-1", "user-1", items, nil, vo.CurrencyUSD, time.Now())
+	require.NoError(t, err)
+	require.NoError(t, inv.MarkPending(time.Now()))
+	require.NoError(t, inv.MarkPaid(time.Now()))
+
+	newSubtotal := int64(500)
+	err = inv.ApplyPricingModification(&newSubtotal, nil, "too_late", time.Now())
+
+	require.ErrorIs(t, err, ErrInvoiceNotDraft)
 }
 
 // --- ApplyDiscount ---

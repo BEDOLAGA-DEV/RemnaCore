@@ -36,6 +36,23 @@ type PasswordResetPayload struct {
 	UserID string `json:"user_id"`
 }
 
+// PasswordChangedPayload is the typed payload for EventPasswordChanged.
+type PasswordChangedPayload struct {
+	UserID string `json:"user_id"`
+}
+
+// TelegramLinkedPayload is the typed payload for EventTelegramLinked.
+type TelegramLinkedPayload struct {
+	UserID     string `json:"user_id"`
+	TelegramID int64  `json:"telegram_id"`
+}
+
+// TelegramUnlinkedPayload is the typed payload for EventTelegramUnlinked.
+type TelegramUnlinkedPayload struct {
+	UserID     string `json:"user_id"`
+	TelegramID int64  `json:"telegram_id"`
+}
+
 // --- EventPayload interface implementations ---
 
 func (UserRegisteredPayload) EventType() domainevent.EventType { return EventUserRegistered }
@@ -45,7 +62,10 @@ func (TokenRefreshedPayload) EventType() domainevent.EventType  { return EventTo
 func (PasswordResetRequestedPayload) EventType() domainevent.EventType {
 	return EventPasswordResetRequested
 }
-func (PasswordResetPayload) EventType() domainevent.EventType { return EventPasswordReset }
+func (PasswordResetPayload) EventType() domainevent.EventType      { return EventPasswordReset }
+func (PasswordChangedPayload) EventType() domainevent.EventType    { return EventPasswordChanged }
+func (TelegramLinkedPayload) EventType() domainevent.EventType     { return EventTelegramLinked }
+func (TelegramUnlinkedPayload) EventType() domainevent.EventType   { return EventTelegramUnlinked }
 
 // Compile-time interface checks.
 var (
@@ -55,4 +75,7 @@ var (
 	_ domainevent.EventPayload = TokenRefreshedPayload{}
 	_ domainevent.EventPayload = PasswordResetRequestedPayload{}
 	_ domainevent.EventPayload = PasswordResetPayload{}
+	_ domainevent.EventPayload = PasswordChangedPayload{}
+	_ domainevent.EventPayload = TelegramLinkedPayload{}
+	_ domainevent.EventPayload = TelegramUnlinkedPayload{}
 )

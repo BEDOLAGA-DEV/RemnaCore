@@ -318,7 +318,8 @@ func TestAddFamilyMember_Success(t *testing.T) {
 	plan := samplePlan()
 	sub := activeSubscription("user-1", "plan-premium")
 
-	fg := aggregate.NewFamilyGroup("user-1", 5, time.Now())
+	fg, fgErr := aggregate.NewFamilyGroup("user-1", 5, time.Now())
+	require.NoError(t, fgErr)
 
 	subs.On("GetByID", mock.Anything, "sub-1").Return(sub, nil)
 	plans.On("GetByID", mock.Anything, "plan-premium").Return(plan, nil)
@@ -345,7 +346,8 @@ func TestAddFamilyMember_FamilyNotEnabled(t *testing.T) {
 	plan.FamilyEnabled = false
 	sub := activeSubscription("user-1", "plan-premium")
 
-	fg := aggregate.NewFamilyGroup("user-1", 5, time.Now())
+	fg, fgErr := aggregate.NewFamilyGroup("user-1", 5, time.Now())
+	require.NoError(t, fgErr)
 
 	subs.On("GetByID", mock.Anything, "sub-1").Return(sub, nil)
 	plans.On("GetByID", mock.Anything, "plan-premium").Return(plan, nil)
@@ -390,7 +392,8 @@ func TestRemoveFamilyMember_Success(t *testing.T) {
 	ctx := context.Background()
 
 	sub := activeSubscription("user-1", "plan-premium")
-	fg := aggregate.NewFamilyGroup("user-1", 5, time.Now())
+	fg, fgErr := aggregate.NewFamilyGroup("user-1", 5, time.Now())
+	require.NoError(t, fgErr)
 	require.NoError(t, fg.AddMember("member-1", "Alice", time.Now()))
 
 	subs.On("GetByID", mock.Anything, "sub-1").Return(sub, nil)

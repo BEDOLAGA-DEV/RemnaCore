@@ -8,8 +8,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// newTestFamilyGroup is a test helper that creates a FamilyGroup and fails
+// the test immediately if construction returns an error.
+func newTestFamilyGroup(t *testing.T, ownerID string, maxMembers int) *FamilyGroup {
+	t.Helper()
+	fg, err := NewFamilyGroup(ownerID, maxMembers, time.Now())
+	require.NoError(t, err)
+	return fg
+}
+
 func TestNewFamilyGroup(t *testing.T) {
-	fg := NewFamilyGroup("owner-1", 5, time.Now())
+	fg, err := NewFamilyGroup("owner-1", 5, time.Now())
+	require.NoError(t, err)
 
 	assert.NotEmpty(t, fg.ID)
 	assert.Equal(t, "owner-1", fg.OwnerID)
@@ -33,8 +43,52 @@ func TestNewFamilyGroup(t *testing.T) {
 	assert.Equal(t, 5, payload.MaxMembers)
 }
 
+func TestNewFamilyGroup_Validation(t *testing.T) {
+	t.Run("empty owner ID returns error", func(t *testing.T) {
+		_, err := NewFamilyGroup("", 5, time.Now())
+
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "owner ID must not be empty")
+	})
+
+	t.Run("maxMembers below minimum returns error", func(t *testing.T) {
+		_, err := NewFamilyGroup("owner-1", 1, time.Now())
+
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "max members must be at least")
+	})
+
+	t.Run("maxMembers zero returns error", func(t *testing.T) {
+		_, err := NewFamilyGroup("owner-1", 0, time.Now())
+
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "max members must be at least")
+	})
+
+	t.Run("maxMembers exceeds maximum returns error", func(t *testing.T) {
+		_, err := NewFamilyGroup("owner-1", MaxFamilyMembers+1, time.Now())
+
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "max members must not exceed")
+	})
+
+	t.Run("maxMembers at boundary succeeds", func(t *testing.T) {
+		fg, err := NewFamilyGroup("owner-1", MinFamilyMembers, time.Now())
+
+		require.NoError(t, err)
+		assert.Equal(t, MinFamilyMembers, fg.MaxMembers)
+	})
+
+	t.Run("maxMembers at upper boundary succeeds", func(t *testing.T) {
+		fg, err := NewFamilyGroup("owner-1", MaxFamilyMembers, time.Now())
+
+		require.NoError(t, err)
+		assert.Equal(t, MaxFamilyMembers, fg.MaxMembers)
+	})
+}
+
 func TestFamilyGroup_AddMember(t *testing.T) {
-	fg := NewFamilyGroup("owner-1", 5, time.Now())
+	fg := newTestFamilyGroup(t, "owner-1", 5)
 
 	err := fg.AddMember("user-2", "Alice", time.Now())
 
@@ -47,7 +101,7 @@ func TestFamilyGroup_AddMember(t *testing.T) {
 }
 
 func TestFamilyGroup_AddMember_MaxExceeded(t *testing.T) {
-	fg := NewFamilyGroup("owner-1", 2, time.Now())
+	fg := newTestFamilyGroup(t, "owner-1", 2)
 	require.NoError(t, fg.AddMember("user-2", "Alice", time.Now()))
 
 	err := fg.AddMember("user-3", "Bob", time.Now())
@@ -58,7 +112,7 @@ func TestFamilyGroup_AddMember_MaxExceeded(t *testing.T) {
 }
 
 func TestFamilyGroup_AddMember_Duplicate(t *testing.T) {
-	fg := NewFamilyGroup("owner-1", 5, time.Now())
+	fg := newTestFamilyGroup(t, "owner-1", 5)
 	require.NoError(t, fg.AddMember("user-2", "Alice", time.Now()))
 
 	err := fg.AddMember("user-2", "Alice Again", time.Now())
@@ -69,7 +123,7 @@ func TestFamilyGroup_AddMember_Duplicate(t *testing.T) {
 }
 
 func TestFamilyGroup_AddMember_DuplicateOwner(t *testing.T) {
-	fg := NewFamilyGroup("owner-1", 5, time.Now())
+	fg := newTestFamilyGroup(t, "owner-1", 5)
 
 	err := fg.AddMember("owner-1", "Owner Again", time.Now())
 
@@ -78,7 +132,7 @@ func TestFamilyGroup_AddMember_DuplicateOwner(t *testing.T) {
 }
 
 func TestFamilyGroup_RemoveMember(t *testing.T) {
-	fg := NewFamilyGroup("owner-1", 5, time.Now())
+	fg := newTestFamilyGroup(t, "owner-1", 5)
 	require.NoError(t, fg.AddMember("user-2", "Alice", time.Now()))
 	assert.Len(t, fg.Members, 2)
 
@@ -90,7 +144,7 @@ func TestFamilyGroup_RemoveMember(t *testing.T) {
 }
 
 func TestFamilyGroup_RemoveOwner_Error(t *testing.T) {
-	fg := NewFamilyGroup("owner-1", 5, time.Now())
+	fg := newTestFamilyGroup(t, "owner-1", 5)
 
 	err := fg.RemoveMember("owner-1", time.Now())
 
@@ -100,7 +154,7 @@ func TestFamilyGroup_RemoveOwner_Error(t *testing.T) {
 }
 
 func TestFamilyGroup_RemoveMember_NotFound(t *testing.T) {
-	fg := NewFamilyGroup("owner-1", 5, time.Now())
+	fg := newTestFamilyGroup(t, "owner-1", 5)
 
 	err := fg.RemoveMember("nonexistent", time.Now())
 
@@ -109,7 +163,7 @@ func TestFamilyGroup_RemoveMember_NotFound(t *testing.T) {
 }
 
 func TestFamilyGroup_IsFull(t *testing.T) {
-	fg := NewFamilyGroup("owner-1", 2, time.Now())
+	fg := newTestFamilyGroup(t, "owner-1", 2)
 
 	assert.False(t, fg.IsFull())
 
@@ -119,7 +173,7 @@ func TestFamilyGroup_IsFull(t *testing.T) {
 }
 
 func TestFamilyGroup_MemberCount(t *testing.T) {
-	fg := NewFamilyGroup("owner-1", 5, time.Now())
+	fg := newTestFamilyGroup(t, "owner-1", 5)
 	assert.Equal(t, 1, fg.MemberCount())
 
 	require.NoError(t, fg.AddMember("user-2", "Alice", time.Now()))
@@ -130,7 +184,7 @@ func TestFamilyGroup_MemberCount(t *testing.T) {
 }
 
 func TestFamilyGroup_HasMember(t *testing.T) {
-	fg := NewFamilyGroup("owner-1", 5, time.Now())
+	fg := newTestFamilyGroup(t, "owner-1", 5)
 
 	assert.True(t, fg.HasMember("owner-1"))
 	assert.False(t, fg.HasMember("user-2"))
@@ -140,7 +194,7 @@ func TestFamilyGroup_HasMember(t *testing.T) {
 }
 
 func TestFamilyGroup_RemoveAndReAdd(t *testing.T) {
-	fg := NewFamilyGroup("owner-1", 5, time.Now())
+	fg := newTestFamilyGroup(t, "owner-1", 5)
 	require.NoError(t, fg.AddMember("user-2", "Alice", time.Now()))
 	require.NoError(t, fg.RemoveMember("user-2", time.Now()))
 	assert.False(t, fg.HasMember("user-2"))

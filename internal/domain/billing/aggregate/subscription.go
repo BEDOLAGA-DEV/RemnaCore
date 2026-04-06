@@ -252,6 +252,7 @@ func (s *Subscription) Upgrade(newPlanID string, newPeriod vo.BillingPeriod, now
 	oldPlanID := s.PlanID
 	s.PlanID = newPlanID
 	s.Period = newPeriod
+	s.PendingPlanID = nil // clear deferred downgrade
 	s.UpdatedAt = now
 	s.RecordEvent(domainevent.NewAtWithEntity(EventSubUpgraded, SubUpgradedPayload{
 		SubscriptionID: s.ID,
