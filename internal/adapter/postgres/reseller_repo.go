@@ -15,17 +15,23 @@ import (
 
 // ResellerRepository implements both reseller.TenantRepository and
 // reseller.CommissionRepository backed by PostgreSQL via sqlc-generated queries.
+// All methods resolve the underlying connection via DBFromContext so that
+// queries participate in the active transaction (and therefore respect
+// SET LOCAL app.tenant_id for RLS enforcement).
 type ResellerRepository struct {
-	pool    *pgxpool.Pool
-	queries *gen.Queries
+	pool *pgxpool.Pool
 }
 
 // NewResellerRepository returns a new ResellerRepository using the given pool.
 func NewResellerRepository(pool *pgxpool.Pool) *ResellerRepository {
-	return &ResellerRepository{
-		pool:    pool,
-		queries: gen.New(pool),
-	}
+	return &ResellerRepository{pool: pool}
+}
+
+// q returns the sqlc Queries bound to the transaction from ctx (if any),
+// otherwise falls back to the pool. This ensures row-level security session
+// variables set via SET LOCAL are visible to every query.
+func (r *ResellerRepository) q(ctx context.Context) *gen.Queries {
+	return gen.New(DBFromContext(ctx, r.pool))
 }
 
 // ---------------------------------------------------------------------------
@@ -90,7 +96,7 @@ func (r *ResellerRepository) CreateTenant(ctx context.Context, tenant *reseller.
 		return fmt.Errorf("marshal branding config: %w", err)
 	}
 
-	err = r.queries.CreateTenant(ctx, gen.CreateTenantParams{
+	err = r.q(ctx).CreateTenant(ctx, gen.CreateTenantParams{
 		ID:             pgutil.UUIDToPgtype(tenant.ID),
 		Name:           tenant.Name,
 		Domain:         pgutil.StrPtrOrNil(tenant.Domain),
@@ -105,7 +111,7 @@ func (r *ResellerRepository) CreateTenant(ctx context.Context, tenant *reseller.
 }
 
 func (r *ResellerRepository) GetTenantByID(ctx context.Context, id string) (*reseller.Tenant, error) {
-	row, err := r.queries.GetTenantByID(ctx, pgutil.UUIDToPgtype(id))
+	row, err := r.q(ctx).GetTenantByID(ctx, pgutil.UUIDToPgtype(id))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get tenant by id", reseller.ErrTenantNotFound)
 	}
@@ -113,7 +119,7 @@ func (r *ResellerRepository) GetTenantByID(ctx context.Context, id string) (*res
 }
 
 func (r *ResellerRepository) GetTenantByDomain(ctx context.Context, domain string) (*reseller.Tenant, error) {
-	row, err := r.queries.GetTenantByDomain(ctx, &domain)
+	row, err := r.q(ctx).GetTenantByDomain(ctx, &domain)
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get tenant by domain", reseller.ErrTenantNotFound)
 	}
@@ -121,7 +127,7 @@ func (r *ResellerRepository) GetTenantByDomain(ctx context.Context, domain strin
 }
 
 func (r *ResellerRepository) GetTenantByAPIKeyHash(ctx context.Context, keyHash string) (*reseller.Tenant, error) {
-	row, err := r.queries.GetTenantByAPIKeyHash(ctx, &keyHash)
+	row, err := r.q(ctx).GetTenantByAPIKeyHash(ctx, &keyHash)
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get tenant by api key hash", reseller.ErrTenantNotFound)
 	}
@@ -134,7 +140,7 @@ func (r *ResellerRepository) UpdateTenant(ctx context.Context, tenant *reseller.
 		return fmt.Errorf("marshal branding config for update: %w", err)
 	}
 
-	err = r.queries.UpdateTenant(ctx, gen.UpdateTenantParams{
+	err = r.q(ctx).UpdateTenant(ctx, gen.UpdateTenantParams{
 		ID:             pgutil.UUIDToPgtype(tenant.ID),
 		Name:           tenant.Name,
 		Domain:         pgutil.StrPtrOrNil(tenant.Domain),
@@ -146,7 +152,7 @@ func (r *ResellerRepository) UpdateTenant(ctx context.Context, tenant *reseller.
 }
 
 func (r *ResellerRepository) ListTenants(ctx context.Context, limit, offset int) ([]*reseller.Tenant, error) {
-	rows, err := r.queries.ListTenants(ctx, gen.ListTenantsParams{
+	rows, err := r.q(ctx).ListTenants(ctx, gen.ListTenantsParams{
 		Limit:  int32(limit),
 		Offset: int32(offset),
 	})
@@ -165,7 +171,7 @@ func (r *ResellerRepository) ListTenants(ctx context.Context, limit, offset int)
 // ---------------------------------------------------------------------------
 
 func (r *ResellerRepository) CreateResellerAccount(ctx context.Context, account *reseller.ResellerAccount) error {
-	err := r.queries.CreateResellerAccount(ctx, gen.CreateResellerAccountParams{
+	err := r.q(ctx).CreateResellerAccount(ctx, gen.CreateResellerAccountParams{
 		ID:             pgutil.UUIDToPgtype(account.ID),
 		TenantID:       pgutil.UUIDToPgtype(account.TenantID),
 		UserID:         pgutil.UUIDToPgtype(account.UserID),
@@ -177,7 +183,7 @@ func (r *ResellerRepository) CreateResellerAccount(ctx context.Context, account 
 }
 
 func (r *ResellerRepository) GetResellerAccountByID(ctx context.Context, id string) (*reseller.ResellerAccount, error) {
-	row, err := r.queries.GetResellerAccountByID(ctx, pgutil.UUIDToPgtype(id))
+	row, err := r.q(ctx).GetResellerAccountByID(ctx, pgutil.UUIDToPgtype(id))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get reseller account by id", reseller.ErrResellerNotFound)
 	}
@@ -185,7 +191,7 @@ func (r *ResellerRepository) GetResellerAccountByID(ctx context.Context, id stri
 }
 
 func (r *ResellerRepository) GetResellerAccountByUserAndTenant(ctx context.Context, userID, tenantID string) (*reseller.ResellerAccount, error) {
-	row, err := r.queries.GetResellerAccountByUserAndTenant(ctx, gen.GetResellerAccountByUserAndTenantParams{
+	row, err := r.q(ctx).GetResellerAccountByUserAndTenant(ctx, gen.GetResellerAccountByUserAndTenantParams{
 		UserID:   pgutil.UUIDToPgtype(userID),
 		TenantID: pgutil.UUIDToPgtype(tenantID),
 	})
@@ -196,7 +202,7 @@ func (r *ResellerRepository) GetResellerAccountByUserAndTenant(ctx context.Conte
 }
 
 func (r *ResellerRepository) GetCommissionByID(ctx context.Context, id string) (*reseller.Commission, error) {
-	row, err := r.queries.GetCommissionByID(ctx, pgutil.UUIDToPgtype(id))
+	row, err := r.q(ctx).GetCommissionByID(ctx, pgutil.UUIDToPgtype(id))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get commission by id", reseller.ErrCommissionNotFound)
 	}
@@ -204,7 +210,7 @@ func (r *ResellerRepository) GetCommissionByID(ctx context.Context, id string) (
 }
 
 func (r *ResellerRepository) CreateCommission(ctx context.Context, commission *reseller.Commission) error {
-	err := r.queries.CreateCommission(ctx, gen.CreateCommissionParams{
+	err := r.q(ctx).CreateCommission(ctx, gen.CreateCommissionParams{
 		ID:         pgutil.UUIDToPgtype(commission.ID),
 		ResellerID: pgutil.UUIDToPgtype(commission.ResellerID),
 		SaleID:     commission.SaleID,
@@ -218,7 +224,7 @@ func (r *ResellerRepository) CreateCommission(ctx context.Context, commission *r
 }
 
 func (r *ResellerRepository) GetPendingCommissions(ctx context.Context, resellerID string) ([]*reseller.Commission, error) {
-	rows, err := r.queries.GetPendingCommissions(ctx, pgutil.UUIDToPgtype(resellerID))
+	rows, err := r.q(ctx).GetPendingCommissions(ctx, pgutil.UUIDToPgtype(resellerID))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get pending commissions", reseller.ErrCommissionNotFound)
 	}
@@ -230,7 +236,7 @@ func (r *ResellerRepository) GetPendingCommissions(ctx context.Context, reseller
 }
 
 func (r *ResellerRepository) UpdateCommission(ctx context.Context, commission *reseller.Commission) error {
-	err := r.queries.UpdateCommission(ctx, gen.UpdateCommissionParams{
+	err := r.q(ctx).UpdateCommission(ctx, gen.UpdateCommissionParams{
 		ID:     pgutil.UUIDToPgtype(commission.ID),
 		Status: string(commission.Status),
 		PaidAt: pgutil.OptTimeToPgtype(commission.PaidAt),
@@ -239,7 +245,7 @@ func (r *ResellerRepository) UpdateCommission(ctx context.Context, commission *r
 }
 
 func (r *ResellerRepository) UpdateResellerBalance(ctx context.Context, resellerID string, balance int64) error {
-	err := r.queries.UpdateResellerBalance(ctx, gen.UpdateResellerBalanceParams{
+	err := r.q(ctx).UpdateResellerBalance(ctx, gen.UpdateResellerBalanceParams{
 		ID:      pgutil.UUIDToPgtype(resellerID),
 		Balance: balance,
 	})

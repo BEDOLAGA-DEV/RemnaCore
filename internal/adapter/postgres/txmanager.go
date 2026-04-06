@@ -31,14 +31,32 @@ func NewTxManager(pool *pgxpool.Pool) *TxManager {
 	return &TxManager{pool: pool}
 }
 
+// rlsTenantVariable is the PostgreSQL session variable read by row-level
+// security policies. SET LOCAL scopes it to the current transaction only.
+const rlsTenantVariable = "app.tenant_id"
+
 // RunInTx executes fn within a database transaction. The transaction is
 // committed if fn returns nil, rolled back otherwise. The pgx.Tx is stored in
 // the context passed to fn so that any code calling DBFromContext will use the
 // transaction instead of the pool.
+//
+// If the context carries a tenant ID (set by the TenantRLS middleware via
+// WithTenantID), RunInTx issues SET LOCAL app.tenant_id so that PostgreSQL
+// row-level security policies can enforce tenant isolation at the database
+// level. The setting is scoped to this transaction and automatically cleared
+// on commit/rollback.
 func (tm *TxManager) RunInTx(ctx context.Context, fn func(ctx context.Context) error) error {
 	tx, err := tm.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
+	}
+
+	// Propagate tenant ID to PostgreSQL for RLS enforcement.
+	if tenantID := TenantIDFromContext(ctx); tenantID != "" {
+		if _, err := tx.Exec(ctx, "SET LOCAL "+rlsTenantVariable+" = $1", tenantID); err != nil {
+			_ = tx.Rollback(ctx)
+			return fmt.Errorf("set tenant for rls: %w", err)
+		}
 	}
 
 	txCtx := context.WithValue(ctx, txKey, tx)

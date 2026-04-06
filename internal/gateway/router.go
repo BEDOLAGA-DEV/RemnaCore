@@ -108,6 +108,7 @@ func NewRouter(p RouterParams) http.Handler {
 	r.Use(chimiddleware.Compress(GzipCompressionLevel))
 	r.Use(middleware.RateLimit(p.RateLimiter))
 	r.Use(middleware.TenantResolver(p.ResellerService))
+	r.Use(middleware.TenantRLS)
 
 	// Infrastructure endpoints.
 	r.Get("/healthz", p.HealthHandler.Healthz)

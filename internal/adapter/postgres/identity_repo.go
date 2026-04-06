@@ -11,18 +11,23 @@ import (
 )
 
 // IdentityRepository implements identity.Repository backed by PostgreSQL via
-// sqlc-generated queries.
+// sqlc-generated queries. All methods resolve the underlying connection via
+// DBFromContext so that queries participate in the active transaction (and
+// therefore respect SET LOCAL app.tenant_id for RLS enforcement).
 type IdentityRepository struct {
-	pool    *pgxpool.Pool
-	queries *gen.Queries
+	pool *pgxpool.Pool
 }
 
 // NewIdentityRepository returns a new IdentityRepository using the given pool.
 func NewIdentityRepository(pool *pgxpool.Pool) *IdentityRepository {
-	return &IdentityRepository{
-		pool:    pool,
-		queries: gen.New(pool),
-	}
+	return &IdentityRepository{pool: pool}
+}
+
+// q returns the sqlc Queries bound to the transaction from ctx (if any),
+// otherwise falls back to the pool. This ensures row-level security session
+// variables set via SET LOCAL are visible to every query.
+func (r *IdentityRepository) q(ctx context.Context) *gen.Queries {
+	return gen.New(DBFromContext(ctx, r.pool))
 }
 
 // ---------------------------------------------------------------------------
@@ -75,7 +80,7 @@ func rowToEmailVerification(row gen.IdentityEmailVerification) *identity.EmailVe
 // ---------------------------------------------------------------------------
 
 func (r *IdentityRepository) CreateUser(ctx context.Context, user *identity.PlatformUser) error {
-	err := r.queries.CreateUser(ctx, gen.CreateUserParams{
+	err := r.q(ctx).CreateUser(ctx, gen.CreateUserParams{
 		ID:            pgutil.UUIDToPgtype(user.ID),
 		Email:         user.Email,
 		PasswordHash:  user.PasswordHash,
@@ -91,7 +96,7 @@ func (r *IdentityRepository) CreateUser(ctx context.Context, user *identity.Plat
 }
 
 func (r *IdentityRepository) GetUserByID(ctx context.Context, id string) (*identity.PlatformUser, error) {
-	row, err := r.queries.GetUserByID(ctx, pgutil.UUIDToPgtype(id))
+	row, err := r.q(ctx).GetUserByID(ctx, pgutil.UUIDToPgtype(id))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get user by id", identity.ErrNotFound)
 	}
@@ -99,7 +104,7 @@ func (r *IdentityRepository) GetUserByID(ctx context.Context, id string) (*ident
 }
 
 func (r *IdentityRepository) GetUserByEmail(ctx context.Context, email string) (*identity.PlatformUser, error) {
-	row, err := r.queries.GetUserByEmail(ctx, email)
+	row, err := r.q(ctx).GetUserByEmail(ctx, email)
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get user by email", identity.ErrNotFound)
 	}
@@ -107,7 +112,7 @@ func (r *IdentityRepository) GetUserByEmail(ctx context.Context, email string) (
 }
 
 func (r *IdentityRepository) GetUserByTelegramID(ctx context.Context, telegramID int64) (*identity.PlatformUser, error) {
-	row, err := r.queries.GetUserByTelegramID(ctx, &telegramID)
+	row, err := r.q(ctx).GetUserByTelegramID(ctx, &telegramID)
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get user by telegram id", identity.ErrNotFound)
 	}
@@ -115,7 +120,7 @@ func (r *IdentityRepository) GetUserByTelegramID(ctx context.Context, telegramID
 }
 
 func (r *IdentityRepository) ListUsers(ctx context.Context, limit, offset int) ([]*identity.PlatformUser, error) {
-	rows, err := r.queries.ListUsers(ctx, gen.ListUsersParams{
+	rows, err := r.q(ctx).ListUsers(ctx, gen.ListUsersParams{
 		Limit:  int32(limit),
 		Offset: int32(offset),
 	})
@@ -130,7 +135,7 @@ func (r *IdentityRepository) ListUsers(ctx context.Context, limit, offset int) (
 }
 
 func (r *IdentityRepository) UpdateUser(ctx context.Context, user *identity.PlatformUser) error {
-	err := r.queries.UpdateUser(ctx, gen.UpdateUserParams{
+	err := r.q(ctx).UpdateUser(ctx, gen.UpdateUserParams{
 		ID:            pgutil.UUIDToPgtype(user.ID),
 		Email:         user.Email,
 		PasswordHash:  user.PasswordHash,
@@ -144,7 +149,7 @@ func (r *IdentityRepository) UpdateUser(ctx context.Context, user *identity.Plat
 }
 
 func (r *IdentityRepository) CreateSession(ctx context.Context, session *identity.Session) error {
-	err := r.queries.CreateSession(ctx, gen.CreateSessionParams{
+	err := r.q(ctx).CreateSession(ctx, gen.CreateSessionParams{
 		ID:           pgutil.UUIDToPgtype(session.ID),
 		UserID:       pgutil.UUIDToPgtype(session.UserID),
 		RefreshToken: session.RefreshToken,
@@ -155,7 +160,7 @@ func (r *IdentityRepository) CreateSession(ctx context.Context, session *identit
 }
 
 func (r *IdentityRepository) GetSessionByRefreshToken(ctx context.Context, token string) (*identity.Session, error) {
-	row, err := r.queries.GetSessionByRefreshToken(ctx, token)
+	row, err := r.q(ctx).GetSessionByRefreshToken(ctx, token)
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get session by refresh token", identity.ErrNotFound)
 	}
@@ -163,17 +168,17 @@ func (r *IdentityRepository) GetSessionByRefreshToken(ctx context.Context, token
 }
 
 func (r *IdentityRepository) DeleteSession(ctx context.Context, id string) error {
-	err := r.queries.DeleteSession(ctx, pgutil.UUIDToPgtype(id))
+	err := r.q(ctx).DeleteSession(ctx, pgutil.UUIDToPgtype(id))
 	return pgutil.MapErr(err, "delete session", identity.ErrNotFound)
 }
 
 func (r *IdentityRepository) DeleteUserSessions(ctx context.Context, userID string) error {
-	err := r.queries.DeleteUserSessions(ctx, pgutil.UUIDToPgtype(userID))
+	err := r.q(ctx).DeleteUserSessions(ctx, pgutil.UUIDToPgtype(userID))
 	return pgutil.MapErr(err, "delete user sessions", identity.ErrNotFound)
 }
 
 func (r *IdentityRepository) CreateEmailVerification(ctx context.Context, v *identity.EmailVerification) error {
-	err := r.queries.CreateEmailVerification(ctx, gen.CreateEmailVerificationParams{
+	err := r.q(ctx).CreateEmailVerification(ctx, gen.CreateEmailVerificationParams{
 		ID:        pgutil.UUIDToPgtype(v.ID),
 		UserID:    pgutil.UUIDToPgtype(v.UserID),
 		Email:     v.Email,
@@ -185,7 +190,7 @@ func (r *IdentityRepository) CreateEmailVerification(ctx context.Context, v *ide
 }
 
 func (r *IdentityRepository) GetEmailVerification(ctx context.Context, token string) (*identity.EmailVerification, error) {
-	row, err := r.queries.GetEmailVerification(ctx, token)
+	row, err := r.q(ctx).GetEmailVerification(ctx, token)
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get email verification", identity.ErrNotFound)
 	}
@@ -193,7 +198,7 @@ func (r *IdentityRepository) GetEmailVerification(ctx context.Context, token str
 }
 
 func (r *IdentityRepository) DeleteEmailVerification(ctx context.Context, id string) error {
-	err := r.queries.DeleteEmailVerification(ctx, pgutil.UUIDToPgtype(id))
+	err := r.q(ctx).DeleteEmailVerification(ctx, pgutil.UUIDToPgtype(id))
 	return pgutil.MapErr(err, "delete email verification", identity.ErrNotFound)
 }
 
@@ -215,7 +220,7 @@ func rowToPasswordReset(row gen.IdentityPasswordReset) *identity.PasswordReset {
 }
 
 func (r *IdentityRepository) CreatePasswordReset(ctx context.Context, pr *identity.PasswordReset) error {
-	err := r.queries.CreatePasswordReset(ctx, gen.CreatePasswordResetParams{
+	err := r.q(ctx).CreatePasswordReset(ctx, gen.CreatePasswordResetParams{
 		ID:        pgutil.UUIDToPgtype(pr.ID),
 		UserID:    pgutil.UUIDToPgtype(pr.UserID),
 		Email:     pr.Email,
@@ -227,7 +232,7 @@ func (r *IdentityRepository) CreatePasswordReset(ctx context.Context, pr *identi
 }
 
 func (r *IdentityRepository) GetPasswordResetByToken(ctx context.Context, token string) (*identity.PasswordReset, error) {
-	row, err := r.queries.GetPasswordResetByToken(ctx, token)
+	row, err := r.q(ctx).GetPasswordResetByToken(ctx, token)
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get password reset by token", identity.ErrNotFound)
 	}
@@ -235,12 +240,12 @@ func (r *IdentityRepository) GetPasswordResetByToken(ctx context.Context, token 
 }
 
 func (r *IdentityRepository) DeletePasswordReset(ctx context.Context, id string) error {
-	err := r.queries.DeletePasswordReset(ctx, pgutil.UUIDToPgtype(id))
+	err := r.q(ctx).DeletePasswordReset(ctx, pgutil.UUIDToPgtype(id))
 	return pgutil.MapErr(err, "delete password reset", identity.ErrNotFound)
 }
 
 func (r *IdentityRepository) DeleteUserPasswordResets(ctx context.Context, userID string) error {
-	err := r.queries.DeleteUserPasswordResets(ctx, pgutil.UUIDToPgtype(userID))
+	err := r.q(ctx).DeleteUserPasswordResets(ctx, pgutil.UUIDToPgtype(userID))
 	return pgutil.MapErr(err, "delete user password resets", identity.ErrNotFound)
 }
 
