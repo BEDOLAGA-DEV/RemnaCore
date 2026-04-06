@@ -33,6 +33,8 @@ type BillingInvoice struct {
 	TotalDiscountAmount int64                            `json:"total_discount_amount"`
 	TotalAmount         int64                            `json:"total_amount"`
 	Currency            string                           `json:"currency"`
+	PricingReason       string                           `json:"pricing_reason"`
+	Discounts           []byte                           `json:"discounts"`
 	Status              string                           `json:"status"`
 	PaidAt              pgtype.Timestamptz               `json:"paid_at"`
 	CreatedAt           pgtype.Timestamptz               `json:"created_at"`
@@ -93,6 +95,7 @@ type BillingSubscription struct {
 	PeriodInterval string                           `json:"period_interval"`
 	AddonIds       []pgtype.UUID                    `json:"addon_ids"`
 	AssignedTo     *string                          `json:"assigned_to"`
+	PendingPlanID  pgtype.UUID                      `json:"pending_plan_id"`
 	CancelledAt    pgtype.Timestamptz               `json:"cancelled_at"`
 	PausedAt       pgtype.Timestamptz               `json:"paused_at"`
 	CreatedAt      pgtype.Timestamptz               `json:"created_at"`
@@ -167,6 +170,7 @@ type MultisubRemnawaveBinding struct {
 	TrafficLimitBytes  int64              `json:"traffic_limit_bytes"`
 	AllowedNodes       []string           `json:"allowed_nodes"`
 	InboundTags        []string           `json:"inbound_tags"`
+	FailReason         string             `json:"fail_reason"`
 	SyncedAt           pgtype.Timestamptz `json:"synced_at"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`

@@ -71,8 +71,8 @@ const createInvoice = `-- name: CreateInvoice :exec
 
 INSERT INTO billing.invoices (
     id, subscription_id, user_id, subtotal_amount, total_discount_amount,
-    total_amount, currency, status, paid_at, created_at, updated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    total_amount, currency, pricing_reason, discounts, status, paid_at, created_at, updated_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 `
 
 type CreateInvoiceParams struct {
@@ -83,6 +83,8 @@ type CreateInvoiceParams struct {
 	TotalDiscountAmount int64              `json:"total_discount_amount"`
 	TotalAmount         int64              `json:"total_amount"`
 	Currency            string             `json:"currency"`
+	PricingReason       string             `json:"pricing_reason"`
+	Discounts           []byte             `json:"discounts"`
 	Status              string             `json:"status"`
 	PaidAt              pgtype.Timestamptz `json:"paid_at"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
@@ -101,6 +103,8 @@ func (q *Queries) CreateInvoice(ctx context.Context, arg CreateInvoiceParams) er
 		arg.TotalDiscountAmount,
 		arg.TotalAmount,
 		arg.Currency,
+		arg.PricingReason,
+		arg.Discounts,
 		arg.Status,
 		arg.PaidAt,
 		arg.CreatedAt,
@@ -242,8 +246,8 @@ const createSubscription = `-- name: CreateSubscription :exec
 
 INSERT INTO billing.subscriptions (
     id, user_id, plan_id, status, period_start, period_end, period_interval,
-    addon_ids, assigned_to, cancelled_at, paused_at, created_at, updated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 `
 
 type CreateSubscriptionParams struct {
@@ -256,6 +260,7 @@ type CreateSubscriptionParams struct {
 	PeriodInterval string             `json:"period_interval"`
 	AddonIds       []pgtype.UUID      `json:"addon_ids"`
 	AssignedTo     *string            `json:"assigned_to"`
+	PendingPlanID  pgtype.UUID        `json:"pending_plan_id"`
 	CancelledAt    pgtype.Timestamptz `json:"cancelled_at"`
 	PausedAt       pgtype.Timestamptz `json:"paused_at"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
@@ -276,6 +281,7 @@ func (q *Queries) CreateSubscription(ctx context.Context, arg CreateSubscription
 		arg.PeriodInterval,
 		arg.AddonIds,
 		arg.AssignedTo,
+		arg.PendingPlanID,
 		arg.CancelledAt,
 		arg.PausedAt,
 		arg.CreatedAt,
@@ -383,7 +389,7 @@ func (q *Queries) GetActivePlans(ctx context.Context) ([]BillingPlan, error) {
 
 const getActiveSubscriptionsByUserID = `-- name: GetActiveSubscriptionsByUserID :many
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
-       addon_ids, assigned_to, cancelled_at, paused_at, created_at, updated_at
+       addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
 FROM billing.subscriptions WHERE user_id = $1 AND status IN ('trial', 'active') ORDER BY created_at DESC
 `
 
@@ -397,6 +403,7 @@ type GetActiveSubscriptionsByUserIDRow struct {
 	PeriodInterval string             `json:"period_interval"`
 	AddonIds       []pgtype.UUID      `json:"addon_ids"`
 	AssignedTo     *string            `json:"assigned_to"`
+	PendingPlanID  pgtype.UUID        `json:"pending_plan_id"`
 	CancelledAt    pgtype.Timestamptz `json:"cancelled_at"`
 	PausedAt       pgtype.Timestamptz `json:"paused_at"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
@@ -422,6 +429,7 @@ func (q *Queries) GetActiveSubscriptionsByUserID(ctx context.Context, userID pgt
 			&i.PeriodInterval,
 			&i.AddonIds,
 			&i.AssignedTo,
+			&i.PendingPlanID,
 			&i.CancelledAt,
 			&i.PausedAt,
 			&i.CreatedAt,
@@ -476,7 +484,7 @@ func (q *Queries) GetAddonsByPlanID(ctx context.Context, planID pgtype.UUID) ([]
 
 const getAllInvoices = `-- name: GetAllInvoices :many
 SELECT id, subscription_id, user_id, subtotal_amount, total_discount_amount,
-       total_amount, currency, status, paid_at, created_at, updated_at
+       total_amount, currency, pricing_reason, discounts, status, paid_at, created_at, updated_at
 FROM billing.invoices ORDER BY created_at DESC
 LIMIT $1 OFFSET $2
 `
@@ -494,6 +502,8 @@ type GetAllInvoicesRow struct {
 	TotalDiscountAmount int64              `json:"total_discount_amount"`
 	TotalAmount         int64              `json:"total_amount"`
 	Currency            string             `json:"currency"`
+	PricingReason       string             `json:"pricing_reason"`
+	Discounts           []byte             `json:"discounts"`
 	Status              string             `json:"status"`
 	PaidAt              pgtype.Timestamptz `json:"paid_at"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
@@ -517,6 +527,8 @@ func (q *Queries) GetAllInvoices(ctx context.Context, arg GetAllInvoicesParams) 
 			&i.TotalDiscountAmount,
 			&i.TotalAmount,
 			&i.Currency,
+			&i.PricingReason,
+			&i.Discounts,
 			&i.Status,
 			&i.PaidAt,
 			&i.CreatedAt,
@@ -581,7 +593,7 @@ func (q *Queries) GetAllPlans(ctx context.Context) ([]BillingPlan, error) {
 
 const getAllSubscriptions = `-- name: GetAllSubscriptions :many
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
-       addon_ids, assigned_to, cancelled_at, paused_at, created_at, updated_at
+       addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
 FROM billing.subscriptions ORDER BY created_at DESC
 LIMIT $1 OFFSET $2
 `
@@ -601,6 +613,7 @@ type GetAllSubscriptionsRow struct {
 	PeriodInterval string             `json:"period_interval"`
 	AddonIds       []pgtype.UUID      `json:"addon_ids"`
 	AssignedTo     *string            `json:"assigned_to"`
+	PendingPlanID  pgtype.UUID        `json:"pending_plan_id"`
 	CancelledAt    pgtype.Timestamptz `json:"cancelled_at"`
 	PausedAt       pgtype.Timestamptz `json:"paused_at"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
@@ -626,6 +639,7 @@ func (q *Queries) GetAllSubscriptions(ctx context.Context, arg GetAllSubscriptio
 			&i.PeriodInterval,
 			&i.AddonIds,
 			&i.AssignedTo,
+			&i.PendingPlanID,
 			&i.CancelledAt,
 			&i.PausedAt,
 			&i.CreatedAt,
@@ -711,7 +725,7 @@ func (q *Queries) GetFamilyMembersByGroupID(ctx context.Context, familyGroupID p
 
 const getInvoiceByID = `-- name: GetInvoiceByID :one
 SELECT id, subscription_id, user_id, subtotal_amount, total_discount_amount,
-       total_amount, currency, status, paid_at, created_at, updated_at
+       total_amount, currency, pricing_reason, discounts, status, paid_at, created_at, updated_at
 FROM billing.invoices WHERE id = $1
 `
 
@@ -723,6 +737,8 @@ type GetInvoiceByIDRow struct {
 	TotalDiscountAmount int64              `json:"total_discount_amount"`
 	TotalAmount         int64              `json:"total_amount"`
 	Currency            string             `json:"currency"`
+	PricingReason       string             `json:"pricing_reason"`
+	Discounts           []byte             `json:"discounts"`
 	Status              string             `json:"status"`
 	PaidAt              pgtype.Timestamptz `json:"paid_at"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
@@ -740,6 +756,8 @@ func (q *Queries) GetInvoiceByID(ctx context.Context, id pgtype.UUID) (GetInvoic
 		&i.TotalDiscountAmount,
 		&i.TotalAmount,
 		&i.Currency,
+		&i.PricingReason,
+		&i.Discounts,
 		&i.Status,
 		&i.PaidAt,
 		&i.CreatedAt,
@@ -750,7 +768,7 @@ func (q *Queries) GetInvoiceByID(ctx context.Context, id pgtype.UUID) (GetInvoic
 
 const getInvoicesBySubscriptionID = `-- name: GetInvoicesBySubscriptionID :many
 SELECT id, subscription_id, user_id, subtotal_amount, total_discount_amount,
-       total_amount, currency, status, paid_at, created_at, updated_at
+       total_amount, currency, pricing_reason, discounts, status, paid_at, created_at, updated_at
 FROM billing.invoices WHERE subscription_id = $1 ORDER BY created_at DESC
 `
 
@@ -762,6 +780,8 @@ type GetInvoicesBySubscriptionIDRow struct {
 	TotalDiscountAmount int64              `json:"total_discount_amount"`
 	TotalAmount         int64              `json:"total_amount"`
 	Currency            string             `json:"currency"`
+	PricingReason       string             `json:"pricing_reason"`
+	Discounts           []byte             `json:"discounts"`
 	Status              string             `json:"status"`
 	PaidAt              pgtype.Timestamptz `json:"paid_at"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
@@ -785,6 +805,8 @@ func (q *Queries) GetInvoicesBySubscriptionID(ctx context.Context, subscriptionI
 			&i.TotalDiscountAmount,
 			&i.TotalAmount,
 			&i.Currency,
+			&i.PricingReason,
+			&i.Discounts,
 			&i.Status,
 			&i.PaidAt,
 			&i.CreatedAt,
@@ -835,7 +857,7 @@ func (q *Queries) GetLineItemsByInvoiceID(ctx context.Context, invoiceID pgtype.
 
 const getPendingInvoicesByUserID = `-- name: GetPendingInvoicesByUserID :many
 SELECT id, subscription_id, user_id, subtotal_amount, total_discount_amount,
-       total_amount, currency, status, paid_at, created_at, updated_at
+       total_amount, currency, pricing_reason, discounts, status, paid_at, created_at, updated_at
 FROM billing.invoices WHERE user_id = $1 AND status = 'pending' ORDER BY created_at DESC
 `
 
@@ -847,6 +869,8 @@ type GetPendingInvoicesByUserIDRow struct {
 	TotalDiscountAmount int64              `json:"total_discount_amount"`
 	TotalAmount         int64              `json:"total_amount"`
 	Currency            string             `json:"currency"`
+	PricingReason       string             `json:"pricing_reason"`
+	Discounts           []byte             `json:"discounts"`
 	Status              string             `json:"status"`
 	PaidAt              pgtype.Timestamptz `json:"paid_at"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
@@ -870,6 +894,8 @@ func (q *Queries) GetPendingInvoicesByUserID(ctx context.Context, userID pgtype.
 			&i.TotalDiscountAmount,
 			&i.TotalAmount,
 			&i.Currency,
+			&i.PricingReason,
+			&i.Discounts,
 			&i.Status,
 			&i.PaidAt,
 			&i.CreatedAt,
@@ -924,7 +950,7 @@ const getRecentlyUpdatedSubscriptions = `-- name: GetRecentlyUpdatedSubscription
 
 
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
-       addon_ids, assigned_to, cancelled_at, paused_at, created_at, updated_at
+       addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
 FROM billing.subscriptions
 ORDER BY updated_at DESC
 LIMIT $1 OFFSET $2
@@ -945,6 +971,7 @@ type GetRecentlyUpdatedSubscriptionsRow struct {
 	PeriodInterval string             `json:"period_interval"`
 	AddonIds       []pgtype.UUID      `json:"addon_ids"`
 	AssignedTo     *string            `json:"assigned_to"`
+	PendingPlanID  pgtype.UUID        `json:"pending_plan_id"`
 	CancelledAt    pgtype.Timestamptz `json:"cancelled_at"`
 	PausedAt       pgtype.Timestamptz `json:"paused_at"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
@@ -981,6 +1008,7 @@ func (q *Queries) GetRecentlyUpdatedSubscriptions(ctx context.Context, arg GetRe
 			&i.PeriodInterval,
 			&i.AddonIds,
 			&i.AssignedTo,
+			&i.PendingPlanID,
 			&i.CancelledAt,
 			&i.PausedAt,
 			&i.CreatedAt,
@@ -998,7 +1026,7 @@ func (q *Queries) GetRecentlyUpdatedSubscriptions(ctx context.Context, arg GetRe
 
 const getSubscriptionByID = `-- name: GetSubscriptionByID :one
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
-       addon_ids, assigned_to, cancelled_at, paused_at, created_at, updated_at
+       addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
 FROM billing.subscriptions WHERE id = $1
 `
 
@@ -1012,6 +1040,7 @@ type GetSubscriptionByIDRow struct {
 	PeriodInterval string             `json:"period_interval"`
 	AddonIds       []pgtype.UUID      `json:"addon_ids"`
 	AssignedTo     *string            `json:"assigned_to"`
+	PendingPlanID  pgtype.UUID        `json:"pending_plan_id"`
 	CancelledAt    pgtype.Timestamptz `json:"cancelled_at"`
 	PausedAt       pgtype.Timestamptz `json:"paused_at"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
@@ -1031,6 +1060,7 @@ func (q *Queries) GetSubscriptionByID(ctx context.Context, id pgtype.UUID) (GetS
 		&i.PeriodInterval,
 		&i.AddonIds,
 		&i.AssignedTo,
+		&i.PendingPlanID,
 		&i.CancelledAt,
 		&i.PausedAt,
 		&i.CreatedAt,
@@ -1041,7 +1071,7 @@ func (q *Queries) GetSubscriptionByID(ctx context.Context, id pgtype.UUID) (GetS
 
 const getSubscriptionsByUserID = `-- name: GetSubscriptionsByUserID :many
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
-       addon_ids, assigned_to, cancelled_at, paused_at, created_at, updated_at
+       addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
 FROM billing.subscriptions WHERE user_id = $1 ORDER BY created_at DESC
 `
 
@@ -1055,6 +1085,7 @@ type GetSubscriptionsByUserIDRow struct {
 	PeriodInterval string             `json:"period_interval"`
 	AddonIds       []pgtype.UUID      `json:"addon_ids"`
 	AssignedTo     *string            `json:"assigned_to"`
+	PendingPlanID  pgtype.UUID        `json:"pending_plan_id"`
 	CancelledAt    pgtype.Timestamptz `json:"cancelled_at"`
 	PausedAt       pgtype.Timestamptz `json:"paused_at"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
@@ -1080,6 +1111,7 @@ func (q *Queries) GetSubscriptionsByUserID(ctx context.Context, userID pgtype.UU
 			&i.PeriodInterval,
 			&i.AddonIds,
 			&i.AssignedTo,
+			&i.PendingPlanID,
 			&i.CancelledAt,
 			&i.PausedAt,
 			&i.CreatedAt,
@@ -1111,7 +1143,8 @@ func (q *Queries) UpdateFamilyGroup(ctx context.Context, arg UpdateFamilyGroupPa
 
 const updateInvoice = `-- name: UpdateInvoice :exec
 UPDATE billing.invoices
-SET status = $2, paid_at = $3, subtotal_amount = $4, total_discount_amount = $5, total_amount = $6
+SET status = $2, paid_at = $3, subtotal_amount = $4, total_discount_amount = $5,
+    total_amount = $6, pricing_reason = $7, discounts = $8
 WHERE id = $1
 `
 
@@ -1122,6 +1155,8 @@ type UpdateInvoiceParams struct {
 	SubtotalAmount      int64              `json:"subtotal_amount"`
 	TotalDiscountAmount int64              `json:"total_discount_amount"`
 	TotalAmount         int64              `json:"total_amount"`
+	PricingReason       string             `json:"pricing_reason"`
+	Discounts           []byte             `json:"discounts"`
 }
 
 func (q *Queries) UpdateInvoice(ctx context.Context, arg UpdateInvoiceParams) error {
@@ -1132,6 +1167,8 @@ func (q *Queries) UpdateInvoice(ctx context.Context, arg UpdateInvoiceParams) er
 		arg.SubtotalAmount,
 		arg.TotalDiscountAmount,
 		arg.TotalAmount,
+		arg.PricingReason,
+		arg.Discounts,
 	)
 	return err
 }
@@ -1188,7 +1225,7 @@ func (q *Queries) UpdatePlan(ctx context.Context, arg UpdatePlanParams) error {
 const updateSubscription = `-- name: UpdateSubscription :exec
 UPDATE billing.subscriptions
 SET status = $2, period_start = $3, period_end = $4, period_interval = $5,
-    addon_ids = $6, assigned_to = $7, cancelled_at = $8, paused_at = $9
+    addon_ids = $6, assigned_to = $7, pending_plan_id = $8, cancelled_at = $9, paused_at = $10
 WHERE id = $1
 `
 
@@ -1200,6 +1237,7 @@ type UpdateSubscriptionParams struct {
 	PeriodInterval string             `json:"period_interval"`
 	AddonIds       []pgtype.UUID      `json:"addon_ids"`
 	AssignedTo     *string            `json:"assigned_to"`
+	PendingPlanID  pgtype.UUID        `json:"pending_plan_id"`
 	CancelledAt    pgtype.Timestamptz `json:"cancelled_at"`
 	PausedAt       pgtype.Timestamptz `json:"paused_at"`
 }
@@ -1213,6 +1251,7 @@ func (q *Queries) UpdateSubscription(ctx context.Context, arg UpdateSubscription
 		arg.PeriodInterval,
 		arg.AddonIds,
 		arg.AssignedTo,
+		arg.PendingPlanID,
 		arg.CancelledAt,
 		arg.PausedAt,
 	)

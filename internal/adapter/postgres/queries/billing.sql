@@ -88,34 +88,34 @@ DELETE FROM billing.plan_addons WHERE plan_id = $1 AND id != ALL(sqlc.arg(ids)::
 -- name: CreateSubscription :exec
 INSERT INTO billing.subscriptions (
     id, user_id, plan_id, status, period_start, period_end, period_interval,
-    addon_ids, assigned_to, cancelled_at, paused_at, created_at, updated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13);
+    addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14);
 
 -- name: GetSubscriptionByID :one
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
-       addon_ids, assigned_to, cancelled_at, paused_at, created_at, updated_at
+       addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
 FROM billing.subscriptions WHERE id = $1;
 
 -- name: GetSubscriptionsByUserID :many
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
-       addon_ids, assigned_to, cancelled_at, paused_at, created_at, updated_at
+       addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
 FROM billing.subscriptions WHERE user_id = $1 ORDER BY created_at DESC;
 
 -- name: GetActiveSubscriptionsByUserID :many
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
-       addon_ids, assigned_to, cancelled_at, paused_at, created_at, updated_at
+       addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
 FROM billing.subscriptions WHERE user_id = $1 AND status IN ('trial', 'active') ORDER BY created_at DESC;
 
 -- name: GetAllSubscriptions :many
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
-       addon_ids, assigned_to, cancelled_at, paused_at, created_at, updated_at
+       addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
 FROM billing.subscriptions ORDER BY created_at DESC
 LIMIT $1 OFFSET $2;
 
 -- name: UpdateSubscription :exec
 UPDATE billing.subscriptions
 SET status = $2, period_start = $3, period_end = $4, period_interval = $5,
-    addon_ids = $6, assigned_to = $7, cancelled_at = $8, paused_at = $9
+    addon_ids = $6, assigned_to = $7, pending_plan_id = $8, cancelled_at = $9, paused_at = $10
 WHERE id = $1;
 
 -- NOTE: UpdateSubscriptionStatus uses PG18 native OLD/NEW RETURNING syntax
@@ -134,7 +134,7 @@ WHERE id = $1;
 
 -- name: GetRecentlyUpdatedSubscriptions :many
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
-       addon_ids, assigned_to, cancelled_at, paused_at, created_at, updated_at
+       addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
 FROM billing.subscriptions
 ORDER BY updated_at DESC
 LIMIT $1 OFFSET $2;
@@ -146,33 +146,34 @@ LIMIT $1 OFFSET $2;
 -- name: CreateInvoice :exec
 INSERT INTO billing.invoices (
     id, subscription_id, user_id, subtotal_amount, total_discount_amount,
-    total_amount, currency, status, paid_at, created_at, updated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11);
+    total_amount, currency, pricing_reason, discounts, status, paid_at, created_at, updated_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13);
 
 -- name: GetInvoiceByID :one
 SELECT id, subscription_id, user_id, subtotal_amount, total_discount_amount,
-       total_amount, currency, status, paid_at, created_at, updated_at
+       total_amount, currency, pricing_reason, discounts, status, paid_at, created_at, updated_at
 FROM billing.invoices WHERE id = $1;
 
 -- name: GetInvoicesBySubscriptionID :many
 SELECT id, subscription_id, user_id, subtotal_amount, total_discount_amount,
-       total_amount, currency, status, paid_at, created_at, updated_at
+       total_amount, currency, pricing_reason, discounts, status, paid_at, created_at, updated_at
 FROM billing.invoices WHERE subscription_id = $1 ORDER BY created_at DESC;
 
 -- name: GetPendingInvoicesByUserID :many
 SELECT id, subscription_id, user_id, subtotal_amount, total_discount_amount,
-       total_amount, currency, status, paid_at, created_at, updated_at
+       total_amount, currency, pricing_reason, discounts, status, paid_at, created_at, updated_at
 FROM billing.invoices WHERE user_id = $1 AND status = 'pending' ORDER BY created_at DESC;
 
 -- name: GetAllInvoices :many
 SELECT id, subscription_id, user_id, subtotal_amount, total_discount_amount,
-       total_amount, currency, status, paid_at, created_at, updated_at
+       total_amount, currency, pricing_reason, discounts, status, paid_at, created_at, updated_at
 FROM billing.invoices ORDER BY created_at DESC
 LIMIT $1 OFFSET $2;
 
 -- name: UpdateInvoice :exec
 UPDATE billing.invoices
-SET status = $2, paid_at = $3, subtotal_amount = $4, total_discount_amount = $5, total_amount = $6
+SET status = $2, paid_at = $3, subtotal_amount = $4, total_discount_amount = $5,
+    total_amount = $6, pricing_reason = $7, discounts = $8
 WHERE id = $1;
 
 -- ============================================================================

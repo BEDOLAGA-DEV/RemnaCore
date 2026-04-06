@@ -42,6 +42,7 @@ func bindingRowToDomain(row gen.MultisubRemnawaveBinding) *aggregate.RemnawaveBi
 		TrafficLimitBytes:  row.TrafficLimitBytes,
 		AllowedNodes:       row.AllowedNodes,
 		InboundTags:        row.InboundTags,
+		FailReason:         row.FailReason,
 		SyncedAt:           pgutil.PgtypeToOptTime(row.SyncedAt),
 		CreatedAt:          pgutil.PgtypeToTime(row.CreatedAt),
 		UpdatedAt:          pgutil.PgtypeToTime(row.UpdatedAt),
@@ -130,7 +131,7 @@ func (r *BindingRepository) GetFailedWithRemnawaveUUID(ctx context.Context) ([]*
 const getFailedForReconciliationQuery = `
 SELECT id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uuid,
        remnawave_username, purpose, status, traffic_limit_bytes,
-       allowed_nodes, inbound_tags, synced_at, created_at, updated_at
+       allowed_nodes, inbound_tags, fail_reason, synced_at, created_at, updated_at
 FROM multisub.remnawave_bindings
 WHERE status = 'failed' AND remnawave_uuid IS NOT NULL
 ORDER BY updated_at
@@ -161,6 +162,7 @@ func (r *BindingRepository) GetFailedForReconciliation(ctx context.Context, limi
 			&row.TrafficLimitBytes,
 			&row.AllowedNodes,
 			&row.InboundTags,
+			&row.FailReason,
 			&row.SyncedAt,
 			&row.CreatedAt,
 			&row.UpdatedAt,
@@ -205,6 +207,7 @@ func (r *BindingRepository) Create(ctx context.Context, b *aggregate.RemnawaveBi
 		TrafficLimitBytes:  b.TrafficLimitBytes,
 		AllowedNodes:       b.AllowedNodes,
 		InboundTags:        b.InboundTags,
+		FailReason:         b.FailReason,
 		SyncedAt:           pgutil.OptTimeToPgtype(b.SyncedAt),
 		CreatedAt:          pgutil.TimeToPgtype(b.CreatedAt),
 		UpdatedAt:          pgutil.TimeToPgtype(b.UpdatedAt),
@@ -221,6 +224,7 @@ func (r *BindingRepository) Update(ctx context.Context, b *aggregate.RemnawaveBi
 		TrafficLimitBytes:  b.TrafficLimitBytes,
 		AllowedNodes:       b.AllowedNodes,
 		InboundTags:        b.InboundTags,
+		FailReason:         b.FailReason,
 		SyncedAt:           pgutil.OptTimeToPgtype(b.SyncedAt),
 	})
 	return pgutil.MapErr(err, "update binding", multisub.ErrBindingNotFound)

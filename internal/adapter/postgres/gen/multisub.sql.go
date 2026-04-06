@@ -26,8 +26,8 @@ const createBinding = `-- name: CreateBinding :exec
 INSERT INTO multisub.remnawave_bindings (
     id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uuid,
     remnawave_username, purpose, status, traffic_limit_bytes,
-    allowed_nodes, inbound_tags, synced_at, created_at, updated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+    allowed_nodes, inbound_tags, fail_reason, synced_at, created_at, updated_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 `
 
 type CreateBindingParams struct {
@@ -42,6 +42,7 @@ type CreateBindingParams struct {
 	TrafficLimitBytes  int64              `json:"traffic_limit_bytes"`
 	AllowedNodes       []string           `json:"allowed_nodes"`
 	InboundTags        []string           `json:"inbound_tags"`
+	FailReason         string             `json:"fail_reason"`
 	SyncedAt           pgtype.Timestamptz `json:"synced_at"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
@@ -63,6 +64,7 @@ func (q *Queries) CreateBinding(ctx context.Context, arg CreateBindingParams) er
 		arg.TrafficLimitBytes,
 		arg.AllowedNodes,
 		arg.InboundTags,
+		arg.FailReason,
 		arg.SyncedAt,
 		arg.CreatedAt,
 		arg.UpdatedAt,
@@ -82,7 +84,7 @@ func (q *Queries) DeleteBinding(ctx context.Context, id pgtype.UUID) error {
 const getActiveBindingsBySubscriptionID = `-- name: GetActiveBindingsBySubscriptionID :many
 SELECT id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uuid,
        remnawave_username, purpose, status, traffic_limit_bytes,
-       allowed_nodes, inbound_tags, synced_at, created_at, updated_at
+       allowed_nodes, inbound_tags, fail_reason, synced_at, created_at, updated_at
 FROM multisub.remnawave_bindings WHERE subscription_id = $1 AND status = 'active' ORDER BY created_at
 `
 
@@ -107,6 +109,7 @@ func (q *Queries) GetActiveBindingsBySubscriptionID(ctx context.Context, subscri
 			&i.TrafficLimitBytes,
 			&i.AllowedNodes,
 			&i.InboundTags,
+			&i.FailReason,
 			&i.SyncedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -124,7 +127,7 @@ func (q *Queries) GetActiveBindingsBySubscriptionID(ctx context.Context, subscri
 const getAllActiveBindings = `-- name: GetAllActiveBindings :many
 SELECT id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uuid,
        remnawave_username, purpose, status, traffic_limit_bytes,
-       allowed_nodes, inbound_tags, synced_at, created_at, updated_at
+       allowed_nodes, inbound_tags, fail_reason, synced_at, created_at, updated_at
 FROM multisub.remnawave_bindings WHERE status = 'active' ORDER BY created_at
 `
 
@@ -149,6 +152,7 @@ func (q *Queries) GetAllActiveBindings(ctx context.Context) ([]MultisubRemnawave
 			&i.TrafficLimitBytes,
 			&i.AllowedNodes,
 			&i.InboundTags,
+			&i.FailReason,
 			&i.SyncedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -166,7 +170,7 @@ func (q *Queries) GetAllActiveBindings(ctx context.Context) ([]MultisubRemnawave
 const getBindingByID = `-- name: GetBindingByID :one
 SELECT id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uuid,
        remnawave_username, purpose, status, traffic_limit_bytes,
-       allowed_nodes, inbound_tags, synced_at, created_at, updated_at
+       allowed_nodes, inbound_tags, fail_reason, synced_at, created_at, updated_at
 FROM multisub.remnawave_bindings WHERE id = $1
 `
 
@@ -185,6 +189,7 @@ func (q *Queries) GetBindingByID(ctx context.Context, id pgtype.UUID) (MultisubR
 		&i.TrafficLimitBytes,
 		&i.AllowedNodes,
 		&i.InboundTags,
+		&i.FailReason,
 		&i.SyncedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -195,7 +200,7 @@ func (q *Queries) GetBindingByID(ctx context.Context, id pgtype.UUID) (MultisubR
 const getBindingByRemnawaveUUID = `-- name: GetBindingByRemnawaveUUID :one
 SELECT id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uuid,
        remnawave_username, purpose, status, traffic_limit_bytes,
-       allowed_nodes, inbound_tags, synced_at, created_at, updated_at
+       allowed_nodes, inbound_tags, fail_reason, synced_at, created_at, updated_at
 FROM multisub.remnawave_bindings WHERE remnawave_uuid = $1
 `
 
@@ -214,6 +219,7 @@ func (q *Queries) GetBindingByRemnawaveUUID(ctx context.Context, remnawaveUuid *
 		&i.TrafficLimitBytes,
 		&i.AllowedNodes,
 		&i.InboundTags,
+		&i.FailReason,
 		&i.SyncedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -224,7 +230,7 @@ func (q *Queries) GetBindingByRemnawaveUUID(ctx context.Context, remnawaveUuid *
 const getBindingsByPlatformUserID = `-- name: GetBindingsByPlatformUserID :many
 SELECT id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uuid,
        remnawave_username, purpose, status, traffic_limit_bytes,
-       allowed_nodes, inbound_tags, synced_at, created_at, updated_at
+       allowed_nodes, inbound_tags, fail_reason, synced_at, created_at, updated_at
 FROM multisub.remnawave_bindings WHERE platform_user_id = $1 ORDER BY created_at
 `
 
@@ -249,6 +255,7 @@ func (q *Queries) GetBindingsByPlatformUserID(ctx context.Context, platformUserI
 			&i.TrafficLimitBytes,
 			&i.AllowedNodes,
 			&i.InboundTags,
+			&i.FailReason,
 			&i.SyncedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -266,7 +273,7 @@ func (q *Queries) GetBindingsByPlatformUserID(ctx context.Context, platformUserI
 const getBindingsBySubscriptionID = `-- name: GetBindingsBySubscriptionID :many
 SELECT id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uuid,
        remnawave_username, purpose, status, traffic_limit_bytes,
-       allowed_nodes, inbound_tags, synced_at, created_at, updated_at
+       allowed_nodes, inbound_tags, fail_reason, synced_at, created_at, updated_at
 FROM multisub.remnawave_bindings WHERE subscription_id = $1 ORDER BY created_at
 `
 
@@ -291,6 +298,7 @@ func (q *Queries) GetBindingsBySubscriptionID(ctx context.Context, subscriptionI
 			&i.TrafficLimitBytes,
 			&i.AllowedNodes,
 			&i.InboundTags,
+			&i.FailReason,
 			&i.SyncedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -308,7 +316,7 @@ func (q *Queries) GetBindingsBySubscriptionID(ctx context.Context, subscriptionI
 const getFailedBindingsWithRemnawaveUUID = `-- name: GetFailedBindingsWithRemnawaveUUID :many
 SELECT id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uuid,
        remnawave_username, purpose, status, traffic_limit_bytes,
-       allowed_nodes, inbound_tags, synced_at, created_at, updated_at
+       allowed_nodes, inbound_tags, fail_reason, synced_at, created_at, updated_at
 FROM multisub.remnawave_bindings
 WHERE status = 'failed' AND remnawave_uuid IS NOT NULL
 ORDER BY created_at
@@ -335,6 +343,7 @@ func (q *Queries) GetFailedBindingsWithRemnawaveUUID(ctx context.Context) ([]Mul
 			&i.TrafficLimitBytes,
 			&i.AllowedNodes,
 			&i.InboundTags,
+			&i.FailReason,
 			&i.SyncedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -389,7 +398,8 @@ func (q *Queries) TryAcquireIdempotencyKey(ctx context.Context, key string) (pgc
 const updateBinding = `-- name: UpdateBinding :exec
 UPDATE multisub.remnawave_bindings
 SET remnawave_uuid = $2, remnawave_short_uuid = $3, status = $4,
-    traffic_limit_bytes = $5, allowed_nodes = $6, inbound_tags = $7, synced_at = $8
+    traffic_limit_bytes = $5, allowed_nodes = $6, inbound_tags = $7,
+    fail_reason = $8, synced_at = $9
 WHERE id = $1
 `
 
@@ -401,6 +411,7 @@ type UpdateBindingParams struct {
 	TrafficLimitBytes  int64              `json:"traffic_limit_bytes"`
 	AllowedNodes       []string           `json:"allowed_nodes"`
 	InboundTags        []string           `json:"inbound_tags"`
+	FailReason         string             `json:"fail_reason"`
 	SyncedAt           pgtype.Timestamptz `json:"synced_at"`
 }
 
@@ -413,6 +424,7 @@ func (q *Queries) UpdateBinding(ctx context.Context, arg UpdateBindingParams) er
 		arg.TrafficLimitBytes,
 		arg.AllowedNodes,
 		arg.InboundTags,
+		arg.FailReason,
 		arg.SyncedAt,
 	)
 	return err

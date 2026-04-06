@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -268,6 +269,7 @@ type subFields struct {
 	PeriodInterval string
 	AddonIds       []pgtype.UUID
 	AssignedTo     *string
+	PendingPlanID  pgtype.UUID
 	CancelledAt    pgtype.Timestamptz
 	PausedAt       pgtype.Timestamptz
 	CreatedAt      pgtype.Timestamptz
@@ -285,13 +287,13 @@ type subRow interface {
 func extractSubFields[T subRow](row T) subFields {
 	switch r := any(row).(type) {
 	case gen.GetSubscriptionByIDRow:
-		return subFields{r.ID, r.UserID, r.PlanID, r.Status, r.PeriodStart, r.PeriodEnd, r.PeriodInterval, r.AddonIds, r.AssignedTo, r.CancelledAt, r.PausedAt, r.CreatedAt, r.UpdatedAt}
+		return subFields{r.ID, r.UserID, r.PlanID, r.Status, r.PeriodStart, r.PeriodEnd, r.PeriodInterval, r.AddonIds, r.AssignedTo, r.PendingPlanID, r.CancelledAt, r.PausedAt, r.CreatedAt, r.UpdatedAt}
 	case gen.GetSubscriptionsByUserIDRow:
-		return subFields{r.ID, r.UserID, r.PlanID, r.Status, r.PeriodStart, r.PeriodEnd, r.PeriodInterval, r.AddonIds, r.AssignedTo, r.CancelledAt, r.PausedAt, r.CreatedAt, r.UpdatedAt}
+		return subFields{r.ID, r.UserID, r.PlanID, r.Status, r.PeriodStart, r.PeriodEnd, r.PeriodInterval, r.AddonIds, r.AssignedTo, r.PendingPlanID, r.CancelledAt, r.PausedAt, r.CreatedAt, r.UpdatedAt}
 	case gen.GetActiveSubscriptionsByUserIDRow:
-		return subFields{r.ID, r.UserID, r.PlanID, r.Status, r.PeriodStart, r.PeriodEnd, r.PeriodInterval, r.AddonIds, r.AssignedTo, r.CancelledAt, r.PausedAt, r.CreatedAt, r.UpdatedAt}
+		return subFields{r.ID, r.UserID, r.PlanID, r.Status, r.PeriodStart, r.PeriodEnd, r.PeriodInterval, r.AddonIds, r.AssignedTo, r.PendingPlanID, r.CancelledAt, r.PausedAt, r.CreatedAt, r.UpdatedAt}
 	case gen.GetAllSubscriptionsRow:
-		return subFields{r.ID, r.UserID, r.PlanID, r.Status, r.PeriodStart, r.PeriodEnd, r.PeriodInterval, r.AddonIds, r.AssignedTo, r.CancelledAt, r.PausedAt, r.CreatedAt, r.UpdatedAt}
+		return subFields{r.ID, r.UserID, r.PlanID, r.Status, r.PeriodStart, r.PeriodEnd, r.PeriodInterval, r.AddonIds, r.AssignedTo, r.PendingPlanID, r.CancelledAt, r.PausedAt, r.CreatedAt, r.UpdatedAt}
 	default:
 		panic("unreachable: unhandled subRow type")
 	}
@@ -360,6 +362,7 @@ func (r *SubscriptionRepository) Create(ctx context.Context, sub *aggregate.Subs
 		PeriodInterval: string(sub.Period.Interval),
 		AddonIds:       pgutil.StringsToPgtypeUUIDs(sub.AddonIDs),
 		AssignedTo:     pgutil.StrPtrOrNil(sub.AssignedTo),
+		PendingPlanID:  pgutil.OptStrToPgtypeUUID(sub.PendingPlanID),
 		CancelledAt:    pgutil.OptTimeToPgtype(sub.CancelledAt),
 		PausedAt:       pgutil.OptTimeToPgtype(sub.PausedAt),
 		CreatedAt:      pgutil.TimeToPgtype(sub.CreatedAt),
@@ -377,6 +380,7 @@ func (r *SubscriptionRepository) Update(ctx context.Context, sub *aggregate.Subs
 		PeriodInterval: string(sub.Period.Interval),
 		AddonIds:       pgutil.StringsToPgtypeUUIDs(sub.AddonIDs),
 		AssignedTo:     pgutil.StrPtrOrNil(sub.AssignedTo),
+		PendingPlanID:  pgutil.OptStrToPgtypeUUID(sub.PendingPlanID),
 		CancelledAt:    pgutil.OptTimeToPgtype(sub.CancelledAt),
 		PausedAt:       pgutil.OptTimeToPgtype(sub.PausedAt),
 	})
@@ -412,7 +416,7 @@ func (r *SubscriptionRepository) UpdateStatus(ctx context.Context, id string, ne
 // This bypasses sqlc, which does not support the @> operator on tstzrange.
 const getActiveSubscriptionByUserAtTimeSQL = `
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
-       addon_ids, assigned_to, cancelled_at, paused_at, created_at, updated_at
+       addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
 FROM billing.subscriptions
 WHERE user_id = $1
   AND billing_period @> $2::timestamptz
@@ -429,7 +433,7 @@ func (r *SubscriptionRepository) GetActiveByUserAtTime(ctx context.Context, user
 	err := row.Scan(
 		&f.ID, &f.UserID, &f.PlanID, &f.Status,
 		&f.PeriodStart, &f.PeriodEnd, &f.PeriodInterval,
-		&f.AddonIds, &f.AssignedTo, &f.CancelledAt, &f.PausedAt,
+		&f.AddonIds, &f.AssignedTo, &f.PendingPlanID, &f.CancelledAt, &f.PausedAt,
 		&f.CreatedAt, &f.UpdatedAt,
 	)
 	if err != nil {
@@ -446,7 +450,7 @@ func (r *SubscriptionRepository) GetActiveByUserAtTime(ctx context.Context, user
 // This bypasses sqlc, which does not support the && operator on tstzrange.
 const getOverlappingSubscriptionsSQL = `
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
-       addon_ids, assigned_to, cancelled_at, paused_at, created_at, updated_at
+       addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
 FROM billing.subscriptions
 WHERE user_id = $1
   AND plan_id = $2
@@ -474,7 +478,7 @@ func (r *SubscriptionRepository) GetOverlapping(ctx context.Context, userID, pla
 		if err := rows.Scan(
 			&f.ID, &f.UserID, &f.PlanID, &f.Status,
 			&f.PeriodStart, &f.PeriodEnd, &f.PeriodInterval,
-			&f.AddonIds, &f.AssignedTo, &f.CancelledAt, &f.PausedAt,
+			&f.AddonIds, &f.AssignedTo, &f.PendingPlanID, &f.CancelledAt, &f.PausedAt,
 			&f.CreatedAt, &f.UpdatedAt,
 		); err != nil {
 			return nil, pgutil.MapErr(err, "scan overlapping subscription", billing.ErrSubscriptionNotFound)
@@ -500,12 +504,13 @@ func subFieldsToDomain(f subFields) *aggregate.Subscription {
 			End:      pgutil.PgtypeToTime(f.PeriodEnd),
 			Interval: vo.BillingInterval(f.PeriodInterval),
 		},
-		AddonIDs:    pgutil.PgtypeUUIDsToStrings(f.AddonIds),
-		AssignedTo:  pgutil.DerefStr(f.AssignedTo),
-		CancelledAt: pgutil.PgtypeToOptTime(f.CancelledAt),
-		PausedAt:    pgutil.PgtypeToOptTime(f.PausedAt),
-		CreatedAt:   pgutil.PgtypeToTime(f.CreatedAt),
-		UpdatedAt:   pgutil.PgtypeToTime(f.UpdatedAt),
+		AddonIDs:      pgutil.PgtypeUUIDsToStrings(f.AddonIds),
+		AssignedTo:    pgutil.DerefStr(f.AssignedTo),
+		PendingPlanID: pgutil.PgtypeUUIDToOptStr(f.PendingPlanID),
+		CancelledAt:   pgutil.PgtypeToOptTime(f.CancelledAt),
+		PausedAt:      pgutil.PgtypeToOptTime(f.PausedAt),
+		CreatedAt:     pgutil.PgtypeToTime(f.CreatedAt),
+		UpdatedAt:     pgutil.PgtypeToTime(f.UpdatedAt),
 	}
 }
 
@@ -541,6 +546,8 @@ type invFields struct {
 	TotalDiscountAmount int64
 	TotalAmount         int64
 	Currency            string
+	PricingReason       string
+	Discounts           []byte
 	Status              string
 	PaidAt              pgtype.Timestamptz
 	CreatedAt           pgtype.Timestamptz
@@ -555,13 +562,13 @@ type invRow interface {
 func extractInvFields[T invRow](row T) invFields {
 	switch r := any(row).(type) {
 	case gen.GetInvoiceByIDRow:
-		return invFields{r.ID, r.SubscriptionID, r.UserID, r.SubtotalAmount, r.TotalDiscountAmount, r.TotalAmount, r.Currency, r.Status, r.PaidAt, r.CreatedAt, r.UpdatedAt}
+		return invFields{r.ID, r.SubscriptionID, r.UserID, r.SubtotalAmount, r.TotalDiscountAmount, r.TotalAmount, r.Currency, r.PricingReason, r.Discounts, r.Status, r.PaidAt, r.CreatedAt, r.UpdatedAt}
 	case gen.GetInvoicesBySubscriptionIDRow:
-		return invFields{r.ID, r.SubscriptionID, r.UserID, r.SubtotalAmount, r.TotalDiscountAmount, r.TotalAmount, r.Currency, r.Status, r.PaidAt, r.CreatedAt, r.UpdatedAt}
+		return invFields{r.ID, r.SubscriptionID, r.UserID, r.SubtotalAmount, r.TotalDiscountAmount, r.TotalAmount, r.Currency, r.PricingReason, r.Discounts, r.Status, r.PaidAt, r.CreatedAt, r.UpdatedAt}
 	case gen.GetPendingInvoicesByUserIDRow:
-		return invFields{r.ID, r.SubscriptionID, r.UserID, r.SubtotalAmount, r.TotalDiscountAmount, r.TotalAmount, r.Currency, r.Status, r.PaidAt, r.CreatedAt, r.UpdatedAt}
+		return invFields{r.ID, r.SubscriptionID, r.UserID, r.SubtotalAmount, r.TotalDiscountAmount, r.TotalAmount, r.Currency, r.PricingReason, r.Discounts, r.Status, r.PaidAt, r.CreatedAt, r.UpdatedAt}
 	case gen.GetAllInvoicesRow:
-		return invFields{r.ID, r.SubscriptionID, r.UserID, r.SubtotalAmount, r.TotalDiscountAmount, r.TotalAmount, r.Currency, r.Status, r.PaidAt, r.CreatedAt, r.UpdatedAt}
+		return invFields{r.ID, r.SubscriptionID, r.UserID, r.SubtotalAmount, r.TotalDiscountAmount, r.TotalAmount, r.Currency, r.PricingReason, r.Discounts, r.Status, r.PaidAt, r.CreatedAt, r.UpdatedAt}
 	default:
 		panic("unreachable: unhandled invRow type")
 	}
@@ -569,13 +576,19 @@ func extractInvFields[T invRow](row T) invFields {
 
 func invoiceRowToDomain[T invRow](row T) *aggregate.Invoice {
 	f := extractInvFields(row)
+	var discounts []vo.Discount
+	if len(f.Discounts) > 0 {
+		_ = json.Unmarshal(f.Discounts, &discounts)
+	}
 	return &aggregate.Invoice{
 		ID:             pgutil.PgtypeToUUID(f.ID),
 		SubscriptionID: pgutil.PgtypeToUUID(f.SubscriptionID),
 		UserID:         pgutil.PgtypeToUUID(f.UserID),
+		Discounts:      discounts,
 		Subtotal:       vo.NewMoney(f.SubtotalAmount, vo.Currency(f.Currency)),
 		TotalDiscount:  vo.NewMoney(f.TotalDiscountAmount, vo.Currency(f.Currency)),
 		Total:          vo.NewMoney(f.TotalAmount, vo.Currency(f.Currency)),
+		PricingReason:  f.PricingReason,
 		Status:         aggregate.InvoiceStatus(f.Status),
 		PaidAt:         pgutil.PgtypeToOptTime(f.PaidAt),
 		CreatedAt:      pgutil.PgtypeToTime(f.CreatedAt),
@@ -663,7 +676,11 @@ func (r *InvoiceRepository) GetAll(ctx context.Context, limit, offset int) ([]*a
 }
 
 func (r *InvoiceRepository) Create(ctx context.Context, inv *aggregate.Invoice) error {
-	err := r.q(ctx).CreateInvoice(ctx, gen.CreateInvoiceParams{
+	discountsJSON, err := json.Marshal(inv.Discounts)
+	if err != nil {
+		return fmt.Errorf("marshal invoice discounts: %w", err)
+	}
+	err = r.q(ctx).CreateInvoice(ctx, gen.CreateInvoiceParams{
 		ID:                  pgutil.UUIDToPgtype(inv.ID),
 		SubscriptionID:      pgutil.UUIDToPgtype(inv.SubscriptionID),
 		UserID:              pgutil.UUIDToPgtype(inv.UserID),
@@ -671,6 +688,8 @@ func (r *InvoiceRepository) Create(ctx context.Context, inv *aggregate.Invoice) 
 		TotalDiscountAmount: inv.TotalDiscount.Amount,
 		TotalAmount:         inv.Total.Amount,
 		Currency:            string(inv.Total.Currency),
+		PricingReason:       inv.PricingReason,
+		Discounts:           discountsJSON,
 		Status:              string(inv.Status),
 		PaidAt:              pgutil.OptTimeToPgtype(inv.PaidAt),
 		CreatedAt:           pgutil.TimeToPgtype(inv.CreatedAt),
@@ -701,13 +720,19 @@ func (r *InvoiceRepository) createLineItem(ctx context.Context, invoiceID string
 }
 
 func (r *InvoiceRepository) Update(ctx context.Context, inv *aggregate.Invoice) error {
-	err := r.q(ctx).UpdateInvoice(ctx, gen.UpdateInvoiceParams{
+	discountsJSON, err := json.Marshal(inv.Discounts)
+	if err != nil {
+		return fmt.Errorf("marshal invoice discounts: %w", err)
+	}
+	err = r.q(ctx).UpdateInvoice(ctx, gen.UpdateInvoiceParams{
 		ID:                  pgutil.UUIDToPgtype(inv.ID),
 		Status:              string(inv.Status),
 		PaidAt:              pgutil.OptTimeToPgtype(inv.PaidAt),
 		SubtotalAmount:      inv.Subtotal.Amount,
 		TotalDiscountAmount: inv.TotalDiscount.Amount,
 		TotalAmount:         inv.Total.Amount,
+		PricingReason:       inv.PricingReason,
+		Discounts:           discountsJSON,
 	})
 	return pgutil.MapErr(err, "update invoice", billing.ErrInvoiceNotFound)
 }
