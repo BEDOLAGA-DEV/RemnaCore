@@ -50,9 +50,9 @@ podLabels: {}
 # -- Pod security context (applied at pod level)
 podSecurityContext:
   runAsNonRoot: true
-  runAsUser: 65534
-  runAsGroup: 65534
-  fsGroup: 65534
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
   seccompProfile:
     type: RuntimeDefault
 
@@ -339,3 +339,10 @@ grafana:
   dashboards:
     # -- Auto-provision Grafana dashboards via ConfigMap
     enabled: false
+
+# =============================================================================
+# Network Policy
+# =============================================================================
+networkPolicy:
+  # -- Enable NetworkPolicy to restrict pod ingress/egress traffic
+  enabled: false

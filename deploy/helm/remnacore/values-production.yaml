@@ -59,6 +59,9 @@ metrics:
     labels:
       release: prometheus
 
+networkPolicy:
+  enabled: true
+
 # -- In production, never use secrets.create=true with real values.
 # Instead, provide an existing Kubernetes secret:
 secrets:
