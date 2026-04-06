@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -169,6 +170,23 @@ func (r *BindingRepository) GetFailedForReconciliation(ctx context.Context, limi
 		return nil, pgutil.MapErr(err, "iterate failed bindings for reconciliation", multisub.ErrBindingNotFound)
 	}
 	return bindings, nil
+}
+
+// resetAbandonedReconcilingQuery sets bindings stuck in 'reconciling' for
+// longer than the given interval back to 'failed' so they can be retried.
+const resetAbandonedReconcilingQuery = `
+UPDATE multisub.remnawave_bindings
+SET status = 'failed'
+WHERE status = 'reconciling' AND updated_at < NOW() - $1::interval
+`
+
+func (r *BindingRepository) ResetAbandonedReconciling(ctx context.Context, olderThan time.Duration) (int64, error) {
+	db := DBFromContext(ctx, r.pool)
+	tag, err := db.Exec(ctx, resetAbandonedReconcilingQuery, olderThan)
+	if err != nil {
+		return 0, pgutil.MapErr(err, "reset abandoned reconciling bindings", multisub.ErrBindingNotFound)
+	}
+	return tag.RowsAffected(), nil
 }
 
 func (r *BindingRepository) Create(ctx context.Context, b *aggregate.RemnawaveBinding) error {

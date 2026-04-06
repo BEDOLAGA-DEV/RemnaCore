@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/mock"
+
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent/domaineventtest"
@@ -84,6 +85,11 @@ func (m *MockBindingRepo) GetFailedForReconciliation(ctx context.Context, limit 
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]*aggregate.RemnawaveBinding), args.Error(1)
+}
+
+func (m *MockBindingRepo) ResetAbandonedReconciling(ctx context.Context, olderThan time.Duration) (int64, error) {
+	args := m.Called(ctx, olderThan)
+	return args.Get(0).(int64), args.Error(1)
 }
 
 func (m *MockBindingRepo) Create(ctx context.Context, binding *aggregate.RemnawaveBinding) error {

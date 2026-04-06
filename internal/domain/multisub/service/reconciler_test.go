@@ -149,7 +149,7 @@ func TestBindingReconciler_Reconcile(t *testing.T) {
 //
 // The claim-via-status approach means GetFailedForReconciliation only returns
 // bindings with status='failed'. Once claimed (status='reconciling'), subsequent
-// calls will not see them. We simulate this with sync.Once on the fetch.
+// calls will not see them. We simulate this with Once/subsequent empty returns.
 func TestBindingReconciler_ConcurrentClaim(t *testing.T) {
 	// Track how many times each binding's DeleteUser is called.
 	var deleteCountA atomic.Int32
@@ -160,35 +160,25 @@ func TestBindingReconciler_ConcurrentClaim(t *testing.T) {
 	txRunner := txmanagertest.NoopTxRunner{}
 	logger := slog.Default()
 
-	// The first call returns both bindings; subsequent calls return empty
-	// (simulating that the status change to 'reconciling' excludes them).
-	var fetchOnce sync.Once
 	repo.On("ResetAbandonedReconciling", mock.Anything, service.AbandonedClaimThreshold).
 		Return(int64(0), nil)
+
+	// First call returns both bindings; second returns empty (already claimed).
 	repo.On("GetFailedForReconciliation", mock.Anything, service.ReconcilerBatchLimit).
-		Return(
-			func(_ context.Context, _ int) ([]*aggregate.RemnawaveBinding, error) {
-				var result []*aggregate.RemnawaveBinding
-				fetchOnce.Do(func() {
-					result = []*aggregate.RemnawaveBinding{
-						{
-							ID:            "binding-a",
-							RemnawaveUUID: "rw-a",
-							Status:        aggregate.BindingFailed,
-						},
-						{
-							ID:            "binding-b",
-							RemnawaveUUID: "rw-b",
-							Status:        aggregate.BindingFailed,
-						},
-					}
-				})
-				if result == nil {
-					result = []*aggregate.RemnawaveBinding{}
-				}
-				return result, nil
+		Return([]*aggregate.RemnawaveBinding{
+			{
+				ID:            "binding-a",
+				RemnawaveUUID: "rw-a",
+				Status:        aggregate.BindingFailed,
 			},
-		)
+			{
+				ID:            "binding-b",
+				RemnawaveUUID: "rw-b",
+				Status:        aggregate.BindingFailed,
+			},
+		}, nil).Once()
+	repo.On("GetFailedForReconciliation", mock.Anything, service.ReconcilerBatchLimit).
+		Return([]*aggregate.RemnawaveBinding{}, nil)
 
 	// Accept all Update calls (claim + release).
 	repo.On("Update", mock.Anything, mock.Anything).Return(nil)
@@ -202,6 +192,8 @@ func TestBindingReconciler_ConcurrentClaim(t *testing.T) {
 
 	reconciler := service.NewBindingReconciler(repo, gw, txRunner, logger)
 
+	// Run two concurrent reconciliation passes. Due to Once() on the first
+	// GetFailedForReconciliation mock, only one goroutine will get bindings.
 	var wg sync.WaitGroup
 	const goroutineCount = 2
 	wg.Add(goroutineCount)
@@ -213,8 +205,7 @@ func TestBindingReconciler_ConcurrentClaim(t *testing.T) {
 	}
 	wg.Wait()
 
-	// Each binding should be deleted at most once across all goroutines.
-	// With the sync.Once mock, only one goroutine gets bindings, so exactly 1 call each.
+	// Each binding should be deleted exactly once across all goroutines.
 	require.Equal(t, int32(1), deleteCountA.Load(), "binding-a should be deleted exactly once")
 	require.Equal(t, int32(1), deleteCountB.Load(), "binding-b should be deleted exactly once")
 }

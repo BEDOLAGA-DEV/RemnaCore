@@ -32,6 +32,7 @@ const (
 	BindingPending       BindingStatus = "pending"
 	BindingActive        BindingStatus = "active"
 	BindingFailed        BindingStatus = "failed"
+	BindingReconciling   BindingStatus = "reconciling"
 	BindingDisabled      BindingStatus = "disabled"
 	BindingDeprovisioned BindingStatus = "deprovisioned"
 )
@@ -39,10 +40,11 @@ const (
 // bindingTransitions defines the state machine for binding status.
 // Terminal state (deprovisioned) has no valid outbound transitions.
 var bindingTransitions = map[BindingStatus][]BindingStatus{
-	BindingPending:  {BindingActive, BindingFailed},
-	BindingActive:   {BindingDisabled, BindingDeprovisioned, BindingFailed},
-	BindingDisabled: {BindingActive, BindingDeprovisioned},
-	BindingFailed:   {BindingPending, BindingDeprovisioned},
+	BindingPending:     {BindingActive, BindingFailed},
+	BindingActive:      {BindingDisabled, BindingDeprovisioned, BindingFailed},
+	BindingDisabled:    {BindingActive, BindingDeprovisioned},
+	BindingFailed:      {BindingPending, BindingReconciling, BindingDeprovisioned},
+	BindingReconciling: {BindingFailed, BindingDeprovisioned},
 }
 
 // BindingPurpose describes why a Remnawave user was created.
@@ -189,6 +191,19 @@ func (b *RemnawaveBinding) Enable(now time.Time) error {
 		SubscriptionID: b.SubscriptionID,
 	}, now, b.ID))
 	return nil
+}
+
+// ClaimForReconciliation transitions the binding from failed to reconciling.
+// This marks the binding as being actively processed by a reconciler instance,
+// preventing other instances from picking it up (TOCTOU race prevention).
+func (b *RemnawaveBinding) ClaimForReconciliation(now time.Time) error {
+	return b.transitionTo(BindingReconciling, now)
+}
+
+// ReleaseFromReconciliation transitions the binding from reconciling back to
+// failed so it can be retried by a future reconciliation pass.
+func (b *RemnawaveBinding) ReleaseFromReconciliation(now time.Time) error {
+	return b.transitionTo(BindingFailed, now)
 }
 
 // Deprovision transitions the binding to deprovisioned.

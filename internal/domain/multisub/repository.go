@@ -2,6 +2,7 @@ package multisub
 
 import (
 	"context"
+	"time"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
 )
@@ -19,6 +20,10 @@ type BindingRepository interface {
 	// Remnawave UUID, locked with FOR UPDATE SKIP LOCKED to prevent concurrent
 	// processing by multiple reconciler instances.
 	GetFailedForReconciliation(ctx context.Context, limit int) ([]*aggregate.RemnawaveBinding, error)
+	// ResetAbandonedReconciling resets bindings stuck in 'reconciling' status for
+	// longer than the given threshold back to 'failed', so they can be retried.
+	// This recovers from reconciler crashes or timeouts.
+	ResetAbandonedReconciling(ctx context.Context, olderThan time.Duration) (int64, error)
 	Create(ctx context.Context, binding *aggregate.RemnawaveBinding) error
 	Update(ctx context.Context, binding *aggregate.RemnawaveBinding) error
 	Delete(ctx context.Context, id string) error

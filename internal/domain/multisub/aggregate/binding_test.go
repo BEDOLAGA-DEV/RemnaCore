@@ -150,6 +150,47 @@ func TestDeprovision_FromFailed(t *testing.T) {
 	assert.Equal(t, aggregate.BindingDeprovisioned, b.Status)
 }
 
+func TestClaimForReconciliation(t *testing.T) {
+	b := mustNewBinding(t, "sub-1", "user-abc12345xyz", aggregate.PurposeBase, 0, 100_000_000_000, time.Now())
+	require.NoError(t, b.MarkFailed("orphaned", time.Now()))
+
+	err := b.ClaimForReconciliation(time.Now())
+
+	require.NoError(t, err)
+	assert.Equal(t, aggregate.BindingReconciling, b.Status)
+}
+
+func TestClaimForReconciliation_InvalidFromPending(t *testing.T) {
+	b := mustNewBinding(t, "sub-1", "user-abc12345xyz", aggregate.PurposeBase, 0, 100_000_000_000, time.Now())
+
+	err := b.ClaimForReconciliation(time.Now())
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, aggregate.ErrInvalidBindingTransition)
+}
+
+func TestReleaseFromReconciliation(t *testing.T) {
+	b := mustNewBinding(t, "sub-1", "user-abc12345xyz", aggregate.PurposeBase, 0, 100_000_000_000, time.Now())
+	require.NoError(t, b.MarkFailed("orphaned", time.Now()))
+	require.NoError(t, b.ClaimForReconciliation(time.Now()))
+
+	err := b.ReleaseFromReconciliation(time.Now())
+
+	require.NoError(t, err)
+	assert.Equal(t, aggregate.BindingFailed, b.Status)
+}
+
+func TestReconciling_CanDeprovision(t *testing.T) {
+	b := mustNewBinding(t, "sub-1", "user-abc12345xyz", aggregate.PurposeBase, 0, 100_000_000_000, time.Now())
+	require.NoError(t, b.MarkFailed("orphaned", time.Now()))
+	require.NoError(t, b.ClaimForReconciliation(time.Now()))
+
+	err := b.Deprovision(time.Now())
+
+	require.NoError(t, err)
+	assert.Equal(t, aggregate.BindingDeprovisioned, b.Status)
+}
+
 func TestDeprovisioned_IsTerminal(t *testing.T) {
 	b := mustNewBinding(t, "sub-1", "user-abc12345xyz", aggregate.PurposeBase, 0, 100_000_000_000, time.Now())
 	require.NoError(t, b.MarkProvisioned("rw-uuid-123", "rw-short-456", time.Now()))
