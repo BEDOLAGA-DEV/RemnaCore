@@ -3,6 +3,7 @@ package vo
 import (
 	"errors"
 	"fmt"
+	"math"
 )
 
 // Currency represents a supported monetary currency.
@@ -19,7 +20,15 @@ const (
 // currency unit. Used for display formatting.
 const CentsPerUnit = 100
 
-var errCurrencyMismatch = errors.New("currency mismatch")
+var (
+	// ErrCurrencyMismatch is returned when an arithmetic or comparison
+	// operation is attempted on Money values with different currencies.
+	ErrCurrencyMismatch = errors.New("currency mismatch")
+
+	// ErrMoneyOverflow is returned when an arithmetic operation would
+	// overflow or underflow the int64 amount.
+	ErrMoneyOverflow = errors.New("monetary amount overflow")
+)
 
 // Money represents a monetary amount in the smallest unit (cents / kopecks).
 // Money is immutable: arithmetic methods return new values.
@@ -39,24 +48,61 @@ func Zero(currency Currency) Money {
 }
 
 // Add returns the sum of m and other. Both must share the same currency.
+// Returns ErrMoneyOverflow if the result would overflow int64.
 func (m Money) Add(other Money) (Money, error) {
 	if m.Currency != other.Currency {
-		return Money{}, errCurrencyMismatch
+		return Money{}, ErrCurrencyMismatch
 	}
-	return Money{Amount: m.Amount + other.Amount, Currency: m.Currency}, nil
+	sum := m.Amount + other.Amount
+	if (other.Amount > 0 && sum < m.Amount) || (other.Amount < 0 && sum > m.Amount) {
+		return Money{}, ErrMoneyOverflow
+	}
+	return Money{Amount: sum, Currency: m.Currency}, nil
 }
 
 // Subtract returns m minus other. Both must share the same currency.
+// Returns ErrMoneyOverflow if the result would overflow int64.
 func (m Money) Subtract(other Money) (Money, error) {
 	if m.Currency != other.Currency {
-		return Money{}, errCurrencyMismatch
+		return Money{}, ErrCurrencyMismatch
 	}
-	return Money{Amount: m.Amount - other.Amount, Currency: m.Currency}, nil
+	diff := m.Amount - other.Amount
+	if (other.Amount < 0 && diff < m.Amount) || (other.Amount > 0 && diff > m.Amount) {
+		return Money{}, ErrMoneyOverflow
+	}
+	return Money{Amount: diff, Currency: m.Currency}, nil
 }
 
 // Multiply returns m scaled by factor.
-func (m Money) Multiply(factor int64) Money {
-	return Money{Amount: m.Amount * factor, Currency: m.Currency}
+// Returns ErrMoneyOverflow if the result would overflow int64.
+func (m Money) Multiply(factor int64) (Money, error) {
+	if m.Amount == 0 || factor == 0 {
+		return Money{Amount: 0, Currency: m.Currency}, nil
+	}
+	// Special-case MinInt64 * -1 which would overflow to itself.
+	if factor == -1 {
+		if m.Amount == math.MinInt64 {
+			return Money{}, ErrMoneyOverflow
+		}
+		return Money{Amount: -m.Amount, Currency: m.Currency}, nil
+	}
+	if m.Amount == -1 {
+		if factor == math.MinInt64 {
+			return Money{}, ErrMoneyOverflow
+		}
+		return Money{Amount: -factor, Currency: m.Currency}, nil
+	}
+	if factor > 0 {
+		if m.Amount > math.MaxInt64/factor || m.Amount < math.MinInt64/factor {
+			return Money{}, ErrMoneyOverflow
+		}
+	} else {
+		// factor < -1 here (factor == -1 handled above).
+		if m.Amount < math.MaxInt64/factor || m.Amount > math.MinInt64/factor {
+			return Money{}, ErrMoneyOverflow
+		}
+	}
+	return Money{Amount: m.Amount * factor, Currency: m.Currency}, nil
 }
 
 // IsZero reports whether the amount is exactly zero.
@@ -72,6 +118,47 @@ func (m Money) IsPositive() bool {
 // IsNegative reports whether the amount is strictly less than zero.
 func (m Money) IsNegative() bool {
 	return m.Amount < 0
+}
+
+// Equal reports whether m and other represent the same amount in the same currency.
+func (m Money) Equal(other Money) bool {
+	return m.Amount == other.Amount && m.Currency == other.Currency
+}
+
+// GreaterThan reports whether m is strictly greater than other.
+// Returns ErrCurrencyMismatch if currencies differ.
+func (m Money) GreaterThan(other Money) (bool, error) {
+	if m.Currency != other.Currency {
+		return false, ErrCurrencyMismatch
+	}
+	return m.Amount > other.Amount, nil
+}
+
+// LessThan reports whether m is strictly less than other.
+// Returns ErrCurrencyMismatch if currencies differ.
+func (m Money) LessThan(other Money) (bool, error) {
+	if m.Currency != other.Currency {
+		return false, ErrCurrencyMismatch
+	}
+	return m.Amount < other.Amount, nil
+}
+
+// GreaterThanOrEqual reports whether m is greater than or equal to other.
+// Returns ErrCurrencyMismatch if currencies differ.
+func (m Money) GreaterThanOrEqual(other Money) (bool, error) {
+	if m.Currency != other.Currency {
+		return false, ErrCurrencyMismatch
+	}
+	return m.Amount >= other.Amount, nil
+}
+
+// LessThanOrEqual reports whether m is less than or equal to other.
+// Returns ErrCurrencyMismatch if currencies differ.
+func (m Money) LessThanOrEqual(other Money) (bool, error) {
+	if m.Currency != other.Currency {
+		return false, ErrCurrencyMismatch
+	}
+	return m.Amount <= other.Amount, nil
 }
 
 // String returns a human-readable representation such as "12.99 USD".

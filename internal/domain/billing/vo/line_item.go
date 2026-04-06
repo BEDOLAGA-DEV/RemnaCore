@@ -28,6 +28,7 @@ func NewLineItem(desc string, itemType LineItemType, amount Money, quantity int)
 }
 
 // Total returns Amount multiplied by Quantity.
-func (li LineItem) Total() Money {
+// Returns ErrMoneyOverflow if the result would overflow int64.
+func (li LineItem) Total() (Money, error) {
 	return li.Amount.Multiply(int64(li.Quantity))
 }
