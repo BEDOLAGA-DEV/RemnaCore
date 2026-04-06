@@ -56,6 +56,8 @@ services:
       - "-c"
       - "io_method=${PG_IO_METHOD:-worker}"
       - "-c"
+      - "io_combine_limit=${PG_IO_COMBINE_LIMIT:-128}"
+      - "-c"
       - "effective_io_concurrency=${PG_EFFECTIVE_IO_CONCURRENCY:-200}"
       - "-c"
       - "maintenance_io_concurrency=${PG_MAINTENANCE_IO_CONCURRENCY:-10}"
