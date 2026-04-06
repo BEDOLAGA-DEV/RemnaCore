@@ -108,15 +108,10 @@ func NewRouter(p RouterParams) http.Handler {
 	r.Use(chimiddleware.Compress(GzipCompressionLevel))
 	r.Use(middleware.RateLimit(p.RateLimiter))
 
-	// Infrastructure endpoints — before tenant resolution so health probes
-	// and metrics scraping never require a tenant header.
+	// Infrastructure endpoints — no tenant resolution needed.
 	r.Get("/healthz", p.HealthHandler.Healthz)
 	r.Get("/readyz", p.HealthHandler.Readyz)
 	r.Handle("/metrics", promhttp.Handler())
-
-	// Tenant middleware — only affects routes registered after this point.
-	r.Use(middleware.TenantResolver(p.ResellerService))
-	r.Use(middleware.TenantRLS)
 
 	// Per-endpoint auth rate limit middleware.
 	loginRL := middleware.AuthRateLimit(
@@ -130,8 +125,10 @@ func NewRouter(p RouterParams) http.Handler {
 		"forgot_password",
 	)
 
-	// API routes.
+	// API routes — tenant middleware scoped to API only (not health/metrics).
 	r.Route("/api", func(api chi.Router) {
+		api.Use(middleware.TenantResolver(p.ResellerService))
+		api.Use(middleware.TenantRLS)
 		// Public auth endpoints.
 		api.Post("/auth/register", p.IdentityHandler.Register)
 		api.With(loginRL).Post("/auth/login", p.IdentityHandler.Login)
