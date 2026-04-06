@@ -41,7 +41,19 @@ func NewEventPublisher(conn *nc.Conn) (*EventPublisher, error) {
 }
 
 // Publish serializes payload to JSON and publishes it to the given topic.
-func (p *EventPublisher) Publish(_ context.Context, topic string, payload any) error {
+//
+// Context handling: ctx is accepted for domainevent.Publisher interface
+// compatibility but is not used to cancel the underlying NATS publish.
+// PubAck timeout is managed by NATS client options configured in
+// NewConnection (default 5s). The outbox relay checks ctx.Done() between
+// batches, providing cancellation at the batch boundary.
+//
+// A goroutine-based ctx.Done() wrapper was considered and rejected: if the
+// context is cancelled mid-publish, the wrapper returns immediately but the
+// background goroutine continues until PubAck timeout, leaking a goroutine
+// per cancelled publish. The NATS client timeout is the correct cancellation
+// mechanism for individual publishes.
+func (p *EventPublisher) Publish(ctx context.Context, topic string, payload any) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshalling event payload: %w", err)
@@ -60,7 +72,10 @@ func (p *EventPublisher) Publish(_ context.Context, topic string, payload any) e
 // deterministic message ID. When TrackMsgId is enabled on the publisher,
 // Watermill uses the message UUID as the JetStream Nats-Msg-Id header,
 // enabling server-side deduplication of retransmissions.
-func (p *EventPublisher) PublishWithID(_ context.Context, id string, topic string, payload []byte) error {
+//
+// Context handling: see Publish godoc for rationale. ctx is accepted for
+// interface compatibility; PubAck timeout is controlled by NATS client options.
+func (p *EventPublisher) PublishWithID(ctx context.Context, id string, topic string, payload []byte) error {
 	msg := message.NewMessage(id, payload)
 
 	if err := p.publisher.Publish(topic, msg); err != nil {
