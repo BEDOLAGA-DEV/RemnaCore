@@ -5,12 +5,32 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 )
+
+// partitionCountSQL returns the number of child partitions of public.outbox.
+const partitionCountSQL = `SELECT count(*) FROM pg_inherits WHERE inhparent = 'outbox'::regclass`
+
+var partitionGaugeOnce sync.Once
+var partitionCountGauge prometheus.Gauge
+
+func initPartitionGauge() {
+	partitionGaugeOnce.Do(func() {
+		partitionCountGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: "platform",
+			Subsystem: "outbox",
+			Name:      "partition_count",
+			Help:      "Current number of outbox partitions.",
+		})
+		_ = prometheus.Register(partitionCountGauge)
+	})
+}
 
 // partitionCheckInterval is the period between automatic partition
 // ensure/cleanup runs. Partitions change quarterly, so daily is sufficient.
@@ -76,6 +96,7 @@ func NewPartitionManager(
 	lookahead int,
 	retention time.Duration,
 ) *PartitionManager {
+	initPartitionGauge()
 	return &PartitionManager{
 		outbox:    outbox,
 		pool:      pool,
@@ -91,6 +112,7 @@ func NewPartitionManager(
 func (pm *PartitionManager) Run(ctx context.Context) {
 	pm.ensure(ctx)
 	pm.cleanup(ctx)
+	pm.updatePartitionCount(ctx)
 
 	ticker := time.NewTicker(partitionCheckInterval)
 	defer ticker.Stop()
@@ -102,6 +124,7 @@ func (pm *PartitionManager) Run(ctx context.Context) {
 		case <-ticker.C:
 			pm.ensure(ctx)
 			pm.cleanup(ctx)
+			pm.updatePartitionCount(ctx)
 		}
 	}
 }
@@ -318,4 +341,19 @@ func (pm *PartitionManager) isSafeToDrop(ctx context.Context, partitionName stri
 		return false, fmt.Errorf("check sequence safety for %s: %w", partitionName, err)
 	}
 	return safe, nil
+}
+
+// updatePartitionCount queries the current number of outbox partitions and
+// updates the Prometheus gauge.
+func (pm *PartitionManager) updatePartitionCount(ctx context.Context) {
+	var count int64
+	if err := pm.pool.QueryRow(ctx, partitionCountSQL).Scan(&count); err != nil {
+		pm.logger.Warn("partition manager: failed to count partitions",
+			slog.Any("error", err),
+		)
+		return
+	}
+	if partitionCountGauge != nil {
+		partitionCountGauge.Set(float64(count))
+	}
 }
