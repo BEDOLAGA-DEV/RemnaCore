@@ -29,3 +29,6 @@ var ErrInvoiceNotDraft = errors.New("invoice must be in draft status")
 
 // ErrNegativeTotal indicates the invoice total must not be negative.
 var ErrNegativeTotal = errors.New("invoice total must not be negative")
+
+// ErrSamePlan indicates an attempt to upgrade or downgrade to the current plan.
+var ErrSamePlan = errors.New("cannot change to the same plan")

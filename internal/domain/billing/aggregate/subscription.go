@@ -58,12 +58,13 @@ type Subscription struct {
 	PlanID      string
 	Status      SubscriptionStatus
 	Period      vo.BillingPeriod
-	AddonIDs    []string
-	AssignedTo  string // self or familyMemberID
-	CancelledAt *time.Time
-	PausedAt    *time.Time
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	AddonIDs      []string
+	AssignedTo    string     // self or familyMemberID
+	PendingPlanID *string    // deferred downgrade; applied on next Renew
+	CancelledAt   *time.Time
+	PausedAt      *time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // NewSubscription creates a new subscription in the trial state.
@@ -221,10 +222,55 @@ func (s *Subscription) RemoveAddon(addonID string, now time.Time) error {
 	return nil
 }
 
+// Upgrade changes the subscription to a new plan immediately.
+// Only active subscriptions can be upgraded.
+func (s *Subscription) Upgrade(newPlanID string, newPeriod vo.BillingPeriod, now time.Time) error {
+	if s.Status != StatusActive {
+		return ErrInvalidTransition
+	}
+	if newPlanID == s.PlanID {
+		return ErrSamePlan
+	}
+	oldPlanID := s.PlanID
+	s.PlanID = newPlanID
+	s.Period = newPeriod
+	s.UpdatedAt = now
+	s.RecordEvent(domainevent.NewAtWithEntity(EventSubUpgraded, SubUpgradedPayload{
+		SubscriptionID: s.ID,
+		UserID:         s.UserID,
+		FromPlanID:     oldPlanID,
+		ToPlanID:       newPlanID,
+	}, now, s.ID))
+	return nil
+}
+
+// Downgrade schedules a plan change for the next billing period.
+// The actual switch happens during Renew.
+func (s *Subscription) Downgrade(newPlanID string, now time.Time) error {
+	if s.Status != StatusActive {
+		return ErrInvalidTransition
+	}
+	if newPlanID == s.PlanID {
+		return ErrSamePlan
+	}
+	s.PendingPlanID = &newPlanID
+	s.UpdatedAt = now
+	s.RecordEvent(domainevent.NewAtWithEntity(EventSubDowngraded, SubDowngradedPayload{
+		SubscriptionID: s.ID,
+		UserID:         s.UserID,
+		FromPlanID:     s.PlanID,
+		ToPlanID:       newPlanID,
+	}, now, s.ID))
+	return nil
+}
+
 // Renew advances the subscription to its next billing period. The next period
 // is calculated from the current period's end date and interval, so the caller
 // does not need to construct the new period manually. Only allowed when active
 // and the current billing period has elapsed.
+//
+// If a PendingPlanID was set by a prior Downgrade, it is applied during renewal
+// and the pending field is cleared.
 func (s *Subscription) Renew(now time.Time) error {
 	if s.Status != StatusActive {
 		return ErrSubscriptionNotActiveForRenewal
@@ -233,6 +279,10 @@ func (s *Subscription) Renew(now time.Time) error {
 		return ErrPeriodNotElapsed
 	}
 	s.Period = s.Period.Next()
+	if s.PendingPlanID != nil {
+		s.PlanID = *s.PendingPlanID
+		s.PendingPlanID = nil
+	}
 	s.UpdatedAt = now
 	s.RecordEvent(domainevent.NewAtWithEntity(EventSubRenewed, SubRenewedPayload{
 		SubscriptionID: s.ID,
