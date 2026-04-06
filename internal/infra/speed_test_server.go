@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
@@ -29,6 +30,13 @@ const (
 	DefaultChunkSize       = 64 << 10  // 64 KB write chunks
 	SpeedTestReadTimeout   = 30 * time.Second
 	SpeedTestWriteTimeout  = 60 * time.Second
+
+	// SpeedTestRateLimit is the maximum number of speed test requests per IP
+	// within SpeedTestRateLimitWindow.
+	SpeedTestRateLimit = 10
+	// SpeedTestRateLimitWindow is the sliding window duration for speed test
+	// rate limiting.
+	SpeedTestRateLimitWindow = time.Minute
 )
 
 // SpeedTestServer provides download, upload, and ping endpoints for client-side
@@ -127,13 +135,77 @@ func (s *SpeedTestServer) Ping(w http.ResponseWriter, _ *http.Request) {
 	fmt.Fprint(w, `{"pong":true}`)
 }
 
+// inProcessLimiter provides per-key rate limiting using a sliding window.
+type inProcessLimiter struct {
+	mu      sync.Mutex
+	windows map[string][]time.Time
+	limit   int
+	window  time.Duration
+}
+
+// newInProcessLimiter creates a rate limiter that allows at most limit requests
+// per key within the given window duration.
+func newInProcessLimiter(limit int, window time.Duration) *inProcessLimiter {
+	return &inProcessLimiter{
+		windows: make(map[string][]time.Time),
+		limit:   limit,
+		window:  window,
+	}
+}
+
+// Allow reports whether the given key is within its rate limit. If allowed, the
+// current timestamp is recorded.
+func (l *inProcessLimiter) Allow(key string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	now := time.Now()
+	cutoff := now.Add(-l.window)
+
+	// Remove expired entries.
+	timestamps := l.windows[key]
+	valid := timestamps[:0]
+	for _, ts := range timestamps {
+		if ts.After(cutoff) {
+			valid = append(valid, ts)
+		}
+	}
+
+	if len(valid) >= l.limit {
+		l.windows[key] = valid
+		return false
+	}
+
+	l.windows[key] = append(valid, now)
+	return true
+}
+
+// withRateLimit wraps an http.HandlerFunc with per-IP rate limiting. Requests
+// that exceed the limit receive a 429 Too Many Requests response.
+func withRateLimit(limiter *inProcessLimiter, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+		if ip == "" {
+			ip = r.RemoteAddr
+		}
+		if !limiter.Allow(ip) {
+			w.Header().Set(httpconst.HeaderRetryAfter, "60")
+			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
+		next(w, r)
+	}
+}
+
 // Start begins listening on the given port in a separate HTTP server. It blocks
 // until ctx is cancelled.
 func (s *SpeedTestServer) Start(ctx context.Context, port int) error {
+	limiter := newInProcessLimiter(SpeedTestRateLimit, SpeedTestRateLimitWindow)
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("/download", s.Download)
-	mux.HandleFunc("/upload", s.Upload)
-	mux.HandleFunc("/ping", s.Ping)
+	mux.HandleFunc("/download", withRateLimit(limiter, s.Download))
+	mux.HandleFunc("/upload", withRateLimit(limiter, s.Upload))
+	mux.HandleFunc("/ping", withRateLimit(limiter, s.Ping))
 
 	addr := fmt.Sprintf(":%d", port)
 	srv := &http.Server{

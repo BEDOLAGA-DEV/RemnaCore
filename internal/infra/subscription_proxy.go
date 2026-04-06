@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -43,18 +42,12 @@ const (
 	MaxSubscriptionConfigBytes = 1 << 20 // 1 MB
 )
 
-// l1Entry holds a cached subscription response with its expiration time.
-type l1Entry struct {
-	body      []byte
-	expiresAt time.Time
-}
-
 // SubscriptionProxy serves VPN subscription configs to clients. It implements a
-// three-tier cache: L1 (in-memory sync.Map) -> L2 (Valkey) -> L3 (Remnawave API).
+// three-tier cache: L1 (in-memory LRU) -> L2 (Valkey) -> L3 (Remnawave API).
 type SubscriptionProxy struct {
 	remnawaveClient *remnawave.Client
 	httpClient      *http.Client
-	l1Cache         *sync.Map
+	l1Cache         *LRUCache
 	valkeyClient    *redis.Client
 	logger          *slog.Logger
 	clock           clock.Clock
@@ -72,7 +65,7 @@ func NewSubscriptionProxy(
 		httpClient: &http.Client{
 			Timeout: ProxyHTTPTimeout,
 		},
-		l1Cache:      &sync.Map{},
+		l1Cache:      NewLRUCache(L1CacheSize),
 		valkeyClient: valkeyClient,
 		logger:       logger,
 		clock:        clk,
@@ -88,14 +81,10 @@ func (sp *SubscriptionProxy) ServeSubscription(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// L1: in-memory cache.
-	if cached, ok := sp.l1Cache.Load(shortUUID); ok {
-		entry := cached.(l1Entry)
-		if sp.clock.Now().Before(entry.expiresAt) {
-			sp.writeSubscriptionResponse(w, entry.body)
-			return
-		}
-		sp.l1Cache.Delete(shortUUID)
+	// L1: in-memory LRU cache.
+	if body, ok := sp.l1Cache.Get(shortUUID, sp.clock.Now()); ok {
+		sp.writeSubscriptionResponse(w, body)
+		return
 	}
 
 	// L2: Valkey cache.
@@ -103,10 +92,7 @@ func (sp *SubscriptionProxy) ServeSubscription(w http.ResponseWriter, r *http.Re
 	l2Data, err := sp.valkeyClient.Get(r.Context(), l2Key).Bytes()
 	if err == nil {
 		// Populate L1 from L2.
-		sp.l1Cache.Store(shortUUID, l1Entry{
-			body:      l2Data,
-			expiresAt: sp.clock.Now().Add(L1CacheTTL),
-		})
+		sp.l1Cache.Set(shortUUID, l2Data, sp.clock.Now().Add(L1CacheTTL))
 		sp.writeSubscriptionResponse(w, l2Data)
 		return
 	}
@@ -124,10 +110,7 @@ func (sp *SubscriptionProxy) ServeSubscription(w http.ResponseWriter, r *http.Re
 
 	// Store in L2 and L1.
 	sp.valkeyClient.Set(r.Context(), l2Key, body, L2CacheTTL)
-	sp.l1Cache.Store(shortUUID, l1Entry{
-		body:      body,
-		expiresAt: sp.clock.Now().Add(L1CacheTTL),
-	})
+	sp.l1Cache.Set(shortUUID, body, sp.clock.Now().Add(L1CacheTTL))
 
 	sp.writeSubscriptionResponse(w, body)
 }
