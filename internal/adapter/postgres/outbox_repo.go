@@ -100,22 +100,40 @@ func (r *OutboxRepository) MarkPublished(ctx context.Context, id string, created
 
 // markPublishedBatchSQL uses PG18 MERGE ... RETURNING to atomically mark
 // multiple outbox events as published in a single statement. The unnest
-// approach passes parallel arrays of IDs and created_at timestamps to
-// enable partition pruning on the range-partitioned outbox table.
+// approach passes parallel arrays of IDs and created_at timestamps.
+//
+// $3 (minCreatedAt) and $4 (maxCreatedAtExcl) provide a date range hint
+// so the PG planner can prune partitions at plan time. Without these
+// bounds, unnest produces runtime values that prevent partition pruning,
+// causing all partitions to be scanned. The WHEN MATCHED clause restricts
+// the update to rows within [minCreatedAt, maxCreatedAtExcl), which the
+// planner uses for static partition elimination.
 const markPublishedBatchSQL = `
 MERGE INTO public.outbox AS o
 USING (
     SELECT unnest($1::uuid[]) AS id, unnest($2::timestamptz[]) AS created_at
 ) AS input ON o.id = input.id AND o.created_at = input.created_at
-WHEN MATCHED AND o.published = false THEN
+WHEN MATCHED AND o.published = false
+    AND o.created_at >= $3 AND o.created_at < $4
+THEN
     UPDATE SET published = true, published_at = now()
 RETURNING o.id`
+
+// partitionPruningPadding is added to the max created_at timestamp to form an
+// exclusive upper bound. This ensures the max value itself is included in the
+// half-open range [min, max + padding) used for partition pruning.
+const partitionPruningPadding = time.Second
 
 // MarkPublishedBatch atomically marks multiple events as published using a
 // single PG18 MERGE statement. Returns the number of rows actually updated.
 // Both ids and createdAts must have the same length; each pair (ids[i],
 // createdAts[i]) identifies one event. Uses MERGE ... RETURNING for
 // partition-pruned batch updates in a single round-trip.
+//
+// The method computes the min/max of createdAts and passes them as additional
+// parameters ($3, $4) so the PG planner can eliminate partitions that do not
+// overlap the batch's time range. Without these hints, unnest produces runtime
+// values that prevent static partition pruning.
 func (r *OutboxRepository) MarkPublishedBatch(ctx context.Context, ids []string, createdAts []time.Time) (int, error) {
 	if len(ids) == 0 {
 		return 0, nil
@@ -130,7 +148,14 @@ func (r *OutboxRepository) MarkPublishedBatch(ctx context.Context, ids []string,
 	// timestamptz[], so we convert IDs to pgtype and pass times directly.
 	pgIDs := pgutil.StringsToPgtypeUUIDs(ids)
 
-	rows, err := db.Query(ctx, markPublishedBatchSQL, pgIDs, createdAts)
+	// Compute date range for partition pruning.
+	minTime, maxTime := timeRange(createdAts)
+	maxTimeExcl := maxTime.Add(partitionPruningPadding)
+
+	rows, err := db.Query(ctx, markPublishedBatchSQL,
+		pgIDs, createdAts,
+		pgutil.TimeToPgtype(minTime), pgutil.TimeToPgtype(maxTimeExcl),
+	)
 	if err != nil {
 		return 0, fmt.Errorf("merge mark published batch: %w", err)
 	}
@@ -149,6 +174,22 @@ func (r *OutboxRepository) MarkPublishedBatch(ctx context.Context, ids []string,
 	}
 
 	return count, nil
+}
+
+// timeRange returns the minimum and maximum values from a non-empty time slice.
+// The caller must ensure ts is non-empty; this is guaranteed by the len(ids)==0
+// early return in MarkPublishedBatch.
+func timeRange(ts []time.Time) (min, max time.Time) {
+	min, max = ts[0], ts[0]
+	for _, t := range ts[1:] {
+		if t.Before(min) {
+			min = t
+		}
+		if t.After(max) {
+			max = t
+		}
+	}
+	return min, max
 }
 
 // DeleteOld removes published events whose published_at is older than the
