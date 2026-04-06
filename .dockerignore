@@ -1,0 +1,15 @@
+.git
+.github
+.claude
+.idea
+.vscode
+*.md
+docs/
+tests/
+web/
+deploy/helm/
+scripts/
+node_modules/
+bin/
+coverage.out
+*.test
