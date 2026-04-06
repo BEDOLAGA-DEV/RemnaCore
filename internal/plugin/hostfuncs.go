@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
@@ -50,6 +51,8 @@ type HostFunctions struct {
 	// urlChecker validates whether a URL targets a blocked internal address.
 	// Defaults to isBlockedHostname. Can be overridden in tests.
 	urlChecker func(rawURL string) (blocked bool, err error)
+	// httpLimiters holds per-plugin HTTP rate limiters keyed by plugin slug.
+	httpLimiters sync.Map
 }
 
 // NewHostFunctions creates a HostFunctions value with sensible defaults. The
@@ -146,6 +149,16 @@ func (hf *HostFunctions) HTTPRequest(ctx context.Context, pluginSlug string, req
 	// Layer 3: DNS-rebinding protection is handled by the SSRF-safe transport
 	// on hf.HTTPClient, which validates resolved IPs in DialContext.
 
+	// Layer 4: per-plugin HTTP rate limiting from manifest limits.
+	limits := p.Manifest.EffectiveLimits()
+	if limits.MaxHTTPCallsPerMin > 0 {
+		limiter := hf.getOrCreateHTTPLimiter(pluginSlug, limits.MaxHTTPCallsPerMin)
+		if !limiter.Allow() {
+			return nil, fmt.Errorf("%w: plugin %q exceeded %d HTTP calls/min",
+				ErrHTTPRateLimitExceeded, pluginSlug, limits.MaxHTTPCallsPerMin)
+		}
+	}
+
 	httpReq, err := http.NewRequestWithContext(ctx, req.Method, normalizedURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("invalid HTTP request: %w", err)
@@ -184,17 +197,33 @@ func (hf *HostFunctions) HTTPRequest(ctx context.Context, pluginSlug string, req
 }
 
 // StorageGet retrieves a value from the plugin's isolated key-value store.
+// Requires the storage:read permission scope.
 func (hf *HostFunctions) StorageGet(ctx context.Context, pluginSlug, key string) ([]byte, error) {
 	if hf.Storage == nil {
 		return nil, fmt.Errorf("storage service not configured")
+	}
+	p, err := hf.resolvePlugin(pluginSlug)
+	if err != nil {
+		return nil, err
+	}
+	if !hf.Permissions.HasPermission(p, PermStorageRead) {
+		return nil, fmt.Errorf("%w: plugin %q lacks storage:read permission", ErrPermissionDenied, pluginSlug)
 	}
 	return hf.Storage.Get(ctx, pluginSlug, key)
 }
 
 // StorageSet stores a value in the plugin's isolated key-value store.
+// Requires the storage:readwrite permission scope.
 func (hf *HostFunctions) StorageSet(ctx context.Context, pluginSlug, key string, value []byte, ttlSeconds int64) error {
 	if hf.Storage == nil {
 		return fmt.Errorf("storage service not configured")
+	}
+	p, err := hf.resolvePlugin(pluginSlug)
+	if err != nil {
+		return err
+	}
+	if !hf.Permissions.HasPermission(p, PermStorageWrite) {
+		return fmt.Errorf("%w: plugin %q lacks storage:readwrite permission", ErrPermissionDenied, pluginSlug)
 	}
 	return hf.Storage.Set(ctx, pluginSlug, key, value, ttlSeconds)
 }
@@ -215,9 +244,17 @@ func (hf *HostFunctions) ConfigGet(pluginSlug, key string) (string, error) {
 }
 
 // EmitEvent publishes a domain event on behalf of a plugin.
+// Requires the notifications:emit permission scope.
 func (hf *HostFunctions) EmitEvent(ctx context.Context, pluginSlug string, eventType string, payload []byte) error {
 	if hf.Publisher == nil {
 		return fmt.Errorf("event publisher not configured")
+	}
+	p, err := hf.resolvePlugin(pluginSlug)
+	if err != nil {
+		return err
+	}
+	if !hf.Permissions.HasPermission(p, PermNotificationsEmit) {
+		return fmt.Errorf("%w: plugin %q lacks notifications:emit permission", ErrPermissionDenied, pluginSlug)
 	}
 
 	event := domainevent.NewAt(domainevent.EventType(eventType), map[string]any{
@@ -251,6 +288,17 @@ func (hf *HostFunctions) Log(pluginSlug, level, message string, fields map[strin
 	default:
 		hf.Logger.Info(message, args...)
 	}
+}
+
+// getOrCreateHTTPLimiter returns the existing rate limiter for a plugin slug,
+// or atomically creates one with the given per-minute limit.
+func (hf *HostFunctions) getOrCreateHTTPLimiter(slug string, maxPerMin int) *httpRateLimiter {
+	if v, ok := hf.httpLimiters.Load(slug); ok {
+		return v.(*httpRateLimiter)
+	}
+	limiter := newHTTPRateLimiter(maxPerMin, time.Minute)
+	actual, _ := hf.httpLimiters.LoadOrStore(slug, limiter)
+	return actual.(*httpRateLimiter)
 }
 
 // resolvePlugin uses the registry lookup function to find a Plugin by slug.

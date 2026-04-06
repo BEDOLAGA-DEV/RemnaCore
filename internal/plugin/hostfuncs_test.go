@@ -297,6 +297,237 @@ func TestHTTPRequest_ContextCancellation(t *testing.T) {
 	assert.Contains(t, err.Error(), "context canceled")
 }
 
+// ---------------------------------------------------------------------------
+// StorageGet permission enforcement
+// ---------------------------------------------------------------------------
+
+func TestStorageGet_WithStorageReadPermission(t *testing.T) {
+	p := testPluginWithPerms([]PermissionScope{PermStorageRead})
+	store := newTestStorageService()
+	_ = store.Set(context.Background(), "test-plugin", "k1", []byte("v1"), 0)
+
+	hf := newTestHostFunctions(t, p, nil)
+	hf.Storage = store
+
+	val, err := hf.StorageGet(context.Background(), "test-plugin", "k1")
+	require.NoError(t, err)
+	assert.Equal(t, []byte("v1"), val)
+}
+
+func TestStorageGet_WithoutStorageReadPermission(t *testing.T) {
+	p := testPluginWithPerms([]PermissionScope{PermBillingRead})
+	hf := newTestHostFunctions(t, p, nil)
+	hf.Storage = newTestStorageService()
+
+	_, err := hf.StorageGet(context.Background(), "test-plugin", "k1")
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrPermissionDenied),
+		"expected ErrPermissionDenied, got: %v", err)
+}
+
+func TestStorageGet_ReadWriteImpliesRead(t *testing.T) {
+	p := testPluginWithPerms([]PermissionScope{PermStorageWrite})
+	store := newTestStorageService()
+	_ = store.Set(context.Background(), "test-plugin", "k1", []byte("v1"), 0)
+
+	hf := newTestHostFunctions(t, p, nil)
+	hf.Storage = store
+
+	val, err := hf.StorageGet(context.Background(), "test-plugin", "k1")
+	require.NoError(t, err)
+	assert.Equal(t, []byte("v1"), val)
+}
+
+// ---------------------------------------------------------------------------
+// StorageSet permission enforcement
+// ---------------------------------------------------------------------------
+
+func TestStorageSet_WithStorageWritePermission(t *testing.T) {
+	p := testPluginWithPerms([]PermissionScope{PermStorageWrite})
+	store := newTestStorageService()
+
+	hf := newTestHostFunctions(t, p, nil)
+	hf.Storage = store
+
+	err := hf.StorageSet(context.Background(), "test-plugin", "k1", []byte("v1"), 0)
+	require.NoError(t, err)
+}
+
+func TestStorageSet_WithoutStorageWritePermission(t *testing.T) {
+	p := testPluginWithPerms([]PermissionScope{PermStorageRead})
+	hf := newTestHostFunctions(t, p, nil)
+	hf.Storage = newTestStorageService()
+
+	err := hf.StorageSet(context.Background(), "test-plugin", "k1", []byte("v1"), 0)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrPermissionDenied),
+		"expected ErrPermissionDenied, got: %v", err)
+}
+
+func TestStorageSet_NoPermissions(t *testing.T) {
+	p := testPluginWithPerms(nil)
+	hf := newTestHostFunctions(t, p, nil)
+	hf.Storage = newTestStorageService()
+
+	err := hf.StorageSet(context.Background(), "test-plugin", "k1", []byte("v1"), 0)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrPermissionDenied),
+		"expected ErrPermissionDenied, got: %v", err)
+}
+
+// ---------------------------------------------------------------------------
+// EmitEvent permission enforcement
+// ---------------------------------------------------------------------------
+
+func TestEmitEvent_WithNotificationsEmitPermission(t *testing.T) {
+	p := testPluginWithPerms([]PermissionScope{PermNotificationsEmit})
+	pub := &testPublisher{}
+
+	hf := newTestHostFunctions(t, p, nil)
+	hf.Publisher = pub
+
+	err := hf.EmitEvent(context.Background(), "test-plugin", "test.event", []byte(`{}`))
+	require.NoError(t, err)
+	assert.Len(t, pub.events, 1)
+}
+
+func TestEmitEvent_WithoutNotificationsEmitPermission(t *testing.T) {
+	p := testPluginWithPerms([]PermissionScope{PermBillingRead})
+	pub := &testPublisher{}
+
+	hf := newTestHostFunctions(t, p, nil)
+	hf.Publisher = pub
+
+	err := hf.EmitEvent(context.Background(), "test-plugin", "test.event", []byte(`{}`))
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrPermissionDenied),
+		"expected ErrPermissionDenied, got: %v", err)
+	assert.Empty(t, pub.events, "no event should have been published")
+}
+
+func TestEmitEvent_NoPermissions(t *testing.T) {
+	p := testPluginWithPerms(nil)
+	pub := &testPublisher{}
+
+	hf := newTestHostFunctions(t, p, nil)
+	hf.Publisher = pub
+
+	err := hf.EmitEvent(context.Background(), "test-plugin", "test.event", []byte(`{}`))
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrPermissionDenied),
+		"expected ErrPermissionDenied, got: %v", err)
+}
+
+// ---------------------------------------------------------------------------
+// HTTP rate limiting
+// ---------------------------------------------------------------------------
+
+func TestHTTPRequest_RateLimitEnforced(t *testing.T) {
+	const rateLimit = 5
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	p := &Plugin{
+		ID:   "test-id",
+		Slug: "test-plugin",
+		Manifest: &Manifest{
+			Permissions: ManifestPermissions{
+				HTTP: []string{server.URL + "/*"},
+			},
+			Limits: ManifestLimits{
+				MaxHTTPCallsPerMin: rateLimit,
+			},
+		},
+	}
+	hf := newTestHostFunctionsNoSSRF(t, p, server.Client())
+
+	// First rateLimit calls should succeed.
+	for i := range rateLimit {
+		_, err := hf.HTTPRequest(context.Background(), "test-plugin", sdk.HTTPRequest{
+			Method: http.MethodGet,
+			URL:    server.URL + "/v1/call",
+		})
+		require.NoError(t, err, "call %d should succeed", i+1)
+	}
+
+	// The next call should be rate limited.
+	_, err := hf.HTTPRequest(context.Background(), "test-plugin", sdk.HTTPRequest{
+		Method: http.MethodGet,
+		URL:    server.URL + "/v1/call",
+	})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrHTTPRateLimitExceeded),
+		"expected ErrHTTPRateLimitExceeded, got: %v", err)
+}
+
+func TestHTTPRequest_RateLimitPerPlugin(t *testing.T) {
+	const rateLimit = 2
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	makePlugin := func(slug string) *Plugin {
+		return &Plugin{
+			ID:   slug + "-id",
+			Slug: slug,
+			Manifest: &Manifest{
+				Permissions: ManifestPermissions{
+					HTTP: []string{server.URL + "/*"},
+				},
+				Limits: ManifestLimits{
+					MaxHTTPCallsPerMin: rateLimit,
+				},
+			},
+		}
+	}
+
+	pluginA := makePlugin("plugin-a")
+	pluginB := makePlugin("plugin-b")
+
+	hf := NewHostFunctions(slog.Default(), clock.NewReal())
+	hf.HTTPClient = server.Client()
+	hf.urlChecker = func(string) (bool, error) { return false, nil }
+	hf.SetPluginRegistry(func(slug string) (*Plugin, error) {
+		switch slug {
+		case "plugin-a":
+			return pluginA, nil
+		case "plugin-b":
+			return pluginB, nil
+		default:
+			return nil, ErrPluginNotFound
+		}
+	})
+
+	// Exhaust plugin-a's limit.
+	for i := range rateLimit {
+		_, err := hf.HTTPRequest(context.Background(), "plugin-a", sdk.HTTPRequest{
+			Method: http.MethodGet,
+			URL:    server.URL + "/v1/call",
+		})
+		require.NoError(t, err, "plugin-a call %d should succeed", i+1)
+	}
+
+	// plugin-a is now limited.
+	_, err := hf.HTTPRequest(context.Background(), "plugin-a", sdk.HTTPRequest{
+		Method: http.MethodGet,
+		URL:    server.URL + "/v1/call",
+	})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrHTTPRateLimitExceeded))
+
+	// plugin-b should still be allowed.
+	_, err = hf.HTTPRequest(context.Background(), "plugin-b", sdk.HTTPRequest{
+		Method: http.MethodGet,
+		URL:    server.URL + "/v1/call",
+	})
+	require.NoError(t, err, "plugin-b should not be affected by plugin-a's rate limit")
+}
+
 func TestNormalizeURL(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -23,3 +23,64 @@ func (p *testPublisher) Publish(_ context.Context, event domainevent.Event) erro
 func testErrorLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 }
+
+// testStorageService is an in-memory StorageService for unit tests.
+type testStorageService struct {
+	data map[string][]byte
+}
+
+func newTestStorageService() *testStorageService {
+	return &testStorageService{data: make(map[string][]byte)}
+}
+
+func (s *testStorageService) Get(_ context.Context, pluginSlug, key string) ([]byte, error) {
+	v, ok := s.data[pluginSlug+"/"+key]
+	if !ok {
+		return nil, ErrPluginNotFound
+	}
+	return v, nil
+}
+
+func (s *testStorageService) Set(_ context.Context, pluginSlug, key string, value []byte, _ int64) error {
+	s.data[pluginSlug+"/"+key] = value
+	return nil
+}
+
+func (s *testStorageService) Delete(_ context.Context, pluginSlug, key string) error {
+	delete(s.data, pluginSlug+"/"+key)
+	return nil
+}
+
+func (s *testStorageService) DeleteAll(_ context.Context, pluginSlug string) error {
+	for k := range s.data {
+		if len(k) > len(pluginSlug) && k[:len(pluginSlug)+1] == pluginSlug+"/" {
+			delete(s.data, k)
+		}
+	}
+	return nil
+}
+
+func (s *testStorageService) GetUsedBytes(_ context.Context, _ string) (int64, error) {
+	return 0, nil
+}
+
+// testPluginWithPerms creates a minimal Plugin with the given permission scopes
+// and a non-nil manifest containing basic hooks (required for EffectiveLimits).
+func testPluginWithPerms(perms []PermissionScope) *Plugin {
+	return &Plugin{
+		ID:   "test-id",
+		Slug: "test-plugin",
+		Manifest: &Manifest{
+			Plugin: ManifestPlugin{
+				ID:         "test-plugin",
+				Name:       "Test Plugin",
+				Version:    "1.0.0",
+				SDKVersion: CurrentSDKVersion,
+			},
+			Hooks: ManifestHooks{
+				Sync: []string{"test_hook"},
+			},
+		},
+		Permissions: perms,
+	}
+}
