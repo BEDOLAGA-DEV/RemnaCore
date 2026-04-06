@@ -5,13 +5,24 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+// requireValidUUIDv7 asserts that s is a valid UUID and its version is 7.
+func requireValidUUIDv7(t *testing.T, s string) {
+	t.Helper()
+	require.NotEmpty(t, s, "event ID must not be empty")
+	parsed, err := uuid.Parse(s)
+	require.NoError(t, err, "event ID must be a valid UUID")
+	assert.Equal(t, uuid.Version(7), parsed.Version(), "event ID must be UUIDv7")
+}
+
 func TestNew_WithMapData(t *testing.T) {
 	e := New("user.registered", map[string]any{"user_id": "u-1"})
 
+	requireValidUUIDv7(t, e.ID)
 	assert.Equal(t, EventType("user.registered"), e.Type)
 	assert.Equal(t, DefaultEventVersion, e.Version)
 	assert.False(t, e.Timestamp.IsZero())
@@ -55,6 +66,7 @@ func TestNewAt_UsesExplicitTimestamp(t *testing.T) {
 	ts := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	e := NewAt("test.event", map[string]any{"key": "val"}, ts)
 
+	requireValidUUIDv7(t, e.ID)
 	assert.Equal(t, ts, e.Timestamp)
 	assert.Equal(t, DefaultEventVersion, e.Version)
 	assert.Empty(t, e.EntityID) // no entity for plain NewAt
@@ -63,6 +75,7 @@ func TestNewAt_UsesExplicitTimestamp(t *testing.T) {
 func TestNewWithEntity_SetsEntityID(t *testing.T) {
 	e := NewWithEntity("subscription.activated", map[string]any{"sub": "s-1"}, "sub-123")
 
+	requireValidUUIDv7(t, e.ID)
 	assert.Equal(t, EventType("subscription.activated"), e.Type)
 	assert.Equal(t, "sub-123", e.EntityID)
 	assert.False(t, e.Timestamp.IsZero())
@@ -72,6 +85,7 @@ func TestNewAtWithEntity_SetsTimestampAndEntityID(t *testing.T) {
 	ts := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	e := NewAtWithEntity("invoice.paid", map[string]any{"inv": "i-1"}, ts, "inv-456")
 
+	requireValidUUIDv7(t, e.ID)
 	assert.Equal(t, EventType("invoice.paid"), e.Type)
 	assert.Equal(t, ts, e.Timestamp)
 	assert.Equal(t, "inv-456", e.EntityID)
@@ -163,6 +177,7 @@ func TestNewTyped_SetsTypeFromPayload(t *testing.T) {
 	payload := typedTestPayload{UserID: "u-1"}
 	e := NewTyped(payload, ts, "entity-1")
 
+	requireValidUUIDv7(t, e.ID)
 	assert.Equal(t, EventType("test.typed"), e.Type)
 	assert.Equal(t, DefaultEventVersion, e.Version)
 	assert.Equal(t, ts, e.Timestamp)
@@ -184,4 +199,59 @@ func TestEvent_JSONRoundTrip_IncludesVersion(t *testing.T) {
 	err = json.Unmarshal(data, &decoded)
 	require.NoError(t, err)
 	assert.Equal(t, DefaultEventVersion, decoded.Version)
+}
+
+func TestEvent_ConstructorsGenerateUniqueIDs(t *testing.T) {
+	// Two events from the same constructor with identical parameters must get
+	// different IDs. This is the core property that fixes the false-duplicate
+	// idempotency bug.
+	e1 := NewWithEntity("subscription.renewed", map[string]any{"subscription_id": "sub-1"}, "sub-1")
+	e2 := NewWithEntity("subscription.renewed", map[string]any{"subscription_id": "sub-1"}, "sub-1")
+
+	requireValidUUIDv7(t, e1.ID)
+	requireValidUUIDv7(t, e2.ID)
+	assert.NotEqual(t, e1.ID, e2.ID,
+		"two events with identical parameters must have different IDs")
+}
+
+func TestNewAtVersioned_SetsIDAndVersion(t *testing.T) {
+	ts := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	customVersion := 3
+	e := NewAtVersioned("user.upgraded", customVersion, map[string]any{"tier": "pro"}, ts, "user-1")
+
+	requireValidUUIDv7(t, e.ID)
+	assert.Equal(t, EventType("user.upgraded"), e.Type)
+	assert.Equal(t, customVersion, e.Version)
+	assert.Equal(t, ts, e.Timestamp)
+	assert.Equal(t, "user-1", e.EntityID)
+}
+
+func TestEvent_JSONRoundTrip_PreservesID(t *testing.T) {
+	original := NewWithEntity("subscription.activated", testPayload{
+		UserID: "u-1",
+		Email:  "test@example.com",
+	}, "sub-789")
+
+	data, err := json.Marshal(original)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"id":"`)
+
+	var decoded Event
+	err = json.Unmarshal(data, &decoded)
+	require.NoError(t, err)
+
+	assert.Equal(t, original.ID, decoded.ID, "ID must survive JSON round-trip")
+}
+
+func TestEvent_JSONRoundTrip_BackwardCompat_EmptyID(t *testing.T) {
+	// Simulate an old event without an ID field (pre-migration).
+	oldJSON := `{"type":"subscription.cancelled","version":1,"timestamp":"2026-01-01T00:00:00Z","data":{"subscription_id":"sub-1"},"entity_id":"sub-1"}`
+
+	var decoded Event
+	err := json.Unmarshal([]byte(oldJSON), &decoded)
+	require.NoError(t, err)
+
+	assert.Empty(t, decoded.ID, "old events without ID must decode with empty ID")
+	assert.Equal(t, EventType("subscription.cancelled"), decoded.Type)
+	assert.Equal(t, "sub-1", decoded.EntityID)
 }

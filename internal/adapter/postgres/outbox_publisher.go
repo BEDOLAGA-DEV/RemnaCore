@@ -9,6 +9,7 @@ import (
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres/gen"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pgutil"
 )
 
 // OutboxPublisher implements domainevent.Publisher by writing events to the
@@ -32,6 +33,12 @@ func NewOutboxPublisher(pool *pgxpool.Pool) *OutboxPublisher {
 // table. If the context carries a transaction (set by TxManager.RunInTx), the
 // insert uses that transaction, ensuring the outbox write is atomic with the
 // business logic. Otherwise the insert goes directly to the pool.
+//
+// When the event carries an ID (all events created via constructors since the
+// UUIDv7 migration), the outbox row uses that ID as its primary key. This
+// ensures the outbox row ID, NATS Msg-Id, and consumer idempotency key are all
+// the same domain event ID. Events without an ID (backward compat) fall back
+// to the DB-generated gen_random_uuid() default.
 func (p *OutboxPublisher) Publish(ctx context.Context, event domainevent.Event) error {
 	payload, err := json.Marshal(event)
 	if err != nil {
@@ -41,11 +48,22 @@ func (p *OutboxPublisher) Publish(ctx context.Context, event domainevent.Event) 
 	db := DBFromContext(ctx, p.pool)
 	queries := gen.New(db)
 
-	if err := queries.InsertOutboxEvent(ctx, gen.InsertOutboxEventParams{
-		EventType: string(event.Type),
-		Payload:   payload,
-	}); err != nil {
-		return fmt.Errorf("outbox publish: %w", err)
+	if event.ID != "" {
+		if err := queries.InsertOutboxEventWithID(ctx, gen.InsertOutboxEventWithIDParams{
+			ID:        pgutil.UUIDToPgtype(event.ID),
+			EventType: string(event.Type),
+			Payload:   payload,
+		}); err != nil {
+			return fmt.Errorf("outbox publish: %w", err)
+		}
+	} else {
+		// Backward compat: old events without ID use DB-generated default.
+		if err := queries.InsertOutboxEvent(ctx, gen.InsertOutboxEventParams{
+			EventType: string(event.Type),
+			Payload:   payload,
+		}); err != nil {
+			return fmt.Errorf("outbox publish: %w", err)
+		}
 	}
 
 	return nil

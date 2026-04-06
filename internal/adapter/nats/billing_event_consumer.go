@@ -12,6 +12,8 @@ import (
 
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/message"
+	nc "github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
@@ -68,8 +70,10 @@ type SubscriptionEventHandler interface {
 // The adapter layer owns this interface; the postgres.IdempotencyRepository
 // satisfies it.
 //
-// Keys are composed as "{event_type}:{entity_id}" to deduplicate at the
-// business level rather than the transport level (Watermill message UUID).
+// Keys are the domain event ID (UUIDv7), unique per event instance. This
+// deduplicates at the event level rather than the transport level (Watermill
+// message UUID). Events without an ID (backward compat) use
+// "{event_type}:{entity_id}" as the key.
 type IdempotencyChecker interface {
 	// TryAcquire returns true if the key is new, false if it was already seen.
 	TryAcquire(ctx context.Context, key string) (bool, error)
@@ -86,9 +90,21 @@ type IdempotencyChecker interface {
 	IncrementRetry(ctx context.Context, key string) (int, error)
 }
 
-// entityLockTTL is the duration after which an idle entity lock is eligible for
-// eviction. This prevents unbounded growth of the entityLocks map.
-const entityLockTTL = 10 * time.Minute
+// Consumer lifecycle constants.
+const (
+	// entityLockTTL is the duration after which an idle entity lock is eligible for
+	// eviction. This prevents unbounded growth of the entityLocks map.
+	entityLockTTL = 10 * time.Minute
+
+	// ConsumerDrainTimeout is the maximum duration Drain waits for in-flight
+	// messages to finish processing before returning. This bounds the shutdown
+	// delay when handlers are blocked on slow external calls (e.g. Remnawave).
+	ConsumerDrainTimeout = 30 * time.Second
+
+	// DLQDepthPollInterval is how often the consumer queries JetStream for
+	// the current DLQ stream message count and updates the DLQDepth gauge.
+	DLQDepthPollInterval = 30 * time.Second
+)
 
 // entityLock serialises event processing for a single entity (e.g. one
 // subscription). This prevents race conditions when events like
@@ -104,8 +120,9 @@ type entityLock struct {
 // provisioning and deprovisioning.
 //
 // Correctness guarantees:
-//   - Business-level idempotency: events are deduplicated by
-//     {event_type}:{entity_id}, not Watermill message UUID.
+//   - Per-event-instance idempotency: events are deduplicated by the domain
+//     event ID (UUIDv7), not Watermill message UUID. This allows legitimate
+//     repeated operations on the same aggregate to be processed independently.
 //   - Per-entity ordering: events for the same entity are processed serially
 //     via entityLocks, while different entities run concurrently.
 //   - Retry + DLQ: failed messages are retried up to MaxMessageRetries times;
@@ -121,7 +138,9 @@ type BillingEventConsumer struct {
 	logger         *slog.Logger
 	clock          clock.Clock
 	metrics        *observability.Metrics
+	natsConn       *nc.Conn
 	entityLocks    sync.Map // map[string]*entityLock — per-entity serialisation
+	inflightWg     sync.WaitGroup
 }
 
 // NewBillingEventConsumer creates a BillingEventConsumer with the given
@@ -129,6 +148,7 @@ type BillingEventConsumer struct {
 // the dead-letter queue. Plan and subscription data are resolved through
 // multisub domain ports (PlanProvider + SubscriptionProvider). The schema
 // registry upcasts old event payloads to the latest version before processing.
+// The NATS connection is used for DLQ depth polling via JetStream API.
 func NewBillingEventConsumer(
 	subscriber *EventSubscriber,
 	handler SubscriptionEventHandler,
@@ -140,6 +160,7 @@ func NewBillingEventConsumer(
 	logger *slog.Logger,
 	clk clock.Clock,
 	metrics *observability.Metrics,
+	conn *nc.Conn,
 ) *BillingEventConsumer {
 	return &BillingEventConsumer{
 		subscriber:     subscriber,
@@ -152,6 +173,7 @@ func NewBillingEventConsumer(
 		logger:         logger,
 		clock:          clk,
 		metrics:        metrics,
+		natsConn:       conn,
 	}
 }
 
@@ -188,6 +210,71 @@ func (c *BillingEventConsumer) evictStaleLocks(ctx context.Context) {
 	}
 }
 
+// Drain waits for all in-flight message handlers to complete, bounded by
+// ConsumerDrainTimeout. Call Drain after cancelling the context passed to
+// Start so that consumeLoop stops reading new messages while existing handlers
+// finish. If the timeout expires, a warning is logged — this is a best-effort
+// mechanism that avoids blocking shutdown indefinitely.
+func (c *BillingEventConsumer) Drain() {
+	done := make(chan struct{})
+	go func() {
+		c.inflightWg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		c.logger.Info("billing event consumer: drain complete")
+	case <-time.After(ConsumerDrainTimeout):
+		c.logger.Warn("billing event consumer: drain timeout, some messages may still be in-flight")
+	}
+}
+
+// pollDLQDepth periodically queries the JetStream DLQ stream for its current
+// message count and updates the DLQDepth Prometheus gauge. This runs as a
+// background goroutine started by Start and exits when the context is cancelled.
+// If the NATS connection or metrics dependency is nil, the goroutine returns
+// immediately to avoid panics in test environments.
+func (c *BillingEventConsumer) pollDLQDepth(ctx context.Context) {
+	if c.natsConn == nil || c.metrics == nil {
+		return
+	}
+
+	js, err := jetstream.New(c.natsConn)
+	if err != nil {
+		c.logger.Warn("billing event consumer: failed to init JetStream for DLQ polling",
+			slog.Any("error", err),
+		)
+		return
+	}
+
+	ticker := time.NewTicker(DLQDepthPollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			stream, streamErr := js.Stream(ctx, StreamDLQ)
+			if streamErr != nil {
+				c.logger.Debug("billing event consumer: failed to get DLQ stream info",
+					slog.Any("error", streamErr),
+				)
+				continue
+			}
+			info, infoErr := stream.Info(ctx)
+			if infoErr != nil {
+				c.logger.Debug("billing event consumer: failed to get DLQ stream info",
+					slog.Any("error", infoErr),
+				)
+				continue
+			}
+			c.metrics.DLQDepth.Set(float64(info.State.Msgs))
+		}
+	}
+}
+
 // billingSubscriptionSubjects returns the NATS subjects this consumer listens to.
 func billingSubscriptionSubjects() []string {
 	return []string{
@@ -220,6 +307,9 @@ func (c *BillingEventConsumer) Start(ctx context.Context) error {
 	// Start background goroutine to evict stale entity locks.
 	go c.evictStaleLocks(ctx)
 
+	// Start DLQ depth polling goroutine to keep the DLQDepth gauge current.
+	go c.pollDLQDepth(ctx)
+
 	c.logger.Info("billing event consumer started",
 		slog.Int("subscribed", subscribed),
 		slog.Int("total", len(billingSubscriptionSubjects())),
@@ -228,7 +318,11 @@ func (c *BillingEventConsumer) Start(ctx context.Context) error {
 }
 
 // consumeLoop reads messages from a single subscription channel until the
-// context is cancelled or the channel is closed.
+// context is cancelled or the channel is closed. Each in-flight message is
+// tracked by inflightWg so that Drain can wait for completion on shutdown.
+// When the context is cancelled, the loop stops reading new messages but any
+// message already being processed continues with a detached (Background)
+// context so that in-flight work is not aborted mid-processing.
 func (c *BillingEventConsumer) consumeLoop(ctx context.Context, subject string, ch <-chan *message.Message) {
 	c.logger.Info("billing event consumer started", slog.String("subject", subject))
 
@@ -240,16 +334,24 @@ func (c *BillingEventConsumer) consumeLoop(ctx context.Context, subject string, 
 			if !ok {
 				return
 			}
-			c.handleMessage(ctx, subject, msg)
+			c.inflightWg.Add(1)
+			// Use context.Background() so that a cancelled parent context does
+			// not abort an in-flight handler mid-processing (e.g. during a
+			// Remnawave provisioning call). The WaitGroup ensures Drain blocks
+			// until this handler completes.
+			c.handleMessage(context.Background(), subject, msg)
+			c.inflightWg.Done()
 		}
 	}
 }
 
 // handleMessage parses and routes a single billing event message.
 //
-// Idempotency: deduplicates by {event_type}:{entity_id} (business-level key),
-// not by Watermill message UUID. This catches outbox relay re-publishes where
-// the same business event gets a new transport UUID.
+// Idempotency: deduplicates by the domain event ID (unique per event instance).
+// This allows legitimate repeated operations on the same aggregate (e.g., two
+// subscription.renewed events for the same sub) while still catching outbox
+// relay re-publishes. Events without an ID (backward compat) fall back to
+// {event_type}:{entity_id}.
 //
 // Ordering: acquires a per-entity lock so that concurrent events for the same
 // subscription (arriving on different NATS subjects) are processed serially.
@@ -275,6 +377,16 @@ func (c *BillingEventConsumer) handleMessage(ctx context.Context, subject string
 	// Upcast old event payloads to the latest schema version before processing.
 	event = c.schemaRegistry.Upcast(event)
 
+	// Record event processing lag: the time between when the event was created
+	// (by the domain service) and when the consumer begins processing it. This
+	// captures outbox relay delay + NATS delivery latency.
+	if !event.Timestamp.IsZero() {
+		lag := time.Since(event.Timestamp).Seconds()
+		c.recordMetric(func(m *observability.Metrics) {
+			m.EventProcessingLag.WithLabelValues(string(event.Type)).Observe(lag)
+		})
+	}
+
 	// Resolve entity ID: prefer the top-level EntityID field; fall back to
 	// extracting subscription_id from the data payload for backward compat
 	// with events published before the EntityID migration.
@@ -283,10 +395,17 @@ func (c *BillingEventConsumer) handleMessage(ctx context.Context, subject string
 		entityID = extractString(event.Data, "subscription_id")
 	}
 
-	// Business-level idempotency key: {event_type}:{entity_id}. If the
-	// idempotency check fails (DB error), we fail open — at-least-once
-	// delivery is safer than silently dropping.
-	idempotencyKey := fmt.Sprintf("%s:%s", event.Type, entityID)
+	// Per-event-instance idempotency key: use the domain event ID when
+	// available. This prevents false duplicates where two legitimate events
+	// of the same type target the same entity (e.g., a second
+	// subscription.renewed for the same sub). Events without an ID (backward
+	// compat: pre-UUIDv7 migration) fall back to {event_type}:{entity_id}.
+	// If the idempotency check fails (DB error), we fail open —
+	// at-least-once delivery is safer than silently dropping.
+	idempotencyKey := event.ID
+	if idempotencyKey == "" {
+		idempotencyKey = fmt.Sprintf("%s:%s", event.Type, entityID)
+	}
 	isNew, err := c.idempotency.TryAcquire(ctx, idempotencyKey)
 	if err != nil {
 		c.logger.Warn("idempotency check failed, processing message anyway",

@@ -28,6 +28,7 @@ const (
 	MetricIdempotencyHitTotal    = "platform_idempotency_hit_total"
 
 	MetricDLQDepth                 = "platform_dlq_depth"
+	MetricEventProcessingLag       = "platform_event_processing_lag_seconds"
 
 	MetricOutboxRelayBatchSize     = "platform_outbox_relay_batch_size"
 	MetricOutboxRelayBatchLatency  = "platform_outbox_relay_batch_duration_seconds"
@@ -58,6 +59,7 @@ const (
 	helpIdempotencyHitTotal    = "Total number of duplicate events detected by idempotency check."
 
 	helpDLQDepth                 = "Current number of unprocessed messages in the dead-letter queue."
+	helpEventProcessingLag       = "Time between event creation and consumer processing in seconds."
 
 	helpOutboxRelayBatchSize     = "Number of events in each outbox relay batch."
 	helpOutboxRelayBatchLatency  = "Duration of outbox relay batch processing in seconds."
@@ -91,6 +93,11 @@ var PluginHookBuckets = []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.
 // and entity lock wait durations. Range covers sub-millisecond dedup skips through
 // multi-second Remnawave provisioning calls.
 var EventProcessingBuckets = []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}
+
+// EventProcessingLagBuckets defines histogram buckets for the delay between event
+// creation and consumer processing. Range covers sub-second near-realtime through
+// multi-minute backlogs.
+var EventProcessingLagBuckets = []float64{0.1, 0.5, 1, 2, 5, 10, 30, 60, 300}
 
 // OutboxRelayBatchBuckets defines histogram buckets for outbox relay batch sizes
 // (event count per batch). Range covers empty through full batches.
@@ -132,6 +139,7 @@ type Metrics struct {
 	// Consumer metrics
 	EventsProcessedTotal   *prometheus.CounterVec
 	EventProcessingLatency *prometheus.HistogramVec
+	EventProcessingLag     *prometheus.HistogramVec
 	EntityLockWaitLatency  *prometheus.HistogramVec
 	DLQPublishedTotal      prometheus.Counter
 	IdempotencyHitTotal    *prometheus.CounterVec
@@ -256,6 +264,12 @@ func NewMetrics() *Metrics {
 			Name:    MetricEventProcessingLatency,
 			Help:    helpEventProcessingLatency,
 			Buckets: EventProcessingBuckets,
+		}, []string{LabelEventType}),
+
+		EventProcessingLag: promauto.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    MetricEventProcessingLag,
+			Help:    helpEventProcessingLag,
+			Buckets: EventProcessingLagBuckets,
 		}, []string{LabelEventType}),
 
 		EntityLockWaitLatency: promauto.NewHistogramVec(prometheus.HistogramOpts{

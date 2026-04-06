@@ -186,7 +186,7 @@ func buildEventMessage(t *testing.T, event domainevent.Event) *message.Message {
 
 // --- tests ---
 
-func TestHandleMessage_BusinessLevelIdempotencyKey(t *testing.T) {
+func TestHandleMessage_PerEventInstanceIdempotencyKey(t *testing.T) {
 	idem := newStubIdempotencyChecker()
 	handler := &recordingHandler{}
 
@@ -209,10 +209,12 @@ func TestHandleMessage_BusinessLevelIdempotencyKey(t *testing.T) {
 	msg := buildEventMessage(t, event)
 	consumer.handleMessage(context.Background(), "subscription.cancelled", msg)
 
-	// The idempotency key must be business-level, not the Watermill UUID.
+	// The idempotency key must be the domain event ID, not the Watermill UUID
+	// and not {event_type}:{entity_id}.
 	keys := idem.acquiredKeys()
 	require.Len(t, keys, 1)
-	assert.Equal(t, "subscription.cancelled:sub-123", keys[0])
+	assert.Equal(t, event.ID, keys[0],
+		"idempotency key must be the domain event ID")
 }
 
 func TestHandleMessage_DuplicateEventSkipped(t *testing.T) {
@@ -441,11 +443,12 @@ func TestHandleMessage_FailureReleasesIdempotencyKey(t *testing.T) {
 	msg := buildEventMessage(t, event)
 	consumer.handleMessage(context.Background(), "subscription.cancelled", msg)
 
-	// The idempotency key must have been released so the next delivery can
-	// reprocess the event.
+	// The idempotency key (event.ID) must have been released so the next
+	// delivery can reprocess the event.
 	released := idem.releasedKeys()
 	require.Len(t, released, 1)
-	assert.Equal(t, "subscription.cancelled:sub-fail", released[0])
+	assert.Equal(t, event.ID, released[0],
+		"released key must be the domain event ID")
 
 	// The key must no longer be in the "seen" set.
 	assert.Empty(t, idem.acquiredKeys(),
@@ -474,7 +477,7 @@ func TestHandleMessage_RetryCountIncrementedOnFailure(t *testing.T) {
 		"sub-retry",
 	)
 
-	retryKey := retryKeyPrefix + "subscription.cancelled:sub-retry"
+	retryKey := retryKeyPrefix + event.ID
 
 	// Simulate multiple redeliveries (each call = one NATS redelivery).
 	for i := 1; i <= MaxMessageRetries-1; i++ {
@@ -508,7 +511,7 @@ func TestHandleMessage_DLQAfterMaxRetries(t *testing.T) {
 		"sub-dlq",
 	)
 
-	retryKey := retryKeyPrefix + "subscription.cancelled:sub-dlq"
+	retryKey := retryKeyPrefix + event.ID
 
 	// Exhaust all retries. After MaxMessageRetries, the message must be Ack'd
 	// (sent to DLQ) rather than Nack'd.
@@ -574,6 +577,11 @@ func newTestConsumerMetrics() *observability.Metrics {
 			Name:    "test_event_processing_duration_seconds",
 			Help:    "test metric",
 			Buckets: observability.EventProcessingBuckets,
+		}, []string{observability.LabelEventType}),
+		EventProcessingLag: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "test_event_processing_lag_seconds",
+			Help:    "test metric",
+			Buckets: observability.EventProcessingLagBuckets,
 		}, []string{observability.LabelEventType}),
 		EntityLockWaitLatency: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "test_entity_lock_wait_duration_seconds",
@@ -661,4 +669,253 @@ func TestHandleMessage_DuplicateIncrementsIdempotencyHitCounter(t *testing.T) {
 	)
 	assert.Equal(t, float64(1), testutil.ToFloat64(duplicateCounter),
 		"EventsProcessedTotal with status=skipped_duplicate must be incremented for duplicates")
+}
+
+func TestHandleMessage_EventProcessingLagRecorded(t *testing.T) {
+	metrics := newTestConsumerMetrics()
+	handler := &recordingHandler{}
+
+	consumer := &BillingEventConsumer{
+		handler:        handler,
+		idempotency:    &alwaysNewIdempotencyChecker{},
+		schemaRegistry: domainevent.NewSchemaRegistry(),
+		logger:         discardLogger(),
+		clock:          clock.NewReal(),
+		metrics:        metrics,
+	}
+
+	// Create an event with a timestamp in the past to produce a measurable lag.
+	pastTimestamp := time.Now().Add(-2 * time.Second)
+	event := domainevent.Event{
+		ID:        "evt-lag-test",
+		Type:      "subscription.cancelled",
+		Version:   1,
+		Timestamp: pastTimestamp,
+		Data:      map[string]any{"subscription_id": "sub-lag", "user_id": "u-1", "reason": "test"},
+		EntityID:  "sub-lag",
+	}
+
+	msg := buildEventMessage(t, event)
+	consumer.handleMessage(context.Background(), "subscription.cancelled", msg)
+
+	// EventProcessingLag histogram must have recorded exactly one observation.
+	assert.Equal(t, 1, testutil.CollectAndCount(metrics.EventProcessingLag),
+		"EventProcessingLag must record exactly one observation")
+}
+
+func TestHandleMessage_ZeroTimestampSkipsLag(t *testing.T) {
+	metrics := newTestConsumerMetrics()
+	handler := &recordingHandler{}
+
+	consumer := &BillingEventConsumer{
+		handler:        handler,
+		idempotency:    &alwaysNewIdempotencyChecker{},
+		schemaRegistry: domainevent.NewSchemaRegistry(),
+		logger:         discardLogger(),
+		clock:          clock.NewReal(),
+		metrics:        metrics,
+	}
+
+	// Event with zero timestamp (backward compat: very old events).
+	event := domainevent.Event{
+		ID:       "evt-no-ts",
+		Type:     "subscription.cancelled",
+		Version:  1,
+		Data:     map[string]any{"subscription_id": "sub-nots", "user_id": "u-1", "reason": "test"},
+		EntityID: "sub-nots",
+	}
+
+	msg := buildEventMessage(t, event)
+	consumer.handleMessage(context.Background(), "subscription.cancelled", msg)
+
+	// No lag should be recorded for zero timestamps.
+	assert.Equal(t, 0, testutil.CollectAndCount(metrics.EventProcessingLag),
+		"EventProcessingLag must not record when timestamp is zero")
+}
+
+func TestDrain_CompletesWhenNoInflight(t *testing.T) {
+	consumer := &BillingEventConsumer{
+		logger: discardLogger(),
+		clock:  clock.NewReal(),
+	}
+
+	// Drain should return immediately when there are no in-flight messages.
+	done := make(chan struct{})
+	go func() {
+		consumer.Drain()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// success — Drain returned promptly
+	case <-time.After(1 * time.Second):
+		t.Fatal("Drain must return immediately when no messages are in-flight")
+	}
+}
+
+func TestDrain_WaitsForInflight(t *testing.T) {
+	consumer := &BillingEventConsumer{
+		logger: discardLogger(),
+		clock:  clock.NewReal(),
+	}
+
+	// Simulate an in-flight message by incrementing the WaitGroup.
+	consumer.inflightWg.Add(1)
+
+	drainDone := make(chan struct{})
+	go func() {
+		consumer.Drain()
+		close(drainDone)
+	}()
+
+	// Drain should be blocked while the message is in-flight.
+	select {
+	case <-drainDone:
+		t.Fatal("Drain must not return while messages are in-flight")
+	case <-time.After(50 * time.Millisecond):
+		// expected — Drain is still waiting
+	}
+
+	// Complete the "in-flight" message.
+	consumer.inflightWg.Done()
+
+	select {
+	case <-drainDone:
+		// success — Drain returned after in-flight completed
+	case <-time.After(1 * time.Second):
+		t.Fatal("Drain must return after all in-flight messages complete")
+	}
+}
+
+func TestPollDLQDepth_ReturnsWhenNilConn(t *testing.T) {
+	consumer := &BillingEventConsumer{
+		logger:  discardLogger(),
+		clock:   clock.NewReal(),
+		metrics: newTestConsumerMetrics(),
+		// natsConn is nil — pollDLQDepth must return immediately.
+	}
+
+	done := make(chan struct{})
+	go func() {
+		consumer.pollDLQDepth(context.Background())
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// success
+	case <-time.After(1 * time.Second):
+		t.Fatal("pollDLQDepth must return immediately when natsConn is nil")
+	}
+}
+
+func TestPollDLQDepth_ReturnsWhenNilMetrics(t *testing.T) {
+	consumer := &BillingEventConsumer{
+		logger: discardLogger(),
+		clock:  clock.NewReal(),
+		// metrics is nil — pollDLQDepth must return immediately.
+	}
+
+	done := make(chan struct{})
+	go func() {
+		consumer.pollDLQDepth(context.Background())
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// success
+	case <-time.After(1 * time.Second):
+		t.Fatal("pollDLQDepth must return immediately when metrics is nil")
+	}
+}
+
+func TestConsumerDrainTimeout_IsPositive(t *testing.T) {
+	assert.Greater(t, ConsumerDrainTimeout, time.Duration(0),
+		"ConsumerDrainTimeout must be positive")
+}
+
+func TestDLQDepthPollInterval_IsPositive(t *testing.T) {
+	assert.Greater(t, DLQDepthPollInterval, time.Duration(0),
+		"DLQDepthPollInterval must be positive")
+}
+
+func TestHandleMessage_TwoEventsForSameEntityBothProcessed(t *testing.T) {
+	// This is the core bug fix: two legitimate events of the same type for the
+	// same entity (e.g., two subscription.cancelled events after two separate
+	// reactivation cycles) must both be processed because they have different
+	// event IDs.
+	idem := newStubIdempotencyChecker()
+	var processCount atomic.Int32
+
+	handler := &recordingHandler{
+		onCancelled: func(_ context.Context, _ string) error {
+			processCount.Add(1)
+			return nil
+		},
+	}
+
+	consumer := &BillingEventConsumer{
+		handler:        handler,
+		idempotency:    idem,
+		schemaRegistry: domainevent.NewSchemaRegistry(),
+		logger:         discardLogger(),
+		clock:          clock.NewReal(),
+	}
+
+	sameSubID := "sub-same"
+
+	// Two separate event instances for the same entity and type.
+	event1 := domainevent.NewWithEntity(
+		"subscription.cancelled",
+		map[string]any{"subscription_id": sameSubID, "user_id": "u-1", "reason": "first cancel"},
+		sameSubID,
+	)
+	event2 := domainevent.NewWithEntity(
+		"subscription.cancelled",
+		map[string]any{"subscription_id": sameSubID, "user_id": "u-1", "reason": "second cancel"},
+		sameSubID,
+	)
+
+	msg1 := buildEventMessage(t, event1)
+	consumer.handleMessage(context.Background(), "subscription.cancelled", msg1)
+
+	msg2 := buildEventMessage(t, event2)
+	consumer.handleMessage(context.Background(), "subscription.cancelled", msg2)
+
+	assert.Equal(t, int32(2), processCount.Load(),
+		"two distinct events for the same entity must both be processed")
+}
+
+func TestHandleMessage_BackwardCompat_OldEventWithoutIDUsesTypeEntityKey(t *testing.T) {
+	// Events without an ID (pre-UUIDv7 migration) must fall back to the old
+	// {event_type}:{entity_id} idempotency key format.
+	idem := newStubIdempotencyChecker()
+	handler := &recordingHandler{}
+
+	consumer := &BillingEventConsumer{
+		handler:        handler,
+		idempotency:    idem,
+		schemaRegistry: domainevent.NewSchemaRegistry(),
+		logger:         discardLogger(),
+		clock:          clock.NewReal(),
+	}
+
+	// Manually construct an event without ID (simulating pre-migration event).
+	event := domainevent.Event{
+		Type:      "subscription.cancelled",
+		Version:   1,
+		Timestamp: time.Now(),
+		Data:      map[string]any{"subscription_id": "sub-old", "user_id": "u-1", "reason": "test"},
+		EntityID:  "sub-old",
+	}
+
+	msg := buildEventMessage(t, event)
+	consumer.handleMessage(context.Background(), "subscription.cancelled", msg)
+
+	keys := idem.acquiredKeys()
+	require.Len(t, keys, 1)
+	assert.Equal(t, "subscription.cancelled:sub-old", keys[0],
+		"old events without ID must use type:entity_id as idempotency key")
 }

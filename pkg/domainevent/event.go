@@ -5,6 +5,8 @@ package domainevent
 import (
 	"context"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // EventType identifies the kind of domain event.
@@ -20,19 +22,32 @@ const DefaultEventVersion = 1
 // for compile-time safety, but map[string]any is still accepted for backward
 // compatibility and dynamic event sources (webhooks, plugins, infra).
 //
+// ID is a UUIDv7 that uniquely identifies each event instance. It is generated
+// at construction time and used as the outbox row ID, the NATS dedup key, and
+// the consumer-side idempotency key. Two identical business operations produce
+// two events with different IDs, enabling correct deduplication without
+// blocking legitimate repeated operations on the same aggregate.
+//
 // Version tracks the schema version of the payload, enabling backward-compatible
 // evolution of the 45+ event types. Consumers can branch on Version to handle
 // old and new payload shapes gracefully.
 //
 // EntityID identifies the aggregate instance that produced the event. Consumers
-// use it for business-level idempotency ({event_type}:{entity_id}) and
-// per-entity serial processing to guarantee ordering.
+// use it for per-entity serial processing to guarantee ordering.
 type Event struct {
+	ID        string    `json:"id"`
 	Type      EventType `json:"type"`
 	Version   int       `json:"version"`
 	Timestamp time.Time `json:"timestamp"`
 	Data      any       `json:"data"`
 	EntityID  string    `json:"entity_id,omitempty"`
+}
+
+// newEventID generates a UUIDv7 string for use as an event instance identifier.
+// UUIDv7 is time-ordered, making outbox row inserts append-only and enabling
+// efficient B-tree index usage on the partitioned outbox table.
+func newEventID() string {
+	return uuid.Must(uuid.NewV7()).String()
 }
 
 // New creates an Event with the given type, data, and the current timestamp.
@@ -44,6 +59,7 @@ func New(eventType EventType, data any) Event {
 // constructors and service methods that receive a deterministic time.Time.
 func NewAt(eventType EventType, data any, ts time.Time) Event {
 	return Event{
+		ID:        newEventID(),
 		Type:      eventType,
 		Version:   DefaultEventVersion,
 		Timestamp: ts,
@@ -52,10 +68,11 @@ func NewAt(eventType EventType, data any, ts time.Time) Event {
 }
 
 // NewWithEntity creates an Event tagged with the source aggregate's entity ID.
-// Consumers use EntityID for business-level idempotency and per-entity serial
-// processing to guarantee ordering within a single aggregate.
+// Consumers use EntityID for per-entity serial processing to guarantee ordering
+// within a single aggregate.
 func NewWithEntity(eventType EventType, data any, entityID string) Event {
 	return Event{
+		ID:        newEventID(),
 		Type:      eventType,
 		Version:   DefaultEventVersion,
 		Timestamp: time.Now(),
@@ -67,6 +84,7 @@ func NewWithEntity(eventType EventType, data any, entityID string) Event {
 // NewAtWithEntity creates an Event with an explicit timestamp and entity ID.
 func NewAtWithEntity(eventType EventType, data any, ts time.Time, entityID string) Event {
 	return Event{
+		ID:        newEventID(),
 		Type:      eventType,
 		Version:   DefaultEventVersion,
 		Timestamp: ts,
@@ -79,6 +97,7 @@ func NewAtWithEntity(eventType EventType, data any, ts time.Time, entityID strin
 // Use this when publishing events with a schema version different from DefaultEventVersion.
 func NewAtVersioned(eventType EventType, version int, data any, ts time.Time, entityID string) Event {
 	return Event{
+		ID:        newEventID(),
 		Type:      eventType,
 		Version:   version,
 		Timestamp: ts,
@@ -108,6 +127,7 @@ type EventPayload interface {
 // This is the preferred constructor for aggregate-level event recording.
 func NewTyped(payload EventPayload, ts time.Time, entityID string) Event {
 	return Event{
+		ID:        newEventID(),
 		Type:      payload.EventType(),
 		Version:   DefaultEventVersion,
 		Timestamp: ts,
