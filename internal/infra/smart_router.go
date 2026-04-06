@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math"
 	"sort"
+	"time"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
 )
@@ -82,6 +83,10 @@ const HookRoutingScoreModifier = "routing.score_modifier"
 // Maximum fallback nodes returned in a response.
 const maxFallbackNodes = 3
 
+// staleCacheThreshold is the maximum age of node health data before the
+// SmartRouter logs a warning about stale cache state.
+const staleCacheThreshold = 5 * time.Minute
+
 // Errors returned by the SmartRouter.
 var (
 	ErrNoHealthyNodes = errors.New("no healthy nodes available")
@@ -134,6 +139,13 @@ type NodeScore struct {
 // SelectNode evaluates healthy nodes against the request parameters and returns
 // the best match plus fallback alternatives.
 func (r *SmartRouter) SelectNode(ctx context.Context, req RouteRequest) (*RouteResponse, error) {
+	if !r.cache.IsFresh(staleCacheThreshold) {
+		if r.logger != nil {
+			r.logger.Warn("node health cache is stale",
+				slog.Duration("stale_for", r.cache.StaleDuration()))
+		}
+	}
+
 	healthy := r.cache.GetHealthy()
 	if len(healthy) == 0 {
 		return nil, ErrNoHealthyNodes

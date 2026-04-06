@@ -23,8 +23,9 @@ type NodeHealth struct {
 // NodeHealthCache is a thread-safe in-memory cache of node health data shared
 // between the HealthMonitor (writer) and the SmartRouter (reader).
 type NodeHealthCache struct {
-	mu    sync.RWMutex
-	nodes map[string]NodeHealth
+	mu          sync.RWMutex
+	nodes       map[string]NodeHealth
+	lastUpdated time.Time
 }
 
 // NewNodeHealthCache returns an initialised, empty cache.
@@ -44,6 +45,7 @@ func (c *NodeHealthCache) Update(health []NodeHealth) {
 		updated[h.NodeID] = h
 	}
 	c.nodes = updated
+	c.lastUpdated = time.Now()
 }
 
 // GetAll returns a snapshot of every cached node.
@@ -79,4 +81,28 @@ func (c *NodeHealthCache) Get(nodeID string) (NodeHealth, bool) {
 
 	h, ok := c.nodes[nodeID]
 	return h, ok
+}
+
+// IsFresh reports whether the cache has been updated within the given maxAge
+// window. Returns false if the cache has never been updated.
+func (c *NodeHealthCache) IsFresh(maxAge time.Duration) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if c.lastUpdated.IsZero() {
+		return false
+	}
+	return time.Since(c.lastUpdated) < maxAge
+}
+
+// StaleDuration returns how long ago the cache was last updated. Returns zero
+// if the cache has never been updated.
+func (c *NodeHealthCache) StaleDuration() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if c.lastUpdated.IsZero() {
+		return 0
+	}
+	return time.Since(c.lastUpdated)
 }

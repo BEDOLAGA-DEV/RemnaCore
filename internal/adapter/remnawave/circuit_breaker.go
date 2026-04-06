@@ -3,8 +3,11 @@ package remnawave
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sony/gobreaker/v2"
 )
 
@@ -28,15 +31,57 @@ const (
 	CBConsecutiveFailures = 5
 )
 
+// Prometheus metric constants for the circuit breaker.
+const (
+	cbMetricNamespace = "platform"
+	cbMetricSubsystem = "circuit_breaker"
+
+	cbMetricStateName       = "remnawave_state"
+	cbMetricStateHelp       = "Current circuit breaker state (0=closed, 1=half-open, 2=open)"
+	cbMetricTransitionsName = "remnawave_transitions_total"
+	cbMetricTransitionsHelp = "Circuit breaker state transitions"
+
+	cbLabelToState = "to_state"
+)
+
+var cbMetricsOnce sync.Once
+var (
+	cbStateGauge       prometheus.Gauge
+	cbTransitionsTotal *prometheus.CounterVec
+)
+
+// registerCBMetrics registers the circuit breaker Prometheus metrics once.
+func registerCBMetrics() {
+	cbMetricsOnce.Do(func() {
+		cbStateGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: cbMetricNamespace,
+			Subsystem: cbMetricSubsystem,
+			Name:      cbMetricStateName,
+			Help:      cbMetricStateHelp,
+		})
+		cbTransitionsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: cbMetricNamespace,
+			Subsystem: cbMetricSubsystem,
+			Name:      cbMetricTransitionsName,
+			Help:      cbMetricTransitionsHelp,
+		}, []string{cbLabelToState})
+		prometheus.MustRegister(cbStateGauge)
+		prometheus.MustRegister(cbTransitionsTotal)
+	})
+}
+
 // ResilientClient wraps a Client with a circuit breaker that opens after
-// consecutive failures and prevents cascading failures.
+// consecutive failures and prevents cascading failures. State transitions
+// are recorded as Prometheus metrics.
 type ResilientClient struct {
 	client *Client
 	cb     *gobreaker.CircuitBreaker[any]
 }
 
 // NewResilientClient wraps the provided Client with a circuit breaker.
-func NewResilientClient(client *Client) *ResilientClient {
+func NewResilientClient(client *Client, logger *slog.Logger) *ResilientClient {
+	registerCBMetrics()
+
 	settings := gobreaker.Settings{
 		Name:        CBName,
 		MaxRequests: CBMaxRequests,
@@ -44,6 +89,15 @@ func NewResilientClient(client *Client) *ResilientClient {
 		Timeout:     CBTimeout,
 		ReadyToTrip: func(counts gobreaker.Counts) bool {
 			return counts.ConsecutiveFailures >= CBConsecutiveFailures
+		},
+		OnStateChange: func(name string, from, to gobreaker.State) {
+			logger.Warn("circuit breaker state changed",
+				slog.String("name", name),
+				slog.String("from", from.String()),
+				slog.String("to", to.String()),
+			)
+			cbStateGauge.Set(float64(to))
+			cbTransitionsTotal.WithLabelValues(to.String()).Inc()
 		},
 	}
 

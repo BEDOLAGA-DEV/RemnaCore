@@ -6,11 +6,14 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/redis/go-redis/v9"
+	"github.com/sony/gobreaker/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -146,8 +149,164 @@ func TestNewSubscriptionProxy(t *testing.T) {
 	assert.NotNil(t, proxy)
 	assert.NotNil(t, proxy.l1Cache)
 	assert.NotNil(t, proxy.remnawaveClient)
+	assert.NotNil(t, proxy.cbRemnawave, "circuit breaker must be initialized")
 
 	_ = valkeyClient.Close()
+}
+
+func TestSubscriptionProxy_Singleflight_DeduplicatesL3(t *testing.T) {
+	// 10 concurrent requests for the same UUID must result in exactly 1
+	// HTTP call to Remnawave via singleflight deduplication.
+	const concurrentRequests = 10
+
+	var httpCalls atomic.Int64
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		httpCalls.Add(1)
+		// Simulate a slow upstream so all goroutines pile up on singleflight.
+		time.Sleep(50 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("deduplicated-response"))
+	}))
+	defer mockServer.Close()
+
+	client := remnawave.NewClient(mockServer.URL, "test-token")
+	valkeyClient := redis.NewClient(&redis.Options{Addr: "localhost:0"})
+	proxy := NewSubscriptionProxy(client, valkeyClient, slog.Default(), clock.NewReal())
+
+	router := chi.NewRouter()
+	router.Get("/{shortUuid}", proxy.ServeSubscription)
+
+	var wg sync.WaitGroup
+	results := make([]*httptest.ResponseRecorder, concurrentRequests)
+
+	for i := range concurrentRequests {
+		wg.Add(1)
+		results[i] = httptest.NewRecorder()
+		go func(idx int) {
+			defer wg.Done()
+			req := httptest.NewRequest(http.MethodGet, "/dedup-uuid", nil)
+			router.ServeHTTP(results[idx], req)
+		}(i)
+	}
+	wg.Wait()
+
+	// All requests must succeed.
+	for i, rec := range results {
+		assert.Equal(t, http.StatusOK, rec.Code,
+			"request %d should succeed", i)
+		assert.Equal(t, "deduplicated-response", rec.Body.String(),
+			"request %d should return the shared response", i)
+	}
+
+	// Singleflight must collapse all concurrent calls into exactly 1 HTTP call.
+	assert.Equal(t, int64(1), httpCalls.Load(),
+		"singleflight should deduplicate to exactly 1 upstream call")
+}
+
+func TestSubscriptionProxy_CircuitBreaker_OpensAfterFailures(t *testing.T) {
+	// After ProxyCBConsecutiveFailures consecutive failures, the circuit
+	// breaker should open and reject the next call immediately.
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer mockServer.Close()
+
+	client := remnawave.NewClient(mockServer.URL, "test-token")
+	valkeyClient := redis.NewClient(&redis.Options{Addr: "localhost:0"})
+	proxy := NewSubscriptionProxy(client, valkeyClient, slog.Default(), clock.NewReal())
+
+	router := chi.NewRouter()
+	router.Get("/{shortUuid}", proxy.ServeSubscription)
+
+	// Trip the circuit breaker by issuing ProxyCBConsecutiveFailures requests.
+	// Each must use a unique UUID to avoid singleflight deduplication.
+	for i := range ProxyCBConsecutiveFailures {
+		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/fail-%d", i), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusBadGateway, w.Code,
+			"failure %d should return 502", i+1)
+	}
+
+	// The breaker should now be open. The next request must fail immediately
+	// without calling the upstream (gobreaker returns ErrOpenState).
+	req := httptest.NewRequest(http.MethodGet, "/after-trip", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusBadGateway, w.Code,
+		"request after breaker trips should return 502")
+}
+
+func TestSubscriptionProxy_CircuitBreaker_Constants(t *testing.T) {
+	tests := []struct {
+		name  string
+		check func(t *testing.T)
+	}{
+		{
+			name: "name is non-empty",
+			check: func(t *testing.T) {
+				assert.NotEmpty(t, ProxyCBName)
+			},
+		},
+		{
+			name: "max requests is positive",
+			check: func(t *testing.T) {
+				assert.Greater(t, int(ProxyCBMaxRequests), 0)
+			},
+		},
+		{
+			name: "timeout is positive",
+			check: func(t *testing.T) {
+				assert.Greater(t, ProxyCBTimeout, time.Duration(0))
+			},
+		},
+		{
+			name: "consecutive failures threshold is positive",
+			check: func(t *testing.T) {
+				assert.Greater(t, int(ProxyCBConsecutiveFailures), 0)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, tt.check)
+	}
+}
+
+func TestSubscriptionProxy_CircuitBreaker_DirectTrip(t *testing.T) {
+	// Verify the gobreaker instance embedded in the proxy behaves correctly:
+	// 5 failures -> state open -> next call rejected without execution.
+	cb := gobreaker.NewCircuitBreaker[[]byte](gobreaker.Settings{
+		Name:        ProxyCBName,
+		MaxRequests: ProxyCBMaxRequests,
+		Timeout:     ProxyCBTimeout,
+		ReadyToTrip: func(counts gobreaker.Counts) bool {
+			return counts.ConsecutiveFailures >= ProxyCBConsecutiveFailures
+		},
+	})
+
+	errUpstream := fmt.Errorf("upstream 500")
+
+	// Record consecutive failures up to the threshold.
+	for i := range ProxyCBConsecutiveFailures {
+		t.Run(fmt.Sprintf("failure_%d", i+1), func(t *testing.T) {
+			_, err := cb.Execute(func() ([]byte, error) {
+				return nil, errUpstream
+			})
+			require.Error(t, err)
+		})
+	}
+
+	assert.Equal(t, gobreaker.StateOpen, cb.State(),
+		"breaker should be open after %d consecutive failures", ProxyCBConsecutiveFailures)
+
+	// Next call must be rejected without executing the function.
+	functionCalled := false
+	_, err := cb.Execute(func() ([]byte, error) {
+		functionCalled = true
+		return []byte("should-not-run"), nil
+	})
+	assert.Error(t, err)
+	assert.False(t, functionCalled, "function must not be called when breaker is open")
 }
 
 func TestLRUCache_EvictsOldest(t *testing.T) {

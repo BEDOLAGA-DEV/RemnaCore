@@ -12,6 +12,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/redis/go-redis/v9"
+	"github.com/sony/gobreaker/v2"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/remnawave"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
@@ -32,6 +34,21 @@ const (
 	// when fetching subscription configs.
 	ProxyHTTPTimeout = 10 * time.Second
 
+	// ProxyCBName is the circuit breaker instance name for the subscription proxy.
+	ProxyCBName = "subscription-proxy-remnawave"
+
+	// ProxyCBMaxRequests is the number of probe requests allowed in the
+	// half-open state.
+	ProxyCBMaxRequests = 1
+
+	// ProxyCBTimeout is the duration the circuit stays open before
+	// transitioning to half-open.
+	ProxyCBTimeout = 15 * time.Second
+
+	// ProxyCBConsecutiveFailures is the number of consecutive failures
+	// required to trip the breaker from closed to open.
+	ProxyCBConsecutiveFailures = 5
+
 	// L2CacheKeyPrefix is the Valkey key prefix for L2-cached subscription configs.
 	L2CacheKeyPrefix = "sub:"
 	// RemnawaveSubPath is the URL path segment for Remnawave subscription endpoints.
@@ -44,6 +61,9 @@ const (
 
 // SubscriptionProxy serves VPN subscription configs to clients. It implements a
 // three-tier cache: L1 (in-memory LRU) -> L2 (Valkey) -> L3 (Remnawave API).
+//
+// L3 fetches are deduplicated via singleflight and protected by a circuit
+// breaker that opens after ProxyCBConsecutiveFailures consecutive failures.
 type SubscriptionProxy struct {
 	remnawaveClient *remnawave.Client
 	httpClient      *http.Client
@@ -51,6 +71,8 @@ type SubscriptionProxy struct {
 	valkeyClient    *redis.Client
 	logger          *slog.Logger
 	clock           clock.Clock
+	sfGroup         singleflight.Group
+	cbRemnawave     *gobreaker.CircuitBreaker[[]byte]
 }
 
 // NewSubscriptionProxy creates a SubscriptionProxy wired to the given backends.
@@ -60,6 +82,15 @@ func NewSubscriptionProxy(
 	logger *slog.Logger,
 	clk clock.Clock,
 ) *SubscriptionProxy {
+	cb := gobreaker.NewCircuitBreaker[[]byte](gobreaker.Settings{
+		Name:        ProxyCBName,
+		MaxRequests: ProxyCBMaxRequests,
+		Timeout:     ProxyCBTimeout,
+		ReadyToTrip: func(counts gobreaker.Counts) bool {
+			return counts.ConsecutiveFailures >= ProxyCBConsecutiveFailures
+		},
+	})
+
 	return &SubscriptionProxy{
 		remnawaveClient: client,
 		httpClient: &http.Client{
@@ -69,6 +100,7 @@ func NewSubscriptionProxy(
 		valkeyClient: valkeyClient,
 		logger:       logger,
 		clock:        clk,
+		cbRemnawave:  cb,
 	}
 }
 
@@ -97,8 +129,12 @@ func (sp *SubscriptionProxy) ServeSubscription(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// L3: Remnawave API.
-	body, err := sp.fetchFromRemnawave(r.Context(), shortUUID)
+	// L3: Singleflight + Circuit Breaker.
+	result, err, shared := sp.sfGroup.Do(shortUUID, func() (any, error) {
+		return sp.cbRemnawave.Execute(func() ([]byte, error) {
+			return sp.fetchFromRemnawave(r.Context(), shortUUID)
+		})
+	})
 	if err != nil {
 		sp.logger.Error("subscription proxy: remnawave fetch failed",
 			slog.String("short_uuid", shortUUID),
@@ -106,6 +142,10 @@ func (sp *SubscriptionProxy) ServeSubscription(w http.ResponseWriter, r *http.Re
 		)
 		http.Error(w, "upstream unavailable", http.StatusBadGateway)
 		return
+	}
+	body := result.([]byte)
+	if shared {
+		sp.logger.Debug("singleflight: shared L3 result", slog.String("uuid", shortUUID))
 	}
 
 	// Store in L2 and L1.

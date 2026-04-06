@@ -61,6 +61,59 @@ func TestNodeHealthCache_Get(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestNodeHealthCache_IsFresh_NeverUpdated(t *testing.T) {
+	cache := NewNodeHealthCache()
+	assert.False(t, cache.IsFresh(5*time.Minute),
+		"cache that was never updated should not be fresh")
+}
+
+func TestNodeHealthCache_IsFresh_RecentUpdate(t *testing.T) {
+	cache := NewNodeHealthCache()
+	cache.Update([]NodeHealth{
+		{NodeID: "a", IsOnline: true},
+	})
+
+	assert.True(t, cache.IsFresh(5*time.Minute),
+		"cache updated just now should be fresh within 5 minutes")
+}
+
+func TestNodeHealthCache_StaleDuration_NeverUpdated(t *testing.T) {
+	cache := NewNodeHealthCache()
+	assert.Equal(t, time.Duration(0), cache.StaleDuration(),
+		"stale duration should be zero when never updated")
+}
+
+func TestNodeHealthCache_StaleDuration_AfterUpdate(t *testing.T) {
+	cache := NewNodeHealthCache()
+	cache.Update([]NodeHealth{
+		{NodeID: "a", IsOnline: true},
+	})
+
+	stale := cache.StaleDuration()
+	assert.Less(t, stale, 1*time.Second,
+		"stale duration should be very small immediately after update")
+}
+
+func TestNodeHealthCache_UpdateSetsLastUpdated(t *testing.T) {
+	cache := NewNodeHealthCache()
+
+	// Before any update, IsFresh must return false.
+	assert.False(t, cache.IsFresh(time.Hour))
+
+	before := time.Now()
+	cache.Update([]NodeHealth{
+		{NodeID: "a", IsOnline: true},
+	})
+
+	// After update, IsFresh with a very large maxAge should return true.
+	assert.True(t, cache.IsFresh(time.Hour))
+
+	// StaleDuration should be small and reflect time since the update.
+	stale := cache.StaleDuration()
+	assert.GreaterOrEqual(t, stale, time.Duration(0))
+	assert.Less(t, stale, time.Since(before)+1*time.Millisecond)
+}
+
 func TestNodeHealthCache_ConcurrentAccess(t *testing.T) {
 	cache := NewNodeHealthCache()
 	now := time.Now()
@@ -78,6 +131,8 @@ func TestNodeHealthCache_ConcurrentAccess(t *testing.T) {
 			_ = cache.GetAll()
 			_ = cache.GetHealthy()
 			cache.Get("a")
+			_ = cache.IsFresh(5 * time.Minute)
+			_ = cache.StaleDuration()
 		})
 	}
 	wg.Wait()
