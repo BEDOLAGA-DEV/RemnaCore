@@ -79,6 +79,12 @@ func mapDomainError(err error) *apierror.Error {
 		return apierror.IdentityResetExpired
 	case errors.Is(err, identity.ErrPasswordResetNotFound):
 		return apierror.IdentityResetNotFound
+	case errors.Is(err, identity.ErrDisplayNameTooLong):
+		return apierror.IdentityDisplayNameTooLong
+	case errors.Is(err, identity.ErrTelegramAlreadyLinked):
+		return apierror.IdentityTelegramAlreadyLinked
+	case errors.Is(err, identity.ErrTelegramNotLinked):
+		return apierror.IdentityTelegramNotLinked
 
 	// ── Billing ──────────────────────────────────────────────────────────
 	case errors.Is(err, billing.ErrPlanNotFound):

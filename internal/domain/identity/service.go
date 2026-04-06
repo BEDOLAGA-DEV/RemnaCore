@@ -298,8 +298,9 @@ func (s *Service) UpdateDisplayName(ctx context.Context, userID, displayName str
 	if err != nil {
 		return fmt.Errorf("finding user: %w", err)
 	}
-	user.DisplayName = displayName
-	user.UpdatedAt = s.clock.Now()
+	if err := user.ChangeDisplayName(displayName, s.clock.Now()); err != nil {
+		return err
+	}
 	if err := s.repo.UpdateUser(ctx, user); err != nil {
 		return fmt.Errorf("updating user: %w", err)
 	}
@@ -312,9 +313,9 @@ func (s *Service) LinkTelegram(ctx context.Context, userID string, telegramID in
 	if err != nil {
 		return fmt.Errorf("finding user: %w", err)
 	}
-	now := s.clock.Now()
-	user.TelegramID = &telegramID
-	user.UpdatedAt = now
+	if err := user.LinkTelegram(telegramID, s.clock.Now()); err != nil {
+		return err
+	}
 	if err := s.repo.UpdateUser(ctx, user); err != nil {
 		return fmt.Errorf("updating user: %w", err)
 	}
@@ -327,8 +328,9 @@ func (s *Service) UnlinkTelegram(ctx context.Context, userID string) error {
 	if err != nil {
 		return fmt.Errorf("finding user: %w", err)
 	}
-	user.TelegramID = nil
-	user.UpdatedAt = s.clock.Now()
+	if err := user.UnlinkTelegram(s.clock.Now()); err != nil {
+		return err
+	}
 	if err := s.repo.UpdateUser(ctx, user); err != nil {
 		return fmt.Errorf("updating user: %w", err)
 	}
@@ -409,8 +411,7 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 	}
 
 	now := s.clock.Now()
-	user.PasswordHash = hash
-	user.UpdatedAt = now
+	user.ChangePassword(hash, now)
 
 	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		if err := s.repo.UpdateUser(txCtx, user); err != nil {

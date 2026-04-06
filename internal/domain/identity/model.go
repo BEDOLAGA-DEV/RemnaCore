@@ -17,10 +17,11 @@ const (
 	RoleReseller Role = "reseller"
 	RoleAdmin    Role = "admin"
 
-	MinPasswordLength    = 8
-	EmailVerificationTTL = 24 * time.Hour
-	PasswordResetTTL     = 1 * time.Hour
-	VerificationTokenLen = 32 // bytes, hex-encoded = 64 chars
+	MinPasswordLength     = 8
+	MaxDisplayNameLen     = 100
+	EmailVerificationTTL  = 24 * time.Hour
+	PasswordResetTTL      = 1 * time.Hour
+	VerificationTokenLen  = 32 // bytes, hex-encoded = 64 chars
 	PasswordResetTokenLen = 32 // bytes, hex-encoded = 64 chars
 )
 
@@ -87,6 +88,45 @@ func NewPlatformUser(email, password string, now time.Time) (*PlatformUser, erro
 func (u *PlatformUser) VerifyEmail(now time.Time) {
 	u.EmailVerified = true
 	u.UpdatedAt = now
+}
+
+// ChangeDisplayName validates and sets the user's display name.
+func (u *PlatformUser) ChangeDisplayName(name string, now time.Time) error {
+	if len(name) > MaxDisplayNameLen {
+		return ErrDisplayNameTooLong
+	}
+	u.DisplayName = name
+	u.UpdatedAt = now
+	return nil
+}
+
+// ChangePassword sets a pre-hashed password on the user. Callers are
+// responsible for hashing the raw password before invoking this method.
+func (u *PlatformUser) ChangePassword(newHash string, now time.Time) {
+	u.PasswordHash = newHash
+	u.UpdatedAt = now
+}
+
+// LinkTelegram associates a Telegram account with the user. Returns an error
+// if a Telegram account is already linked.
+func (u *PlatformUser) LinkTelegram(telegramID int64, now time.Time) error {
+	if u.TelegramID != nil {
+		return ErrTelegramAlreadyLinked
+	}
+	u.TelegramID = &telegramID
+	u.UpdatedAt = now
+	return nil
+}
+
+// UnlinkTelegram removes the Telegram association. Returns an error if no
+// Telegram account is currently linked.
+func (u *PlatformUser) UnlinkTelegram(now time.Time) error {
+	if u.TelegramID == nil {
+		return ErrTelegramNotLinked
+	}
+	u.TelegramID = nil
+	u.UpdatedAt = now
+	return nil
 }
 
 // validatePassword checks that the password meets minimum complexity

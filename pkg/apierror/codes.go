@@ -12,8 +12,11 @@ var (
 	IdentityEmailNotVerified = New("IDENTITY.EMAIL_NOT_VERIFIED", "email not verified", http.StatusForbidden)
 	IdentityPasswordTooShort = New("IDENTITY.PASSWORD_TOO_SHORT", "password must be at least 8 characters", http.StatusUnprocessableEntity)
 	IdentityPasswordTooWeak  = New("IDENTITY.PASSWORD_TOO_WEAK", "password must contain uppercase, lowercase, and digit characters", http.StatusUnprocessableEntity)
-	IdentityResetExpired     = New("IDENTITY.RESET_EXPIRED", "password reset token expired", http.StatusGone)
-	IdentityResetNotFound    = New("IDENTITY.RESET_NOT_FOUND", "password reset token not found", http.StatusNotFound)
+	IdentityResetExpired        = New("IDENTITY.RESET_EXPIRED", "password reset token expired", http.StatusGone)
+	IdentityResetNotFound       = New("IDENTITY.RESET_NOT_FOUND", "password reset token not found", http.StatusNotFound)
+	IdentityDisplayNameTooLong  = New("IDENTITY.DISPLAY_NAME_TOO_LONG", "display name exceeds maximum length", http.StatusUnprocessableEntity)
+	IdentityTelegramAlreadyLinked = New("IDENTITY.TELEGRAM_ALREADY_LINKED", "telegram account already linked", http.StatusConflict)
+	IdentityTelegramNotLinked   = New("IDENTITY.TELEGRAM_NOT_LINKED", "no telegram account linked", http.StatusConflict)
 )
 
 // Billing error codes.
