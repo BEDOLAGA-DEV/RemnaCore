@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"os"
@@ -12,13 +11,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/billingtest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
-	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch/hookdispatchtest"
 )
 
 // --- checkout test infrastructure ---
@@ -52,6 +51,15 @@ func sampleDraftInvoice(subID string) *aggregate.Invoice {
 	}
 }
 
+// noPricingModifier returns a MockPricingModifier that applies no modification.
+func noPricingModifier() *billingtest.MockPricingModifier {
+	pm := &billingtest.MockPricingModifier{}
+	pm.On("BeginFlow", mock.Anything).Return()
+	pm.On("ModifyPricing", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, nil)
+	return pm
+}
+
 // --- Tests ---
 
 func TestStartCheckout_Success(t *testing.T) {
@@ -74,16 +82,13 @@ func TestStartCheckout_Success(t *testing.T) {
 			Status:      "pending",
 		}, nil)
 
-	// Pricing hook dispatcher.
-	dispatcher := &hookdispatchtest.MockDispatcher{}
-	dispatcher.On("BeginFlow", mock.Anything).Return()
-	dispatcher.On("DispatchSync", mock.Anything, "pricing.calculate", mock.AnythingOfType("json.RawMessage")).
-		Return(nil, nil)
+	// Pricing modifier — no modification.
+	pricingMod := noPricingModifier()
 
 	// Create checkout service with billing-owned PaymentGateway.
 	checkoutPub := &billingtest.MockEventPublisher{}
 	checkoutPub.On("Publish", mock.Anything, mock.Anything).Return(nil).Maybe()
-	checkoutSvc := NewCheckoutService(billingSvc, paymentGW, dispatcher, checkoutPub, checkoutLogger(), billing.AlwaysAllowRateLimiter{}, clock.NewReal())
+	checkoutSvc := NewCheckoutService(billingSvc, paymentGW, pricingMod, checkoutPub, checkoutLogger(), billing.AlwaysAllowRateLimiter{}, clock.NewReal())
 
 	result, err := checkoutSvc.StartCheckout(context.Background(), CheckoutRequest{
 		UserID:    "user-1",
@@ -103,7 +108,7 @@ func TestStartCheckout_Success(t *testing.T) {
 	subs.AssertExpectations(t)
 	invoices.AssertExpectations(t)
 	paymentGW.AssertExpectations(t)
-	dispatcher.AssertExpectations(t)
+	pricingMod.AssertExpectations(t)
 }
 
 func TestCompleteCheckout_Success(t *testing.T) {
@@ -118,7 +123,7 @@ func TestCompleteCheckout_Success(t *testing.T) {
 	subs.On("Update", mock.Anything, sub).Return(nil)
 	publisher.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
-	// Payment gateway is not needed for CompleteCheckout; only billing service is used.
+	// Payment gateway and pricing modifier are not needed for CompleteCheckout.
 	checkoutSvc := NewCheckoutService(svc, nil, nil, publisher, checkoutLogger(), billing.AlwaysAllowRateLimiter{}, clock.NewReal())
 
 	err := checkoutSvc.CompleteCheckout(context.Background(), "inv-1")
@@ -196,10 +201,7 @@ func TestStartCheckout_RateLimiterError_FailsOpen(t *testing.T) {
 			Status:      "pending",
 		}, nil)
 
-	dispatcher := &hookdispatchtest.MockDispatcher{}
-	dispatcher.On("BeginFlow", mock.Anything).Return()
-	dispatcher.On("DispatchSync", mock.Anything, "pricing.calculate", mock.AnythingOfType("json.RawMessage")).
-		Return(nil, nil)
+	pricingMod := noPricingModifier()
 
 	rateLimiter := &billingtest.MockDomainRateLimiter{}
 	rateLimiter.On("AllowCheckout", mock.Anything, "user-1").
@@ -207,7 +209,7 @@ func TestStartCheckout_RateLimiterError_FailsOpen(t *testing.T) {
 
 	checkoutPub := &billingtest.MockEventPublisher{}
 	checkoutPub.On("Publish", mock.Anything, mock.Anything).Return(nil).Maybe()
-	checkoutSvc := NewCheckoutService(billingSvc, paymentGW, dispatcher, checkoutPub, checkoutLogger(), rateLimiter, clock.NewReal())
+	checkoutSvc := NewCheckoutService(billingSvc, paymentGW, pricingMod, checkoutPub, checkoutLogger(), rateLimiter, clock.NewReal())
 
 	result, err := checkoutSvc.StartCheckout(context.Background(), CheckoutRequest{
 		UserID:    "user-1",
@@ -227,7 +229,7 @@ func TestStartCheckout_RateLimiterError_FailsOpen(t *testing.T) {
 
 // --- Pricing plugin integration tests ---
 
-func TestStartCheckout_PricingHook_DiscountApplied(t *testing.T) {
+func TestStartCheckout_PricingModifier_DiscountApplied(t *testing.T) {
 	billingSvc, plans, subs, invoices, _, billingPub := newTestBillingService()
 
 	plan := samplePlan()
@@ -238,9 +240,6 @@ func TestStartCheckout_PricingHook_DiscountApplied(t *testing.T) {
 
 	paymentGW := &billingtest.MockPaymentGateway{}
 	paymentGW.On("CreateCharge", mock.Anything, mock.MatchedBy(func(req billing.CreateChargeRequest) bool {
-		// The charge amount must reflect the discounted total: 999 - 1000 = 0 (floored).
-		// Actually 999 subtotal, 1000 discount -> total floored at 0.
-		// Let's use a smaller discount: 200 cents off -> 999 - 200 = 799.
 		return true
 	})).
 		Return(&billing.CreateChargeResult{
@@ -250,21 +249,19 @@ func TestStartCheckout_PricingHook_DiscountApplied(t *testing.T) {
 			Status:      "pending",
 		}, nil)
 
-	// Pricing hook returns a discount of 200 cents.
+	// Pricing modifier returns a discount of 200 cents.
 	discountCents := int64(200)
-	hookResponse, _ := json.Marshal(PricingHookResult{
-		Discount: &discountCents,
-		Reason:   "loyalty_10pct",
-	})
-
-	dispatcher := &hookdispatchtest.MockDispatcher{}
-	dispatcher.On("BeginFlow", mock.Anything).Return()
-	dispatcher.On("DispatchSync", mock.Anything, HookPricingCalculate, mock.AnythingOfType("json.RawMessage")).
-		Return(json.RawMessage(hookResponse), nil)
+	pricingMod := &billingtest.MockPricingModifier{}
+	pricingMod.On("BeginFlow", mock.Anything).Return()
+	pricingMod.On("ModifyPricing", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&billing.PricingModification{
+			Discount: &discountCents,
+			Reason:   "loyalty_10pct",
+		}, nil)
 
 	checkoutPub := &billingtest.MockEventPublisher{}
 	checkoutPub.On("Publish", mock.Anything, mock.Anything).Return(nil).Maybe()
-	checkoutSvc := NewCheckoutService(billingSvc, paymentGW, dispatcher, checkoutPub, checkoutLogger(), billing.AlwaysAllowRateLimiter{}, clock.NewReal())
+	checkoutSvc := NewCheckoutService(billingSvc, paymentGW, pricingMod, checkoutPub, checkoutLogger(), billing.AlwaysAllowRateLimiter{}, clock.NewReal())
 
 	result, err := checkoutSvc.StartCheckout(context.Background(), CheckoutRequest{
 		UserID:    "user-1",
@@ -281,10 +278,10 @@ func TestStartCheckout_PricingHook_DiscountApplied(t *testing.T) {
 	paymentGW.AssertCalled(t, "CreateCharge", mock.Anything, mock.MatchedBy(func(req billing.CreateChargeRequest) bool {
 		return req.Amount == 799
 	}))
-	dispatcher.AssertExpectations(t)
+	pricingMod.AssertExpectations(t)
 }
 
-func TestStartCheckout_PricingHook_Error_OriginalPrice(t *testing.T) {
+func TestStartCheckout_PricingModifier_Error_OriginalPrice(t *testing.T) {
 	billingSvc, plans, subs, invoices, _, billingPub := newTestBillingService()
 
 	plan := samplePlan()
@@ -302,15 +299,15 @@ func TestStartCheckout_PricingHook_Error_OriginalPrice(t *testing.T) {
 			Status:      "pending",
 		}, nil)
 
-	// Pricing hook returns an error — price should remain unchanged.
-	dispatcher := &hookdispatchtest.MockDispatcher{}
-	dispatcher.On("BeginFlow", mock.Anything).Return()
-	dispatcher.On("DispatchSync", mock.Anything, HookPricingCalculate, mock.AnythingOfType("json.RawMessage")).
+	// Pricing modifier returns an error -- price should remain unchanged.
+	pricingMod := &billingtest.MockPricingModifier{}
+	pricingMod.On("BeginFlow", mock.Anything).Return()
+	pricingMod.On("ModifyPricing", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(nil, errors.New("plugin crashed"))
 
 	checkoutPub := &billingtest.MockEventPublisher{}
 	checkoutPub.On("Publish", mock.Anything, mock.Anything).Return(nil).Maybe()
-	checkoutSvc := NewCheckoutService(billingSvc, paymentGW, dispatcher, checkoutPub, checkoutLogger(), billing.AlwaysAllowRateLimiter{}, clock.NewReal())
+	checkoutSvc := NewCheckoutService(billingSvc, paymentGW, pricingMod, checkoutPub, checkoutLogger(), billing.AlwaysAllowRateLimiter{}, clock.NewReal())
 
 	result, err := checkoutSvc.StartCheckout(context.Background(), CheckoutRequest{
 		UserID:    "user-1",
@@ -329,7 +326,7 @@ func TestStartCheckout_PricingHook_Error_OriginalPrice(t *testing.T) {
 	}))
 }
 
-func TestStartCheckout_PricingHook_InvalidJSON_OriginalPrice(t *testing.T) {
+func TestStartCheckout_PricingModifier_NilResult_OriginalPrice(t *testing.T) {
 	billingSvc, plans, subs, invoices, _, billingPub := newTestBillingService()
 
 	plan := samplePlan()
@@ -342,20 +339,17 @@ func TestStartCheckout_PricingHook_InvalidJSON_OriginalPrice(t *testing.T) {
 	paymentGW.On("CreateCharge", mock.Anything, mock.AnythingOfType("billing.CreateChargeRequest")).
 		Return(&billing.CreateChargeResult{
 			Provider:    "stripe",
-			ExternalID:  "pi_bad",
-			CheckoutURL: "https://checkout.stripe.com/session/bad",
+			ExternalID:  "pi_nil",
+			CheckoutURL: "https://checkout.stripe.com/session/nil",
 			Status:      "pending",
 		}, nil)
 
-	// Pricing hook returns invalid JSON — price should remain unchanged.
-	dispatcher := &hookdispatchtest.MockDispatcher{}
-	dispatcher.On("BeginFlow", mock.Anything).Return()
-	dispatcher.On("DispatchSync", mock.Anything, HookPricingCalculate, mock.AnythingOfType("json.RawMessage")).
-		Return(json.RawMessage([]byte("not valid json {")), nil)
+	// Pricing modifier returns nil (no plugin registered).
+	pricingMod := noPricingModifier()
 
 	checkoutPub := &billingtest.MockEventPublisher{}
 	checkoutPub.On("Publish", mock.Anything, mock.Anything).Return(nil).Maybe()
-	checkoutSvc := NewCheckoutService(billingSvc, paymentGW, dispatcher, checkoutPub, checkoutLogger(), billing.AlwaysAllowRateLimiter{}, clock.NewReal())
+	checkoutSvc := NewCheckoutService(billingSvc, paymentGW, pricingMod, checkoutPub, checkoutLogger(), billing.AlwaysAllowRateLimiter{}, clock.NewReal())
 
 	result, err := checkoutSvc.StartCheckout(context.Background(), CheckoutRequest{
 		UserID:    "user-1",

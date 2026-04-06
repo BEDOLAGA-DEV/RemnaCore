@@ -133,7 +133,7 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (*RegisterR
 		if err := s.repo.CreateEmailVerification(txCtx, verification); err != nil {
 			return fmt.Errorf("persisting email verification: %w", err)
 		}
-		if err := s.publishAggregateEvents(txCtx, user); err != nil {
+		if err := domainevent.PublishAll(txCtx, s.publisher, user); err != nil {
 			return err
 		}
 		return nil
@@ -236,7 +236,7 @@ func (s *Service) VerifyEmail(ctx context.Context, token string) error {
 		if err := s.repo.DeleteEmailVerification(txCtx, verification.ID); err != nil {
 			return fmt.Errorf("deleting verification: %w", err)
 		}
-		if err := s.publishAggregateEvents(txCtx, user); err != nil {
+		if err := domainevent.PublishAll(txCtx, s.publisher, user); err != nil {
 			return err
 		}
 		return nil
@@ -352,7 +352,7 @@ func (s *Service) LinkTelegram(ctx context.Context, userID string, telegramID in
 		if err := s.repo.UpdateUser(txCtx, user); err != nil {
 			return fmt.Errorf("updating user: %w", err)
 		}
-		return s.publishAggregateEvents(txCtx, user)
+		return domainevent.PublishAll(txCtx, s.publisher, user)
 	})
 }
 
@@ -369,7 +369,7 @@ func (s *Service) UnlinkTelegram(ctx context.Context, userID string) error {
 		if err := s.repo.UpdateUser(txCtx, user); err != nil {
 			return fmt.Errorf("updating user: %w", err)
 		}
-		return s.publishAggregateEvents(txCtx, user)
+		return domainevent.PublishAll(txCtx, s.publisher, user)
 	})
 }
 
@@ -466,28 +466,11 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 			return fmt.Errorf("publishing %s: %w", EventPasswordReset, err)
 		}
 		// Publish aggregate-recorded events (PasswordChanged from ChangePassword).
-		if err := s.publishAggregateEvents(txCtx, user); err != nil {
+		if err := domainevent.PublishAll(txCtx, s.publisher, user); err != nil {
 			return err
 		}
 		return nil
 	})
-}
-
-// eventSource is implemented by aggregates that embed domainevent.EventRecorder.
-type eventSource interface {
-	DomainEvents() []domainevent.Event
-}
-
-// publishAggregateEvents flushes all pending events from the aggregate and
-// publishes them through the publisher. This centralises the flush-and-publish
-// pattern so individual service methods cannot forget to publish.
-func (s *Service) publishAggregateEvents(ctx context.Context, src eventSource) error {
-	for _, event := range src.DomainEvents() {
-		if err := s.publisher.Publish(ctx, event); err != nil {
-			return fmt.Errorf("publish %s: %w", event.Type, err)
-		}
-	}
-	return nil
 }
 
 // RefreshTokenLen is the number of random bytes used for refresh tokens.

@@ -2,60 +2,36 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
-	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
 )
-
-// HookPricingCalculate is the plugin hook dispatched to modify invoice pricing.
-const HookPricingCalculate = "pricing.calculate"
-
-// PricingHookResult is the expected response from the pricing.calculate hook.
-// Pointer fields distinguish "not set" from "zero".
-type PricingHookResult struct {
-	Subtotal *int64 `json:"subtotal,omitempty"`
-	Discount *int64 `json:"discount,omitempty"`
-	Reason   string `json:"reason,omitempty"`
-}
 
 // CheckoutService orchestrates the full checkout flow: subscription creation,
 // invoice generation, and payment charge initiation via the payment gateway.
 //
 // # Architectural rationale
 //
-// CheckoutService depends directly on hookdispatch.Dispatcher for the
-// pricing.calculate hook. This is a pragmatic trade-off:
+// CheckoutService delegates pricing modifications to a billing.PricingModifier
+// port. The adapter (internal/app/pricing_modifier_adapter.go) handles the
+// WASM plugin wire protocol (JSON marshal/unmarshal, hookdispatch), keeping
+// the billing domain free of encoding and plugin concerns.
 //
-//   - hookdispatch.Dispatcher is a shared kernel package (pkg/hookdispatch), not
-//     an infrastructure adapter. It defines a pure Go interface with no external
-//     dependencies. Importing it from a domain service package follows the same
-//     dependency direction as importing stdlib or pkg/domainevent.
+// The pricing hook is best-effort and optional: if no plugin is registered or
+// the hook errors, the checkout proceeds with the original price.
 //
-//   - The pricing hook is best-effort and optional: if no plugin is registered or
-//     the hook errors, the checkout proceeds with the original price. Extracting a
-//     PricingPort interface would add a file that delegates to the same dispatcher
-//     method with identical semantics.
-//
-//   - Plugin version pinning (BeginFlow) is called at the start of the checkout
-//     flow to guarantee consistency across multiple hook calls. This is a
-//     dispatcher concern that would leak into the adapter regardless.
-//
-// Rationale: in a modular monolith compiled as a single binary, a
-// PricingDispatcher port + adapter would be pure delegation with no decoupling
-// benefit. The trade-off is documented rather than abstracted.
-//
-// When to split: if pricing logic grows beyond a single hook dispatch (e.g.,
-// tiered pricing engine, A/B testing, coupon validation), extract a
-// PricingService that encapsulates that complexity and inject it here.
+// Plugin version pinning (BeginFlow) is called at the start of the checkout
+// flow to guarantee consistency across multiple hook calls within the flow.
+// This is exposed through the PricingModifier port so that the checkout
+// service does not depend on the hookdispatch package.
 type CheckoutService struct {
 	billing     *BillingService
 	payment     billing.PaymentGateway
-	dispatcher  hookdispatch.Dispatcher
+	pricing     billing.PricingModifier
 	publisher   domainevent.Publisher
 	logger      *slog.Logger
 	rateLimiter billing.DomainRateLimiter
@@ -66,7 +42,7 @@ type CheckoutService struct {
 func NewCheckoutService(
 	billingSvc *BillingService,
 	paymentGateway billing.PaymentGateway,
-	dispatcher hookdispatch.Dispatcher,
+	pricing billing.PricingModifier,
 	publisher domainevent.Publisher,
 	logger *slog.Logger,
 	rateLimiter billing.DomainRateLimiter,
@@ -75,7 +51,7 @@ func NewCheckoutService(
 	return &CheckoutService{
 		billing:     billingSvc,
 		payment:     paymentGateway,
-		dispatcher:  dispatcher,
+		pricing:     pricing,
 		publisher:   publisher,
 		logger:      logger,
 		rateLimiter: rateLimiter,
@@ -127,8 +103,8 @@ func (cs *CheckoutService) StartCheckout(ctx context.Context, req CheckoutReques
 	// Pin plugin versions for the duration of this checkout flow so that all
 	// hook calls within this flow use the same plugin version, even if a
 	// plugin is hot-reloaded mid-flow.
-	if cs.dispatcher != nil {
-		ctx = cs.dispatcher.BeginFlow(ctx)
+	if cs.pricing != nil {
+		ctx = cs.pricing.BeginFlow(ctx)
 	}
 
 	// 1. Create subscription + invoice via billing service.
@@ -143,36 +119,8 @@ func (cs *CheckoutService) StartCheckout(ctx context.Context, req CheckoutReques
 
 	// 2. Run pricing plugins (can modify final price). Best-effort: if no
 	//    handler is registered or the hook errors, proceed with the original price.
-	if cs.dispatcher != nil {
-		pricingPayload, _ := json.Marshal(map[string]any{
-			"invoice_id": inv.ID,
-			"user_id":    req.UserID,
-			"plan_id":    req.PlanID,
-			"subtotal":   inv.Subtotal.Amount,
-			"currency":   string(inv.Total.Currency),
-		})
-		output, dispatchErr := cs.dispatcher.DispatchSync(ctx, HookPricingCalculate, pricingPayload)
-		if dispatchErr != nil {
-			cs.logger.Warn("pricing.calculate hook failed, using original price",
-				slog.String("invoice_id", inv.ID),
-				slog.Any("error", dispatchErr),
-			)
-		} else if output != nil {
-			var pricingResult PricingHookResult
-			if unmarshalErr := json.Unmarshal(output, &pricingResult); unmarshalErr != nil {
-				cs.logger.Warn("pricing.calculate returned invalid JSON, using original price",
-					slog.String("invoice_id", inv.ID),
-					slog.Any("error", unmarshalErr),
-				)
-			} else {
-				if pricingErr := inv.ApplyPricingModification(pricingResult.Subtotal, pricingResult.Discount, pricingResult.Reason, cs.clock.Now()); pricingErr != nil {
-					cs.logger.Warn("pricing.calculate modification rejected",
-						slog.String("invoice_id", inv.ID),
-						slog.Any("error", pricingErr),
-					)
-				}
-			}
-		}
+	if cs.pricing != nil {
+		cs.applyPricingModification(ctx, inv, req)
 	}
 
 	// 3. Initiate payment charge via the payment gateway (ACL boundary).
@@ -202,6 +150,31 @@ func (cs *CheckoutService) StartCheckout(ctx context.Context, req CheckoutReques
 		CheckoutURL:    chargeResult.CheckoutURL,
 		Provider:       chargeResult.Provider,
 	}, nil
+}
+
+// applyPricingModification dispatches a pricing modification request to the
+// pricing modifier and applies any resulting modification to the invoice. This
+// is best-effort: errors are logged and the original price is preserved.
+func (cs *CheckoutService) applyPricingModification(ctx context.Context, inv *aggregate.Invoice, req CheckoutRequest) {
+	mod, err := cs.pricing.ModifyPricing(ctx, inv.ID, req.UserID, req.PlanID, inv.Subtotal.Amount, string(inv.Total.Currency))
+	if err != nil {
+		cs.logger.Warn("pricing modification failed, using original price",
+			slog.String("invoice_id", inv.ID),
+			slog.Any("error", err),
+		)
+		return
+	}
+
+	if mod == nil {
+		return
+	}
+
+	if pricingErr := inv.ApplyPricingModification(mod.Subtotal, mod.Discount, mod.Reason, cs.clock.Now()); pricingErr != nil {
+		cs.logger.Warn("pricing modification rejected",
+			slog.String("invoice_id", inv.ID),
+			slog.Any("error", pricingErr),
+		)
+	}
 }
 
 // CompleteCheckout is called when a payment webhook confirms success. It marks

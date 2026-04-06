@@ -297,22 +297,13 @@ func isWebhookDuplicate(err error) bool {
 	return errors.Is(err, ErrWebhookDuplicate)
 }
 
-// eventSource is implemented by aggregates that embed domainevent.EventRecorder.
-type eventSource interface {
-	DomainEvents() []domainevent.Event
-}
-
 // publishAggregateEvents flushes all pending events from the aggregate and
-// publishes them through the publisher. This centralises the flush-and-publish
-// pattern so individual facade methods cannot forget to publish.
-func (f *PaymentFacade) publishAggregateEvents(ctx context.Context, src eventSource) error {
+// publishes them through the publisher. This nil-safe variant is specific to
+// PaymentFacade because its publisher may be nil in tests or minimal
+// deployments.
+func (f *PaymentFacade) publishAggregateEvents(ctx context.Context, src domainevent.EventSource) error {
 	if f.publisher == nil {
 		return nil
 	}
-	for _, event := range src.DomainEvents() {
-		if err := f.publisher.Publish(ctx, event); err != nil {
-			return fmt.Errorf("publish %s: %w", event.Type, err)
-		}
-	}
-	return nil
+	return domainevent.PublishAll(ctx, f.publisher, src)
 }

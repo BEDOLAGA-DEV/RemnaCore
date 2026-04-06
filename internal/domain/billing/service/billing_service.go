@@ -140,7 +140,7 @@ func (s *BillingService) CreateSubscription(
 			return fmt.Errorf("persist invoice: %w", err)
 		}
 
-		if err := s.publishAggregateEvents(txCtx, sub); err != nil {
+		if err := domainevent.PublishAll(txCtx, s.publisher, sub); err != nil {
 			return err
 		}
 
@@ -172,7 +172,7 @@ func (s *BillingService) CancelSubscription(ctx context.Context, subID string) e
 			return fmt.Errorf("update subscription: %w", err)
 		}
 
-		if err := s.publishAggregateEvents(txCtx, sub); err != nil {
+		if err := domainevent.PublishAll(txCtx, s.publisher, sub); err != nil {
 			return err
 		}
 
@@ -213,7 +213,7 @@ func (s *BillingService) PayInvoice(ctx context.Context, invoiceID string) error
 			return fmt.Errorf("update invoice: %w", err)
 		}
 
-		if err := s.publishAggregateEvents(txCtx, inv); err != nil {
+		if err := domainevent.PublishAll(txCtx, s.publisher, inv); err != nil {
 			return err
 		}
 
@@ -234,7 +234,7 @@ func (s *BillingService) PayInvoice(ctx context.Context, invoiceID string) error
 				return fmt.Errorf("update subscription: %w", err)
 			}
 
-			if err := s.publishAggregateEvents(txCtx, sub); err != nil {
+			if err := domainevent.PublishAll(txCtx, s.publisher, sub); err != nil {
 				return err
 			}
 		}
@@ -297,7 +297,7 @@ func (s *BillingService) AddFamilyMember(
 			return fmt.Errorf("update family group: %w", err)
 		}
 
-		if err := s.publishAggregateEvents(txCtx, fg); err != nil {
+		if err := domainevent.PublishAll(txCtx, s.publisher, fg); err != nil {
 			return err
 		}
 
@@ -333,7 +333,7 @@ func (s *BillingService) RemoveFamilyMember(
 			return fmt.Errorf("update family group: %w", err)
 		}
 
-		if err := s.publishAggregateEvents(txCtx, fg); err != nil {
+		if err := domainevent.PublishAll(txCtx, s.publisher, fg); err != nil {
 			return err
 		}
 
@@ -357,7 +357,7 @@ func (s *BillingService) AddSubscriptionAddon(ctx context.Context, subID, addonI
 		if err := s.subs.Update(txCtx, sub); err != nil {
 			return fmt.Errorf("update subscription: %w", err)
 		}
-		return s.publishAggregateEvents(txCtx, sub)
+		return domainevent.PublishAll(txCtx, s.publisher, sub)
 	})
 }
 
@@ -377,25 +377,8 @@ func (s *BillingService) RemoveSubscriptionAddon(ctx context.Context, subID, add
 		if err := s.subs.Update(txCtx, sub); err != nil {
 			return fmt.Errorf("update subscription: %w", err)
 		}
-		return s.publishAggregateEvents(txCtx, sub)
+		return domainevent.PublishAll(txCtx, s.publisher, sub)
 	})
-}
-
-// eventSource is implemented by aggregates that embed domainevent.EventRecorder.
-type eventSource interface {
-	DomainEvents() []domainevent.Event
-}
-
-// publishAggregateEvents flushes all pending events from the aggregate and
-// publishes them through the publisher. This centralises the flush-and-publish
-// pattern so individual service methods cannot forget to publish.
-func (s *BillingService) publishAggregateEvents(ctx context.Context, src eventSource) error {
-	for _, event := range src.DomainEvents() {
-		if err := s.publisher.Publish(ctx, event); err != nil {
-			return fmt.Errorf("publish %s: %w", event.Type, err)
-		}
-	}
-	return nil
 }
 
 // buildLineItems creates invoice line items from a plan and selected addon IDs.

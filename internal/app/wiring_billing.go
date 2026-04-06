@@ -9,6 +9,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	billingservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
 )
 
 // billingWiring provides all billing-domain bindings: repository implementations,
@@ -21,6 +22,12 @@ var billingWiring = fx.Options(
 	}),
 	fx.Provide(billingservice.NewBillingService),
 	fx.Provide(billingservice.NewCheckoutService),
+
+	// PricingModifier: billing.PricingModifier wraps hookdispatch.Dispatcher
+	// to handle WASM plugin wire protocol for pricing calculations.
+	fx.Provide(func(d hookdispatch.Dispatcher) billing.PricingModifier {
+		return newPluginPricingModifier(d)
+	}),
 
 	// Billing -> Payment ACL: billing.PaymentGateway wraps *payment.PaymentFacade
 	// so that the billing domain never imports the payment domain directly.

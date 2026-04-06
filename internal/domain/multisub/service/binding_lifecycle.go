@@ -182,12 +182,10 @@ func (s *BindingLifecycleService) persistAndPublish(ctx context.Context, binding
 		return
 	}
 
-	for _, evt := range binding.DomainEvents() {
-		if err := s.publisher.Publish(ctx, evt); err != nil {
-			s.logger.Warn("failed to publish binding event",
-				slog.String("binding_id", binding.ID),
-				slog.Any("error", err),
-			)
-		}
+	if err := domainevent.PublishAll(ctx, s.publisher, binding); err != nil {
+		s.logger.Warn("failed to publish binding event",
+			slog.String("binding_id", binding.ID),
+			slog.Any("error", err),
+		)
 	}
 }

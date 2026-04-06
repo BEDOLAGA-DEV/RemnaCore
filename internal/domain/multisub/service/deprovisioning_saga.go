@@ -142,12 +142,7 @@ func (s *DeprovisioningSaga) deprovisionOne(ctx context.Context, binding *aggreg
 		if err := s.bindings.Update(txCtx, binding); err != nil {
 			return fmt.Errorf("update binding: %w", err)
 		}
-		for _, evt := range binding.DomainEvents() {
-			if err := s.publisher.Publish(txCtx, evt); err != nil {
-				return fmt.Errorf("publish binding event: %w", err)
-			}
-		}
-		return nil
+		return domainevent.PublishAll(txCtx, s.publisher, binding)
 	})
 	if err != nil {
 		s.logger.Warn("failed to persist deprovisioned binding",

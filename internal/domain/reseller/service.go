@@ -87,7 +87,7 @@ func (s *ResellerService) CreateTenant(ctx context.Context, name, domain, ownerU
 		if err := s.tenants.CreateTenant(txCtx, tenant); err != nil {
 			return fmt.Errorf("persisting tenant: %w", err)
 		}
-		if err := s.publishAggregateEvents(txCtx, tenant); err != nil {
+		if err := domainevent.PublishAll(txCtx, s.publisher, tenant); err != nil {
 			return err
 		}
 		return nil
@@ -144,7 +144,7 @@ func (s *ResellerService) UpdateBranding(ctx context.Context, tenantID string, b
 		if err := s.tenants.UpdateTenant(txCtx, tenant); err != nil {
 			return fmt.Errorf("updating tenant branding: %w", err)
 		}
-		if err := s.publishAggregateEvents(txCtx, tenant); err != nil {
+		if err := domainevent.PublishAll(txCtx, s.publisher, tenant); err != nil {
 			return err
 		}
 		return nil
@@ -166,7 +166,7 @@ func (s *ResellerService) CreateResellerAccount(ctx context.Context, tenantID, u
 		if err := s.commissions.CreateResellerAccount(txCtx, account); err != nil {
 			return fmt.Errorf("persisting reseller account: %w", err)
 		}
-		if err := s.publishAggregateEvents(txCtx, account); err != nil {
+		if err := domainevent.PublishAll(txCtx, s.publisher, account); err != nil {
 			return err
 		}
 		return nil
@@ -214,7 +214,7 @@ func (s *ResellerService) RecordCommission(ctx context.Context, resellerID, sale
 	}
 
 	// Aggregate already recorded its own created event in NewCommission().
-	if err := s.publishAggregateEvents(ctx, commission); err != nil {
+	if err := domainevent.PublishAll(ctx, s.publisher, commission); err != nil {
 		s.logger.Warn("failed to publish aggregate events",
 			slog.String("event_type", string(EventCommissionCreated)),
 			slog.Any("error", err),
@@ -244,7 +244,7 @@ func (s *ResellerService) MarkCommissionPaid(ctx context.Context, commissionID s
 		return nil, fmt.Errorf("updating commission: %w", err)
 	}
 
-	if err := s.publishAggregateEvents(ctx, commission); err != nil {
+	if err := domainevent.PublishAll(ctx, s.publisher, commission); err != nil {
 		s.logger.Warn("failed to publish aggregate events",
 			slog.String("event_type", string(EventCommissionPaid)),
 			slog.Any("error", err),
@@ -286,19 +286,3 @@ func (s *ResellerService) ValidateAPIKey(ctx context.Context, plainKey string) (
 	return tenant, nil
 }
 
-// eventSource is implemented by aggregates that embed domainevent.EventRecorder.
-type eventSource interface {
-	DomainEvents() []domainevent.Event
-}
-
-// publishAggregateEvents flushes all pending events from the aggregate and
-// publishes them through the publisher. This centralises the flush-and-publish
-// pattern so individual service methods cannot forget to publish.
-func (s *ResellerService) publishAggregateEvents(ctx context.Context, src eventSource) error {
-	for _, event := range src.DomainEvents() {
-		if err := s.publisher.Publish(ctx, event); err != nil {
-			return fmt.Errorf("publish %s: %w", event.Type, err)
-		}
-	}
-	return nil
-}

@@ -236,6 +236,26 @@ func (m *MockPaymentGateway) CreateCharge(ctx context.Context, req billing.Creat
 	return args.Get(0).(*billing.CreateChargeResult), args.Error(1)
 }
 
+// --- MockPricingModifier ---
+
+// MockPricingModifier is a testify/mock implementation of billing.PricingModifier.
+type MockPricingModifier struct {
+	mock.Mock
+}
+
+func (m *MockPricingModifier) BeginFlow(ctx context.Context) context.Context {
+	m.Called(ctx)
+	return ctx
+}
+
+func (m *MockPricingModifier) ModifyPricing(ctx context.Context, invoiceID, userID, planID string, subtotal int64, currency string) (*billing.PricingModification, error) {
+	args := m.Called(ctx, invoiceID, userID, planID, subtotal, currency)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*billing.PricingModification), args.Error(1)
+}
+
 // --- MockDomainRateLimiter ---
 
 // MockDomainRateLimiter is a testify/mock implementation of billing.DomainRateLimiter.
