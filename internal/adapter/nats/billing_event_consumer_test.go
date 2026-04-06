@@ -3,6 +3,7 @@ package nats
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"os"
 	"sync"
@@ -23,14 +24,21 @@ import (
 // --- test doubles ---
 
 // stubIdempotencyChecker records keys and allows controlling duplicates.
+// It also tracks Release and IncrementRetry calls for assertion.
 type stubIdempotencyChecker struct {
-	mu       sync.Mutex
-	seen     map[string]bool
-	forceErr error
+	mu           sync.Mutex
+	seen         map[string]bool
+	retryCounts  map[string]int
+	released     []string
+	forceErr     error
+	forceRetryErr error
 }
 
 func newStubIdempotencyChecker() *stubIdempotencyChecker {
-	return &stubIdempotencyChecker{seen: make(map[string]bool)}
+	return &stubIdempotencyChecker{
+		seen:        make(map[string]bool),
+		retryCounts: make(map[string]int),
+	}
 }
 
 func (s *stubIdempotencyChecker) TryAcquire(_ context.Context, key string) (bool, error) {
@@ -47,6 +55,26 @@ func (s *stubIdempotencyChecker) TryAcquire(_ context.Context, key string) (bool
 	return true, nil
 }
 
+func (s *stubIdempotencyChecker) Release(_ context.Context, key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.seen, key)
+	s.released = append(s.released, key)
+	return nil
+}
+
+func (s *stubIdempotencyChecker) IncrementRetry(_ context.Context, key string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.forceRetryErr != nil {
+		return 0, s.forceRetryErr
+	}
+	s.retryCounts[key]++
+	return s.retryCounts[key], nil
+}
+
 func (s *stubIdempotencyChecker) acquiredKeys() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -58,12 +86,35 @@ func (s *stubIdempotencyChecker) acquiredKeys() []string {
 	return keys
 }
 
+func (s *stubIdempotencyChecker) releasedKeys() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	out := make([]string, len(s.released))
+	copy(out, s.released)
+	return out
+}
+
+func (s *stubIdempotencyChecker) retryCount(key string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.retryCounts[key]
+}
+
 // alwaysNewIdempotencyChecker always reports the key as new. Used when the
 // test needs to bypass dedup and focus on processing behaviour.
 type alwaysNewIdempotencyChecker struct{}
 
 func (alwaysNewIdempotencyChecker) TryAcquire(_ context.Context, _ string) (bool, error) {
 	return true, nil
+}
+
+func (alwaysNewIdempotencyChecker) Release(_ context.Context, _ string) error {
+	return nil
+}
+
+func (alwaysNewIdempotencyChecker) IncrementRetry(_ context.Context, _ string) (int, error) {
+	return 0, nil
 }
 
 // recordingHandler implements SubscriptionEventHandler for tests. Callback
@@ -359,4 +410,149 @@ func TestGetEntityLock_ReturnsSameLockForSameID(t *testing.T) {
 
 	assert.Same(t, lock1, lock2, "same entity ID must return the same lock")
 	assert.NotSame(t, lock1, lock3, "different entity IDs must return different locks")
+}
+
+func TestHandleMessage_FailureReleasesIdempotencyKey(t *testing.T) {
+	idem := newStubIdempotencyChecker()
+	handler := &recordingHandler{
+		onCancelled: func(_ context.Context, _ string) error {
+			return errors.New("transient error")
+		},
+	}
+
+	consumer := &BillingEventConsumer{
+		handler:        handler,
+		idempotency:    idem,
+		schemaRegistry: domainevent.NewSchemaRegistry(),
+		logger:         discardLogger(),
+		clock:          clock.NewReal(),
+	}
+
+	event := domainevent.NewWithEntity(
+		"subscription.cancelled",
+		map[string]any{"subscription_id": "sub-fail", "user_id": "u-1", "reason": "test"},
+		"sub-fail",
+	)
+
+	msg := buildEventMessage(t, event)
+	consumer.handleMessage(context.Background(), "subscription.cancelled", msg)
+
+	// The idempotency key must have been released so the next delivery can
+	// reprocess the event.
+	released := idem.releasedKeys()
+	require.Len(t, released, 1)
+	assert.Equal(t, "subscription.cancelled:sub-fail", released[0])
+
+	// The key must no longer be in the "seen" set.
+	assert.Empty(t, idem.acquiredKeys(),
+		"idempotency key must be removed after release")
+}
+
+func TestHandleMessage_RetryCountIncrementedOnFailure(t *testing.T) {
+	idem := newStubIdempotencyChecker()
+	handler := &recordingHandler{
+		onCancelled: func(_ context.Context, _ string) error {
+			return errors.New("transient error")
+		},
+	}
+
+	consumer := &BillingEventConsumer{
+		handler:        handler,
+		idempotency:    idem,
+		schemaRegistry: domainevent.NewSchemaRegistry(),
+		logger:         discardLogger(),
+		clock:          clock.NewReal(),
+	}
+
+	event := domainevent.NewWithEntity(
+		"subscription.cancelled",
+		map[string]any{"subscription_id": "sub-retry", "user_id": "u-1", "reason": "test"},
+		"sub-retry",
+	)
+
+	retryKey := retryKeyPrefix + "subscription.cancelled:sub-retry"
+
+	// Simulate multiple redeliveries (each call = one NATS redelivery).
+	for i := 1; i <= MaxMessageRetries-1; i++ {
+		msg := buildEventMessage(t, event)
+		consumer.handleMessage(context.Background(), "subscription.cancelled", msg)
+		assert.Equal(t, i, idem.retryCount(retryKey),
+			"retry count must match delivery attempt")
+	}
+}
+
+func TestHandleMessage_DLQAfterMaxRetries(t *testing.T) {
+	idem := newStubIdempotencyChecker()
+	handler := &recordingHandler{
+		onCancelled: func(_ context.Context, _ string) error {
+			return errors.New("permanent error")
+		},
+	}
+
+	consumer := &BillingEventConsumer{
+		handler:        handler,
+		idempotency:    idem,
+		schemaRegistry: domainevent.NewSchemaRegistry(),
+		logger:         discardLogger(),
+		clock:          clock.NewReal(),
+		// publisher is nil — sendToDLQ will log an error but not panic.
+	}
+
+	event := domainevent.NewWithEntity(
+		"subscription.cancelled",
+		map[string]any{"subscription_id": "sub-dlq", "user_id": "u-1", "reason": "test"},
+		"sub-dlq",
+	)
+
+	retryKey := retryKeyPrefix + "subscription.cancelled:sub-dlq"
+
+	// Exhaust all retries. After MaxMessageRetries, the message must be Ack'd
+	// (sent to DLQ) rather than Nack'd.
+	for i := 0; i < MaxMessageRetries; i++ {
+		msg := buildEventMessage(t, event)
+		consumer.handleMessage(context.Background(), "subscription.cancelled", msg)
+	}
+
+	assert.Equal(t, MaxMessageRetries, idem.retryCount(retryKey),
+		"retry count must reach max before DLQ routing")
+}
+
+func TestHandleMessage_RedeliveryAfterFailureIsProcessed(t *testing.T) {
+	idem := newStubIdempotencyChecker()
+	var callCount atomic.Int32
+
+	handler := &recordingHandler{
+		onCancelled: func(_ context.Context, _ string) error {
+			n := callCount.Add(1)
+			if n == 1 {
+				return errors.New("first attempt fails")
+			}
+			return nil // second attempt succeeds
+		},
+	}
+
+	consumer := &BillingEventConsumer{
+		handler:        handler,
+		idempotency:    idem,
+		schemaRegistry: domainevent.NewSchemaRegistry(),
+		logger:         discardLogger(),
+		clock:          clock.NewReal(),
+	}
+
+	event := domainevent.NewWithEntity(
+		"subscription.cancelled",
+		map[string]any{"subscription_id": "sub-redeliver", "user_id": "u-1", "reason": "test"},
+		"sub-redeliver",
+	)
+
+	// First delivery — fails, key released.
+	msg1 := buildEventMessage(t, event)
+	consumer.handleMessage(context.Background(), "subscription.cancelled", msg1)
+
+	// Second delivery — must NOT be skipped as duplicate.
+	msg2 := buildEventMessage(t, event)
+	consumer.handleMessage(context.Background(), "subscription.cancelled", msg2)
+
+	assert.Equal(t, int32(2), callCount.Load(),
+		"redelivered message must be processed after failure release")
 }

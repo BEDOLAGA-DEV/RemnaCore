@@ -44,6 +44,27 @@ func (r *IdempotencyRepository) TryAcquire(ctx context.Context, key string) (boo
 	return result.RowsAffected() == 1, nil
 }
 
+// Release removes an idempotency key so that a redelivered message can be
+// reprocessed. This is called when event processing fails — without it, the
+// next delivery would be silently skipped as a duplicate.
+func (r *IdempotencyRepository) Release(ctx context.Context, key string) error {
+	if err := r.queries.ReleaseIdempotencyKey(ctx, key); err != nil {
+		return fmt.Errorf("release idempotency key: %w", err)
+	}
+	return nil
+}
+
+// IncrementRetry atomically increments and returns the retry count for the
+// given key. Uses INSERT ... ON CONFLICT DO UPDATE so the counter persists
+// across NATS redeliveries (where Watermill metadata is lost).
+func (r *IdempotencyRepository) IncrementRetry(ctx context.Context, key string) (int, error) {
+	count, err := r.queries.IncrementIdempotencyRetry(ctx, key)
+	if err != nil {
+		return 0, fmt.Errorf("increment idempotency retry: %w", err)
+	}
+	return int(count), nil
+}
+
 // Cleanup deletes all expired idempotency keys.
 func (r *IdempotencyRepository) Cleanup(ctx context.Context) error {
 	if err := r.queries.CleanupExpiredIdempotencyKeys(ctx); err != nil {

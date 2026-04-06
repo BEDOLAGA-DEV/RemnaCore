@@ -71,5 +71,14 @@ INSERT INTO multisub.idempotency_keys (key, created_at, expires_at)
 VALUES ($1, now(), now() + interval '24 hours')
 ON CONFLICT (key) DO NOTHING;
 
+-- name: ReleaseIdempotencyKey :exec
+DELETE FROM multisub.idempotency_keys WHERE key = $1;
+
+-- name: IncrementIdempotencyRetry :one
+INSERT INTO multisub.idempotency_keys (key, retry_count, created_at, expires_at)
+VALUES ($1, 1, now(), now() + interval '24 hours')
+ON CONFLICT (key) DO UPDATE SET retry_count = multisub.idempotency_keys.retry_count + 1
+RETURNING retry_count;
+
 -- name: CleanupExpiredIdempotencyKeys :exec
 DELETE FROM multisub.idempotency_keys WHERE expires_at < now();

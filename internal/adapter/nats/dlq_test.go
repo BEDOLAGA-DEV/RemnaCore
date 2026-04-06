@@ -3,26 +3,8 @@ package nats
 import (
 	"testing"
 
-	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/stretchr/testify/assert"
 )
-
-func TestGetRetryCount_Empty(t *testing.T) {
-	msg := message.NewMessage("test-id", nil)
-	assert.Equal(t, 0, getRetryCount(msg))
-}
-
-func TestGetRetryCount_ValidValue(t *testing.T) {
-	msg := message.NewMessage("test-id", nil)
-	msg.Metadata.Set(MetadataRetryCount, "2")
-	assert.Equal(t, 2, getRetryCount(msg))
-}
-
-func TestGetRetryCount_InvalidValue(t *testing.T) {
-	msg := message.NewMessage("test-id", nil)
-	msg.Metadata.Set(MetadataRetryCount, "not-a-number")
-	assert.Equal(t, 0, getRetryCount(msg))
-}
 
 func TestDLQConstants(t *testing.T) {
 	t.Run("max retries is positive", func(t *testing.T) {
@@ -35,6 +17,10 @@ func TestDLQConstants(t *testing.T) {
 
 	t.Run("DLQ subject prefix ends with dot", func(t *testing.T) {
 		assert.Equal(t, "dlq.", DLQSubjectPrefix)
+	})
+
+	t.Run("retry key prefix is non-empty", func(t *testing.T) {
+		assert.NotEmpty(t, retryKeyPrefix)
 	})
 }
 

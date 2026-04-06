@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -34,9 +33,10 @@ const (
 	// failed messages to the dead-letter stream.
 	DLQSubjectPrefix = "dlq."
 
-	// MetadataRetryCount is the Watermill metadata key used to track how many
-	// times a message has been redelivered by the consumer.
-	MetadataRetryCount = "retry_count"
+	// retryKeyPrefix is prepended to the idempotency key to form a separate
+	// key that tracks retry attempts in the database. Using a separate key
+	// prevents conflicts with the idempotency key lifecycle (acquire/release).
+	retryKeyPrefix = "retry:"
 )
 
 // SubscriptionEventHandler defines the contract for handling billing
@@ -63,14 +63,26 @@ type SubscriptionEventHandler interface {
 // domain as multisub.PlanProvider and multisub.SubscriptionProvider. The NATS
 // adapter (BillingSubscriptionLookup) implements those domain ports.
 
-// IdempotencyChecker provides event-level deduplication. The adapter layer
-// owns this interface; the postgres.IdempotencyRepository satisfies it.
+// IdempotencyChecker provides event-level deduplication and retry tracking.
+// The adapter layer owns this interface; the postgres.IdempotencyRepository
+// satisfies it.
 //
 // Keys are composed as "{event_type}:{entity_id}" to deduplicate at the
 // business level rather than the transport level (Watermill message UUID).
 type IdempotencyChecker interface {
 	// TryAcquire returns true if the key is new, false if it was already seen.
 	TryAcquire(ctx context.Context, key string) (bool, error)
+
+	// Release removes an idempotency key so that a redelivered message can be
+	// processed again. This MUST be called when event processing fails,
+	// otherwise the redelivered message will be silently skipped as a
+	// duplicate.
+	Release(ctx context.Context, key string) error
+
+	// IncrementRetry atomically increments and returns the retry count for
+	// the given key. The count is persisted in the database so it survives
+	// NATS redeliveries (Watermill metadata is lost across Nack cycles).
+	IncrementRetry(ctx context.Context, key string) (int, error)
 }
 
 // entityLockTTL is the duration after which an idle entity lock is eligible for
@@ -249,7 +261,7 @@ func (c *BillingEventConsumer) handleMessage(ctx context.Context, subject string
 			slog.String("subject", subject),
 			slog.Any("error", err),
 		)
-		c.sendToDLQ(subject, msg, err)
+		c.sendToDLQ(subject, msg, err, 0)
 		msg.Ack()
 		return
 	}
@@ -301,12 +313,37 @@ func (c *BillingEventConsumer) handleMessage(ctx context.Context, subject string
 		return
 	}
 
-	retryCount := getRetryCount(msg)
+	// Processing failed — release the idempotency key so the next delivery
+	// is not silently skipped as a duplicate.
+	if releaseErr := c.idempotency.Release(ctx, idempotencyKey); releaseErr != nil {
+		c.logger.Warn("failed to release idempotency key after processing error",
+			slog.String("msg_id", msg.UUID),
+			slog.String("idempotency_key", idempotencyKey),
+			slog.Any("error", releaseErr),
+		)
+	}
+
+	// Track retry attempts via a separate "retry:" key in the idempotency
+	// table. This survives NATS redeliveries because it is persisted in
+	// PostgreSQL — unlike Watermill message metadata which is lost on Nack.
+	retryKey := retryKeyPrefix + idempotencyKey
+	retryCount, retryErr := c.idempotency.IncrementRetry(ctx, retryKey)
+	if retryErr != nil {
+		c.logger.Warn("failed to increment retry count, will retry anyway",
+			slog.String("msg_id", msg.UUID),
+			slog.String("retry_key", retryKey),
+			slog.Any("error", retryErr),
+		)
+		// Fail open: allow retry even if we cannot track the count.
+		msg.Nack()
+		return
+	}
+
 	if retryCount < MaxMessageRetries {
 		c.logger.Warn("event processing failed, will retry",
 			slog.String("subject", subject),
 			slog.String("msg_id", msg.UUID),
-			slog.Int("retry", retryCount+1),
+			slog.Int("retry", retryCount),
 			slog.Int("max_retries", MaxMessageRetries),
 			slog.String("error", handleErr.Error()),
 		)
@@ -315,11 +352,11 @@ func (c *BillingEventConsumer) handleMessage(ctx context.Context, subject string
 	}
 
 	// Max retries exceeded — send to DLQ and acknowledge to stop redelivery.
-	c.sendToDLQ(subject, msg, handleErr)
+	c.sendToDLQ(subject, msg, handleErr, retryCount)
 	c.logger.Error("event processing failed permanently, sent to DLQ",
 		slog.String("subject", subject),
 		slog.String("msg_id", msg.UUID),
-		slog.Int("retries_exhausted", MaxMessageRetries),
+		slog.Int("retries_exhausted", retryCount),
 		slog.String("error", handleErr.Error()),
 	)
 	msg.Ack()
@@ -344,7 +381,7 @@ func (c *BillingEventConsumer) processEvent(ctx context.Context, subject string,
 
 // sendToDLQ publishes a failed message to the dead-letter queue stream. The DLQ
 // message preserves the original payload and adds diagnostic metadata.
-func (c *BillingEventConsumer) sendToDLQ(subject string, msg *message.Message, processingErr error) {
+func (c *BillingEventConsumer) sendToDLQ(subject string, msg *message.Message, processingErr error, retryCount int) {
 	dlqSubject := DLQSubjectPrefix + subject
 	dlqPayload := DLQPayload{
 		OriginalSubject: subject,
@@ -352,7 +389,7 @@ func (c *BillingEventConsumer) sendToDLQ(subject string, msg *message.Message, p
 		Error:           processingErr.Error(),
 		MsgID:           msg.UUID,
 		FailedAt:        c.clock.Now().Format(time.RFC3339),
-		RetryCount:      getRetryCount(msg),
+		RetryCount:      retryCount,
 	}
 
 	data, err := json.Marshal(dlqPayload)
@@ -360,6 +397,13 @@ func (c *BillingEventConsumer) sendToDLQ(subject string, msg *message.Message, p
 		c.logger.Error("failed to marshal DLQ payload",
 			slog.String("subject", dlqSubject),
 			slog.Any("error", err),
+		)
+		return
+	}
+
+	if c.publisher == nil {
+		c.logger.Error("DLQ publisher not configured, message dropped",
+			slog.String("subject", dlqSubject),
 		)
 		return
 	}
@@ -381,20 +425,6 @@ type DLQPayload struct {
 	MsgID           string `json:"msg_id"`
 	FailedAt        string `json:"failed_at"`
 	RetryCount      int    `json:"retry_count"`
-}
-
-// getRetryCount reads the retry count from Watermill message metadata. Returns
-// 0 if the metadata key is absent or unparseable.
-func getRetryCount(msg *message.Message) int {
-	countStr := msg.Metadata.Get(MetadataRetryCount)
-	if countStr == "" {
-		return 0
-	}
-	count, err := strconv.Atoi(countStr)
-	if err != nil {
-		return 0
-	}
-	return count
 }
 
 // handleActivated enriches the sparse activated event with subscription, plan,
