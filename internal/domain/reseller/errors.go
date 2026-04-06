@@ -11,4 +11,7 @@ var (
 	ErrInvalidAPIKey         = errors.New("invalid API key")
 	ErrTenantInactive        = errors.New("tenant is inactive")
 	ErrDuplicateDomain       = errors.New("domain already in use")
+	ErrCommissionAlreadyPaid = errors.New("commission already paid")
+	ErrTenantAlreadyInactive = errors.New("tenant already inactive")
+	ErrTenantAlreadyActive   = errors.New("tenant already active")
 )

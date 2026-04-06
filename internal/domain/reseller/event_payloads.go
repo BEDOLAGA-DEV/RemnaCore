@@ -22,15 +22,24 @@ type CommissionCreatedPayload struct {
 	Amount       int64  `json:"amount"`
 }
 
+// CommissionPaidPayload is the typed payload for EventCommissionPaid.
+type CommissionPaidPayload struct {
+	CommissionID string `json:"commission_id"`
+	ResellerID   string `json:"reseller_id"`
+	Amount       int64  `json:"amount"`
+}
+
 // --- EventPayload interface implementations ---
 
 func (TenantCreatedPayload) EventType() domainevent.EventType     { return EventTenantCreated }
 func (ResellerCreatedPayload) EventType() domainevent.EventType   { return EventResellerCreated }
 func (CommissionCreatedPayload) EventType() domainevent.EventType { return EventCommissionCreated }
+func (CommissionPaidPayload) EventType() domainevent.EventType    { return EventCommissionPaid }
 
 // Compile-time interface checks.
 var (
 	_ domainevent.EventPayload = TenantCreatedPayload{}
 	_ domainevent.EventPayload = ResellerCreatedPayload{}
 	_ domainevent.EventPayload = CommissionCreatedPayload{}
+	_ domainevent.EventPayload = CommissionPaidPayload{}
 )

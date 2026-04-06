@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
 
 const (
@@ -67,8 +69,19 @@ type ResellerAccount struct {
 // CommissionStatus represents the current state of a commission.
 type CommissionStatus string
 
+// commissionTransitions defines the valid state transitions for a commission.
+var commissionTransitions = map[CommissionStatus][]CommissionStatus{
+	CommissionPending: {CommissionPaid},
+	CommissionPaid:    {},
+}
+
 // Commission records a commission earned by a reseller for a sale.
+// It embeds EventRecorder to accumulate domain events during mutations.
+// Services must call DomainEvents() after persisting the aggregate to
+// retrieve and publish all pending events.
 type Commission struct {
+	domainevent.EventRecorder
+
 	ID         string
 	ResellerID string
 	SaleID     string // subscription or invoice ID
@@ -77,6 +90,35 @@ type Commission struct {
 	Status     CommissionStatus
 	CreatedAt  time.Time
 	PaidAt     *time.Time
+}
+
+// CanTransitionTo reports whether the commission can move to the target status.
+func (c *Commission) CanTransitionTo(target CommissionStatus) bool {
+	allowed, ok := commissionTransitions[c.Status]
+	if !ok {
+		return false
+	}
+	for _, s := range allowed {
+		if s == target {
+			return true
+		}
+	}
+	return false
+}
+
+// MarkPaid transitions the commission from pending to paid.
+func (c *Commission) MarkPaid(now time.Time) error {
+	if !c.CanTransitionTo(CommissionPaid) {
+		return ErrCommissionAlreadyPaid
+	}
+	c.Status = CommissionPaid
+	c.PaidAt = &now
+	c.RecordEvent(domainevent.NewAtWithEntity(EventCommissionPaid, CommissionPaidPayload{
+		CommissionID: c.ID,
+		ResellerID:   c.ResellerID,
+		Amount:       c.Amount,
+	}, now, c.ID))
+	return nil
 }
 
 // NewTenant creates a new Tenant with a generated UUID and default settings.
@@ -90,6 +132,26 @@ func NewTenant(name, domain, ownerUserID string, now time.Time) *Tenant {
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
+}
+
+// Deactivate marks the tenant as inactive.
+func (t *Tenant) Deactivate(now time.Time) error {
+	if !t.IsActive {
+		return ErrTenantAlreadyInactive
+	}
+	t.IsActive = false
+	t.UpdatedAt = now
+	return nil
+}
+
+// Activate marks the tenant as active.
+func (t *Tenant) Activate(now time.Time) error {
+	if t.IsActive {
+		return ErrTenantAlreadyActive
+	}
+	t.IsActive = true
+	t.UpdatedAt = now
+	return nil
 }
 
 // GenerateAPIKey creates a cryptographically random API key, stores its SHA-256
@@ -132,10 +194,12 @@ func NewResellerAccount(tenantID, userID string, commissionRate int, now time.Ti
 }
 
 // NewCommission calculates and creates a commission record for a sale.
+// The creation event is recorded on the aggregate; callers must flush
+// via DomainEvents() after persisting.
 func NewCommission(resellerID, saleID string, saleAmount int64, commissionRate int, currency string, now time.Time) *Commission {
 	amount := saleAmount * int64(commissionRate) / PercentBase
 
-	return &Commission{
+	c := &Commission{
 		ID:         uuid.Must(uuid.NewV7()).String(),
 		ResellerID: resellerID,
 		SaleID:     saleID,
@@ -144,4 +208,10 @@ func NewCommission(resellerID, saleID string, saleAmount int64, commissionRate i
 		Status:     CommissionPending,
 		CreatedAt:  now,
 	}
+	c.RecordEvent(domainevent.NewAtWithEntity(EventCommissionCreated, CommissionCreatedPayload{
+		CommissionID: c.ID,
+		ResellerID:   resellerID,
+		Amount:       amount,
+	}, now, c.ID))
+	return c
 }

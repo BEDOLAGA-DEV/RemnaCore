@@ -168,12 +168,48 @@ func (s *ResellerService) RecordCommission(ctx context.Context, resellerID, sale
 		return nil, fmt.Errorf("record commission tx: %w", err)
 	}
 
-	if err := s.publisher.Publish(ctx, NewCommissionCreatedEvent(commission.ID, resellerID, commission.Amount, s.clock.Now())); err != nil {
-		s.logger.Warn("failed to publish event",
+	// Aggregate already recorded its own created event in NewCommission().
+	if err := s.publishAggregateEvents(ctx, commission); err != nil {
+		s.logger.Warn("failed to publish aggregate events",
 			slog.String("event_type", string(EventCommissionCreated)),
 			slog.Any("error", err),
 		)
 	}
+
+	return commission, nil
+}
+
+// MarkCommissionPaid transitions a pending commission to paid and publishes
+// the resulting domain event.
+func (s *ResellerService) MarkCommissionPaid(ctx context.Context, commissionID string) (*Commission, error) {
+	now := s.clock.Now()
+
+	commission, err := s.commissions.GetCommissionByID(ctx, commissionID)
+	if err != nil {
+		return nil, fmt.Errorf("finding commission: %w", err)
+	}
+
+	if err := commission.MarkPaid(now); err != nil {
+		return nil, err
+	}
+
+	// Aggregate already recorded its own paid event in MarkPaid().
+
+	if err := s.commissions.UpdateCommission(ctx, commission); err != nil {
+		return nil, fmt.Errorf("updating commission: %w", err)
+	}
+
+	if err := s.publishAggregateEvents(ctx, commission); err != nil {
+		s.logger.Warn("failed to publish aggregate events",
+			slog.String("event_type", string(EventCommissionPaid)),
+			slog.Any("error", err),
+		)
+	}
+
+	s.logger.Info("commission marked as paid",
+		slog.String("commission_id", commissionID),
+		slog.String("reseller_id", commission.ResellerID),
+	)
 
 	return commission, nil
 }
@@ -203,4 +239,21 @@ func (s *ResellerService) ValidateAPIKey(ctx context.Context, plainKey string) (
 	}
 
 	return tenant, nil
+}
+
+// eventSource is implemented by aggregates that embed domainevent.EventRecorder.
+type eventSource interface {
+	DomainEvents() []domainevent.Event
+}
+
+// publishAggregateEvents flushes all pending events from the aggregate and
+// publishes them through the publisher. This centralises the flush-and-publish
+// pattern so individual service methods cannot forget to publish.
+func (s *ResellerService) publishAggregateEvents(ctx context.Context, src eventSource) error {
+	for _, event := range src.DomainEvents() {
+		if err := s.publisher.Publish(ctx, event); err != nil {
+			return fmt.Errorf("publish %s: %w", event.Type, err)
+		}
+	}
+	return nil
 }

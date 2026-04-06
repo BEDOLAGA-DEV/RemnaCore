@@ -93,6 +93,14 @@ func (m *MockCommissionRepository) CreateCommission(ctx context.Context, commiss
 	return args.Error(0)
 }
 
+func (m *MockCommissionRepository) GetCommissionByID(ctx context.Context, id string) (*reseller.Commission, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*reseller.Commission), args.Error(1)
+}
+
 func (m *MockCommissionRepository) GetPendingCommissions(ctx context.Context, resellerID string) ([]*reseller.Commission, error) {
 	args := m.Called(ctx, resellerID)
 	if args.Get(0) == nil {

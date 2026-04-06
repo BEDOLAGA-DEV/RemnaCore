@@ -114,6 +114,27 @@ func (q *Queries) CreateTenant(ctx context.Context, arg CreateTenantParams) erro
 	return err
 }
 
+const getCommissionByID = `-- name: GetCommissionByID :one
+SELECT id, reseller_id, sale_id, amount, currency, status, created_at, paid_at
+FROM reseller.commissions WHERE id = $1
+`
+
+func (q *Queries) GetCommissionByID(ctx context.Context, id pgtype.UUID) (ResellerCommission, error) {
+	row := q.db.QueryRow(ctx, getCommissionByID, id)
+	var i ResellerCommission
+	err := row.Scan(
+		&i.ID,
+		&i.ResellerID,
+		&i.SaleID,
+		&i.Amount,
+		&i.Currency,
+		&i.Status,
+		&i.CreatedAt,
+		&i.PaidAt,
+	)
+	return i, err
+}
+
 const getPendingCommissions = `-- name: GetPendingCommissions :many
 SELECT id, reseller_id, sale_id, amount, currency, status, created_at, paid_at
 FROM reseller.commissions

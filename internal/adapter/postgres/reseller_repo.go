@@ -195,6 +195,14 @@ func (r *ResellerRepository) GetResellerAccountByUserAndTenant(ctx context.Conte
 	return resellerAccountRowToDomain(row), nil
 }
 
+func (r *ResellerRepository) GetCommissionByID(ctx context.Context, id string) (*reseller.Commission, error) {
+	row, err := r.queries.GetCommissionByID(ctx, pgutil.UUIDToPgtype(id))
+	if err != nil {
+		return nil, pgutil.MapErr(err, "get commission by id", reseller.ErrCommissionNotFound)
+	}
+	return commissionRowToDomain(row), nil
+}
+
 func (r *ResellerRepository) CreateCommission(ctx context.Context, commission *reseller.Commission) error {
 	err := r.queries.CreateCommission(ctx, gen.CreateCommissionParams{
 		ID:         pgutil.UUIDToPgtype(commission.ID),

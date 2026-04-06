@@ -61,6 +61,10 @@ INSERT INTO reseller.commissions (
     id, reseller_id, sale_id, amount, currency, status, created_at, paid_at
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
 
+-- name: GetCommissionByID :one
+SELECT id, reseller_id, sale_id, amount, currency, status, created_at, paid_at
+FROM reseller.commissions WHERE id = $1;
+
 -- name: GetPendingCommissions :many
 SELECT id, reseller_id, sale_id, amount, currency, status, created_at, paid_at
 FROM reseller.commissions

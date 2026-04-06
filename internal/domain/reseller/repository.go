@@ -20,6 +20,7 @@ type CommissionRepository interface {
 	GetResellerAccountByUserAndTenant(ctx context.Context, userID, tenantID string) (*ResellerAccount, error)
 
 	CreateCommission(ctx context.Context, commission *Commission) error
+	GetCommissionByID(ctx context.Context, id string) (*Commission, error)
 	GetPendingCommissions(ctx context.Context, resellerID string) ([]*Commission, error)
 	UpdateCommission(ctx context.Context, commission *Commission) error
 

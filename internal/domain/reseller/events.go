@@ -13,7 +13,7 @@ const (
 	EventTenantUpdated domainevent.EventType = "reseller.tenant_updated"
 	EventResellerCreated   domainevent.EventType = "reseller.account_created"
 	EventCommissionCreated domainevent.EventType = "reseller.commission_created"
-	// EventCommissionPaid is reserved for future use.
+	// EventCommissionPaid is published when a commission is marked as paid.
 	EventCommissionPaid domainevent.EventType = "reseller.commission_paid"
 )
 

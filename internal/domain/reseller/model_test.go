@@ -113,3 +113,181 @@ func TestNewCommission_RoundsDown(t *testing.T) {
 	commission := NewCommission("reseller-1", "sale-abc", 100, 33, "USD", time.Now())
 	assert.Equal(t, int64(33), commission.Amount)
 }
+
+func TestNewCommission_RecordsCreationEvent(t *testing.T) {
+	commission := NewCommission("reseller-1", "sale-abc", 10000, 15, "USD", time.Now())
+
+	events := commission.DomainEvents()
+	require.Len(t, events, 1)
+	assert.Equal(t, EventCommissionCreated, events[0].Type)
+
+	payload, ok := events[0].Data.(CommissionCreatedPayload)
+	require.True(t, ok)
+	assert.Equal(t, commission.ID, payload.CommissionID)
+	assert.Equal(t, "reseller-1", payload.ResellerID)
+	assert.Equal(t, int64(1500), payload.Amount)
+}
+
+func TestCommission_MarkPaid(t *testing.T) {
+	tests := []struct {
+		name        string
+		status      CommissionStatus
+		wantErr     error
+		wantStatus  CommissionStatus
+		wantPaidAt  bool
+		wantEventN  int
+	}{
+		{
+			name:       "pending to paid succeeds",
+			status:     CommissionPending,
+			wantErr:    nil,
+			wantStatus: CommissionPaid,
+			wantPaidAt: true,
+			wantEventN: 1,
+		},
+		{
+			name:       "already paid returns error",
+			status:     CommissionPaid,
+			wantErr:    ErrCommissionAlreadyPaid,
+			wantStatus: CommissionPaid,
+			wantPaidAt: false,
+			wantEventN: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			commission := &Commission{
+				ID:         "comm-1",
+				ResellerID: "reseller-1",
+				SaleID:     "sale-1",
+				Amount:     1500,
+				Currency:   "USD",
+				Status:     tt.status,
+				CreatedAt:  time.Now(),
+			}
+			now := time.Now()
+
+			err := commission.MarkPaid(now)
+
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				assert.Nil(t, commission.PaidAt)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.wantStatus, commission.Status)
+			}
+
+			if tt.wantPaidAt {
+				require.NotNil(t, commission.PaidAt)
+				assert.Equal(t, now, *commission.PaidAt)
+			}
+
+			events := commission.DomainEvents()
+			assert.Len(t, events, tt.wantEventN)
+
+			if tt.wantEventN > 0 {
+				assert.Equal(t, EventCommissionPaid, events[0].Type)
+				payload, ok := events[0].Data.(CommissionPaidPayload)
+				require.True(t, ok)
+				assert.Equal(t, "comm-1", payload.CommissionID)
+				assert.Equal(t, "reseller-1", payload.ResellerID)
+				assert.Equal(t, int64(1500), payload.Amount)
+			}
+		})
+	}
+}
+
+func TestCommission_CanTransitionTo(t *testing.T) {
+	tests := []struct {
+		name   string
+		from   CommissionStatus
+		to     CommissionStatus
+		expect bool
+	}{
+		{"pending to paid", CommissionPending, CommissionPaid, true},
+		{"paid to paid", CommissionPaid, CommissionPaid, false},
+		{"paid to pending", CommissionPaid, CommissionPending, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Commission{Status: tt.from}
+			assert.Equal(t, tt.expect, c.CanTransitionTo(tt.to))
+		})
+	}
+}
+
+func TestTenant_Deactivate(t *testing.T) {
+	tests := []struct {
+		name     string
+		isActive bool
+		wantErr  error
+	}{
+		{
+			name:     "active tenant deactivates successfully",
+			isActive: true,
+			wantErr:  nil,
+		},
+		{
+			name:     "inactive tenant returns error",
+			isActive: false,
+			wantErr:  ErrTenantAlreadyInactive,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tenant := NewTenant("Acme", "acme.com", "owner-1", time.Now())
+			tenant.IsActive = tt.isActive
+			now := time.Now()
+
+			err := tenant.Deactivate(now)
+
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+				assert.False(t, tenant.IsActive)
+				assert.Equal(t, now, tenant.UpdatedAt)
+			}
+		})
+	}
+}
+
+func TestTenant_Activate(t *testing.T) {
+	tests := []struct {
+		name     string
+		isActive bool
+		wantErr  error
+	}{
+		{
+			name:     "inactive tenant activates successfully",
+			isActive: false,
+			wantErr:  nil,
+		},
+		{
+			name:     "active tenant returns error",
+			isActive: true,
+			wantErr:  ErrTenantAlreadyActive,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tenant := NewTenant("Acme", "acme.com", "owner-1", time.Now())
+			tenant.IsActive = tt.isActive
+			now := time.Now()
+
+			err := tenant.Activate(now)
+
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+				assert.True(t, tenant.IsActive)
+				assert.Equal(t, now, tenant.UpdatedAt)
+			}
+		})
+	}
+}
