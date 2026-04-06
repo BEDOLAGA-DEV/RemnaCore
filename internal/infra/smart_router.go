@@ -41,21 +41,16 @@ const (
 	PremiumTierBonus = 15.0
 )
 
-// Geo proximity scores returned by geoProximityScore().
+// Geo proximity fallback scores used when coordinates are unavailable.
 const (
-	// GeoScoreSameCountry is the geo proximity score when user and node share a country.
+	// GeoScoreSameCountry is the geo score when user and node share a country.
 	GeoScoreSameCountry = 100.0
-	// GeoScoreDifferentCountry is the fallback geo proximity score.
+	// GeoScoreDifferentCountry is the fallback geo score for unknown distance.
 	GeoScoreDifferentCountry = 30.0
 )
 
-// Latency scores returned by estimatedLatencyScore().
-const (
-	// LatencyScoreSameCountry is the latency score for same-country nodes.
-	LatencyScoreSameCountry = 90.0
-	// LatencyScoreDifferentCountry is the fallback latency score.
-	LatencyScoreDifferentCountry = 50.0
-)
+// Latency score returned when no real measurement is available.
+const LatencyScoreUnknown = 50.0
 
 // Load scores returned by loadScore().
 const (
@@ -113,6 +108,8 @@ func NewSmartRouter(cache *NodeHealthCache, dispatcher hookdispatch.Dispatcher, 
 // RouteRequest describes the parameters used for node selection.
 type RouteRequest struct {
 	UserCountry      string   `json:"user_country"`
+	UserLatitude     float64  `json:"user_latitude"`
+	UserLongitude    float64  `json:"user_longitude"`
 	Protocol         string   `json:"protocol"`
 	Purpose          string   `json:"purpose"`
 	AllowedNodes     []string `json:"allowed_nodes"`
@@ -159,11 +156,11 @@ func (r *SmartRouter) SelectNode(ctx context.Context, req RouteRequest) (*RouteR
 			}
 		}
 
-		geoScore := geoProximityScore(req.UserCountry, node.CountryCode)
-		latencyScore := estimatedLatencyScore(node.CountryCode, req.UserCountry)
+		geoScore := geoProximityScore(req, node)
+		latScore := latencyScore(node)
 		loadScore := loadScore(node.TrafficUsed)
 
-		composite := wGeo*geoScore + wLatency*latencyScore + wLoad*loadScore
+		composite := wGeo*geoScore + wLatency*latScore + wLoad*loadScore
 
 		// Premium tier bonus.
 		if req.SubscriptionTier == TierPremium || req.SubscriptionTier == TierUltra {
@@ -180,7 +177,7 @@ func (r *SmartRouter) SelectNode(ctx context.Context, req RouteRequest) (*RouteR
 			Name:    node.Name,
 			Country: node.CountryCode,
 			Score:   math.Round(composite*ScoreRoundingFactor) / ScoreRoundingFactor,
-			Reason:  fmt.Sprintf("geo=%.1f lat=%.1f load=%.1f", geoScore, latencyScore, loadScore),
+			Reason:  fmt.Sprintf("geo=%.1f lat=%.1f load=%.1f", geoScore, latScore, loadScore),
 		})
 	}
 
@@ -220,22 +217,30 @@ func weightsForPurpose(purpose string) (geo, latency, load float64) {
 	}
 }
 
-// geoProximityScore returns a 0–100 score based on whether the user and node
-// share the same country code. A full geo-distance implementation (Haversine)
-// would require lat/lng data; for now same-country = 100, different = 30.
-func geoProximityScore(userCountry, nodeCountry string) float64 {
-	if userCountry == nodeCountry {
+// geoProximityScore returns a 0-100 score. When both user and node have
+// coordinates it uses Haversine great-circle distance for a continuous score.
+// Otherwise it falls back to binary country-code matching.
+func geoProximityScore(req RouteRequest, node NodeHealth) float64 {
+	if req.UserLatitude != 0 && node.Latitude != 0 {
+		dist := Haversine(req.UserLatitude, req.UserLongitude, node.Latitude, node.Longitude)
+		return GeoScore(dist)
+	}
+	if req.UserCountry != "" && node.CountryCode == req.UserCountry {
 		return GeoScoreSameCountry
 	}
 	return GeoScoreDifferentCountry
 }
 
-// estimatedLatencyScore returns a 0–100 score. Same region = high score.
-func estimatedLatencyScore(nodeCountry, userCountry string) float64 {
-	if nodeCountry == userCountry {
-		return LatencyScoreSameCountry
+// latencyScore returns a 0-100 score based on real latency measurements.
+// When no measurement is available it returns LatencyScoreUnknown.
+func latencyScore(node NodeHealth) float64 {
+	if node.LastLatencyMs <= 0 {
+		return LatencyScoreUnknown
 	}
-	return LatencyScoreDifferentCountry
+	if node.LastLatencyMs >= MaxLatencyMs {
+		return 0
+	}
+	return 100 * (1 - node.LastLatencyMs/MaxLatencyMs)
 }
 
 // loadScore returns a 0–100 score inversely proportional to traffic load.

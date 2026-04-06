@@ -9,12 +9,15 @@ import (
 
 // NodeHealth represents the cached health state of a single Remnawave node.
 type NodeHealth struct {
-	NodeID      string
-	Name        string
-	IsOnline    bool
-	CountryCode string
-	TrafficUsed int64
-	UpdatedAt   time.Time
+	NodeID        string
+	Name          string
+	IsOnline      bool
+	CountryCode   string
+	TrafficUsed   int64
+	Latitude      float64
+	Longitude     float64
+	LastLatencyMs float64
+	UpdatedAt     time.Time
 }
 
 // NodeHealthCache is a thread-safe in-memory cache of node health data shared
