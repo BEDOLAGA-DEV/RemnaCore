@@ -111,6 +111,13 @@ func (s *ResellerService) UpdateBranding(ctx context.Context, tenantID string, b
 		return nil, fmt.Errorf("updating tenant branding: %w", err)
 	}
 
+	if err := s.publisher.Publish(ctx, NewTenantUpdatedEvent(tenant.ID, s.clock.Now())); err != nil {
+		slog.Warn("failed to publish tenant updated event",
+			slog.String("tenant_id", tenant.ID),
+			slog.Any("error", err),
+		)
+	}
+
 	return tenant, nil
 }
 
@@ -145,9 +152,12 @@ func (s *ResellerService) CreateResellerAccount(ctx context.Context, tenantID, u
 // accumulated balance. The commission creation and balance update are wrapped
 // in a database transaction to prevent race conditions on concurrent writes.
 func (s *ResellerService) RecordCommission(ctx context.Context, resellerID, saleID string, saleAmount int64, rate int, currency string) (*Commission, error) {
-	commission := NewCommission(resellerID, saleID, saleAmount, rate, currency, s.clock.Now())
+	commission, err := NewCommission(resellerID, saleID, saleAmount, rate, currency, s.clock.Now())
+	if err != nil {
+		return nil, fmt.Errorf("creating commission: %w", err)
+	}
 
-	err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+	err = s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		if err := s.commissions.CreateCommission(txCtx, commission); err != nil {
 			return fmt.Errorf("persisting commission: %w", err)
 		}

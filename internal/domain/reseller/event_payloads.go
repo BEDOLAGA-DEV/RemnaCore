@@ -8,6 +8,11 @@ type TenantCreatedPayload struct {
 	OwnerUserID string `json:"owner_user_id"`
 }
 
+// TenantUpdatedPayload is the typed payload for EventTenantUpdated.
+type TenantUpdatedPayload struct {
+	TenantID string `json:"tenant_id"`
+}
+
 // ResellerCreatedPayload is the typed payload for EventResellerCreated.
 type ResellerCreatedPayload struct {
 	ResellerID string `json:"reseller_id"`
@@ -32,6 +37,7 @@ type CommissionPaidPayload struct {
 // --- EventPayload interface implementations ---
 
 func (TenantCreatedPayload) EventType() domainevent.EventType     { return EventTenantCreated }
+func (TenantUpdatedPayload) EventType() domainevent.EventType     { return EventTenantUpdated }
 func (ResellerCreatedPayload) EventType() domainevent.EventType   { return EventResellerCreated }
 func (CommissionCreatedPayload) EventType() domainevent.EventType { return EventCommissionCreated }
 func (CommissionPaidPayload) EventType() domainevent.EventType    { return EventCommissionPaid }
@@ -39,6 +45,7 @@ func (CommissionPaidPayload) EventType() domainevent.EventType    { return Event
 // Compile-time interface checks.
 var (
 	_ domainevent.EventPayload = TenantCreatedPayload{}
+	_ domainevent.EventPayload = TenantUpdatedPayload{}
 	_ domainevent.EventPayload = ResellerCreatedPayload{}
 	_ domainevent.EventPayload = CommissionCreatedPayload{}
 	_ domainevent.EventPayload = CommissionPaidPayload{}

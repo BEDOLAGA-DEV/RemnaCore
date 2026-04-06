@@ -26,6 +26,7 @@ const (
 	EventInvDiscountApplied  domainevent.EventType = "invoice.discount_applied"
 	EventInvTotalOverridden  domainevent.EventType = "invoice.total_overridden"
 
+	EventFamilyCreated       domainevent.EventType = "family.created"
 	EventFamilyMemberAdded   domainevent.EventType = "family.member_added"
 	EventFamilyMemberRemoved domainevent.EventType = "family.member_removed"
 
@@ -173,6 +174,13 @@ type InvTotalOverriddenPayload struct {
 
 // --- Family event payloads ---
 
+// FamilyCreatedPayload is the typed payload for EventFamilyCreated.
+type FamilyCreatedPayload struct {
+	FamilyGroupID string `json:"family_group_id"`
+	OwnerID       string `json:"owner_id"`
+	MaxMembers    int    `json:"max_members"`
+}
+
 // FamilyMemberAddedPayload is the typed payload for EventFamilyMemberAdded.
 type FamilyMemberAddedPayload struct {
 	FamilyGroupID string `json:"family_group_id"`
@@ -228,6 +236,7 @@ func (InvFailedPayload) EventType() domainevent.EventType         { return Event
 func (InvRefundedPayload) EventType() domainevent.EventType        { return EventInvRefunded }
 func (InvDiscountAppliedPayload) EventType() domainevent.EventType { return EventInvDiscountApplied }
 func (InvTotalOverriddenPayload) EventType() domainevent.EventType { return EventInvTotalOverridden }
+func (FamilyCreatedPayload) EventType() domainevent.EventType     { return EventFamilyCreated }
 func (FamilyMemberAddedPayload) EventType() domainevent.EventType { return EventFamilyMemberAdded }
 func (FamilyMemberRemovedPayload) EventType() domainevent.EventType {
 	return EventFamilyMemberRemoved
@@ -257,6 +266,7 @@ var (
 	_ domainevent.EventPayload = InvRefundedPayload{}
 	_ domainevent.EventPayload = InvDiscountAppliedPayload{}
 	_ domainevent.EventPayload = InvTotalOverriddenPayload{}
+	_ domainevent.EventPayload = FamilyCreatedPayload{}
 	_ domainevent.EventPayload = FamilyMemberAddedPayload{}
 	_ domainevent.EventPayload = FamilyMemberRemovedPayload{}
 	_ domainevent.EventPayload = PlanCreatedPayload{}

@@ -19,6 +19,18 @@ func TestNewFamilyGroup(t *testing.T) {
 	assert.Equal(t, MemberOwner, fg.Members[0].Role)
 	assert.False(t, fg.CreatedAt.IsZero())
 	assert.False(t, fg.UpdatedAt.IsZero())
+
+	assert.True(t, fg.HasEvents(), "NewFamilyGroup must record a creation event")
+	events := fg.DomainEvents()
+	require.Len(t, events, 1)
+	assert.Equal(t, EventFamilyCreated, events[0].Type)
+	assert.Equal(t, fg.ID, events[0].EntityID)
+
+	payload, ok := events[0].Data.(FamilyCreatedPayload)
+	require.True(t, ok)
+	assert.Equal(t, fg.ID, payload.FamilyGroupID)
+	assert.Equal(t, "owner-1", payload.OwnerID)
+	assert.Equal(t, 5, payload.MaxMembers)
 }
 
 func TestFamilyGroup_AddMember(t *testing.T) {

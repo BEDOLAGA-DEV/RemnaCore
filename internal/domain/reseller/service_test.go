@@ -13,6 +13,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/resellertest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
 
 func newTestService(t *testing.T) (
@@ -189,12 +190,15 @@ func TestValidateAPIKey_InactiveTenant(t *testing.T) {
 }
 
 func TestUpdateBranding_Success(t *testing.T) {
-	svc, tenantRepo, _, _ := newTestService(t)
+	svc, tenantRepo, _, pub := newTestService(t)
 	ctx := context.Background()
 
 	tenant := reseller.NewTenant("Acme VPN", "acme.vpn.com", "owner-1", time.Now())
 	tenantRepo.On("GetTenantByID", ctx, tenant.ID).Return(tenant, nil)
 	tenantRepo.On("UpdateTenant", ctx, mock.AnythingOfType("*reseller.Tenant")).Return(nil)
+	pub.On("Publish", mock.Anything, mock.MatchedBy(func(e domainevent.Event) bool {
+		return e.Type == reseller.EventTenantUpdated
+	})).Return(nil)
 
 	branding := reseller.BrandingConfig{
 		Logo:         "https://acme.com/logo.png",
@@ -209,6 +213,7 @@ func TestUpdateBranding_Success(t *testing.T) {
 	assert.Equal(t, branding, updated.BrandingConfig)
 
 	tenantRepo.AssertExpectations(t)
+	pub.AssertExpectations(t)
 }
 
 func TestGetPendingCommissions_Success(t *testing.T) {

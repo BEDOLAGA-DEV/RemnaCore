@@ -9,8 +9,7 @@ import (
 // Reseller-specific event types.
 const (
 	EventTenantCreated     domainevent.EventType = "reseller.tenant_created"
-	// EventTenantUpdated is reserved for future use.
-	EventTenantUpdated domainevent.EventType = "reseller.tenant_updated"
+	EventTenantUpdated     domainevent.EventType = "reseller.tenant_updated"
 	EventResellerCreated   domainevent.EventType = "reseller.account_created"
 	EventCommissionCreated domainevent.EventType = "reseller.commission_created"
 	// EventCommissionPaid is published when a commission is marked as paid.
@@ -22,6 +21,13 @@ func NewTenantCreatedEvent(tenantID, ownerUserID string, now time.Time) domainev
 	return domainevent.NewAtWithEntity(EventTenantCreated, TenantCreatedPayload{
 		TenantID:    tenantID,
 		OwnerUserID: ownerUserID,
+	}, now, tenantID)
+}
+
+// NewTenantUpdatedEvent creates an event for an updated tenant.
+func NewTenantUpdatedEvent(tenantID string, now time.Time) domainevent.Event {
+	return domainevent.NewAtWithEntity(EventTenantUpdated, TenantUpdatedPayload{
+		TenantID: tenantID,
 	}, now, tenantID)
 }
 

@@ -123,9 +123,16 @@ func TestSubscription_EventRecorder_Embedded(t *testing.T) {
 func TestFamilyGroup_EventRecorder_Embedded(t *testing.T) {
 	fg := NewFamilyGroup("owner-1", 5, time.Now())
 
+	// NewFamilyGroup records a creation event.
+	assert.True(t, fg.HasEvents())
+
+	// Flush the creation event before testing AddMember.
+	creationEvents := fg.DomainEvents()
+	require.Len(t, creationEvents, 1)
+	assert.Equal(t, EventFamilyCreated, creationEvents[0].Type)
 	assert.False(t, fg.HasEvents())
 
-	// AddMember now records its own event.
+	// AddMember records its own event.
 	require.NoError(t, fg.AddMember("user-2", "Alice", time.Now()))
 	assert.True(t, fg.HasEvents())
 

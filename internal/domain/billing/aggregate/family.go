@@ -53,7 +53,7 @@ type FamilyGroup struct {
 
 // NewFamilyGroup creates a new family group with the owner as the first member.
 func NewFamilyGroup(ownerID string, maxMembers int, now time.Time) *FamilyGroup {
-	return &FamilyGroup{
+	fg := &FamilyGroup{
 		ID:         uuid.Must(uuid.NewV7()).String(),
 		OwnerID:    ownerID,
 		MaxMembers: maxMembers,
@@ -68,6 +68,12 @@ func NewFamilyGroup(ownerID string, maxMembers int, now time.Time) *FamilyGroup 
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
+	fg.RecordEvent(domainevent.NewAtWithEntity(EventFamilyCreated, FamilyCreatedPayload{
+		FamilyGroupID: fg.ID,
+		OwnerID:       fg.OwnerID,
+		MaxMembers:    fg.MaxMembers,
+	}, now, fg.ID))
+	return fg
 }
 
 // AddMember adds a new member to the family group.
