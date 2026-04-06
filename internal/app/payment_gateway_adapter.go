@@ -9,14 +9,24 @@ import (
 )
 
 // paymentGatewayAdapter translates between billing's ACL types and the payment
-// domain's concrete types. This adapter lives in the wiring layer because it
-// bridges two bounded contexts that must not import each other.
+// domain's concrete types. This adapter lives in the wiring layer (internal/app/)
+// because it bridges two bounded contexts that must not import each other.
+//
+// This adapter currently translates only CreateCharge, which is the sole
+// synchronous operation that billing initiates against payment. Other payment
+// operations (webhook verification, refund, payment completion) are either
+// handled directly by the gateway layer (PaymentWebhookHandler) or flow through
+// domain events — they do not cross the billing→payment ACL boundary.
+//
+// See billing.PaymentGateway for the full architectural rationale and
+// communication flow documentation.
 type paymentGatewayAdapter struct {
 	facade *payment.PaymentFacade
 }
 
 // newPaymentGatewayAdapter creates a paymentGatewayAdapter that implements
-// billing.PaymentGateway by delegating to payment.PaymentFacade.
+// billing.PaymentGateway by delegating to payment.PaymentFacade. Wired via Fx
+// in wiring_billing.go.
 func newPaymentGatewayAdapter(facade *payment.PaymentFacade) billing.PaymentGateway {
 	return &paymentGatewayAdapter{facade: facade}
 }
