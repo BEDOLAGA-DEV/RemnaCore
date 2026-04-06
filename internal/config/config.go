@@ -28,6 +28,10 @@ const (
 	DefaultSubscriptionProxyPort  = 4100
 	DefaultCheckoutMaxPerHour     = 10
 	DefaultSubscriptionMaxPerDay  = 5
+	DefaultLoginMaxPerWindow      = 20
+	DefaultLoginWindowMinutes     = 15
+	DefaultForgotPwdMaxPerWindow  = 3
+	DefaultForgotPwdWindowMinutes = 60
 	DefaultOutboxRelayWorkers        = 1
 	DefaultOutboxPartitionLookahead = 2
 	DefaultOutboxRetentionDays      = 90
@@ -104,6 +108,10 @@ type TracingConfig struct {
 type RateLimitConfig struct {
 	CheckoutMaxPerHour    int `koanf:"checkout_max_per_hour"`
 	SubscriptionMaxPerDay int `koanf:"subscription_max_per_day"`
+	LoginMaxPerWindow     int `koanf:"login_max_per_window"`
+	LoginWindowMinutes    int `koanf:"login_window_minutes"`
+	ForgotPwdMaxPerWindow  int `koanf:"forgot_pwd_max_per_window"`
+	ForgotPwdWindowMinutes int `koanf:"forgot_pwd_window_minutes"`
 }
 
 // OutboxConfig holds settings for the transactional outbox relay and
@@ -177,8 +185,12 @@ func Load() (*Config, error) {
 		"infra.max_concurrent_checks":    DefaultMaxConcurrentChecks,
 		"infra.speed_test_port":          DefaultSpeedTestPort,
 		"infra.subscription_proxy_port":  DefaultSubscriptionProxyPort,
-		"ratelimit.checkout_max_per_hour":    DefaultCheckoutMaxPerHour,
-		"ratelimit.subscription_max_per_day": DefaultSubscriptionMaxPerDay,
+		"ratelimit.checkout_max_per_hour":      DefaultCheckoutMaxPerHour,
+		"ratelimit.subscription_max_per_day":   DefaultSubscriptionMaxPerDay,
+		"ratelimit.login_max_per_window":       DefaultLoginMaxPerWindow,
+		"ratelimit.login_window_minutes":       DefaultLoginWindowMinutes,
+		"ratelimit.forgot_pwd_max_per_window":  DefaultForgotPwdMaxPerWindow,
+		"ratelimit.forgot_pwd_window_minutes":  DefaultForgotPwdWindowMinutes,
 		"outbox.relay_workers":               DefaultOutboxRelayWorkers,
 		"outbox.partition_lookahead":         DefaultOutboxPartitionLookahead,
 		"outbox.retention_days":              DefaultOutboxRetentionDays,

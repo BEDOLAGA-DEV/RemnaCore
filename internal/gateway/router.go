@@ -45,6 +45,7 @@ type RouterParams struct {
 	Config                *config.Config
 	JWT                   *authutil.JWTIssuer
 	RateLimiter           middleware.RateLimiter
+	AuthRateLimiters      *middleware.AuthRateLimiters
 	IdentityHandler       *handler.IdentityHandler
 	HealthHandler         *handler.HealthHandler
 	WebhookHandler        *remnawave.WebhookHandler
@@ -113,11 +114,23 @@ func NewRouter(p RouterParams) http.Handler {
 	r.Get("/readyz", p.HealthHandler.Readyz)
 	r.Handle("/metrics", promhttp.Handler())
 
+	// Per-endpoint auth rate limit middleware.
+	loginRL := middleware.AuthRateLimit(
+		p.AuthRateLimiters.Login,
+		p.AuthRateLimiters.LoginCfg,
+		"login",
+	)
+	forgotPwdRL := middleware.AuthRateLimit(
+		p.AuthRateLimiters.ForgotPwd,
+		p.AuthRateLimiters.ForgotPwdCfg,
+		"forgot_password",
+	)
+
 	// API routes.
 	r.Route("/api", func(api chi.Router) {
 		// Public auth endpoints.
 		api.Post("/auth/register", p.IdentityHandler.Register)
-		api.Post("/auth/login", p.IdentityHandler.Login)
+		api.With(loginRL).Post("/auth/login", p.IdentityHandler.Login)
 		api.Post("/auth/verify-email", p.IdentityHandler.VerifyEmail)
 		api.Post("/auth/refresh", p.IdentityHandler.RefreshToken)
 
@@ -131,7 +144,7 @@ func NewRouter(p RouterParams) http.Handler {
 		api.Get("/plans/{planID}", p.BillingHandler.GetPlan)
 
 		// Public password reset endpoints.
-		api.Post("/auth/forgot-password", p.IdentityHandler.ForgotPassword)
+		api.With(forgotPwdRL).Post("/auth/forgot-password", p.IdentityHandler.ForgotPassword)
 		api.Post("/auth/reset-password", p.IdentityHandler.ResetPassword)
 
 		// Protected endpoints — require valid JWT.

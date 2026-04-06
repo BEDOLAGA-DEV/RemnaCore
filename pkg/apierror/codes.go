@@ -130,4 +130,5 @@ var (
 	BodyTooLarge     = New("COMMON.BODY_TOO_LARGE", "request body too large", http.StatusRequestEntityTooLarge)
 	Unauthorized     = New("COMMON.UNAUTHORIZED", "authentication required", http.StatusUnauthorized)
 	Forbidden        = New("COMMON.FORBIDDEN", "access denied", http.StatusForbidden)
+	RateLimited      = New("COMMON.RATE_LIMITED", "too many requests", http.StatusTooManyRequests)
 )

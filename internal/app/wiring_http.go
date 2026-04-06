@@ -9,12 +9,14 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/fx"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/valkey"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 )
 
 // httpShutdownTimeout is the maximum time allowed for the HTTP server to
@@ -29,6 +31,9 @@ var httpWiring = fx.Options(
 
 	// Rate limiter: middleware.RateLimiter wraps *valkey.ResilientRateLimiter
 	fx.Provide(func(r *valkey.ResilientRateLimiter) middleware.RateLimiter { return r }),
+
+	// Auth-endpoint rate limiters with per-endpoint thresholds.
+	fx.Provide(newAuthRateLimiters),
 
 	// HTTP server lifecycle
 	fx.Invoke(startHTTPServer),
@@ -64,4 +69,40 @@ func startHTTPServer(lc fx.Lifecycle, router http.Handler, cfg *config.Config, l
 			return srv.Shutdown(shutdownCtx)
 		},
 	})
+}
+
+// newAuthRateLimiters creates per-endpoint auth rate limiters backed by Valkey
+// sliding window counters. Each endpoint gets its own limiter instance with
+// independent limits read from configuration.
+func newAuthRateLimiters(client *redis.Client, cfg *config.Config, clk clock.Clock) *middleware.AuthRateLimiters {
+	loginLimit := cfg.RateLimit.LoginMaxPerWindow
+	if loginLimit == 0 {
+		loginLimit = config.DefaultLoginMaxPerWindow
+	}
+	loginWindow := time.Duration(cfg.RateLimit.LoginWindowMinutes) * time.Minute
+	if cfg.RateLimit.LoginWindowMinutes == 0 {
+		loginWindow = time.Duration(config.DefaultLoginWindowMinutes) * time.Minute
+	}
+
+	forgotLimit := cfg.RateLimit.ForgotPwdMaxPerWindow
+	if forgotLimit == 0 {
+		forgotLimit = config.DefaultForgotPwdMaxPerWindow
+	}
+	forgotWindow := time.Duration(cfg.RateLimit.ForgotPwdWindowMinutes) * time.Minute
+	if cfg.RateLimit.ForgotPwdWindowMinutes == 0 {
+		forgotWindow = time.Duration(config.DefaultForgotPwdWindowMinutes) * time.Minute
+	}
+
+	return &middleware.AuthRateLimiters{
+		Login: valkey.NewSlidingWindowRateLimiter(client, loginLimit, loginWindow, clk),
+		LoginCfg: middleware.AuthRateLimitConfig{
+			Limit:  loginLimit,
+			Window: loginWindow,
+		},
+		ForgotPwd: valkey.NewSlidingWindowRateLimiter(client, forgotLimit, forgotWindow, clk),
+		ForgotPwdCfg: middleware.AuthRateLimitConfig{
+			Limit:  forgotLimit,
+			Window: forgotWindow,
+		},
+	}
 }

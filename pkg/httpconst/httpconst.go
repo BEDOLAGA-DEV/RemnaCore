@@ -44,6 +44,10 @@ const (
 	// protocol (HTTP/HTTPS) through a reverse proxy.
 	HeaderForwardedProto = "X-Forwarded-Proto"
 
+	// HeaderRetryAfter is the standard header indicating how long the client
+	// should wait before retrying a rate-limited request.
+	HeaderRetryAfter = "Retry-After"
+
 	// MaxWebhookBodySize is the maximum allowed size for incoming webhook
 	// request bodies (1 MiB).
 	MaxWebhookBodySize = 1 << 20
