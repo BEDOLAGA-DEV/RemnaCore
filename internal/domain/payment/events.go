@@ -21,7 +21,7 @@ type Event = domainevent.Event
 
 // NewChargeCreatedEvent creates an event for a newly created payment charge.
 func NewChargeCreatedEvent(paymentID, invoiceID, provider, externalID string, amount int64, now time.Time) Event {
-	return domainevent.NewAtWithEntity(EventChargeCreated, ChargeCreatedPayload{
+	return domainevent.NewTyped(ChargeCreatedPayload{
 		PaymentID:  paymentID,
 		InvoiceID:  invoiceID,
 		Provider:   provider,
@@ -32,7 +32,7 @@ func NewChargeCreatedEvent(paymentID, invoiceID, provider, externalID string, am
 
 // NewChargeCompletedEvent creates an event for a successfully completed payment.
 func NewChargeCompletedEvent(paymentID, invoiceID, provider string, amount int64, now time.Time) Event {
-	return domainevent.NewAtWithEntity(EventChargeCompleted, ChargeCompletedPayload{
+	return domainevent.NewTyped(ChargeCompletedPayload{
 		PaymentID: paymentID,
 		InvoiceID: invoiceID,
 		Provider:  provider,
@@ -42,7 +42,7 @@ func NewChargeCompletedEvent(paymentID, invoiceID, provider string, amount int64
 
 // NewChargeFailedEvent creates an event for a failed payment charge.
 func NewChargeFailedEvent(paymentID, invoiceID, provider, reason string, now time.Time) Event {
-	return domainevent.NewAtWithEntity(EventChargeFailed, ChargeFailedPayload{
+	return domainevent.NewTyped(ChargeFailedPayload{
 		PaymentID: paymentID,
 		InvoiceID: invoiceID,
 		Provider:  provider,
@@ -52,7 +52,7 @@ func NewChargeFailedEvent(paymentID, invoiceID, provider, reason string, now tim
 
 // NewRefundCompletedEvent creates an event for a completed refund.
 func NewRefundCompletedEvent(paymentID, invoiceID, provider string, amount int64, now time.Time) Event {
-	return domainevent.NewAtWithEntity(EventRefundCompleted, RefundCompletedPayload{
+	return domainevent.NewTyped(RefundCompletedPayload{
 		PaymentID: paymentID,
 		InvoiceID: invoiceID,
 		Provider:  provider,
@@ -64,7 +64,7 @@ func NewRefundCompletedEvent(paymentID, invoiceID, provider string, amount int64
 // Webhook events use the external provider ID as the entity since they
 // originate outside the platform and have no internal aggregate ID.
 func NewWebhookReceivedEvent(provider, externalID, status string, now time.Time) Event {
-	return domainevent.NewAtWithEntity(EventWebhookReceived, WebhookReceivedPayload{
+	return domainevent.NewTyped(WebhookReceivedPayload{
 		Provider:   provider,
 		ExternalID: externalID,
 		Status:     status,

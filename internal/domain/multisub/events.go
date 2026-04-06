@@ -31,7 +31,7 @@ type EventType = domainevent.EventType
 
 // NewBindingSyncFailedEvent creates an event when binding synchronisation fails.
 func NewBindingSyncFailedEvent(bindingID, subscriptionID, reason string, now time.Time) Event {
-	return domainevent.NewAtWithEntity(EventBindingSyncFailed, BindingSyncFailedPayload{
+	return domainevent.NewTyped(BindingSyncFailedPayload{
 		BindingID:      bindingID,
 		SubscriptionID: subscriptionID,
 		Reason:         reason,
@@ -40,7 +40,7 @@ func NewBindingSyncFailedEvent(bindingID, subscriptionID, reason string, now tim
 
 // NewBindingSyncCompletedEvent creates an event when a binding sync succeeds.
 func NewBindingSyncCompletedEvent(bindingID, subscriptionID string, now time.Time) Event {
-	return domainevent.NewAtWithEntity(EventBindingSyncCompleted, BindingSyncCompletedPayload{
+	return domainevent.NewTyped(BindingSyncCompletedPayload{
 		BindingID:      bindingID,
 		SubscriptionID: subscriptionID,
 	}, now, bindingID)

@@ -59,7 +59,7 @@ func NewPaymentRecord(invoiceID, provider, externalID string, amount int64, curr
 		CreatedAt:  now,
 		UpdatedAt:  now,
 	}
-	p.RecordEvent(domainevent.NewAtWithEntity(EventChargeCreated, ChargeCreatedPayload{
+	p.RecordEvent(domainevent.NewTyped(ChargeCreatedPayload{
 		PaymentID:  p.ID,
 		InvoiceID:  p.InvoiceID,
 		Provider:   p.Provider,
@@ -76,7 +76,7 @@ func (p *PaymentRecord) MarkCompleted(now time.Time) error {
 	}
 	p.Status = PaymentCompleted
 	p.UpdatedAt = now
-	p.RecordEvent(domainevent.NewAtWithEntity(EventChargeCompleted, ChargeCompletedPayload{
+	p.RecordEvent(domainevent.NewTyped(ChargeCompletedPayload{
 		PaymentID: p.ID,
 		InvoiceID: p.InvoiceID,
 		Provider:  p.Provider,
@@ -92,7 +92,7 @@ func (p *PaymentRecord) MarkFailed(reason string, now time.Time) error {
 	}
 	p.Status = PaymentFailed
 	p.UpdatedAt = now
-	p.RecordEvent(domainevent.NewAtWithEntity(EventChargeFailed, ChargeFailedPayload{
+	p.RecordEvent(domainevent.NewTyped(ChargeFailedPayload{
 		PaymentID: p.ID,
 		InvoiceID: p.InvoiceID,
 		Provider:  p.Provider,
@@ -108,7 +108,7 @@ func (p *PaymentRecord) MarkRefunded(amount int64, now time.Time) error {
 	}
 	p.Status = PaymentRefunded
 	p.UpdatedAt = now
-	p.RecordEvent(domainevent.NewAtWithEntity(EventRefundCompleted, RefundCompletedPayload{
+	p.RecordEvent(domainevent.NewTyped(RefundCompletedPayload{
 		PaymentID: p.ID,
 		InvoiceID: p.InvoiceID,
 		Provider:  p.Provider,

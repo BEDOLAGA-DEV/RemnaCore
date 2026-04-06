@@ -166,7 +166,7 @@ func (b *RemnawaveBinding) MarkProvisioned(remnawaveUUID, shortUUID string, now 
 	b.RemnawaveUUID = remnawaveUUID
 	b.RemnawaveShortUUID = shortUUID
 	b.SyncedAt = &now
-	b.RecordEvent(domainevent.NewAtWithEntity(EventBindingProvisioned, BindingProvisionedPayload{
+	b.RecordEvent(domainevent.NewTyped(BindingProvisionedPayload{
 		BindingID:      b.ID,
 		SubscriptionID: b.SubscriptionID,
 		RemnawaveUUID:  remnawaveUUID,
@@ -181,7 +181,7 @@ func (b *RemnawaveBinding) MarkFailed(reason string, now time.Time) error {
 		return err
 	}
 	b.FailReason = reason
-	b.RecordEvent(domainevent.NewAtWithEntity(EventBindingFailed, BindingFailedPayload{
+	b.RecordEvent(domainevent.NewTyped(BindingFailedPayload{
 		BindingID:      b.ID,
 		SubscriptionID: b.SubscriptionID,
 		Reason:         reason,
@@ -194,7 +194,7 @@ func (b *RemnawaveBinding) Disable(now time.Time) error {
 	if err := b.transitionTo(BindingDisabled, now); err != nil {
 		return err
 	}
-	b.RecordEvent(domainevent.NewAtWithEntity(EventBindingDisabled, BindingDisabledPayload{
+	b.RecordEvent(domainevent.NewTyped(BindingDisabledPayload{
 		BindingID:      b.ID,
 		SubscriptionID: b.SubscriptionID,
 	}, now, b.ID))
@@ -210,7 +210,7 @@ func (b *RemnawaveBinding) Enable(now time.Time) error {
 	if err := b.transitionTo(BindingActive, now); err != nil {
 		return err
 	}
-	b.RecordEvent(domainevent.NewAtWithEntity(EventBindingEnabled, BindingEnabledPayload{
+	b.RecordEvent(domainevent.NewTyped(BindingEnabledPayload{
 		BindingID:      b.ID,
 		SubscriptionID: b.SubscriptionID,
 	}, now, b.ID))
@@ -235,7 +235,7 @@ func (b *RemnawaveBinding) Deprovision(now time.Time) error {
 	if err := b.transitionTo(BindingDeprovisioned, now); err != nil {
 		return err
 	}
-	b.RecordEvent(domainevent.NewAtWithEntity(EventBindingDeprovisioned, BindingDeprovisionedPayload{
+	b.RecordEvent(domainevent.NewTyped(BindingDeprovisionedPayload{
 		BindingID:      b.ID,
 		SubscriptionID: b.SubscriptionID,
 		RemnawaveUUID:  b.RemnawaveUUID,

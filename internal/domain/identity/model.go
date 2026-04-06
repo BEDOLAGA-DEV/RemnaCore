@@ -78,7 +78,7 @@ func NewPlatformUser(email, password string, now time.Time) (*PlatformUser, erro
 		return nil, fmt.Errorf("hashing password: %w", err)
 	}
 
-	return &PlatformUser{
+	user := &PlatformUser{
 		ID:            uuid.Must(uuid.NewV7()).String(),
 		Email:         email,
 		PasswordHash:  hash,
@@ -86,7 +86,12 @@ func NewPlatformUser(email, password string, now time.Time) (*PlatformUser, erro
 		Role:          RoleCustomer,
 		CreatedAt:     now,
 		UpdatedAt:     now,
-	}, nil
+	}
+	user.RecordEvent(domainevent.NewTyped(UserRegisteredPayload{
+		UserID: user.ID,
+		Email:  user.Email,
+	}, now, user.ID))
+	return user, nil
 }
 
 // VerifyEmail marks the user's email as verified and updates the timestamp.

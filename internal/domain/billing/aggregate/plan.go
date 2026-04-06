@@ -125,7 +125,7 @@ func NewPlan(
 		CreatedAt:            now,
 		UpdatedAt:            now,
 	}
-	plan.RecordEvent(domainevent.NewAtWithEntity(EventPlanCreated, PlanCreatedPayload{
+	plan.RecordEvent(domainevent.NewTyped(PlanCreatedPayload{
 		PlanID: plan.ID,
 		Name:   plan.Name,
 		Tier:   string(plan.Tier),
@@ -138,7 +138,7 @@ func NewPlan(
 func (p *Plan) Deactivate(now time.Time) {
 	p.IsActive = false
 	p.UpdatedAt = now
-	p.RecordEvent(domainevent.NewAtWithEntity(EventPlanDeactivated, PlanDeactivatedPayload{
+	p.RecordEvent(domainevent.NewTyped(PlanDeactivatedPayload{
 		PlanID: p.ID,
 	}, now, p.ID))
 }
@@ -151,7 +151,7 @@ func (p *Plan) AddAddon(addon Addon, now time.Time) error {
 	}
 	p.AvailableAddons = append(p.AvailableAddons, addon)
 	p.UpdatedAt = now
-	p.RecordEvent(domainevent.NewAtWithEntity(EventPlanUpdated, PlanUpdatedPayload{
+	p.RecordEvent(domainevent.NewTyped(PlanUpdatedPayload{
 		PlanID: p.ID,
 		Name:   p.Name,
 	}, now, p.ID))

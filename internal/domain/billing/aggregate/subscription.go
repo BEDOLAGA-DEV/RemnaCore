@@ -106,7 +106,7 @@ func NewSubscription(userID, planID string, interval vo.BillingInterval, addonID
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
-	sub.RecordEvent(domainevent.NewAtWithEntity(EventSubCreated, SubCreatedPayload{
+	sub.RecordEvent(domainevent.NewTyped(SubCreatedPayload{
 		SubscriptionID: sub.ID,
 		UserID:         sub.UserID,
 		PlanID:         sub.PlanID,
@@ -139,7 +139,7 @@ func (s *Subscription) Activate(now time.Time) error {
 	if err := s.transitionTo(StatusActive, now); err != nil {
 		return err
 	}
-	s.RecordEvent(domainevent.NewAtWithEntity(EventSubActivated, SubActivatedPayload{
+	s.RecordEvent(domainevent.NewTyped(SubActivatedPayload{
 		SubscriptionID: s.ID,
 		UserID:         s.UserID,
 	}, now, s.ID))
@@ -151,7 +151,7 @@ func (s *Subscription) MarkPastDue(now time.Time) error {
 	if err := s.transitionTo(StatusPastDue, now); err != nil {
 		return err
 	}
-	s.RecordEvent(domainevent.NewAtWithEntity(EventSubPastDue, SubPastDuePayload{
+	s.RecordEvent(domainevent.NewTyped(SubPastDuePayload{
 		SubscriptionID: s.ID,
 		UserID:         s.UserID,
 	}, now, s.ID))
@@ -164,7 +164,7 @@ func (s *Subscription) Cancel(now time.Time) error {
 		return err
 	}
 	s.CancelledAt = &now
-	s.RecordEvent(domainevent.NewAtWithEntity(EventSubCancelled, SubCancelledPayload{
+	s.RecordEvent(domainevent.NewTyped(SubCancelledPayload{
 		SubscriptionID: s.ID,
 		UserID:         s.UserID,
 	}, now, s.ID))
@@ -177,7 +177,7 @@ func (s *Subscription) Pause(now time.Time) error {
 		return err
 	}
 	s.PausedAt = &now
-	s.RecordEvent(domainevent.NewAtWithEntity(EventSubPaused, SubPausedPayload{
+	s.RecordEvent(domainevent.NewTyped(SubPausedPayload{
 		SubscriptionID: s.ID,
 		UserID:         s.UserID,
 	}, now, s.ID))
@@ -190,7 +190,7 @@ func (s *Subscription) Resume(now time.Time) error {
 		return err
 	}
 	s.PausedAt = nil
-	s.RecordEvent(domainevent.NewAtWithEntity(EventSubResumed, SubResumedPayload{
+	s.RecordEvent(domainevent.NewTyped(SubResumedPayload{
 		SubscriptionID: s.ID,
 		UserID:         s.UserID,
 	}, now, s.ID))
@@ -202,7 +202,7 @@ func (s *Subscription) Expire(now time.Time) error {
 	if err := s.transitionTo(StatusExpired, now); err != nil {
 		return err
 	}
-	s.RecordEvent(domainevent.NewAtWithEntity(EventSubExpired, SubExpiredPayload{
+	s.RecordEvent(domainevent.NewTyped(SubExpiredPayload{
 		SubscriptionID: s.ID,
 		UserID:         s.UserID,
 	}, now, s.ID))
@@ -217,7 +217,7 @@ func (s *Subscription) AddAddon(addonID string, now time.Time) error {
 	}
 	s.AddonIDs = append(s.AddonIDs, addonID)
 	s.UpdatedAt = now
-	s.RecordEvent(domainevent.NewAtWithEntity(EventSubUpdated, SubUpdatedPayload{
+	s.RecordEvent(domainevent.NewTyped(SubUpdatedPayload{
 		SubscriptionID: s.ID,
 		UserID:         s.UserID,
 	}, now, s.ID))
@@ -233,7 +233,7 @@ func (s *Subscription) RemoveAddon(addonID string, now time.Time) error {
 	}
 	s.AddonIDs = slices.Delete(s.AddonIDs, idx, idx+1)
 	s.UpdatedAt = now
-	s.RecordEvent(domainevent.NewAtWithEntity(EventSubUpdated, SubUpdatedPayload{
+	s.RecordEvent(domainevent.NewTyped(SubUpdatedPayload{
 		SubscriptionID: s.ID,
 		UserID:         s.UserID,
 	}, now, s.ID))
@@ -254,7 +254,7 @@ func (s *Subscription) Upgrade(newPlanID string, newPeriod vo.BillingPeriod, now
 	s.Period = newPeriod
 	s.PendingPlanID = nil // clear deferred downgrade
 	s.UpdatedAt = now
-	s.RecordEvent(domainevent.NewAtWithEntity(EventSubUpgraded, SubUpgradedPayload{
+	s.RecordEvent(domainevent.NewTyped(SubUpgradedPayload{
 		SubscriptionID: s.ID,
 		UserID:         s.UserID,
 		FromPlanID:     oldPlanID,
@@ -274,7 +274,7 @@ func (s *Subscription) Downgrade(newPlanID string, now time.Time) error {
 	}
 	s.PendingPlanID = &newPlanID
 	s.UpdatedAt = now
-	s.RecordEvent(domainevent.NewAtWithEntity(EventSubDowngraded, SubDowngradedPayload{
+	s.RecordEvent(domainevent.NewTyped(SubDowngradedPayload{
 		SubscriptionID: s.ID,
 		UserID:         s.UserID,
 		FromPlanID:     s.PlanID,
@@ -303,7 +303,7 @@ func (s *Subscription) Renew(now time.Time) error {
 		s.PendingPlanID = nil
 	}
 	s.UpdatedAt = now
-	s.RecordEvent(domainevent.NewAtWithEntity(EventSubRenewed, SubRenewedPayload{
+	s.RecordEvent(domainevent.NewTyped(SubRenewedPayload{
 		SubscriptionID: s.ID,
 		UserID:         s.UserID,
 	}, now, s.ID))

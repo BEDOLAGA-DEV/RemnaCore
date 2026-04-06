@@ -133,8 +133,8 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (*RegisterR
 		if err := s.repo.CreateEmailVerification(txCtx, verification); err != nil {
 			return fmt.Errorf("persisting email verification: %w", err)
 		}
-		if err := s.publisher.Publish(txCtx, NewUserRegisteredEvent(user.ID, user.Email, now)); err != nil {
-			return fmt.Errorf("publishing %s: %w", EventUserRegistered, err)
+		if err := s.publishAggregateEvents(txCtx, user); err != nil {
+			return err
 		}
 		return nil
 	}); err != nil {

@@ -29,32 +29,16 @@ type Event = domainevent.Event
 // callers referencing identity.EventType continue to compile without changes.
 type EventType = domainevent.EventType
 
-// NewUserRegisteredEvent creates an event for a newly registered user.
-func NewUserRegisteredEvent(userID, email string, now time.Time) Event {
-	return domainevent.NewAtWithEntity(EventUserRegistered, UserRegisteredPayload{
-		UserID: userID,
-		Email:  email,
-	}, now, userID)
-}
-
-// NewEmailVerifiedEvent creates an event for a successful email verification.
-func NewEmailVerifiedEvent(userID, email string, now time.Time) Event {
-	return domainevent.NewAtWithEntity(EventEmailVerified, EmailVerifiedPayload{
-		UserID: userID,
-		Email:  email,
-	}, now, userID)
-}
-
 // NewUserLoggedInEvent creates an event for a successful login.
 func NewUserLoggedInEvent(userID string, now time.Time) Event {
-	return domainevent.NewAtWithEntity(EventUserLoggedIn, UserLoggedInPayload{
+	return domainevent.NewTyped(UserLoggedInPayload{
 		UserID: userID,
 	}, now, userID)
 }
 
 // NewTokenRefreshedEvent creates an event for a successful token rotation.
 func NewTokenRefreshedEvent(userID string, now time.Time) Event {
-	return domainevent.NewAtWithEntity(EventTokenRefreshed, TokenRefreshedPayload{
+	return domainevent.NewTyped(TokenRefreshedPayload{
 		UserID: userID,
 	}, now, userID)
 }
@@ -62,7 +46,7 @@ func NewTokenRefreshedEvent(userID string, now time.Time) Event {
 // NewPasswordResetRequestedEvent creates an event when a user requests a
 // password reset. Notification plugins listen for this to send the reset email.
 func NewPasswordResetRequestedEvent(userID, email, token string, now time.Time) Event {
-	return domainevent.NewAtWithEntity(EventPasswordResetRequested, PasswordResetRequestedPayload{
+	return domainevent.NewTyped(PasswordResetRequestedPayload{
 		UserID: userID,
 		Email:  email,
 		Token:  token,
@@ -72,7 +56,7 @@ func NewPasswordResetRequestedEvent(userID, email, token string, now time.Time) 
 // NewPasswordResetEvent creates an event when a password has been successfully
 // reset.
 func NewPasswordResetEvent(userID string, now time.Time) Event {
-	return domainevent.NewAtWithEntity(EventPasswordReset, PasswordResetPayload{
+	return domainevent.NewTyped(PasswordResetPayload{
 		UserID: userID,
 	}, now, userID)
 }

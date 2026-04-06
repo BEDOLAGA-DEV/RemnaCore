@@ -36,7 +36,12 @@ const (
 )
 
 // Tenant represents a white-label tenant on the platform.
+// It embeds EventRecorder to accumulate domain events during mutations.
+// Services must call DomainEvents() after persisting the aggregate to
+// retrieve and publish all pending events.
 type Tenant struct {
+	domainevent.EventRecorder
+
 	ID             string
 	Name           string
 	Domain         string // custom domain
@@ -58,7 +63,12 @@ type BrandingConfig struct {
 }
 
 // ResellerAccount represents a reseller's account linked to a specific tenant.
+// It embeds EventRecorder to accumulate domain events during mutations.
+// Services must call DomainEvents() after persisting the aggregate to
+// retrieve and publish all pending events.
 type ResellerAccount struct {
+	domainevent.EventRecorder
+
 	ID             string
 	TenantID       string
 	UserID         string
@@ -114,7 +124,7 @@ func (c *Commission) MarkPaid(now time.Time) error {
 	}
 	c.Status = CommissionPaid
 	c.PaidAt = &now
-	c.RecordEvent(domainevent.NewAtWithEntity(EventCommissionPaid, CommissionPaidPayload{
+	c.RecordEvent(domainevent.NewTyped(CommissionPaidPayload{
 		CommissionID: c.ID,
 		ResellerID:   c.ResellerID,
 		Amount:       c.Amount,
@@ -123,8 +133,10 @@ func (c *Commission) MarkPaid(now time.Time) error {
 }
 
 // NewTenant creates a new Tenant with a generated UUID and default settings.
+// The creation event is recorded on the aggregate; callers must flush
+// via DomainEvents() after persisting.
 func NewTenant(name, domain, ownerUserID string, now time.Time) *Tenant {
-	return &Tenant{
+	t := &Tenant{
 		ID:          uuid.Must(uuid.NewV7()).String(),
 		Name:        name,
 		Domain:      domain,
@@ -133,6 +145,11 @@ func NewTenant(name, domain, ownerUserID string, now time.Time) *Tenant {
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
+	t.RecordEvent(domainevent.NewTyped(TenantCreatedPayload{
+		TenantID:    t.ID,
+		OwnerUserID: ownerUserID,
+	}, now, t.ID))
+	return t
 }
 
 // Deactivate marks the tenant as inactive.
@@ -229,7 +246,7 @@ func NewCommission(resellerID, saleID string, saleAmount int64, commissionRate i
 		Status:     CommissionPending,
 		CreatedAt:  now,
 	}
-	c.RecordEvent(domainevent.NewAtWithEntity(EventCommissionCreated, CommissionCreatedPayload{
+	c.RecordEvent(domainevent.NewTyped(CommissionCreatedPayload{
 		CommissionID: c.ID,
 		ResellerID:   resellerID,
 		Amount:       amount,

@@ -117,7 +117,7 @@ func NewInvoice(subID, userID string, lineItems []vo.LineItem, discounts []vo.Di
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
-	inv.RecordEvent(domainevent.NewAtWithEntity(EventInvCreated, InvCreatedPayload{
+	inv.RecordEvent(domainevent.NewTyped(InvCreatedPayload{
 		InvoiceID:      inv.ID,
 		SubscriptionID: inv.SubscriptionID,
 		UserID:         inv.UserID,
@@ -154,7 +154,7 @@ func (inv *Invoice) MarkPaid(now time.Time) error {
 	inv.Status = InvoicePaid
 	inv.PaidAt = &now
 	inv.UpdatedAt = now
-	inv.RecordEvent(domainevent.NewAtWithEntity(EventInvPaid, InvPaidPayload{
+	inv.RecordEvent(domainevent.NewTyped(InvPaidPayload{
 		InvoiceID:      inv.ID,
 		SubscriptionID: inv.SubscriptionID,
 		UserID:         inv.UserID,
@@ -170,7 +170,7 @@ func (inv *Invoice) MarkFailed(now time.Time) error {
 	}
 	inv.Status = InvoiceFailed
 	inv.UpdatedAt = now
-	inv.RecordEvent(domainevent.NewAtWithEntity(EventInvFailed, InvFailedPayload{
+	inv.RecordEvent(domainevent.NewTyped(InvFailedPayload{
 		InvoiceID:      inv.ID,
 		SubscriptionID: inv.SubscriptionID,
 		UserID:         inv.UserID,
@@ -185,7 +185,7 @@ func (inv *Invoice) Refund(now time.Time) error {
 	}
 	inv.Status = InvoiceRefunded
 	inv.UpdatedAt = now
-	inv.RecordEvent(domainevent.NewAtWithEntity(EventInvRefunded, InvRefundedPayload{
+	inv.RecordEvent(domainevent.NewTyped(InvRefundedPayload{
 		InvoiceID:      inv.ID,
 		SubscriptionID: inv.SubscriptionID,
 		UserID:         inv.UserID,
@@ -214,7 +214,7 @@ func (inv *Invoice) ApplyDiscount(discount vo.Discount, now time.Time) error {
 	inv.Total = total
 	inv.UpdatedAt = now
 
-	inv.RecordEvent(domainevent.NewAtWithEntity(EventInvDiscountApplied, InvDiscountAppliedPayload{
+	inv.RecordEvent(domainevent.NewTyped(InvDiscountAppliedPayload{
 		InvoiceID:      inv.ID,
 		DiscountCode:   discount.Code,
 		DiscountAmount: totalDiscount.Amount,
@@ -241,7 +241,7 @@ func (inv *Invoice) OverrideTotal(newTotal vo.Money, reason string, now time.Tim
 	inv.Total = newTotal
 	inv.UpdatedAt = now
 
-	inv.RecordEvent(domainevent.NewAtWithEntity(EventInvTotalOverridden, InvTotalOverriddenPayload{
+	inv.RecordEvent(domainevent.NewTyped(InvTotalOverriddenPayload{
 		InvoiceID: inv.ID,
 		OldAmount: oldTotal.Amount,
 		NewAmount: newTotal.Amount,
@@ -275,7 +275,7 @@ func (inv *Invoice) ApplyPricingModification(subtotal, discount *int64, reason s
 	inv.PricingReason = reason
 	inv.UpdatedAt = now
 
-	inv.RecordEvent(domainevent.NewAtWithEntity(EventInvTotalOverridden, InvTotalOverriddenPayload{
+	inv.RecordEvent(domainevent.NewTyped(InvTotalOverriddenPayload{
 		InvoiceID: inv.ID,
 		OldAmount: oldTotal,
 		NewAmount: inv.Total.Amount,

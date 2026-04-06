@@ -88,7 +88,7 @@ func NewFamilyGroup(ownerID string, maxMembers int, now time.Time) (*FamilyGroup
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
-	fg.RecordEvent(domainevent.NewAtWithEntity(EventFamilyCreated, FamilyCreatedPayload{
+	fg.RecordEvent(domainevent.NewTyped(FamilyCreatedPayload{
 		FamilyGroupID: fg.ID,
 		OwnerID:       fg.OwnerID,
 		MaxMembers:    fg.MaxMembers,
@@ -113,7 +113,7 @@ func (fg *FamilyGroup) AddMember(userID, nickname string, now time.Time) error {
 		JoinedAt: now,
 	})
 	fg.UpdatedAt = now
-	fg.RecordEvent(domainevent.NewAtWithEntity(EventFamilyMemberAdded, FamilyMemberAddedPayload{
+	fg.RecordEvent(domainevent.NewTyped(FamilyMemberAddedPayload{
 		FamilyGroupID: fg.ID,
 		OwnerID:       fg.OwnerID,
 		MemberID:      userID,
@@ -132,7 +132,7 @@ func (fg *FamilyGroup) RemoveMember(userID string, now time.Time) error {
 		if m.UserID == userID {
 			fg.Members = append(fg.Members[:i], fg.Members[i+1:]...)
 			fg.UpdatedAt = now
-			fg.RecordEvent(domainevent.NewAtWithEntity(EventFamilyMemberRemoved, FamilyMemberRemovedPayload{
+			fg.RecordEvent(domainevent.NewTyped(FamilyMemberRemovedPayload{
 				FamilyGroupID: fg.ID,
 				OwnerID:       fg.OwnerID,
 				MemberID:      userID,
