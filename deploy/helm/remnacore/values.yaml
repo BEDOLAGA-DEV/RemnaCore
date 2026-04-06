@@ -92,6 +92,12 @@ config:
     maxIdleConns: 5
     # -- Maximum connection lifetime in minutes
     connMaxLifetimeMinutes: 5
+    # -- PostgreSQL 18 I/O method for async I/O.
+    #   worker  — thread-pool based (default, works everywhere)
+    #   io_uring — Linux 5.1+ kernel, up to 2x IOPS on NVMe storage
+    # Requires Linux 5.1+ host kernel. The application logs a warning at
+    # startup if io_method != io_uring (see internal/adapter/postgres/module.go).
+    ioMethod: "worker"
 
   # ---------------------------------------------------------------------------
   # Valkey (cache / session store)

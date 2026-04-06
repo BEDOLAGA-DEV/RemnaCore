@@ -54,6 +54,18 @@ services:
     # PG18 async I/O and performance tuning (sized for 1GB container, SSD storage).
     # Data checksums are enabled by default in PG18 (initdb --data-checksums).
     # Use SHOW data_checksums; to verify at runtime.
+    #
+    # PostgreSQL 18 I/O method configuration:
+    #   worker  — thread-pool based (default, works everywhere)
+    #   io_uring — Linux 5.1+ kernel, up to 2x IOPS on NVMe storage
+    #
+    # To enable io_uring in Docker:
+    #   1. Host kernel must be Linux 5.1+ (check: uname -r)
+    #   2. Container needs --privileged or --cap-add SYS_ADMIN
+    #   3. Set PG_IO_METHOD=io_uring in .env
+    #
+    # The application logs a warning at startup if io_method != io_uring
+    # (see internal/adapter/postgres/module.go).
     command:
       - "postgres"
       - "-c"

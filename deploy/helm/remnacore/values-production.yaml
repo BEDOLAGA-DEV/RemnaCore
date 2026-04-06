@@ -14,6 +14,9 @@ config:
     maxOpenConns: 50
     maxIdleConns: 10
     connMaxLifetimeMinutes: 10
+    # io_uring requires Linux 5.1+ host kernel and SYS_ADMIN capability
+    # on the PostgreSQL pod. Verify: SHOW io_method; in psql.
+    ioMethod: "io_uring"
 
 resources:
   requests:
