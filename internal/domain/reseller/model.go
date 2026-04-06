@@ -172,6 +172,16 @@ func (t *Tenant) Activate(now time.Time) error {
 	return nil
 }
 
+// SetBranding updates the tenant's branding configuration and records a
+// TenantUpdated event.
+func (t *Tenant) SetBranding(branding BrandingConfig, now time.Time) {
+	t.BrandingConfig = branding
+	t.UpdatedAt = now
+	t.RecordEvent(domainevent.NewTyped(TenantUpdatedPayload{
+		TenantID: t.ID,
+	}, now, t.ID))
+}
+
 // GenerateAPIKey creates a cryptographically random API key, stores its SHA-256
 // hash on the tenant, and returns the plain-text key. The plain-text key is
 // only available at generation time; it is NEVER persisted.
@@ -195,20 +205,27 @@ func HashAPIKey(plainKey string) string {
 }
 
 // NewResellerAccount creates a new ResellerAccount after validating the
-// commission rate is within the allowed range.
+// commission rate is within the allowed range. The creation event is recorded
+// on the aggregate; callers must flush via DomainEvents() after persisting.
 func NewResellerAccount(tenantID, userID string, commissionRate int, now time.Time) (*ResellerAccount, error) {
 	if commissionRate < MinCommissionRate || commissionRate > MaxCommissionRate {
 		return nil, ErrInvalidCommissionRate
 	}
 
-	return &ResellerAccount{
+	a := &ResellerAccount{
 		ID:             uuid.Must(uuid.NewV7()).String(),
 		TenantID:       tenantID,
 		UserID:         userID,
 		CommissionRate: commissionRate,
 		Balance:        0,
 		CreatedAt:      now,
-	}, nil
+	}
+	a.RecordEvent(domainevent.NewTyped(ResellerCreatedPayload{
+		ResellerID: a.ID,
+		TenantID:   tenantID,
+		UserID:     userID,
+	}, now, a.ID))
+	return a, nil
 }
 
 // safeCommissionAmount calculates the commission amount with overflow protection.
