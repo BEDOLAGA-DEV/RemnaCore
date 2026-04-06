@@ -20,3 +20,6 @@ var ErrAddonAlreadyOnSubscription = errors.New("addon already added to subscript
 
 // ErrAddonNotOnSubscription indicates the addon was not found on the subscription.
 var ErrAddonNotOnSubscription = errors.New("addon not found on subscription")
+
+// ErrPeriodNotElapsed indicates a renewal attempt before the current billing period has ended.
+var ErrPeriodNotElapsed = errors.New("current billing period has not elapsed")

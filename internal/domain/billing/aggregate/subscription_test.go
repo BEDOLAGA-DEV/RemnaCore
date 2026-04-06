@@ -260,28 +260,75 @@ func TestSubscription_ExpiredToAny_Terminal(t *testing.T) {
 }
 
 func TestSubscription_Renew(t *testing.T) {
-	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
-	require.NoError(t, sub.Activate(time.Now()))
+	now := time.Now()
+	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, now)
+	require.NoError(t, sub.Activate(now))
 
 	oldEnd := sub.Period.End
 	expectedNext := vo.NewBillingPeriod(oldEnd, vo.IntervalMonth)
 
-	err := sub.Renew(time.Now())
+	renewTime := oldEnd.Add(time.Hour)
+	err := sub.Renew(renewTime)
 
 	require.NoError(t, err)
 	assert.Equal(t, StatusActive, sub.Status)
 	assert.Equal(t, expectedNext.Start, sub.Period.Start)
 	assert.Equal(t, expectedNext.End, sub.Period.End)
+	assert.Equal(t, renewTime, sub.UpdatedAt)
 }
 
 func TestSubscription_Renew_NotActive(t *testing.T) {
 	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, time.Now())
-	// Still in trial
+	// Still in trial — pass a time well after period end to isolate the status check.
+	renewTime := sub.Period.End.Add(time.Hour)
 
-	err := sub.Renew(time.Now())
+	err := sub.Renew(renewTime)
 
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "active")
+	assert.ErrorIs(t, err, ErrSubscriptionNotActiveForRenewal)
+}
+
+func TestSubscription_Renew_PeriodNotElapsed(t *testing.T) {
+	now := time.Now()
+	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, now)
+	require.NoError(t, sub.Activate(now))
+
+	// Attempt renewal while still within the current billing period.
+	midPeriod := now.Add(sub.Period.End.Sub(now) / 2)
+	err := sub.Renew(midPeriod)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrPeriodNotElapsed)
+	// Period must remain unchanged.
+	assert.Equal(t, now, sub.Period.Start)
+}
+
+func TestSubscription_Renew_ExactlyAtPeriodEnd(t *testing.T) {
+	now := time.Now()
+	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, now)
+	require.NoError(t, sub.Activate(now))
+
+	// Renewing exactly at Period.End should succeed (not Before).
+	err := sub.Renew(sub.Period.End)
+
+	require.NoError(t, err)
+}
+
+func TestSubscription_Renew_DoubleRenewal(t *testing.T) {
+	now := time.Now()
+	sub := mustNewSubscription(t, "user-1", "plan-1", vo.IntervalMonth, nil, now)
+	require.NoError(t, sub.Activate(now))
+
+	// First renewal — after the initial period ends.
+	firstRenewTime := sub.Period.End.Add(time.Hour)
+	require.NoError(t, sub.Renew(firstRenewTime))
+
+	// Second renewal immediately after — still within the new period.
+	secondRenewTime := firstRenewTime.Add(time.Minute)
+	err := sub.Renew(secondRenewTime)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrPeriodNotElapsed)
 }
 
 func TestSubscription_Renew_PreservesInterval(t *testing.T) {
@@ -296,12 +343,14 @@ func TestSubscription_Renew_PreservesInterval(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sub := mustNewSubscription(t, "user-1", "plan-1", tt.interval, nil, time.Now())
-			require.NoError(t, sub.Activate(time.Now()))
+			now := time.Now()
+			sub := mustNewSubscription(t, "user-1", "plan-1", tt.interval, nil, now)
+			require.NoError(t, sub.Activate(now))
 
 			originalEnd := sub.Period.End
 
-			err := sub.Renew(time.Now())
+			renewTime := originalEnd.Add(time.Hour)
+			err := sub.Renew(renewTime)
 
 			require.NoError(t, err)
 			assert.Equal(t, originalEnd, sub.Period.Start)

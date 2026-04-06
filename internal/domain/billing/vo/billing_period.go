@@ -40,14 +40,17 @@ func (bp BillingPeriod) Contains(t time.Time) bool {
 	return !t.Before(bp.Start) && t.Before(bp.End)
 }
 
+// hoursPerDay is the number of hours in a calendar day.
+const hoursPerDay = 24
+
 // DaysRemaining returns the number of whole days from now until the period end.
 // Returns 0 if the period has already ended.
-func (bp BillingPeriod) DaysRemaining() int {
-	remaining := time.Until(bp.End)
+func (bp BillingPeriod) DaysRemaining(now time.Time) int {
+	remaining := bp.End.Sub(now).Hours()
 	if remaining <= 0 {
 		return 0
 	}
-	return int(remaining.Hours() / 24)
+	return int(remaining / hoursPerDay)
 }
 
 // Next returns the billing period that immediately follows this one, using the

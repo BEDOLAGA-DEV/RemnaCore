@@ -223,10 +223,14 @@ func (s *Subscription) RemoveAddon(addonID string, now time.Time) error {
 
 // Renew advances the subscription to its next billing period. The next period
 // is calculated from the current period's end date and interval, so the caller
-// does not need to construct the new period manually. Only allowed when active.
+// does not need to construct the new period manually. Only allowed when active
+// and the current billing period has elapsed.
 func (s *Subscription) Renew(now time.Time) error {
 	if s.Status != StatusActive {
 		return ErrSubscriptionNotActiveForRenewal
+	}
+	if now.Before(s.Period.End) {
+		return ErrPeriodNotElapsed
 	}
 	s.Period = s.Period.Next()
 	s.UpdatedAt = now

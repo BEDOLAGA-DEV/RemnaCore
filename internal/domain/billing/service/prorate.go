@@ -32,7 +32,7 @@ func (pc *ProrateCalculator) CalculateUpgradeCredit(
 		return vo.Zero(currentPlan.BasePrice.Currency)
 	}
 
-	daysRemaining := daysRemainingFrom(currentPeriod, now)
+	daysRemaining := currentPeriod.DaysRemaining(now)
 	// Multiply first, divide last — preserves precision for small amounts.
 	creditAmount := (currentPlan.BasePrice.Amount * int64(daysRemaining)) / int64(totalDays)
 
@@ -57,7 +57,7 @@ func (pc *ProrateCalculator) CalculateUpgradeCost(
 		return vo.Zero(newPlan.BasePrice.Currency), nil
 	}
 
-	daysRemaining := daysRemainingFrom(currentPeriod, now)
+	daysRemaining := currentPeriod.DaysRemaining(now)
 	// Multiply first, divide last — preserves precision for small amounts.
 	proratedAmount := (newPlan.BasePrice.Amount * int64(daysRemaining)) / int64(totalDays)
 
@@ -72,12 +72,3 @@ func totalDaysInPeriod(period vo.BillingPeriod) int {
 	return int(hours / hoursPerDay)
 }
 
-// daysRemainingFrom returns the whole number of days from now until the period end.
-// Returns 0 if the period has already ended.
-func daysRemainingFrom(period vo.BillingPeriod, now time.Time) int {
-	remaining := period.End.Sub(now).Hours()
-	if remaining <= 0 {
-		return 0
-	}
-	return int(remaining / hoursPerDay)
-}
