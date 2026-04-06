@@ -2,7 +2,6 @@ package remnawave
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -70,6 +69,27 @@ func registerCBMetrics() {
 	})
 }
 
+// cbExec executes fn through the circuit breaker with type-safe generics.
+func cbExec[T any](cb *gobreaker.CircuitBreaker[any], fn func() (T, error)) (T, error) {
+	result, err := cb.Execute(func() (any, error) {
+		return fn()
+	})
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	return result.(T), nil
+}
+
+// cbExecNoResult executes fn through the circuit breaker when no result value
+// is needed.
+func cbExecNoResult(cb *gobreaker.CircuitBreaker[any], fn func() error) error {
+	_, err := cb.Execute(func() (any, error) {
+		return nil, fn()
+	})
+	return err
+}
+
 // ResilientClient wraps a Client with a circuit breaker that opens after
 // consecutive failures and prevents cascading failures. State transitions
 // are recorded as Prometheus metrics.
@@ -109,94 +129,50 @@ func NewResilientClient(client *Client, logger *slog.Logger) *ResilientClient {
 
 // CreateUser provisions a new VPN user through the circuit breaker.
 func (rc *ResilientClient) CreateUser(ctx context.Context, req CreateUserRequest) (*RemnawaveUser, error) {
-	result, err := rc.cb.Execute(func() (any, error) {
+	return cbExec(rc.cb, func() (*RemnawaveUser, error) {
 		return rc.client.CreateUser(ctx, req)
 	})
-	if err != nil {
-		return nil, fmt.Errorf("circuit breaker: %w", err)
-	}
-	user, ok := result.(*RemnawaveUser)
-	if !ok {
-		return nil, fmt.Errorf("circuit breaker: unexpected result type %T", result)
-	}
-	return user, nil
 }
 
 // GetNodes returns all proxy nodes through the circuit breaker.
 func (rc *ResilientClient) GetNodes(ctx context.Context) ([]RemnawaveNode, error) {
-	result, err := rc.cb.Execute(func() (any, error) {
+	return cbExec(rc.cb, func() ([]RemnawaveNode, error) {
 		return rc.client.GetNodes(ctx)
 	})
-	if err != nil {
-		return nil, fmt.Errorf("circuit breaker: %w", err)
-	}
-	nodes, ok := result.([]RemnawaveNode)
-	if !ok {
-		return nil, fmt.Errorf("circuit breaker: unexpected result type %T", result)
-	}
-	return nodes, nil
 }
 
 // GetUserByUUID retrieves a single VPN user with traffic stats through the
 // circuit breaker.
 func (rc *ResilientClient) GetUserByUUID(ctx context.Context, uuid string) (*RemnawaveUserWithTraffic, error) {
-	result, err := rc.cb.Execute(func() (any, error) {
+	return cbExec(rc.cb, func() (*RemnawaveUserWithTraffic, error) {
 		return rc.client.GetUserByUUID(ctx, uuid)
 	})
-	if err != nil {
-		return nil, fmt.Errorf("circuit breaker: %w", err)
-	}
-	user, ok := result.(*RemnawaveUserWithTraffic)
-	if !ok {
-		return nil, fmt.Errorf("circuit breaker: unexpected result type %T", result)
-	}
-	return user, nil
 }
 
 // UpdateUser modifies an existing VPN user through the circuit breaker.
 func (rc *ResilientClient) UpdateUser(ctx context.Context, req UpdateUserRequest) (*RemnawaveUser, error) {
-	result, err := rc.cb.Execute(func() (any, error) {
+	return cbExec(rc.cb, func() (*RemnawaveUser, error) {
 		return rc.client.UpdateUser(ctx, req)
 	})
-	if err != nil {
-		return nil, fmt.Errorf("circuit breaker: %w", err)
-	}
-	user, ok := result.(*RemnawaveUser)
-	if !ok {
-		return nil, fmt.Errorf("circuit breaker: unexpected result type %T", result)
-	}
-	return user, nil
 }
 
 // DeleteUser removes a VPN user through the circuit breaker.
 func (rc *ResilientClient) DeleteUser(ctx context.Context, uuid string) error {
-	_, err := rc.cb.Execute(func() (any, error) {
-		return nil, rc.client.DeleteUser(ctx, uuid)
+	return cbExecNoResult(rc.cb, func() error {
+		return rc.client.DeleteUser(ctx, uuid)
 	})
-	if err != nil {
-		return fmt.Errorf("circuit breaker: %w", err)
-	}
-	return nil
 }
 
 // EnableUser activates a VPN user through the circuit breaker.
 func (rc *ResilientClient) EnableUser(ctx context.Context, uuid string) error {
-	_, err := rc.cb.Execute(func() (any, error) {
-		return nil, rc.client.EnableUser(ctx, uuid)
+	return cbExecNoResult(rc.cb, func() error {
+		return rc.client.EnableUser(ctx, uuid)
 	})
-	if err != nil {
-		return fmt.Errorf("circuit breaker: %w", err)
-	}
-	return nil
 }
 
 // DisableUser deactivates a VPN user through the circuit breaker.
 func (rc *ResilientClient) DisableUser(ctx context.Context, uuid string) error {
-	_, err := rc.cb.Execute(func() (any, error) {
-		return nil, rc.client.DisableUser(ctx, uuid)
+	return cbExecNoResult(rc.cb, func() error {
+		return rc.client.DisableUser(ctx, uuid)
 	})
-	if err != nil {
-		return fmt.Errorf("circuit breaker: %w", err)
-	}
-	return nil
 }
