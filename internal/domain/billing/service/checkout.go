@@ -25,6 +25,33 @@ type PricingHookResult struct {
 
 // CheckoutService orchestrates the full checkout flow: subscription creation,
 // invoice generation, and payment charge initiation via the payment gateway.
+//
+// # Architectural rationale
+//
+// CheckoutService depends directly on hookdispatch.Dispatcher for the
+// pricing.calculate hook. This is a pragmatic trade-off:
+//
+//   - hookdispatch.Dispatcher is a shared kernel package (pkg/hookdispatch), not
+//     an infrastructure adapter. It defines a pure Go interface with no external
+//     dependencies. Importing it from a domain service package follows the same
+//     dependency direction as importing stdlib or pkg/domainevent.
+//
+//   - The pricing hook is best-effort and optional: if no plugin is registered or
+//     the hook errors, the checkout proceeds with the original price. Extracting a
+//     PricingPort interface would add a file that delegates to the same dispatcher
+//     method with identical semantics.
+//
+//   - Plugin version pinning (BeginFlow) is called at the start of the checkout
+//     flow to guarantee consistency across multiple hook calls. This is a
+//     dispatcher concern that would leak into the adapter regardless.
+//
+// Rationale: in a modular monolith compiled as a single binary, a
+// PricingDispatcher port + adapter would be pure delegation with no decoupling
+// benefit. The trade-off is documented rather than abstracted.
+//
+// When to split: if pricing logic grows beyond a single hook dispatch (e.g.,
+// tiered pricing engine, A/B testing, coupon validation), extract a
+// PricingService that encapsulates that complexity and inject it here.
 type CheckoutService struct {
 	billing     *BillingService
 	payment     billing.PaymentGateway

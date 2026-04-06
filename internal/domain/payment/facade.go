@@ -23,6 +23,40 @@ const (
 
 // PaymentFacade dispatches payment operations to plugins via the hook
 // dispatcher. It contains NO built-in Stripe/BTCPay logic.
+//
+// # Architectural rationale
+//
+// PaymentFacade intentionally combines domain port, application orchestration,
+// and plugin protocol handling in a single type within the domain layer. This is
+// a pragmatic trade-off for RemnaCore's plugin-first architecture:
+//
+//   - hookdispatch.Dispatcher is a shared kernel package (pkg/hookdispatch), not
+//     an infrastructure adapter. It defines a pure Go interface with no external
+//     dependencies. Domain packages importing it does not create a coupling to
+//     infrastructure -- the dependency arrow points from domain to pkg, which is
+//     the same direction as stdlib imports.
+//
+//   - Payment is 100% plugin-driven. There is no built-in provider logic to
+//     separate from the dispatch mechanism. Extracting a port interface and
+//     adapter would produce a pure-delegation layer (port calls adapter, adapter
+//     calls dispatcher) with no additional decoupling benefit since this is a
+//     modular monolith compiled as a single binary.
+//
+//   - The facade validates inputs, dispatches to plugins, interprets results,
+//     persists records, and publishes domain events. This is deliberate: all
+//     payment invariants are enforced in one place rather than scattered across
+//     a thin domain model and a separate application service.
+//
+// Rationale: in a modular monolith with a single transport layer (chi HTTP),
+// the cost of 4-6 additional files per context (port interface, adapter struct,
+// adapter constructor, Fx wiring, tests) outweighs the benefit when the adapter
+// would be a one-line delegation to the same dispatcher interface.
+//
+// When to split: if RemnaCore gains a second transport layer (gRPC/ConnectRPC
+// gateway), is extracted into separate microservices, or if payment orchestration
+// logic diverges from plugin dispatch (e.g., built-in provider fallbacks), then
+// extract a PaymentDispatcher port in the domain and move plugin protocol
+// handling to an adapter in internal/adapter/plugin/.
 type PaymentFacade struct {
 	dispatcher hookdispatch.Dispatcher
 	repo       PaymentRepository

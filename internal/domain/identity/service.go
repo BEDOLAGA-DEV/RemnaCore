@@ -21,6 +21,38 @@ type EventPublisher = domainevent.Publisher
 
 // Service implements the core identity use-cases: registration, login, email
 // verification, token refresh, and profile retrieval.
+//
+// # Architectural rationale
+//
+// Service is a "thick" domain service that combines domain logic (user
+// construction, credential verification, token generation) with application
+// orchestration (transaction management, event publishing, session lifecycle).
+// In strict hexagonal architecture these would be separate layers, but
+// RemnaCore intentionally merges them:
+//
+//   - Every public method follows the same pattern: load entities, enforce
+//     invariants, persist changes and publish events within a single database
+//     transaction (txmanager.Runner). A separate application service would
+//     duplicate this ceremony without adding meaningful separation.
+//
+//   - Domain entities (PlatformUser, EmailVerification, PasswordReset) own their
+//     own validation and state transitions. Service orchestrates them but does
+//     not contain business rules -- those live in the entities.
+//
+//   - Security-sensitive operations (password hashing, JWT signing, refresh token
+//     rotation) are delegated to pkg/authutil, keeping the service focused on
+//     coordination rather than cryptographic implementation.
+//
+// Rationale: in a modular monolith, splitting identity into a thin domain
+// service + application service would create two files with near-identical
+// method signatures where the application service simply delegates to the
+// domain service and wraps it in a transaction. The thick service pattern keeps
+// the identity context's public API in one place.
+//
+// When to split: if Service exceeds ~500 lines or gains responsibilities beyond
+// authentication and profile management (e.g., RBAC policy engine, OAuth2
+// provider integration), extract focused services (e.g., AuthService,
+// ProfileService) that each own a subset of the use-cases.
 type Service struct {
 	repo       Repository
 	publisher  domainevent.Publisher

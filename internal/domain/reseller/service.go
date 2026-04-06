@@ -13,6 +13,37 @@ import (
 // ResellerService implements the core reseller and white-label use-cases:
 // tenant management, reseller account creation, commission tracking, and
 // API key validation.
+//
+// # Architectural rationale
+//
+// ResellerService is a "thick" domain service that combines domain logic
+// (tenant construction, commission calculation, API key validation) with
+// application orchestration (transaction management, event publishing,
+// repository coordination). In strict hexagonal architecture these would be
+// separate layers, but RemnaCore intentionally merges them:
+//
+//   - Every public method follows the same pattern: construct or load aggregates,
+//     enforce invariants, persist changes and publish events. A separate
+//     application service would duplicate this ceremony without adding meaningful
+//     separation.
+//
+//   - Domain entities (Tenant, ResellerAccount, Commission) own their own
+//     validation and state transitions. ResellerService orchestrates them but
+//     does not contain business rules -- those live in the entities.
+//
+//   - Commission recording uses txmanager.Runner to atomically persist the
+//     commission and update the reseller balance, keeping transaction boundaries
+//     explicit and testable without depending on concrete database infrastructure.
+//
+// Rationale: in a modular monolith, the application service layer would be a
+// thin pass-through that adds ceremony without adding separation. The thick
+// service pattern keeps the reseller context's public API in one place, making
+// it easier to audit invariants and transaction boundaries.
+//
+// When to split: if ResellerService exceeds ~500 lines or gains responsibilities
+// beyond tenant/commission CRUD (e.g., payout orchestration, multi-currency
+// settlement), extract focused services (e.g., PayoutService, TenantService)
+// that each own a subset of the aggregate interactions.
 type ResellerService struct {
 	tenants     TenantRepository
 	commissions CommissionRepository

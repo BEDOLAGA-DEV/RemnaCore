@@ -25,6 +25,38 @@ type CreateSubscriptionCmd struct {
 }
 
 // BillingService implements CQRS command handlers for the billing domain.
+//
+// # Architectural rationale
+//
+// BillingService is a "thick" domain service that combines domain logic
+// (aggregate construction, state transitions, invariant enforcement) with
+// application orchestration (transaction management, event publishing,
+// repository coordination). In strict hexagonal architecture these would be
+// separate layers, but RemnaCore intentionally merges them:
+//
+//   - Every public method follows the same pattern: load aggregates, enforce
+//     invariants via aggregate methods, persist changes and publish events within
+//     a single database transaction (txmanager.Runner). Splitting this into a
+//     thin domain service + application service would duplicate the aggregate
+//     load/validate/persist/publish ceremony in every method.
+//
+//   - Aggregates (Subscription, Invoice, FamilyGroup) own their own state
+//     machines and domain events. BillingService orchestrates them but does not
+//     contain business rules -- those live in the aggregates and value objects.
+//
+//   - Transaction boundaries are a cross-cutting concern. Using txmanager.Runner
+//     (a pkg/ interface) keeps the service testable without depending on concrete
+//     database infrastructure.
+//
+// Rationale: in a modular monolith, the application service layer would be a
+// thin pass-through that adds ceremony without adding separation. The thick
+// service pattern keeps the billing context's public API in one place, making
+// it easier to audit invariants and transaction boundaries.
+//
+// When to split: if BillingService exceeds ~500 lines or gains responsibilities
+// beyond CRUD orchestration (e.g., complex saga coordination across contexts),
+// extract focused services (e.g., RenewalService, FamilyService) that each own
+// a subset of the aggregate interactions.
 type BillingService struct {
 	plans     billing.PlanRepository
 	subs      billing.SubscriptionRepository
