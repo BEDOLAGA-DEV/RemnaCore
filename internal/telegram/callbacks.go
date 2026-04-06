@@ -152,7 +152,7 @@ func (b *Bot) handleCancelCallback(ctx context.Context, _ *tgbot.Bot, update *mo
 		return
 	}
 
-	err := b.billing.CancelSubscription(ctx, subID)
+	err := b.billing.CancelSubscription(ctx, subID, nil)
 	if err != nil {
 		b.logger.Error("cancel subscription failed", slog.String("sub_id", subID), slog.Any("error", err))
 		b.answerCallback(ctx, cb.ID, "Failed to cancel subscription.")

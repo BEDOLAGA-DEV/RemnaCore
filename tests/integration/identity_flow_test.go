@@ -144,7 +144,7 @@ func TestIdentityFlow(t *testing.T) {
 		var resp map[string]any
 		err := json.NewDecoder(rec.Body).Decode(&resp)
 		require.NoError(t, err)
-		assert.Contains(t, resp["error"], "already taken")
+		assert.Equal(t, "IDENTITY.EMAIL_TAKEN", resp["code"])
 
 		h.repo.AssertExpectations(t)
 	})
@@ -218,7 +218,7 @@ func TestIdentityFlow(t *testing.T) {
 		var resp map[string]any
 		err = json.NewDecoder(rec.Body).Decode(&resp)
 		require.NoError(t, err)
-		assert.Contains(t, resp["error"], "invalid credentials")
+		assert.Equal(t, "IDENTITY.INVALID_CREDENTIALS", resp["code"])
 
 		h.repo.AssertExpectations(t)
 	})
@@ -313,7 +313,7 @@ func TestIdentityFlow(t *testing.T) {
 		}
 
 		h.repo.On("GetEmailVerification", mock.Anything, vToken).Return(verification, nil)
-		h.repo.On("GetUserByID", mock.Anything, userID).Return(user, nil)
+		h.repo.On("GetUserByIDForUpdate", mock.Anything, userID).Return(user, nil)
 		h.repo.On("UpdateUser", mock.Anything, mock.AnythingOfType("*identity.PlatformUser")).Return(nil)
 		h.repo.On("DeleteEmailVerification", mock.Anything, "v-1").Return(nil)
 		h.pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
@@ -386,6 +386,7 @@ func TestIdentityFlow(t *testing.T) {
 		h.repo.On("GetUserByID", mock.Anything, userID).Return(user, nil)
 		h.repo.On("DeleteSession", mock.Anything, "s-1").Return(nil)
 		h.repo.On("CreateSession", mock.Anything, mock.AnythingOfType("*identity.Session")).Return(nil)
+		h.pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
 		body := `{"refresh_token":"` + rToken + `"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/auth/refresh", bytes.NewBufferString(body))

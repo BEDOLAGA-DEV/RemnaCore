@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -33,7 +34,7 @@ func newTestBillingService() (
 	txRunner := billingtest.NoopTxRunner{}
 	clk := clock.NewReal()
 
-	svc := NewBillingService(plans, subs, invoices, families, publisher, prorate, trial, txRunner, clk)
+	svc := NewBillingService(plans, subs, invoices, families, publisher, prorate, trial, txRunner, clk, slog.Default())
 	return svc, plans, subs, invoices, families, publisher
 }
 
@@ -180,7 +181,7 @@ func TestCancelSubscription_Success(t *testing.T) {
 	subs.On("Update", mock.Anything, sub).Return(nil)
 	publisher.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
-	err := svc.CancelSubscription(ctx, "sub-1")
+	err := svc.CancelSubscription(ctx, "sub-1", nil)
 
 	require.NoError(t, err)
 	assert.Equal(t, aggregate.StatusCancelled, sub.Status)
@@ -198,7 +199,7 @@ func TestCancelSubscription_AlreadyCancelled(t *testing.T) {
 
 	subs.On("GetByIDForUpdate", mock.Anything, "sub-1").Return(sub, nil)
 
-	err := svc.CancelSubscription(ctx, "sub-1")
+	err := svc.CancelSubscription(ctx, "sub-1", nil)
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, aggregate.ErrInvalidTransition)

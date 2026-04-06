@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"sync"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
@@ -16,6 +17,37 @@ type testPublisher struct {
 func (p *testPublisher) Publish(_ context.Context, event domainevent.Event) error {
 	p.events = append(p.events, event)
 	return nil
+}
+
+// syncTestPublisher is a thread-safe event publisher for tests that involve
+// goroutines (e.g., DispatchAsync). Use this instead of testPublisher when
+// events may be published from a background goroutine.
+type syncTestPublisher struct {
+	mu     sync.Mutex
+	events []domainevent.Event
+}
+
+func (p *syncTestPublisher) Publish(_ context.Context, event domainevent.Event) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.events = append(p.events, event)
+	return nil
+}
+
+// Len returns the number of published events (thread-safe).
+func (p *syncTestPublisher) Len() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.events)
+}
+
+// Events returns a snapshot of published events (thread-safe).
+func (p *syncTestPublisher) Events() []domainevent.Event {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make([]domainevent.Event, len(p.events))
+	copy(out, p.events)
+	return out
 }
 
 // testErrorLogger returns a logger that only emits error-level messages,

@@ -281,7 +281,7 @@ func TestProvisioningFlow(t *testing.T) {
 		var resp map[string]any
 		err := json.NewDecoder(rec.Body).Decode(&resp)
 		require.NoError(t, err)
-		assert.Contains(t, resp["error"], "does not belong to you")
+		assert.Contains(t, resp["details"], "does not belong to you")
 
 		h.bindings.AssertExpectations(t)
 	})

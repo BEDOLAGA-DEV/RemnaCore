@@ -32,6 +32,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager/txmanagertest"
+	"log/slog"
 )
 
 const (
@@ -98,7 +99,7 @@ func newLifecycleHarness(t *testing.T) *lifecycleHarness {
 	trial := billingservice.NewTrialManager(billingservice.DefaultTrialDays)
 	billingSvc := billingservice.NewBillingService(
 		plans, subs, invoices, families, billPub, prorate, trial,
-		billingtest.NoopTxRunner{}, clock.NewReal(),
+		billingtest.NoopTxRunner{}, clock.NewReal(), slog.Default(),
 	)
 	billingHandler := handler.NewBillingHandler(billingSvc, plans, subs, invoices)
 
@@ -241,7 +242,7 @@ func TestFullLifecycle(t *testing.T) {
 
 		h.identityRepo.On("GetEmailVerification", mock.Anything, verificationToken).
 			Return(verification, nil).Once()
-		h.identityRepo.On("GetUserByID", mock.Anything, userID).
+		h.identityRepo.On("GetUserByIDForUpdate", mock.Anything, userID).
 			Return(unverifiedUser, nil).Once()
 		h.identityRepo.On("UpdateUser", mock.Anything, mock.AnythingOfType("*identity.PlatformUser")).
 			Return(nil).Once()
@@ -402,13 +403,16 @@ func TestFullLifecycle(t *testing.T) {
 			UpdatedAt: now,
 		}
 
-		// Handler calls GetByID for ownership check, then service calls GetByID for processing.
+		// Handler calls GetByID for ownership check.
 		h.invoices.On("GetByID", mock.Anything, invoiceID).
+			Return(draftInvoice, nil).Once()
+		// Service calls GetByIDForUpdate inside RunInTx for processing.
+		h.invoices.On("GetByIDForUpdate", mock.Anything, invoiceID).
 			Return(draftInvoice, nil).Once()
 		h.invoices.On("Update", mock.Anything, mock.AnythingOfType("*aggregate.Invoice")).
 			Return(nil).Once()
-		// Service loads subscription to activate it.
-		h.subs.On("GetByID", mock.Anything, subscriptionID).
+		// Service loads subscription for activation inside RunInTx.
+		h.subs.On("GetByIDForUpdate", mock.Anything, subscriptionID).
 			Return(trialSub, nil).Once()
 		h.subs.On("Update", mock.Anything, mock.AnythingOfType("*aggregate.Subscription")).
 			Return(nil).Once()
@@ -529,10 +533,12 @@ func TestFullLifecycle(t *testing.T) {
 			UpdatedAt: now,
 		}
 
-		// Handler calls GetByID for ownership check, then service calls GetByID
-		// to load the aggregate for cancellation.
+		// Handler calls GetByID for ownership check.
 		h.subs.On("GetByID", mock.Anything, subscriptionID).
-			Return(activeSub, nil)
+			Return(activeSub, nil).Once()
+		// Service calls GetByIDForUpdate inside RunInTx for cancellation.
+		h.subs.On("GetByIDForUpdate", mock.Anything, subscriptionID).
+			Return(activeSub, nil).Once()
 		h.subs.On("Update", mock.Anything, mock.AnythingOfType("*aggregate.Subscription")).
 			Return(nil).Once()
 		// subscription.cancelled event.

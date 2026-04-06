@@ -46,6 +46,12 @@ func (m *MockDispatcher) DispatchSyncSafe(ctx context.Context, hookName string, 
 	return args.Get(0).(*hookdispatch.ChainResult)
 }
 
+// DispatchAsync records the async dispatch call. Domain tests can assert that
+// the expected hooks were dispatched without blocking on actual execution.
+func (m *MockDispatcher) DispatchAsync(ctx context.Context, hookName string, payload json.RawMessage) {
+	m.Called(ctx, hookName, payload)
+}
+
 // BeginFlow records the call and returns the context unchanged. Domain tests do
 // not need real flow bindings since they mock the dispatcher.
 func (m *MockDispatcher) BeginFlow(ctx context.Context) context.Context {

@@ -15,6 +15,8 @@ const (
 	EventBindingSyncFailed      = aggregate.EventBindingSyncFailed
 	EventBindingSyncCompleted   = aggregate.EventBindingSyncCompleted
 	EventBindingTrafficExceeded = aggregate.EventBindingTrafficExceeded
+	EventBindingLimited         = aggregate.EventBindingLimited
+	EventBindingUnlimited       = aggregate.EventBindingUnlimited
 	EventBindingDisabled        = aggregate.EventBindingDisabled
 	EventBindingEnabled         = aggregate.EventBindingEnabled
 	EventBindingFailed          = aggregate.EventBindingFailed

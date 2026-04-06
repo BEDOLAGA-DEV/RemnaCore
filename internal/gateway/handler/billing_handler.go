@@ -150,7 +150,7 @@ func (h *BillingHandler) CancelSubscription(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if err := h.service.CancelSubscription(r.Context(), subID); err != nil {
+	if err := h.service.CancelSubscription(r.Context(), subID, nil); err != nil {
 		writeErrorFromDomain(w, err)
 		return
 	}

@@ -477,19 +477,40 @@ func (d *HookDispatcher) hasHandlers(hookName string) bool {
 	return ok && len(regs) > 0
 }
 
-// DispatchAsync publishes a hook event to NATS for asynchronous processing.
-// The payload is published to subject "plugin.hook.{hookName}".
-func (d *HookDispatcher) DispatchAsync(ctx context.Context, hookName string, payload json.RawMessage) error {
-	if d.publisher == nil {
-		return fmt.Errorf("event publisher not configured")
-	}
+// DispatchAsync dispatches a hook in a background goroutine with panic recovery.
+// The hook event is published to NATS subject "plugin.hook.{hookName}" for
+// asynchronous processing. Used for post-lifecycle hooks where the result is
+// not needed. Errors are logged but do not propagate to the caller.
+func (d *HookDispatcher) DispatchAsync(ctx context.Context, hookName string, payload json.RawMessage) {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				d.logger.Error("panic in async hook dispatch",
+					"hook", hookName,
+					"panic", r,
+				)
+			}
+		}()
 
-	event := domainevent.NewAt(domainevent.EventType(asyncHookSubjectPrefix+hookName), map[string]any{
-		"hook_name": hookName,
-		"payload":   string(payload),
-	}, d.clock.Now())
+		if d.publisher == nil {
+			d.logger.Warn("async hook dispatch skipped: event publisher not configured",
+				"hook", hookName,
+			)
+			return
+		}
 
-	return d.publisher.Publish(ctx, event)
+		event := domainevent.NewAt(domainevent.EventType(asyncHookSubjectPrefix+hookName), map[string]any{
+			"hook_name": hookName,
+			"payload":   string(payload),
+		}, d.clock.Now())
+
+		if err := d.publisher.Publish(ctx, event); err != nil {
+			d.logger.Warn("async hook dispatch failed",
+				"hook", hookName,
+				"error", err,
+			)
+		}
+	}()
 }
 
 // Registrations returns a snapshot of current registrations for a hook name.

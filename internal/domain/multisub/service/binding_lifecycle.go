@@ -147,6 +147,117 @@ func (s *BindingLifecycleService) EnableAllForSubscription(ctx context.Context, 
 	return nil
 }
 
+// LimitBinding transitions a single binding to limited state.
+// No gateway call — the VPN provider already restricted the user.
+func (s *BindingLifecycleService) LimitBinding(ctx context.Context, bindingID string, reason string) error {
+	binding, err := s.bindings.GetByID(ctx, bindingID)
+	if err != nil {
+		return fmt.Errorf("get binding: %w", err)
+	}
+
+	if err := binding.Limit(reason, s.clock.Now()); err != nil {
+		return err
+	}
+
+	s.persistAndPublish(ctx, binding)
+	return nil
+}
+
+// UnlimitBinding transitions a single binding from limited back to active.
+// No gateway call — the VPN provider already reset the traffic.
+func (s *BindingLifecycleService) UnlimitBinding(ctx context.Context, bindingID string) error {
+	binding, err := s.bindings.GetByID(ctx, bindingID)
+	if err != nil {
+		return fmt.Errorf("get binding: %w", err)
+	}
+
+	if err := binding.Unlimit(s.clock.Now()); err != nil {
+		return err
+	}
+
+	s.persistAndPublish(ctx, binding)
+	return nil
+}
+
+// LimitAllForSubscription transitions all active bindings for a subscription
+// to limited. Used when the subscription-level traffic limit is exceeded.
+// No gateway calls — the VPN provider already restricted the users.
+//
+// Best-effort per-binding: if a single binding fails to transition, the error
+// is logged and the loop continues with the remaining bindings.
+// Idempotency: returns nil if no active bindings exist.
+func (s *BindingLifecycleService) LimitAllForSubscription(ctx context.Context, subscriptionID string, reason string) error {
+	bindings, err := s.bindings.GetActiveBySubscriptionID(ctx, subscriptionID)
+	if err != nil {
+		return fmt.Errorf("get active bindings: %w", err)
+	}
+
+	if len(bindings) == 0 {
+		return nil
+	}
+
+	now := s.clock.Now()
+
+	for _, binding := range bindings {
+		if limitErr := binding.Limit(reason, now); limitErr != nil {
+			s.logger.Warn("failed to transition binding to limited",
+				slog.String("binding_id", binding.ID),
+				slog.Any("error", limitErr),
+			)
+			continue
+		}
+
+		s.persistAndPublish(ctx, binding)
+	}
+
+	return nil
+}
+
+// UnlimitAllForSubscription transitions all limited bindings for a subscription
+// back to active. Used when traffic resets for the subscription.
+// No gateway calls — the VPN provider already reset the traffic.
+//
+// Best-effort per-binding: if a single binding fails to transition, the error
+// is logged and the loop continues with the remaining bindings.
+// Idempotency: returns nil if no limited bindings exist.
+func (s *BindingLifecycleService) UnlimitAllForSubscription(ctx context.Context, subscriptionID string) error {
+	bindings, err := s.bindings.GetBySubscriptionID(ctx, subscriptionID)
+	if err != nil {
+		return fmt.Errorf("get bindings: %w", err)
+	}
+
+	hasLimited := false
+	for _, binding := range bindings {
+		if binding.Status == multisubagg.BindingLimited {
+			hasLimited = true
+			break
+		}
+	}
+	if !hasLimited {
+		return nil
+	}
+
+	now := s.clock.Now()
+
+	for _, binding := range bindings {
+		if binding.Status != multisubagg.BindingLimited {
+			continue
+		}
+
+		if unlimitErr := binding.Unlimit(now); unlimitErr != nil {
+			s.logger.Warn("failed to transition binding to active",
+				slog.String("binding_id", binding.ID),
+				slog.Any("error", unlimitErr),
+			)
+			continue
+		}
+
+		s.persistAndPublish(ctx, binding)
+	}
+
+	return nil
+}
+
 // handleGatewayFailure marks a binding as failed after a gateway call error
 // and persists the status change.
 func (s *BindingLifecycleService) handleGatewayFailure(

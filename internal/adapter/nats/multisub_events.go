@@ -35,5 +35,7 @@ func multiSubEventTopics() []string {
 		string(multisub.EventBindingSyncFailed),
 		string(multisub.EventBindingSyncCompleted),
 		string(multisub.EventBindingTrafficExceeded),
+		string(multisub.EventBindingLimited),
+		string(multisub.EventBindingUnlimited),
 	}
 }

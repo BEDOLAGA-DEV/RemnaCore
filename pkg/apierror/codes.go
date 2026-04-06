@@ -37,6 +37,8 @@ var (
 	BillingPlanNotActive           = New("BILLING.PLAN_NOT_ACTIVE", "plan is not active", http.StatusBadRequest)
 	BillingNoPriceConfigured       = New("BILLING.NO_PRICE_CONFIGURED", "plan has no price configured", http.StatusBadRequest)
 	BillingFamilyNotEnabled        = New("BILLING.FAMILY_NOT_ENABLED", "family sharing not enabled for this plan", http.StatusConflict)
+	BillingCancellationBlocked     = New("BILLING.CANCELLATION_BLOCKED", "subscription cancellation blocked", http.StatusForbidden)
+	BillingCheckoutBlocked         = New("BILLING.CHECKOUT_BLOCKED", "checkout blocked by plugin", http.StatusForbidden)
 	BillingInvalidTransition       = New("BILLING.INVALID_TRANSITION", "invalid subscription state transition", http.StatusConflict)
 	BillingMaxFamilyExceeded       = New("BILLING.MAX_FAMILY_EXCEEDED", "maximum family members exceeded", http.StatusConflict)
 	BillingAlreadyMember           = New("BILLING.ALREADY_MEMBER", "user is already a member of this family group", http.StatusConflict)
@@ -65,6 +67,9 @@ var (
 	MultiSubMaxBindingsExceeded  = New("MULTISUB.MAX_BINDINGS_EXCEEDED", "maximum bindings exceeded", http.StatusConflict)
 	MultiSubSagaNotFound         = New("MULTISUB.SAGA_NOT_FOUND", "saga instance not found", http.StatusNotFound)
 	MultiSubSagaAlreadyExists    = New("MULTISUB.SAGA_ALREADY_EXISTS", "saga instance already exists", http.StatusConflict)
+	MultiSubBindingAlreadyLimited = New("MULTISUB.BINDING_ALREADY_LIMITED", "binding is already traffic-limited", http.StatusConflict)
+	MultiSubBindingNotLimited    = New("MULTISUB.BINDING_NOT_LIMITED", "binding is not traffic-limited", http.StatusConflict)
+	MultiSubNoVPNPlugin          = New("MULTISUB.NO_VPN_PLUGIN", "VPN provider not configured", http.StatusServiceUnavailable)
 )
 
 // Payment error codes.

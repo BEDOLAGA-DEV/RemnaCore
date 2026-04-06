@@ -7,6 +7,7 @@ import (
 
 	multisubdomain "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
 )
 
 // MultiSubOrchestrator is the facade that coordinates billing lifecycle events
@@ -24,10 +25,27 @@ type MultiSubOrchestrator struct {
 	bindings       multisubdomain.BindingRepository
 	publisher      domainevent.Publisher
 	logger         *slog.Logger
+	dispatcher     hookdispatch.Dispatcher // nil-safe; all dispatches guarded
+	hooksEnabled   bool                    // subscription lifecycle hooks feature flag
+}
+
+// OrchestratorOption configures optional dependencies on MultiSubOrchestrator.
+type OrchestratorOption func(*MultiSubOrchestrator)
+
+// WithDispatcher sets the WASM hook dispatcher for subscription traffic hooks.
+func WithDispatcher(d hookdispatch.Dispatcher) OrchestratorOption {
+	return func(o *MultiSubOrchestrator) { o.dispatcher = d }
+}
+
+// WithHooksEnabled enables subscription lifecycle hook dispatch points.
+func WithHooksEnabled(enabled bool) OrchestratorOption {
+	return func(o *MultiSubOrchestrator) { o.hooksEnabled = enabled }
 }
 
 // NewMultiSubOrchestrator creates a MultiSubOrchestrator with its saga
-// dependencies.
+// dependencies. Optional dependencies (dispatcher, feature flags) are
+// configured via OrchestratorOption functions to keep the constructor
+// backward-compatible.
 func NewMultiSubOrchestrator(
 	provisioning *ProvisioningSaga,
 	deprovisioning *DeprovisioningSaga,
@@ -36,8 +54,9 @@ func NewMultiSubOrchestrator(
 	bindings multisubdomain.BindingRepository,
 	publisher domainevent.Publisher,
 	logger *slog.Logger,
+	opts ...OrchestratorOption,
 ) *MultiSubOrchestrator {
-	return &MultiSubOrchestrator{
+	o := &MultiSubOrchestrator{
 		provisioning:   provisioning,
 		deprovisioning: deprovisioning,
 		syncService:    syncService,
@@ -46,6 +65,10 @@ func NewMultiSubOrchestrator(
 		publisher:      publisher,
 		logger:         logger,
 	}
+	for _, opt := range opts {
+		opt(o)
+	}
+	return o
 }
 
 // OnSubscriptionActivated is called when billing publishes

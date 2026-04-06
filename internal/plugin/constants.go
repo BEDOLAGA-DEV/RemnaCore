@@ -36,6 +36,10 @@ const (
 	PermAPIRoutes         PermissionScope = "api:routes"
 	PermVPNRead           PermissionScope = "vpn:read"
 	PermVPNWrite          PermissionScope = "vpn:write"
+	PermSubscriptionRead  PermissionScope = "subscription:read"
+	PermSubscriptionWrite PermissionScope = "subscription:write"
+	PermCheckoutRead      PermissionScope = "checkout:read"
+	PermCheckoutWrite     PermissionScope = "checkout:write"
 )
 
 // Default resource limits applied when a plugin manifest omits explicit values.

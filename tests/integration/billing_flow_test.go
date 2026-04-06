@@ -6,6 +6,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -64,7 +65,7 @@ func newBillingTestHarness(t *testing.T) *billingTestHarness {
 	prorate := billingservice.NewProrateCalculator()
 	trial := billingservice.NewTrialManager(billingservice.DefaultTrialDays)
 	txRunner := billingtest.NoopTxRunner{}
-	svc := billingservice.NewBillingService(plans, subs, invoices, families, pub, prorate, trial, txRunner, clock.NewReal())
+	svc := billingservice.NewBillingService(plans, subs, invoices, families, pub, prorate, trial, txRunner, clock.NewReal(), slog.Default())
 
 	bh := handler.NewBillingHandler(svc, plans, subs, invoices)
 
@@ -210,10 +211,12 @@ func TestBillingFlow(t *testing.T) {
 		token := billingAccessToken(t, h.jwt)
 
 		plan := &aggregate.Plan{
-			ID:        "plan-1",
-			Name:      "Basic",
-			BasePrice: vo.Money{Amount: 999, Currency: "USD"},
-			Interval:  vo.IntervalMonth,
+			ID:               "plan-1",
+			Name:             "Basic",
+			BasePrice:        vo.Money{Amount: 999, Currency: "USD"},
+			Interval:         vo.IntervalMonth,
+			IsActive:         true,
+			AllowedCountries: []string{"US"},
 		}
 		h.plans.On("GetByID", mock.Anything, "plan-1").Return(plan, nil)
 		h.subs.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Subscription")).Return(nil)
@@ -290,8 +293,9 @@ func TestBillingFlow(t *testing.T) {
 		}
 
 		// The handler calls subs.GetByID to verify ownership, then
-		// the service calls subs.GetByID again to load the aggregate.
+		// the service calls subs.GetByIDForUpdate to load the aggregate inside tx.
 		h.subs.On("GetByID", mock.Anything, "sub-1").Return(sub, nil)
+		h.subs.On("GetByIDForUpdate", mock.Anything, "sub-1").Return(sub, nil)
 		h.subs.On("Update", mock.Anything, mock.AnythingOfType("*aggregate.Subscription")).Return(nil)
 		h.pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 

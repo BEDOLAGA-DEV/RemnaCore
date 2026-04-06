@@ -3,7 +3,10 @@
 // minimal and stable -- it is the contract across the WASM boundary.
 package sdk
 
-import "encoding/json"
+import (
+	"context"
+	"encoding/json"
+)
 
 // HookContext is the JSON envelope passed as input to every plugin hook
 // function invoked by the runtime.
@@ -60,4 +63,33 @@ type HTTPResponse struct {
 type StorageEntry struct {
 	Key   string `json:"key"`
 	Value []byte `json:"value"`
+}
+
+// --- VPN provider request/response types ---
+
+// VPNRequest represents a VPN provider API request built by a plugin.
+// The plugin constructs the request spec; the host executes it with
+// circuit breaker, retry, and connection pooling.
+type VPNRequest struct {
+	Method  string            `json:"method"`
+	Path    string            `json:"path"`                 // relative path, base URL from host config
+	Headers map[string]string `json:"headers,omitempty"`
+	Body    []byte            `json:"body,omitempty"`
+	Timeout int               `json:"timeout_ms,omitempty"` // override, capped by host
+}
+
+// VPNResponse represents a VPN provider API response returned to a plugin for parsing.
+type VPNResponse struct {
+	StatusCode int               `json:"status_code"`
+	Headers    map[string]string `json:"headers,omitempty"`
+	Body       []byte            `json:"body,omitempty"`
+}
+
+// VPNHTTPExecutor executes VPN provider API requests on behalf of plugins.
+// The host provides circuit breaker, retry, and connection pooling around the
+// underlying HTTP transport. Implementations live in the adapter layer
+// (internal/adapter/plugin); consumers live in both internal/plugin and
+// internal/adapter/plugin, so the interface is defined here as shared contract.
+type VPNHTTPExecutor interface {
+	Execute(ctx context.Context, req VPNRequest) (*VPNResponse, error)
 }

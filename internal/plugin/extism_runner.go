@@ -114,12 +114,20 @@ type logRequest struct {
 }
 
 // hostFunctionName constants for host functions exposed to WASM guests.
-const hostFunctionNameLog = "log"
+const (
+	hostFunctionNameLog        = "log"
+	hostFunctionNameVPNRequest = "vpn_request"
+)
 
 // maxLogPayloadBytes is the maximum size of a log payload from a WASM guest.
 // Oversized entries are silently dropped to prevent a misbehaving plugin from
 // flooding the host with unbounded log data.
 const maxLogPayloadBytes = 64 << 10 // 64 KB
+
+// maxVPNRequestPayloadBytes is the maximum size of a VPN request payload from
+// a WASM guest. Requests larger than this are rejected with an error written
+// back to the guest.
+const maxVPNRequestPayloadBytes = 1 << 20 // 1 MB
 
 // buildExtismHostFunctions creates the Extism host function definitions bound
 // to a specific plugin slug. If hf is nil, no host functions are registered
@@ -152,7 +160,60 @@ func buildExtismHostFunctions(hf *HostFunctions, slug string) []extism.HostFunct
 		nil,
 	)
 
-	return []extism.HostFunction{logFn}
+	vpnRequestFn := extism.NewHostFunctionWithStack(
+		hostFunctionNameVPNRequest,
+		func(ctx context.Context, p *extism.CurrentPlugin, stack []uint64) {
+			offset := stack[0]
+			input, err := p.ReadBytes(offset)
+			if err != nil {
+				writeErrorToGuest(p, stack, fmt.Errorf("read vpn request input: %w", err))
+				return
+			}
+			if len(input) > maxVPNRequestPayloadBytes {
+				writeErrorToGuest(p, stack, fmt.Errorf("vpn request payload exceeds %d bytes", maxVPNRequestPayloadBytes))
+				return
+			}
+
+			output, err := hf.VPNRequest(ctx, slug, input)
+			if err != nil {
+				writeErrorToGuest(p, stack, err)
+				return
+			}
+
+			outOffset, err := p.WriteBytes(output)
+			if err != nil {
+				writeErrorToGuest(p, stack, fmt.Errorf("write vpn response: %w", err))
+				return
+			}
+			stack[0] = outOffset
+		},
+		[]extism.ValueType{extism.ValueTypePTR},
+		[]extism.ValueType{extism.ValueTypePTR},
+	)
+
+	return []extism.HostFunction{logFn, vpnRequestFn}
+}
+
+// hostErrorResponse is the JSON envelope returned to a WASM guest when a host
+// function encounters an error.
+type hostErrorResponse struct {
+	Error string `json:"error"`
+}
+
+// writeErrorToGuest serialises an error as a JSON hostErrorResponse and writes
+// it into the guest's memory, setting stack[0] to the output offset. If the
+// write itself fails the stack is left untouched (the guest receives no data).
+func writeErrorToGuest(p *extism.CurrentPlugin, stack []uint64, err error) {
+	resp := hostErrorResponse{Error: err.Error()}
+	data, marshalErr := json.Marshal(resp)
+	if marshalErr != nil {
+		return
+	}
+	offset, writeErr := p.WriteBytes(data)
+	if writeErr != nil {
+		return
+	}
+	stack[0] = offset
 }
 
 // Call invokes an exported WASM function by name. Input and output bytes use

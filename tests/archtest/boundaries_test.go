@@ -113,6 +113,68 @@ func TestPluginDoesNotImportDomainDirectly(t *testing.T) {
 	})
 }
 
+// TestAdapterPluginIsolation verifies that internal/adapter/plugin only depends
+// on the domain port it implements (multisub.VPNProvider) and shared pkg/
+// libraries. It must NOT import other domain contexts, peer adapter packages,
+// or upper-layer packages (gateway, infra, telegram, etc.).
+//
+// Allowed imports:
+//   - internal/domain/multisub (VPNProvider port)
+//   - pkg/hookdispatch, pkg/sdk
+//   - stdlib
+//
+// Forbidden: all other internal packages.
+func TestAdapterPluginIsolation(t *testing.T) {
+	// Peer adapter packages that adapter/plugin must not import.
+	peerAdapters := []string{
+		modulePrefix + "/internal/adapter/nats",
+		modulePrefix + "/internal/adapter/postgres",
+		modulePrefix + "/internal/adapter/remnawave",
+		modulePrefix + "/internal/adapter/valkey",
+	}
+
+	// Domain contexts that adapter/plugin must not import (multisub is allowed).
+	forbiddenDomains := []string{
+		modulePrefix + "/internal/domain/billing",
+		modulePrefix + "/internal/domain/identity",
+		modulePrefix + "/internal/domain/payment",
+		modulePrefix + "/internal/domain/reseller",
+	}
+
+	// Upper-layer packages that no adapter should import.
+	forbiddenLayers := []string{
+		modulePrefix + "/internal/gateway",
+		modulePrefix + "/internal/plugin",
+		modulePrefix + "/internal/infra",
+		modulePrefix + "/internal/telegram",
+		modulePrefix + "/internal/app",
+		modulePrefix + "/internal/observability",
+	}
+
+	var forbidden []string
+	forbidden = append(forbidden, peerAdapters...)
+	forbidden = append(forbidden, forbiddenDomains...)
+	forbidden = append(forbidden, forbiddenLayers...)
+
+	checkImports(t, filepath.Join("internal", "adapter", "plugin"), forbidden)
+}
+
+// TestPluginRuntimeDoesNotImportAdapterPlugin verifies that the WASM plugin
+// runtime (internal/plugin) does not depend on the adapter/plugin package.
+// They are at the same layer but serve different concerns: internal/plugin is
+// the generic runtime, while internal/adapter/plugin is a domain-specific
+// adapter that dispatches VPN hooks. Communication flows through
+// hookdispatch.Dispatcher, not direct imports.
+//
+// Note: TestPluginIsolation already forbids internal/plugin from importing
+// internal/adapter (the parent prefix). This test makes the specific boundary
+// between plugin runtime and plugin adapter explicit and self-documenting.
+func TestPluginRuntimeDoesNotImportAdapterPlugin(t *testing.T) {
+	checkImports(t, filepath.Join("internal", "plugin"), []string{
+		modulePrefix + "/internal/adapter/plugin",
+	})
+}
+
 // TestInfraDoesNotImportGateway verifies that infra services (health monitor,
 // smart router, speed test, subscription proxy) never import gateway or
 // adapter packages.

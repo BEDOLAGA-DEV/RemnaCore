@@ -119,6 +119,10 @@ func mapDomainError(err error) *apierror.Error {
 		return apierror.BillingNoPriceConfigured
 	case errors.Is(err, billing.ErrFamilyNotEnabled):
 		return apierror.BillingFamilyNotEnabled
+	case errors.Is(err, billing.ErrCancellationBlocked):
+		return apierror.BillingCancellationBlocked
+	case errors.Is(err, billing.ErrCheckoutBlocked):
+		return apierror.BillingCheckoutBlocked
 
 	// Billing aggregate errors (not aliased at the billing package level).
 	case errors.Is(err, aggregate.ErrInvalidTransition):
@@ -173,6 +177,12 @@ func mapDomainError(err error) *apierror.Error {
 		return apierror.MultiSubSagaNotFound
 	case errors.Is(err, multisub.ErrSagaAlreadyExists):
 		return apierror.MultiSubSagaAlreadyExists
+	case errors.Is(err, multisub.ErrBindingAlreadyLimited):
+		return apierror.MultiSubBindingAlreadyLimited
+	case errors.Is(err, multisub.ErrBindingNotLimited):
+		return apierror.MultiSubBindingNotLimited
+	case errors.Is(err, multisub.ErrNoVPNPlugin):
+		return apierror.MultiSubNoVPNPlugin
 
 	// ── Payment ──────────────────────────────────────────────────────────
 	case errors.Is(err, payment.ErrPaymentNotFound):

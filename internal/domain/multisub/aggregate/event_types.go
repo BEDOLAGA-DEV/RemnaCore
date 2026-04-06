@@ -10,6 +10,8 @@ const (
 	EventBindingSyncFailed      domainevent.EventType = "binding.sync_failed"
 	EventBindingSyncCompleted   domainevent.EventType = "binding.sync_completed"
 	EventBindingTrafficExceeded domainevent.EventType = "binding.traffic_exceeded"
+	EventBindingLimited         domainevent.EventType = "binding.limited"
+	EventBindingUnlimited       domainevent.EventType = "binding.unlimited"
 	EventBindingDisabled        domainevent.EventType = "binding.disabled"
 	EventBindingEnabled         domainevent.EventType = "binding.enabled"
 	EventBindingFailed          domainevent.EventType = "binding.failed"
@@ -51,13 +53,34 @@ type BindingEnabledPayload struct {
 	SubscriptionID string `json:"subscription_id"`
 }
 
+// BindingLimitedPayload is the typed payload for EventBindingLimited.
+// Recorded when the VPN provider reports that traffic has been exceeded.
+type BindingLimitedPayload struct {
+	BindingID      string `json:"binding_id"`
+	SubscriptionID string `json:"subscription_id"`
+	RemnawaveUUID  string `json:"remnawave_uuid"`
+	Reason         string `json:"reason"`
+}
+
+// BindingUnlimitedPayload is the typed payload for EventBindingUnlimited.
+// Recorded when the VPN provider lifts the traffic restriction.
+type BindingUnlimitedPayload struct {
+	BindingID      string `json:"binding_id"`
+	SubscriptionID string `json:"subscription_id"`
+	RemnawaveUUID  string `json:"remnawave_uuid"`
+}
+
 // --- EventPayload interface implementations ---
 
-func (BindingProvisionedPayload) EventType() domainevent.EventType   { return EventBindingProvisioned }
-func (BindingDeprovisionedPayload) EventType() domainevent.EventType { return EventBindingDeprovisioned }
-func (BindingFailedPayload) EventType() domainevent.EventType        { return EventBindingFailed }
-func (BindingDisabledPayload) EventType() domainevent.EventType      { return EventBindingDisabled }
-func (BindingEnabledPayload) EventType() domainevent.EventType       { return EventBindingEnabled }
+func (BindingProvisionedPayload) EventType() domainevent.EventType { return EventBindingProvisioned }
+func (BindingDeprovisionedPayload) EventType() domainevent.EventType {
+	return EventBindingDeprovisioned
+}
+func (BindingFailedPayload) EventType() domainevent.EventType    { return EventBindingFailed }
+func (BindingDisabledPayload) EventType() domainevent.EventType  { return EventBindingDisabled }
+func (BindingEnabledPayload) EventType() domainevent.EventType   { return EventBindingEnabled }
+func (BindingLimitedPayload) EventType() domainevent.EventType   { return EventBindingLimited }
+func (BindingUnlimitedPayload) EventType() domainevent.EventType { return EventBindingUnlimited }
 
 // Compile-time interface checks.
 var (
@@ -66,4 +89,6 @@ var (
 	_ domainevent.EventPayload = BindingFailedPayload{}
 	_ domainevent.EventPayload = BindingDisabledPayload{}
 	_ domainevent.EventPayload = BindingEnabledPayload{}
+	_ domainevent.EventPayload = BindingLimitedPayload{}
+	_ domainevent.EventPayload = BindingUnlimitedPayload{}
 )

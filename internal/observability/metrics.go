@@ -37,6 +37,10 @@ const (
 
 	MetricEntityLocksActive      = "platform_consumer_entity_locks_active"
 	MetricOutboxUnpublishedCount = "platform_outbox_unpublished_count"
+
+	MetricHookDispatchDuration = "platform_hook_dispatch_duration_seconds"
+	MetricHookDispatchTotal    = "platform_hook_dispatch_total"
+	MetricBindingsLimitedTotal = "platform_bindings_limited_total"
 )
 
 // Metric help string constants.
@@ -71,6 +75,10 @@ const (
 
 	helpEntityLocksActive      = "Number of active per-entity serialisation locks."
 	helpOutboxUnpublishedCount = "Number of unpublished events in the outbox."
+
+	helpHookDispatchDuration = "Duration of sync hook dispatches by hook name."
+	helpHookDispatchTotal    = "Total hook dispatches by hook name and result."
+	helpBindingsLimitedTotal = "Current number of bindings in traffic-limited state."
 )
 
 // Label name constants.
@@ -84,6 +92,8 @@ const (
 	LabelAction    = "action"
 	LabelEventType = "event_type"
 	LabelWorkerID  = "worker_id"
+	LabelHookName  = "hook_name"
+	LabelResult    = "result"
 )
 
 // DefaultHTTPBuckets defines histogram buckets for HTTP request durations.
@@ -121,6 +131,18 @@ const (
 	StatusDLQ              = "dlq"
 )
 
+// Hook dispatch result label values.
+const (
+	ResultSuccess  = "success"
+	ResultError    = "error"
+	ResultTimeout  = "timeout"
+	ResultFallback = "fallback"
+)
+
+// HookDispatchBuckets defines histogram buckets for sync hook dispatch durations.
+// Range covers sub-millisecond fast paths through multi-second plugin chains.
+var HookDispatchBuckets = []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5}
+
 // Metrics holds Prometheus metric collectors for the platform.
 type Metrics struct {
 	HTTPRequestsTotal    *prometheus.CounterVec
@@ -153,6 +175,13 @@ type Metrics struct {
 
 	// Outbox backlog gauge
 	OutboxUnpublishedCount prometheus.Gauge
+
+	// Hook dispatch metrics (domain-level, not per-plugin)
+	HookDispatchDuration *prometheus.HistogramVec
+	HookDispatchTotal    *prometheus.CounterVec
+
+	// Binding state gauge
+	BindingsLimitedTotal prometheus.Gauge
 }
 
 // registerRuntimeCollectors replaces the default Go and process collectors with
@@ -306,6 +335,22 @@ func NewMetrics() *Metrics {
 		OutboxUnpublishedCount: promauto.NewGauge(prometheus.GaugeOpts{
 			Name: MetricOutboxUnpublishedCount,
 			Help: helpOutboxUnpublishedCount,
+		}),
+
+		HookDispatchDuration: promauto.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    MetricHookDispatchDuration,
+			Help:    helpHookDispatchDuration,
+			Buckets: HookDispatchBuckets,
+		}, []string{LabelHookName}),
+
+		HookDispatchTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: MetricHookDispatchTotal,
+			Help: helpHookDispatchTotal,
+		}, []string{LabelHookName, LabelResult}),
+
+		BindingsLimitedTotal: promauto.NewGauge(prometheus.GaugeOpts{
+			Name: MetricBindingsLimitedTotal,
+			Help: helpBindingsLimitedTotal,
 		}),
 	}
 }

@@ -8,10 +8,13 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	pluginadapter "github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/plugin"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/sdk"
 )
 
 // pluginWiring provides all plugin-domain bindings: repository, storage,
@@ -33,6 +36,16 @@ var pluginWiring = fx.Options(
 	// WASM runner factory — real Extism/wazero runtime.
 	fx.Provide(provideExtismWASMFactory),
 
+	// Shared VPN HTTP executor — single circuit breaker instance used by both
+	// the plugin HostFunctions (pdk_vpn_request) and the plugin-backed
+	// VPNProvider adapter. nil when HooksVPNProviderEnabled is false.
+	fx.Provide(provideVPNExecutor),
+
+	// Wire VPN HTTP executor into HostFunctions when the VPN provider
+	// feature flag is enabled. This allows plugins to make VPN API requests
+	// through the pdk_vpn_request host function.
+	fx.Invoke(wireVPNExecutor),
+
 	// Load enabled plugins on startup
 	fx.Invoke(loadEnabledPlugins),
 )
@@ -43,6 +56,29 @@ var pluginWiring = fx.Options(
 // are bound per-plugin so WASM guests can call back into the host.
 func provideExtismWASMFactory(hf *plugin.HostFunctions) plugin.WASMRunnerFactory {
 	return plugin.ExtismRunnerFactory(hf)
+}
+
+// provideVPNExecutor creates a single circuit-breaker-wrapped HTTP executor
+// for VPN provider requests. Both the plugin HostFunctions (pdk_vpn_request)
+// and the plugin-backed VPNProvider adapter share this instance so that a
+// single circuit breaker protects the VPN backend. Returns nil when the
+// HooksVPNProviderEnabled feature flag is false.
+func provideVPNExecutor(cfg *config.Config, logger *slog.Logger) sdk.VPNHTTPExecutor {
+	if !cfg.FeatureFlags.HooksVPNProviderEnabled {
+		return nil
+	}
+	return pluginadapter.NewResilientVPNExecutor(cfg.Remnawave.URL, cfg.Remnawave.APIToken.Expose(), logger)
+}
+
+// wireVPNExecutor injects the shared VPN HTTP executor into the plugin
+// HostFunctions when it is non-nil. When nil, HostFunctions.vpnExecutor
+// remains unset and VPNRequest calls from plugins return an error.
+func wireVPNExecutor(hf *plugin.HostFunctions, executor sdk.VPNHTTPExecutor, logger *slog.Logger) {
+	if executor == nil {
+		return
+	}
+	hf.SetVPNExecutor(executor)
+	logger.Info("vpn executor wired into plugin host functions")
 }
 
 // loadEnabledPlugins bootstraps the plugin runtime by loading every plugin that

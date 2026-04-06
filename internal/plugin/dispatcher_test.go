@@ -172,25 +172,29 @@ func TestRegisterHooks_And_UnregisterHooks(t *testing.T) {
 
 func TestDispatchAsync_PublishesEvent(t *testing.T) {
 	rp := NewRuntimePool(testErrorLogger(), nil)
-	pub := &testPublisher{}
+	pub := &syncTestPublisher{}
 	d := NewHookDispatcher(rp, pub, nil, testErrorLogger(), clock.NewReal())
 
 	payload := json.RawMessage(`{"user_id":"u-1"}`)
-	err := d.DispatchAsync(context.Background(), "subscription.renewed", payload)
-	require.NoError(t, err)
+	d.DispatchAsync(context.Background(), "subscription.renewed", payload)
 
-	require.Len(t, pub.events, 1)
-	assert.Equal(t, domainevent.EventType("plugin.hook.subscription.renewed"), pub.events[0].Type)
-	assert.Equal(t, "subscription.renewed", pub.events[0].DataAsMap()["hook_name"])
+	// Wait for the background goroutine to publish.
+	require.Eventually(t, func() bool { return pub.Len() == 1 }, time.Second, 10*time.Millisecond)
+
+	events := pub.Events()
+	assert.Equal(t, domainevent.EventType("plugin.hook.subscription.renewed"), events[0].Type)
+	assert.Equal(t, "subscription.renewed", events[0].DataAsMap()["hook_name"])
 }
 
 func TestDispatchAsync_NilPublisher(t *testing.T) {
 	rp := NewRuntimePool(testErrorLogger(), nil)
 	d := NewHookDispatcher(rp, nil, nil, testErrorLogger(), clock.NewReal())
 
-	err := d.DispatchAsync(context.Background(), "hook.name", json.RawMessage(`{}`))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "event publisher not configured")
+	// Fire-and-forget: no error returned; nil publisher is logged, not returned.
+	d.DispatchAsync(context.Background(), "hook.name", json.RawMessage(`{}`))
+
+	// Give the goroutine time to execute and log the warning.
+	time.Sleep(50 * time.Millisecond)
 }
 
 func TestDispatchSync_SkipsAsyncRegistrations(t *testing.T) {

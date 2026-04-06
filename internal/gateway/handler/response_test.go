@@ -81,6 +81,7 @@ func TestMapDomainError(t *testing.T) {
 		{"multisub max bindings", multisub.ErrMaxBindingsExceeded, "MULTISUB.MAX_BINDINGS_EXCEEDED", http.StatusConflict},
 		{"multisub saga not found", multisub.ErrSagaNotFound, "MULTISUB.SAGA_NOT_FOUND", http.StatusNotFound},
 		{"multisub saga exists", multisub.ErrSagaAlreadyExists, "MULTISUB.SAGA_ALREADY_EXISTS", http.StatusConflict},
+		{"multisub no vpn plugin", multisub.ErrNoVPNPlugin, "MULTISUB.NO_VPN_PLUGIN", http.StatusServiceUnavailable},
 
 		// ── Payment ─────────────────────────────────────────────────────
 		{"payment not found", payment.ErrPaymentNotFound, "PAYMENT.NOT_FOUND", http.StatusNotFound},

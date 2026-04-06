@@ -276,7 +276,7 @@ func TestResetPassword_Success(t *testing.T) {
 	}
 
 	repo.On("GetPasswordResetByToken", mock.Anything, "valid-token").Return(reset, nil)
-	repo.On("GetUserByID", mock.Anything, "user-1").Return(user, nil)
+	repo.On("GetUserByIDForUpdate", mock.Anything, "user-1").Return(user, nil)
 	repo.On("UpdateUser", mock.Anything, mock.AnythingOfType("*identity.PlatformUser")).Return(nil)
 	repo.On("DeleteUserSessions", mock.Anything, "user-1").Return(nil)
 	repo.On("DeletePasswordReset", mock.Anything, "reset-1").Return(nil)

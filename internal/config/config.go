@@ -38,6 +38,8 @@ const (
 	DefaultOutboxRelayWorkers        = 1
 	DefaultOutboxPartitionLookahead = 2
 	DefaultOutboxRetentionDays      = 90
+	DefaultHooksSubscriptionEnabled = false
+	DefaultHooksVPNProviderEnabled  = false
 )
 
 // DefaultAppVersion is used when no APP_VERSION environment variable is set.
@@ -128,6 +130,17 @@ type OutboxConfig struct {
 	RetentionDays      int `koanf:"retention_days"`      // 0 = disable cleanup, default 90
 }
 
+// FeatureFlags controls gradual rollout of new capabilities.
+type FeatureFlags struct {
+	// HooksSubscriptionEnabled enables subscription lifecycle hook dispatch points.
+	// When false, BillingService skips all hook dispatches (default behavior).
+	HooksSubscriptionEnabled bool `koanf:"hooks_subscription_enabled"`
+
+	// HooksVPNProviderEnabled enables plugin-driven VPN provisioning.
+	// When false, the hardcoded Remnawave adapter is used directly.
+	HooksVPNProviderEnabled bool `koanf:"hooks_vpn_provider_enabled"`
+}
+
 // CORSConfig holds the Cross-Origin Resource Sharing configuration.
 type CORSConfig struct {
 	AllowedOrigins []string `koanf:"allowed_origins"`
@@ -146,8 +159,9 @@ type Config struct {
 	Infra     InfraConfig     `koanf:"infra"`
 	Outbox    OutboxConfig    `koanf:"outbox"`
 	CORS      CORSConfig      `koanf:"cors"`
-	Tracing   TracingConfig   `koanf:"tracing"`
-	RateLimit RateLimitConfig `koanf:"ratelimit"`
+	Tracing      TracingConfig   `koanf:"tracing"`
+	RateLimit    RateLimitConfig `koanf:"ratelimit"`
+	FeatureFlags FeatureFlags    `koanf:"featureflags"`
 }
 
 // requiredField maps an environment variable name to the koanf key path used
@@ -203,13 +217,15 @@ func Load() (*Config, error) {
 		"outbox.relay_workers":               DefaultOutboxRelayWorkers,
 		"outbox.partition_lookahead":         DefaultOutboxPartitionLookahead,
 		"outbox.retention_days":              DefaultOutboxRetentionDays,
+		"featureflags.hooks_subscription_enabled": DefaultHooksSubscriptionEnabled,
+		"featureflags.hooks_vpn_provider_enabled": DefaultHooksVPNProviderEnabled,
 	}
 	for key, val := range defaults {
 		k.Set(key, val) //nolint:errcheck // Set on a fresh koanf instance cannot fail
 	}
 
 	// Load each prefix group from environment variables.
-	prefixes := []string{"APP_", "DATABASE_", "VALKEY_", "NATS_", "JWT_", "REMNAWAVE_", "BILLING_", "PLUGIN_", "TELEGRAM_", "INFRA_", "OUTBOX_", "CORS_", "TRACING_", "RATELIMIT_"}
+	prefixes := []string{"APP_", "DATABASE_", "VALKEY_", "NATS_", "JWT_", "REMNAWAVE_", "BILLING_", "PLUGIN_", "TELEGRAM_", "INFRA_", "OUTBOX_", "CORS_", "TRACING_", "RATELIMIT_", "FEATUREFLAGS_"}
 	for _, prefix := range prefixes {
 		provider := env.Provider(prefix, ".", func(s string) string {
 			// Strip prefix then lowercase and replace _ with . for nesting

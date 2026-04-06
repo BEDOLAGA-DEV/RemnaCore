@@ -12,6 +12,8 @@ type (
 	BindingFailedPayload        = aggregate.BindingFailedPayload
 	BindingDisabledPayload      = aggregate.BindingDisabledPayload
 	BindingEnabledPayload       = aggregate.BindingEnabledPayload
+	BindingLimitedPayload       = aggregate.BindingLimitedPayload
+	BindingUnlimitedPayload     = aggregate.BindingUnlimitedPayload
 )
 
 // BindingSyncFailedPayload is the typed payload for EventBindingSyncFailed.

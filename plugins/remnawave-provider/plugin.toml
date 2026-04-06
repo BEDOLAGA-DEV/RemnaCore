@@ -1,0 +1,50 @@
+[plugin]
+id          = "remnawave-provider"
+name        = "Remnawave VPN Provider"
+version     = "1.0.0"
+description = "Default VPN provider plugin for Remnawave panel"
+author      = "RemnaCore Team"
+license     = "MIT"
+sdk_version = "^1.0.0"
+lang        = "go"
+
+[permissions]
+vpn  = "write"
+http = ["https://*/api/*"]
+
+[hooks]
+sync = [
+    "vpn.user.creating",
+    "vpn.user.deleting",
+    "vpn.user.enabling",
+    "vpn.user.disabling",
+    "vpn.user.fetching",
+    "vpn.user.fetched",
+]
+async = ["vpn.user.created"]
+
+[hooks.priority]
+"vpn.user.creating"  = 10
+"vpn.user.deleting"  = 10
+"vpn.user.enabling"  = 10
+"vpn.user.disabling" = 10
+"vpn.user.fetching"  = 10
+"vpn.user.fetched"   = 10
+
+[config.panel_url]
+type     = "string"
+label    = "Remnawave Panel URL"
+required = true
+
+[config.api_token]
+type     = "secret"
+label    = "Remnawave API Token"
+required = true
+
+[limits]
+max_memory_mb             = 32
+max_fuel                  = 500000
+max_storage_mb            = 10
+max_http_calls_per_minute = 200
+timeout_sync_ms           = 10000
+timeout_async_ms          = 30000

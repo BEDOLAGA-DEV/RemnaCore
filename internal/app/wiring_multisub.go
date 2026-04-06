@@ -7,15 +7,21 @@ import (
 	"go.uber.org/fx"
 
 	natsadapter "github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/nats"
+	pluginadapter "github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/plugin"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/remnawave"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	multisubservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/service"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/sdk"
 )
 
 // multisubWiring provides all multisub-domain bindings: binding repository,
-// saga repository, Remnawave gateway, event handler, lookup adapters, and
-// lifecycle hooks for periodic sync, binding reconciler, and saga cleanup.
+// saga repository, Remnawave gateway, event handler, lookup adapters, VPN
+// provider (optional, plugin-backed), and lifecycle hooks for periodic sync,
+// binding reconciler, and saga cleanup.
 var multisubWiring = fx.Options(
 	// MultiSub domain services
 	fx.Provide(multisubservice.NewBindingCalculator),
@@ -24,9 +30,13 @@ var multisubWiring = fx.Options(
 	fx.Provide(multisubservice.NewSyncSaga),
 	fx.Provide(multisubservice.NewSyncService),
 	fx.Provide(multisubservice.NewBindingLifecycleService),
-	fx.Provide(multisubservice.NewMultiSubOrchestrator),
+	fx.Provide(newMultiSubOrchestrator),
 	fx.Provide(multisubservice.NewBindingReconciler),
 	fx.Provide(multisubservice.NewSagaCleanupService),
+
+	// VPN provider: plugin-backed adapter when feature flag is enabled, nil
+	// otherwise (existing RemnawaveGateway is used directly by the sagas).
+	fx.Provide(provideVPNProvider),
 
 	// MultiSub repos -> interface bindings
 	fx.Provide(postgres.NewBindingRepository),
@@ -56,6 +66,45 @@ var multisubWiring = fx.Options(
 	fx.Invoke(startBindingReconciler),
 	fx.Invoke(startSagaCleanup),
 )
+
+// newMultiSubOrchestrator creates a MultiSubOrchestrator with the hook
+// dispatcher and feature flag wired from the Fx container via functional
+// options. This replaces the direct fx.Provide(NewMultiSubOrchestrator) call
+// because Fx cannot inject variadic OrchestratorOption arguments.
+func newMultiSubOrchestrator(
+	provisioning *multisubservice.ProvisioningSaga,
+	deprovisioning *multisubservice.DeprovisioningSaga,
+	syncService *multisubservice.SyncService,
+	lifecycle *multisubservice.BindingLifecycleService,
+	bindings multisub.BindingRepository,
+	publisher domainevent.Publisher,
+	logger *slog.Logger,
+	dispatcher hookdispatch.Dispatcher,
+	cfg *config.Config,
+) *multisubservice.MultiSubOrchestrator {
+	return multisubservice.NewMultiSubOrchestrator(
+		provisioning, deprovisioning, syncService, lifecycle, bindings, publisher, logger,
+		multisubservice.WithDispatcher(dispatcher),
+		multisubservice.WithHooksEnabled(cfg.FeatureFlags.HooksSubscriptionEnabled),
+	)
+}
+
+// provideVPNProvider creates a plugin-backed VPN provider when the shared VPN
+// executor is available (non-nil). When nil (HooksVPNProviderEnabled is false),
+// nil is returned — existing code paths using RemnawaveGateway directly remain
+// unchanged. The executor is created once in provideVPNExecutor (wiring_plugin.go)
+// and shared with the plugin HostFunctions so a single circuit breaker protects
+// the VPN backend.
+func provideVPNProvider(
+	executor sdk.VPNHTTPExecutor,
+	dispatcher hookdispatch.Dispatcher,
+	logger *slog.Logger,
+) multisub.VPNProvider {
+	if executor == nil {
+		return nil
+	}
+	return pluginadapter.NewPluginVPNProvider(dispatcher, executor, logger)
+}
 
 // startSyncService spawns the periodic Remnawave binding sync as a background
 // goroutine managed by the Fx lifecycle.

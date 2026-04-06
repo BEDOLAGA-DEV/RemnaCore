@@ -2,7 +2,9 @@ package plugin
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -526,6 +528,227 @@ func TestHTTPRequest_RateLimitPerPlugin(t *testing.T) {
 		URL:    server.URL + "/v1/call",
 	})
 	require.NoError(t, err, "plugin-b should not be affected by plugin-a's rate limit")
+}
+
+// ---------------------------------------------------------------------------
+// VPNRequest host function
+// ---------------------------------------------------------------------------
+
+// testVPNExecutor is a stub VPNHTTPExecutor for unit tests.
+type testVPNExecutor struct {
+	response *sdk.VPNResponse
+	err      error
+	lastReq  sdk.VPNRequest
+}
+
+func (e *testVPNExecutor) Execute(_ context.Context, req sdk.VPNRequest) (*sdk.VPNResponse, error) {
+	e.lastReq = req
+	return e.response, e.err
+}
+
+func TestVPNRequest_Success(t *testing.T) {
+	p := testPluginWithPerms([]PermissionScope{PermVPNWrite})
+	hf := newTestHostFunctions(t, p, nil)
+
+	executor := &testVPNExecutor{
+		response: &sdk.VPNResponse{
+			StatusCode: http.StatusOK,
+			Headers:    map[string]string{"Content-Type": "application/json"},
+			Body:       []byte(`{"users":[]}`),
+		},
+	}
+	hf.SetVPNExecutor(executor)
+
+	input, err := json.Marshal(sdk.VPNRequest{
+		Method: http.MethodGet,
+		Path:   "/api/users",
+	})
+	require.NoError(t, err)
+
+	output, err := hf.VPNRequest(context.Background(), "test-plugin", input)
+	require.NoError(t, err)
+
+	var resp sdk.VPNResponse
+	require.NoError(t, json.Unmarshal(output, &resp))
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, `{"users":[]}`, string(resp.Body))
+	assert.Equal(t, "application/json", resp.Headers["Content-Type"])
+
+	// Verify the executor received the correct request.
+	assert.Equal(t, http.MethodGet, executor.lastReq.Method)
+	assert.Equal(t, "/api/users", executor.lastReq.Path)
+}
+
+func TestVPNRequest_WithBody(t *testing.T) {
+	p := testPluginWithPerms([]PermissionScope{PermVPNWrite})
+	hf := newTestHostFunctions(t, p, nil)
+
+	executor := &testVPNExecutor{
+		response: &sdk.VPNResponse{StatusCode: http.StatusCreated},
+	}
+	hf.SetVPNExecutor(executor)
+
+	reqBody := []byte(`{"username":"test_user"}`)
+	input, err := json.Marshal(sdk.VPNRequest{
+		Method:  http.MethodPost,
+		Path:    "/api/users",
+		Headers: map[string]string{"Content-Type": "application/json"},
+		Body:    reqBody,
+	})
+	require.NoError(t, err)
+
+	output, err := hf.VPNRequest(context.Background(), "test-plugin", input)
+	require.NoError(t, err)
+
+	var resp sdk.VPNResponse
+	require.NoError(t, json.Unmarshal(output, &resp))
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
+	assert.Equal(t, reqBody, executor.lastReq.Body)
+	assert.Equal(t, "application/json", executor.lastReq.Headers["Content-Type"])
+}
+
+func TestVPNRequest_PermissionDenied(t *testing.T) {
+	tests := []struct {
+		name  string
+		perms []PermissionScope
+	}{
+		{"no permissions", nil},
+		{"only vpn:read", []PermissionScope{PermVPNRead}},
+		{"unrelated permission", []PermissionScope{PermBillingWrite}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := testPluginWithPerms(tt.perms)
+			hf := newTestHostFunctions(t, p, nil)
+			hf.SetVPNExecutor(&testVPNExecutor{
+				response: &sdk.VPNResponse{StatusCode: http.StatusOK},
+			})
+
+			input, err := json.Marshal(sdk.VPNRequest{Method: http.MethodGet, Path: "/api/test"})
+			require.NoError(t, err)
+
+			_, err = hf.VPNRequest(context.Background(), "test-plugin", input)
+			require.Error(t, err)
+			assert.True(t, errors.Is(err, ErrPermissionDenied),
+				"expected ErrPermissionDenied, got: %v", err)
+		})
+	}
+}
+
+func TestVPNRequest_ExecutorNotConfigured(t *testing.T) {
+	p := testPluginWithPerms([]PermissionScope{PermVPNWrite})
+	hf := newTestHostFunctions(t, p, nil)
+	// vpnExecutor is nil by default
+
+	input, err := json.Marshal(sdk.VPNRequest{Method: http.MethodGet, Path: "/api/test"})
+	require.NoError(t, err)
+
+	_, err = hf.VPNRequest(context.Background(), "test-plugin", input)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "vpn executor not configured")
+}
+
+func TestVPNRequest_PluginNotFound(t *testing.T) {
+	p := testPluginWithPerms([]PermissionScope{PermVPNWrite})
+	hf := newTestHostFunctions(t, p, nil)
+	hf.SetVPNExecutor(&testVPNExecutor{
+		response: &sdk.VPNResponse{StatusCode: http.StatusOK},
+	})
+
+	input, err := json.Marshal(sdk.VPNRequest{Method: http.MethodGet, Path: "/api/test"})
+	require.NoError(t, err)
+
+	_, err = hf.VPNRequest(context.Background(), "nonexistent-plugin", input)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrPluginNotFound),
+		"expected ErrPluginNotFound, got: %v", err)
+}
+
+func TestVPNRequest_RegistryNotConfigured(t *testing.T) {
+	hf := NewHostFunctions(slog.Default(), clock.NewReal())
+	hf.SetVPNExecutor(&testVPNExecutor{
+		response: &sdk.VPNResponse{StatusCode: http.StatusOK},
+	})
+
+	input, err := json.Marshal(sdk.VPNRequest{Method: http.MethodGet, Path: "/api/test"})
+	require.NoError(t, err)
+
+	_, err = hf.VPNRequest(context.Background(), "any-slug", input)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "plugin registry not configured")
+}
+
+func TestVPNRequest_InvalidJSON(t *testing.T) {
+	p := testPluginWithPerms([]PermissionScope{PermVPNWrite})
+	hf := newTestHostFunctions(t, p, nil)
+	hf.SetVPNExecutor(&testVPNExecutor{
+		response: &sdk.VPNResponse{StatusCode: http.StatusOK},
+	})
+
+	_, err := hf.VPNRequest(context.Background(), "test-plugin", []byte(`{invalid`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unmarshal vpn request")
+}
+
+func TestVPNRequest_ExecutorError(t *testing.T) {
+	p := testPluginWithPerms([]PermissionScope{PermVPNWrite})
+	hf := newTestHostFunctions(t, p, nil)
+	hf.SetVPNExecutor(&testVPNExecutor{
+		err: fmt.Errorf("circuit breaker open"),
+	})
+
+	input, err := json.Marshal(sdk.VPNRequest{Method: http.MethodGet, Path: "/api/test"})
+	require.NoError(t, err)
+
+	_, err = hf.VPNRequest(context.Background(), "test-plugin", input)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "execute vpn request")
+	assert.Contains(t, err.Error(), "circuit breaker open")
+}
+
+func TestVPNRequest_TimeoutCapped(t *testing.T) {
+	p := testPluginWithPerms([]PermissionScope{PermVPNWrite})
+	hf := newTestHostFunctions(t, p, nil)
+
+	executor := &testVPNExecutor{
+		response: &sdk.VPNResponse{StatusCode: http.StatusOK},
+	}
+	hf.SetVPNExecutor(executor)
+
+	// Request a timeout far exceeding MaxVPNRequestTimeout. The host should
+	// cap it, but the request should still succeed (we just verify no error).
+	const excessiveTimeoutMs = 300_000 // 5 minutes
+	input, err := json.Marshal(sdk.VPNRequest{
+		Method:  http.MethodGet,
+		Path:    "/api/test",
+		Timeout: excessiveTimeoutMs,
+	})
+	require.NoError(t, err)
+
+	output, err := hf.VPNRequest(context.Background(), "test-plugin", input)
+	require.NoError(t, err)
+
+	var resp sdk.VPNResponse
+	require.NoError(t, json.Unmarshal(output, &resp))
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+func TestVPNRequest_ContextCancellation(t *testing.T) {
+	p := testPluginWithPerms([]PermissionScope{PermVPNWrite})
+	hf := newTestHostFunctions(t, p, nil)
+	hf.SetVPNExecutor(&testVPNExecutor{
+		err: context.Canceled,
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	input, err := json.Marshal(sdk.VPNRequest{Method: http.MethodGet, Path: "/api/test"})
+	require.NoError(t, err)
+
+	_, err = hf.VPNRequest(ctx, "test-plugin", input)
+	require.Error(t, err)
 }
 
 func TestNormalizeURL(t *testing.T) {

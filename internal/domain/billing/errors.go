@@ -38,4 +38,11 @@ var (
 	// ErrFamilyNotEnabled is an alias to the aggregate-level sentinel so
 	// that callers using billing.ErrFamilyNotEnabled continue to work.
 	ErrFamilyNotEnabled = aggregate.ErrFamilyNotEnabled
+
+	// ErrCancellationBlocked is returned when a plugin blocks subscription cancellation.
+	ErrCancellationBlocked = errors.New("cancellation blocked by plugin")
+
+	// ErrCheckoutBlocked is returned when a plugin blocks checkout via the
+	// checkout.validating hook.
+	ErrCheckoutBlocked = errors.New("checkout blocked by plugin")
 )

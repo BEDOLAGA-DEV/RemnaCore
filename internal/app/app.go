@@ -67,12 +67,21 @@
 //     Adapter:    remnawave.GatewayAdapter (internal/adapter/remnawave/)
 //     Wiring:     wiring_multisub.go
 //
+//   multisub → plugin (optional, gated by HooksVPNProviderEnabled):
+//     Interface:  multisub.VPNProvider (defined in multisub/vpn_provider.go)
+//     Methods:    CreateUser, GetUser, DeleteUser, EnableUser, DisableUser
+//     Adapter:    pluginadapter.pluginVPNProvider (internal/adapter/plugin/)
+//     Path:       VPNProvider dispatches hooks to WASM plugins via Dispatcher;
+//                 HTTP transport handled by resilientVPNExecutor with circuit breaker.
+//     Wiring:     wiring_multisub.go (provideVPNProvider)
+//     Note:       Returns nil when feature flag is off — sagas use RemnawaveGateway directly.
+//
 // ## Shared Kernel (via pkg/)
 //
 //   All contexts:        domainevent (Event, Publisher), clock (Clock),
 //                        txmanager (Runner)
 //   Identity + gateway:  authutil (JWT issuer, password hashing)
-//   Billing + payment:   hookdispatch (Dispatcher interface for WASM plugins)
+//   Billing + multisub + payment: hookdispatch (Dispatcher interface for WASM plugins)
 //
 // ## Remnawave Webhooks (external → platform)
 //

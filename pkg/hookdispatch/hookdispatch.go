@@ -41,7 +41,7 @@ type ChainResult struct {
 	FailedCompensations []FailedCompensation
 }
 
-// Dispatcher is the port for synchronous hook dispatch. It is implemented by
+// Dispatcher is the port for hook dispatch. It is implemented by
 // plugin.HookDispatcher in the plugin runtime layer.
 type Dispatcher interface {
 	DispatchSync(ctx context.Context, hookName string, payload json.RawMessage) (json.RawMessage, error)
@@ -54,6 +54,11 @@ type Dispatcher interface {
 	// regardless of success/failure, giving the caller access to both the
 	// original and modified payloads.
 	DispatchSyncSafe(ctx context.Context, hookName string, payload json.RawMessage) *ChainResult
+
+	// DispatchAsync dispatches a hook asynchronously (fire-and-forget).
+	// The hook runs in a separate goroutine with panic recovery.
+	// Errors are logged but do not propagate to the caller.
+	DispatchAsync(ctx context.Context, hookName string, payload json.RawMessage)
 
 	// BeginFlow snapshots the current plugin pool versions and returns a
 	// context that pins those versions for all subsequent DispatchSync calls.

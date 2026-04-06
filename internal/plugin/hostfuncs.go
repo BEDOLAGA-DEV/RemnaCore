@@ -3,6 +3,7 @@ package plugin
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -27,6 +28,10 @@ const MaxPluginResponseBodyBytes = 5 << 20 // 5 MB
 // made by plugins.
 const DefaultPluginHTTPTimeout = 10 * time.Second
 
+// MaxVPNRequestTimeout is the maximum timeout allowed for VPN provider API
+// requests made by plugins. Plugin-specified timeouts are capped at this value.
+const MaxVPNRequestTimeout = 60 * time.Second
+
 // Log level constants for plugin log entries.
 const (
 	LogLevelDebug = "debug"
@@ -45,6 +50,9 @@ type HostFunctions struct {
 	Permissions *PermissionChecker
 	HTTPClient  *http.Client
 	Clock       clock.Clock
+	// vpnExecutor handles VPN provider API requests for plugins. Optional;
+	// nil when no VPN provider is configured.
+	vpnExecutor sdk.VPNHTTPExecutor
 	// pluginRegistry is used to look up a plugin instance for permission
 	// checks. Populated during Fx wiring.
 	pluginRegistry func(slug string) (*Plugin, error)
@@ -81,6 +89,13 @@ func NewHostFunctions(logger *slog.Logger, clk clock.Clock) *HostFunctions {
 // that resolves a slug to a full Plugin (needed for permission checks).
 func (hf *HostFunctions) SetPluginRegistry(fn func(slug string) (*Plugin, error)) {
 	hf.pluginRegistry = fn
+}
+
+// SetVPNExecutor injects the VPN HTTP executor used by the VPNRequest host
+// function. When nil, VPNRequest calls return an error. This is set during Fx
+// wiring only when a VPN provider adapter is configured.
+func (hf *HostFunctions) SetVPNExecutor(exec sdk.VPNHTTPExecutor) {
+	hf.vpnExecutor = exec
 }
 
 // normalizeURL parses a raw URL, applies path.Clean to collapse path traversal
@@ -194,6 +209,50 @@ func (hf *HostFunctions) HTTPRequest(ctx context.Context, pluginSlug string, req
 		Headers:    headers,
 		Body:       body,
 	}, nil
+}
+
+// VPNRequest executes a VPN provider API request on behalf of a plugin. The
+// plugin builds the request spec (method, relative path, headers, body); the
+// host handles transport through its circuit breaker and connection pool.
+// Requires the vpn:write permission scope.
+//
+// If the plugin specifies a timeout it is capped at MaxVPNRequestTimeout. When
+// no VPN executor is configured (nil), the call returns an error.
+func (hf *HostFunctions) VPNRequest(ctx context.Context, pluginSlug string, input []byte) ([]byte, error) {
+	p, err := hf.resolvePlugin(pluginSlug)
+	if err != nil {
+		return nil, err
+	}
+
+	if !hf.Permissions.HasPermission(p, PermVPNWrite) {
+		return nil, fmt.Errorf("%w: plugin %q lacks vpn:write permission", ErrPermissionDenied, pluginSlug)
+	}
+
+	var req sdk.VPNRequest
+	if err := json.Unmarshal(input, &req); err != nil {
+		return nil, fmt.Errorf("unmarshal vpn request: %w", err)
+	}
+
+	if req.Timeout > 0 {
+		timeout := time.Duration(req.Timeout) * time.Millisecond
+		if timeout > MaxVPNRequestTimeout {
+			timeout = MaxVPNRequestTimeout
+		}
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
+	if hf.vpnExecutor == nil {
+		return nil, fmt.Errorf("vpn executor not configured")
+	}
+
+	resp, err := hf.vpnExecutor.Execute(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("execute vpn request: %w", err)
+	}
+
+	return json.Marshal(resp)
 }
 
 // StorageGet retrieves a value from the plugin's isolated key-value store.

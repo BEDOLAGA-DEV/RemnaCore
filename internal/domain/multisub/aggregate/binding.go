@@ -6,9 +6,9 @@ import (
 	"slices"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/naming"
+	"github.com/google/uuid"
 )
 
 var (
@@ -34,6 +34,7 @@ type BindingStatus string
 const (
 	BindingPending       BindingStatus = "pending"
 	BindingActive        BindingStatus = "active"
+	BindingLimited       BindingStatus = "limited"
 	BindingFailed        BindingStatus = "failed"
 	BindingReconciling   BindingStatus = "reconciling"
 	BindingDisabled      BindingStatus = "disabled"
@@ -44,7 +45,8 @@ const (
 // Terminal state (deprovisioned) has no valid outbound transitions.
 var bindingTransitions = map[BindingStatus][]BindingStatus{
 	BindingPending:     {BindingActive, BindingFailed},
-	BindingActive:      {BindingDisabled, BindingDeprovisioned, BindingFailed},
+	BindingActive:      {BindingLimited, BindingDisabled, BindingDeprovisioned, BindingFailed},
+	BindingLimited:     {BindingActive, BindingDisabled, BindingDeprovisioned, BindingFailed},
 	BindingDisabled:    {BindingActive, BindingDeprovisioned},
 	BindingFailed:      {BindingPending, BindingReconciling, BindingDeprovisioned},
 	BindingReconciling: {BindingFailed, BindingDeprovisioned},
@@ -213,6 +215,43 @@ func (b *RemnawaveBinding) Enable(now time.Time) error {
 	b.RecordEvent(domainevent.NewTyped(BindingEnabledPayload{
 		BindingID:      b.ID,
 		SubscriptionID: b.SubscriptionID,
+	}, now, b.ID))
+	return nil
+}
+
+// Limit transitions the binding from active to limited when the VPN provider
+// reports that traffic has been exceeded. Unlike Disable, this is an automatic
+// traffic cap — the VPN provider already restricted the user, we only record
+// the state change.
+func (b *RemnawaveBinding) Limit(reason string, now time.Time) error {
+	if b.Status != BindingActive {
+		return fmt.Errorf("%w: Limit requires active, got %s", ErrInvalidBindingTransition, b.Status)
+	}
+	if err := b.transitionTo(BindingLimited, now); err != nil {
+		return err
+	}
+	b.RecordEvent(domainevent.NewTyped(BindingLimitedPayload{
+		BindingID:      b.ID,
+		SubscriptionID: b.SubscriptionID,
+		RemnawaveUUID:  b.RemnawaveUUID,
+		Reason:         reason,
+	}, now, b.ID))
+	return nil
+}
+
+// Unlimit transitions the binding from limited back to active when the traffic
+// resets or the limit is lifted by the VPN provider.
+func (b *RemnawaveBinding) Unlimit(now time.Time) error {
+	if b.Status != BindingLimited {
+		return fmt.Errorf("%w: Unlimit requires limited, got %s", ErrInvalidBindingTransition, b.Status)
+	}
+	if err := b.transitionTo(BindingActive, now); err != nil {
+		return err
+	}
+	b.RecordEvent(domainevent.NewTyped(BindingUnlimitedPayload{
+		BindingID:      b.ID,
+		SubscriptionID: b.SubscriptionID,
+		RemnawaveUUID:  b.RemnawaveUUID,
 	}, now, b.ID))
 	return nil
 }

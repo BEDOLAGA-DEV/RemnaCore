@@ -2,20 +2,20 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/sdk"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tracing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
-
-// lineItemQuantityOne is the standard quantity for plan and addon line items.
-const lineItemQuantityOne = 1
 
 // CreateSubscriptionCmd holds the parameters for creating a new subscription.
 type CreateSubscriptionCmd struct {
@@ -58,18 +58,36 @@ type CreateSubscriptionCmd struct {
 // extract focused services (e.g., RenewalService, FamilyService) that each own
 // a subset of the aggregate interactions.
 type BillingService struct {
-	plans     billing.PlanRepository
-	subs      billing.SubscriptionRepository
-	invoices  billing.InvoiceRepository
-	families  billing.FamilyRepository
-	publisher domainevent.Publisher
-	prorate   *ProrateCalculator
-	trial     *TrialManager
-	txRunner  txmanager.Runner
-	clock     clock.Clock
+	plans      billing.PlanRepository
+	subs       billing.SubscriptionRepository
+	invoices   billing.InvoiceRepository
+	families   billing.FamilyRepository
+	publisher  domainevent.Publisher
+	prorate    *ProrateCalculator
+	trial      *TrialManager
+	txRunner   txmanager.Runner
+	clock      clock.Clock
+	logger     *slog.Logger
+	dispatcher hookdispatch.Dispatcher // nil-safe; all dispatches guarded
+	hooksEnabled bool                  // subscription lifecycle hooks feature flag
+}
+
+// BillingServiceOption configures optional dependencies on BillingService.
+type BillingServiceOption func(*BillingService)
+
+// WithDispatcher sets the WASM hook dispatcher for subscription lifecycle hooks.
+func WithDispatcher(d hookdispatch.Dispatcher) BillingServiceOption {
+	return func(s *BillingService) { s.dispatcher = d }
+}
+
+// WithHooksEnabled enables subscription lifecycle hook dispatch points.
+func WithHooksEnabled(enabled bool) BillingServiceOption {
+	return func(s *BillingService) { s.hooksEnabled = enabled }
 }
 
 // NewBillingService creates a BillingService with the given dependencies.
+// Optional dependencies (dispatcher, feature flags) are configured via
+// BillingServiceOption functions to keep the constructor backward-compatible.
 func NewBillingService(
 	plans billing.PlanRepository,
 	subs billing.SubscriptionRepository,
@@ -80,8 +98,10 @@ func NewBillingService(
 	trial *TrialManager,
 	txRunner txmanager.Runner,
 	clk clock.Clock,
+	logger *slog.Logger,
+	opts ...BillingServiceOption,
 ) *BillingService {
-	return &BillingService{
+	s := &BillingService{
 		plans:     plans,
 		subs:      subs,
 		invoices:  invoices,
@@ -91,7 +111,52 @@ func NewBillingService(
 		trial:     trial,
 		txRunner:  txRunner,
 		clock:     clk,
+		logger:    logger,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+// dispatchHook dispatches a sync hook if dispatcher is available and hooks are
+// enabled. Returns nil response on error or nil dispatcher (fallback to default
+// behavior). Uses DispatchSyncSafe so that plugin failures never block the
+// business operation.
+func (s *BillingService) dispatchHook(ctx context.Context, hookName string, payload any) (json.RawMessage, error) {
+	if s.dispatcher == nil || !s.hooksEnabled {
+		return nil, nil
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal hook payload: %w", err)
+	}
+	result := s.dispatcher.DispatchSyncSafe(ctx, hookName, data)
+	if result.Err != nil {
+		s.logger.Warn("hook dispatch failed, proceeding with defaults",
+			slog.String("hook", hookName),
+			slog.Any("error", result.Err),
+		)
+		return nil, nil
+	}
+	return result.Payload, nil
+}
+
+// dispatchAsync fires an async hook if dispatcher is available and hooks are
+// enabled. Errors are logged but never propagated (fire-and-forget).
+func (s *BillingService) dispatchAsync(ctx context.Context, hookName string, payload any) {
+	if s.dispatcher == nil || !s.hooksEnabled {
+		return
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		s.logger.Warn("failed to marshal async hook payload",
+			slog.String("hook", hookName),
+			slog.Any("error", err),
+		)
+		return
+	}
+	s.dispatcher.DispatchAsync(ctx, hookName, data)
 }
 
 // CreateSubscription creates a new subscription and its initial invoice.
@@ -114,14 +179,16 @@ func (s *BillingService) CreateSubscription(
 		return nil, nil, fmt.Errorf("checkout eligibility: %w", err)
 	}
 
-	// Create subscription (defaults to trial)
+	// Create subscription (defaults to trial). The subscription.creating
+	// hook is dispatched by CheckoutService during the checkout flow —
+	// CreateSubscription does not dispatch it to avoid double-firing.
 	now := s.clock.Now()
 	sub, err := aggregate.NewSubscription(cmd.UserID, plan.ID, plan.Interval, cmd.AddonIDs, now)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create subscription: %w", err)
 	}
 
-	// Build line items for the invoice
+	// Build line items for the invoice.
 	lineItems := buildLineItems(plan, cmd.AddonIDs)
 
 	inv, err := aggregate.NewInvoice(sub.ID, cmd.UserID, lineItems, nil, plan.BasePrice.Currency, now)
@@ -156,11 +223,33 @@ func (s *BillingService) CreateSubscription(
 // CancelSubscription cancels an existing subscription. The read, status
 // transition, update, and outbox event are all performed inside a single
 // database transaction with a FOR UPDATE lock to prevent TOCTOU races.
-func (s *BillingService) CancelSubscription(ctx context.Context, subID string) error {
-	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+//
+// If hooks are enabled, the subscription.cancelling hook is dispatched before
+// the aggregate transition. A plugin may block the cancellation by returning
+// block: true in its response. After a successful commit, the
+// subscription.cancelled.post async hook fires for notifications.
+func (s *BillingService) CancelSubscription(ctx context.Context, subID string, reason *string) error {
+	// asyncPayload is captured inside the tx for post-commit async dispatch.
+	var asyncPayload *sdk.SubCancellingRequest
+
+	err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		sub, err := s.subs.GetByIDForUpdate(txCtx, subID)
 		if err != nil {
 			return fmt.Errorf("get subscription: %w", err)
+		}
+
+		// Dispatch subscription.cancelling pre-hook.
+		hookResp, _ := s.dispatchHook(txCtx, HookSubCancelling, sdk.SubCancellingRequest{
+			SubscriptionID: sub.ID,
+			UserID:         sub.UserID,
+			PlanID:         sub.PlanID,
+			Reason:         reason,
+		})
+		if hookResp != nil {
+			var resp sdk.SubCancellingResponse
+			if err := json.Unmarshal(hookResp, &resp); err == nil && resp.Block {
+				return billing.ErrCancellationBlocked
+			}
 		}
 
 		if err := sub.Cancel(s.clock.Now()); err != nil {
@@ -171,16 +260,39 @@ func (s *BillingService) CancelSubscription(ctx context.Context, subID string) e
 			return fmt.Errorf("update subscription: %w", err)
 		}
 
+		// Capture data for post-commit async hook.
+		asyncPayload = &sdk.SubCancellingRequest{
+			SubscriptionID: sub.ID,
+			UserID:         sub.UserID,
+			PlanID:         sub.PlanID,
+			Reason:         reason,
+		}
+
 		return domainevent.PublishAll(txCtx, s.publisher, sub)
 	})
+	if err != nil {
+		return err
+	}
+
+	// Fire async post-hook AFTER successful commit.
+	if asyncPayload != nil {
+		s.dispatchAsync(ctx, HookSubCancelledPost, *asyncPayload)
+	}
+	return nil
 }
 
 // PayInvoice marks an invoice as paid and activates the associated subscription
 // if it is in trial or past_due status. All reads, state transitions, writes,
 // and outbox events are performed inside a single database transaction with
 // FOR UPDATE locks to prevent TOCTOU races.
+//
+// After a successful commit that activated the subscription, the
+// subscription.activated.post async hook fires for notifications/analytics.
 func (s *BillingService) PayInvoice(ctx context.Context, invoiceID string) error {
-	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+	// asyncPayload is captured inside the tx for post-commit async dispatch.
+	var asyncPayload *sdk.SubActivatedNotification
+
+	err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		inv, err := s.invoices.GetByIDForUpdate(txCtx, invoiceID)
 		if err != nil {
 			return fmt.Errorf("get invoice: %w", err)
@@ -229,10 +341,26 @@ func (s *BillingService) PayInvoice(ctx context.Context, invoiceID string) error
 			if err := domainevent.PublishAll(txCtx, s.publisher, sub); err != nil {
 				return err
 			}
+
+			// Capture data for post-commit async hook.
+			asyncPayload = &sdk.SubActivatedNotification{
+				SubscriptionID: sub.ID,
+				UserID:         sub.UserID,
+				PlanID:         sub.PlanID,
+			}
 		}
 
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	// Fire async post-hook AFTER successful commit.
+	if asyncPayload != nil {
+		s.dispatchAsync(ctx, HookSubActivatedPost, *asyncPayload)
+	}
+	return nil
 }
 
 // AddFamilyMember adds a member to the subscription owner's family group.
@@ -368,27 +496,3 @@ func (s *BillingService) RemoveSubscriptionAddon(ctx context.Context, subID, add
 	})
 }
 
-// buildLineItems creates invoice line items from a plan and selected addon IDs.
-func buildLineItems(plan *aggregate.Plan, addonIDs []string) []vo.LineItem {
-	items := []vo.LineItem{
-		vo.NewLineItem(plan.Name, vo.LineItemPlan, plan.BasePrice, lineItemQuantityOne),
-	}
-
-	addonMap := make(map[string]aggregate.Addon, len(plan.AvailableAddons))
-	for _, addon := range plan.AvailableAddons {
-		addonMap[addon.ID] = addon
-	}
-
-	for _, addonID := range addonIDs {
-		if addon, ok := addonMap[addonID]; ok {
-			items = append(items, vo.NewLineItem(
-				addon.Name,
-				vo.LineItemAddon,
-				addon.Price,
-				lineItemQuantityOne,
-			))
-		}
-	}
-
-	return items
-}

@@ -124,10 +124,13 @@ func (alwaysNewIdempotencyChecker) IncrementRetry(_ context.Context, _ string) (
 // recordingHandler implements SubscriptionEventHandler for tests. Callback
 // fields are optional; nil means the method returns nil immediately.
 type recordingHandler struct {
-	onActivated func(ctx context.Context, subID, userID string, plan multisub.PlanSnapshot, addonIDs, familyMemberIDs []string) error
-	onCancelled func(ctx context.Context, subID string) error
-	onPaused    func(ctx context.Context, subID string) error
-	onResumed   func(ctx context.Context, subID string) error
+	onActivated       func(ctx context.Context, subID, userID string, plan multisub.PlanSnapshot, addonIDs, familyMemberIDs []string) error
+	onCancelled       func(ctx context.Context, subID string) error
+	onPaused          func(ctx context.Context, subID string) error
+	onResumed         func(ctx context.Context, subID string) error
+	onTrafficExceeded func(ctx context.Context, bindingID, subscriptionID string, usedBytes, limitBytes int64) error
+	onTrafficReset    func(ctx context.Context, bindingID, subscriptionID string) error
+	onTrafficWarning  func(ctx context.Context, bindingID, subscriptionID string, usedBytes, limitBytes int64, thresholdPct int)
 }
 
 func (h *recordingHandler) OnSubscriptionActivated(
@@ -163,6 +166,26 @@ func (h *recordingHandler) OnSubscriptionResumed(ctx context.Context, subID stri
 		return h.onResumed(ctx, subID)
 	}
 	return nil
+}
+
+func (h *recordingHandler) OnBindingTrafficExceeded(ctx context.Context, bindingID, subscriptionID string, usedBytes, limitBytes int64) error {
+	if h.onTrafficExceeded != nil {
+		return h.onTrafficExceeded(ctx, bindingID, subscriptionID, usedBytes, limitBytes)
+	}
+	return nil
+}
+
+func (h *recordingHandler) OnBindingTrafficReset(ctx context.Context, bindingID, subscriptionID string) error {
+	if h.onTrafficReset != nil {
+		return h.onTrafficReset(ctx, bindingID, subscriptionID)
+	}
+	return nil
+}
+
+func (h *recordingHandler) OnTrafficWarning(ctx context.Context, bindingID, subscriptionID string, usedBytes, limitBytes int64, thresholdPct int) {
+	if h.onTrafficWarning != nil {
+		h.onTrafficWarning(ctx, bindingID, subscriptionID, usedBytes, limitBytes, thresholdPct)
+	}
 }
 
 // discardLogger returns a slog.Logger that suppresses all output below fatal.
