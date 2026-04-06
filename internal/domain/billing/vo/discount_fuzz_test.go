@@ -37,3 +37,38 @@ func FuzzDiscountApply(f *testing.F) {
 		}
 	})
 }
+
+func FuzzFixedDiscountApply(f *testing.F) {
+	f.Add(int64(1000), int64(200), "usd")
+	f.Add(int64(100), int64(100), "usd")  // exact match
+	f.Add(int64(50), int64(1000), "usd")  // discount exceeds price
+	f.Add(int64(0), int64(1), "usd")      // zero price
+
+	f.Fuzz(func(t *testing.T, priceAmount, discountAmount int64, cur string) {
+		if cur == "" || priceAmount < 0 || discountAmount < 0 {
+			return
+		}
+
+		price := Money{Amount: priceAmount, Currency: Currency(cur)}
+		fd, err := NewFixedDiscount(discountAmount, Currency(cur), "FUZZ", nil)
+		if err != nil {
+			return // discountAmount <= 0 — valid rejection
+		}
+
+		result, err := fd.Apply(price, time.Now())
+		if err != nil {
+			return
+		}
+
+		// Property: result == max(price - discount, 0)
+		expected := max(priceAmount-discountAmount, 0)
+		if result.Amount != expected {
+			t.Errorf("FixedDiscount.Apply(%d, %d) = %d, want %d",
+				priceAmount, discountAmount, result.Amount, expected)
+		}
+		if result.Currency != price.Currency {
+			t.Errorf("FixedDiscount.Apply changed currency from %s to %s",
+				price.Currency, result.Currency)
+		}
+	})
+}

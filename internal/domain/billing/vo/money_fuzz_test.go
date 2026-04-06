@@ -40,11 +40,47 @@ func FuzzMoneyMultiply(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, amount, factor int64) {
 		m := Money{Amount: amount, Currency: "usd"}
-		_, err := m.Multiply(factor)
+		result, err := m.Multiply(factor)
 		if err != nil {
 			return // overflow — valid
 		}
-		// No panic = success
+
+		expected := amount * factor
+		if result.Amount != expected {
+			t.Errorf("Multiply(%d, %d) = %d, want %d", amount, factor, result.Amount, expected)
+		}
+		if result.Currency != m.Currency {
+			t.Errorf("Multiply changed currency from %s to %s", m.Currency, result.Currency)
+		}
+	})
+}
+
+func FuzzMoneySubtract(f *testing.F) {
+	f.Add(int64(100), int64(50), "usd")
+	f.Add(int64(0), int64(0), "usd")
+	f.Add(int64(9223372036854775807), int64(1), "usd")
+	f.Add(int64(-9223372036854775808), int64(-1), "usd")
+
+	f.Fuzz(func(t *testing.T, a, b int64, cur string) {
+		if cur == "" {
+			return
+		}
+		ma := Money{Amount: a, Currency: Currency(cur)}
+		mb := Money{Amount: b, Currency: Currency(cur)}
+
+		diff, err := ma.Subtract(mb)
+		if err != nil {
+			return // overflow — valid
+		}
+
+		roundTrip, err := diff.Add(mb)
+		if err != nil {
+			return // overflow in addition — valid
+		}
+
+		if roundTrip.Amount != a {
+			t.Errorf("Subtract then Add: got %d, want %d", roundTrip.Amount, a)
+		}
 	})
 }
 
