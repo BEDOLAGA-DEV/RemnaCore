@@ -56,6 +56,20 @@ INSERT INTO billing.plan_addons (
     addon_type, extra_traffic_bytes, extra_nodes, extra_feature_flags, created_at
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
 
+-- name: UpsertPlanAddon :exec
+INSERT INTO billing.plan_addons (
+    id, plan_id, name, price_amount, price_currency,
+    addon_type, extra_traffic_bytes, extra_nodes, extra_feature_flags, created_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+ON CONFLICT (id) DO UPDATE SET
+    name              = EXCLUDED.name,
+    price_amount      = EXCLUDED.price_amount,
+    price_currency    = EXCLUDED.price_currency,
+    addon_type        = EXCLUDED.addon_type,
+    extra_traffic_bytes = EXCLUDED.extra_traffic_bytes,
+    extra_nodes       = EXCLUDED.extra_nodes,
+    extra_feature_flags = EXCLUDED.extra_feature_flags;
+
 -- name: GetAddonsByPlanID :many
 SELECT id, plan_id, name, price_amount, price_currency,
        addon_type, extra_traffic_bytes, extra_nodes, extra_feature_flags, created_at
@@ -63,6 +77,9 @@ FROM billing.plan_addons WHERE plan_id = $1 ORDER BY created_at;
 
 -- name: DeleteAddonsByPlanID :exec
 DELETE FROM billing.plan_addons WHERE plan_id = $1;
+
+-- name: DeleteRemovedAddons :exec
+DELETE FROM billing.plan_addons WHERE plan_id = $1 AND id != ALL($2::uuid[]);
 
 -- ============================================================================
 -- Subscriptions

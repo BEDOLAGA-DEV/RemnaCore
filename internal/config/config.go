@@ -13,9 +13,12 @@ const (
 	DefaultAppPort           = 4000
 	DefaultLogLevel          = "debug"
 	DefaultLogFormat         = "json"
-	DefaultDBMaxOpenConns    = 25
-	DefaultDBMaxIdleConns    = 5
-	DefaultDBConnMaxLifetime = 5 * time.Minute
+	DefaultDBMaxOpenConns      = 25
+	DefaultDBMaxIdleConns      = 5
+	DefaultDBConnMaxLifetime   = 5 * time.Minute
+	DefaultDBMinConns          = 5
+	DefaultDBConnMaxIdleTime   = 1 * time.Minute
+	DefaultDBHealthCheckPeriod = 30 * time.Second
 	DefaultJWTAccessTTL      = 15 * time.Minute
 	DefaultJWTRefreshTTL     = 7 * 24 * time.Hour // 1 week
 	DefaultBillingTrialDays  = 7
@@ -48,10 +51,13 @@ type AppConfig struct {
 }
 
 type DatabaseConfig struct {
-	URL             string        `koanf:"url"`
-	MaxOpenConns    int           `koanf:"max_open_conns"`
-	MaxIdleConns    int           `koanf:"max_idle_conns"`
-	ConnMaxLifetime time.Duration `koanf:"conn_max_lifetime"`
+	URL               string        `koanf:"url"`
+	MaxOpenConns      int           `koanf:"max_open_conns"`
+	MaxIdleConns      int           `koanf:"max_idle_conns"`
+	ConnMaxLifetime   time.Duration `koanf:"conn_max_lifetime"`
+	MinConns          int           `koanf:"min_conns"`
+	ConnMaxIdleTime   time.Duration `koanf:"conn_max_idle_time"`
+	HealthCheckPeriod time.Duration `koanf:"health_check_period"`
 }
 
 type ValkeyConfig struct {
@@ -172,9 +178,12 @@ func Load() (*Config, error) {
 		"app.version":               DefaultAppVersion,
 		"app.log_level":             DefaultLogLevel,
 		"app.log_format":            DefaultLogFormat,
-		"database.max_open_conns":   DefaultDBMaxOpenConns,
-		"database.max_idle_conns":   DefaultDBMaxIdleConns,
-		"database.conn_max_lifetime": DefaultDBConnMaxLifetime,
+		"database.max_open_conns":      DefaultDBMaxOpenConns,
+		"database.max_idle_conns":      DefaultDBMaxIdleConns,
+		"database.conn_max_lifetime":   DefaultDBConnMaxLifetime,
+		"database.min_conns":           DefaultDBMinConns,
+		"database.conn_max_idle_time":  DefaultDBConnMaxIdleTime,
+		"database.health_check_period": DefaultDBHealthCheckPeriod,
 		"jwt.access_token_ttl":      DefaultJWTAccessTTL,
 		"jwt.refresh_token_ttl":     DefaultJWTRefreshTTL,
 		"billing.trial_days":        DefaultBillingTrialDays,

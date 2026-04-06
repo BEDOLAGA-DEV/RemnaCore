@@ -23,6 +23,7 @@ const ioMethodIOURing = "io_uring"
 // the pool is closed gracefully on application shutdown.
 var Module = fx.Module("postgres",
 	fx.Provide(NewPool),
+	fx.Invoke(registerPoolMetrics),
 )
 
 // NewPool creates a pgxpool.Pool configured from the application's database
@@ -34,8 +35,10 @@ func NewPool(lc fx.Lifecycle, cfg *config.Config, logger *slog.Logger) (*pgxpool
 	}
 
 	poolCfg.MaxConns = int32(cfg.Database.MaxOpenConns)
-	poolCfg.MinConns = int32(cfg.Database.MaxIdleConns)
+	poolCfg.MinConns = int32(cfg.Database.MinConns)
 	poolCfg.MaxConnLifetime = cfg.Database.ConnMaxLifetime
+	poolCfg.MaxConnIdleTime = cfg.Database.ConnMaxIdleTime
+	poolCfg.HealthCheckPeriod = cfg.Database.HealthCheckPeriod
 
 	pool, err := pgxpool.NewWithConfig(context.Background(), poolCfg)
 	if err != nil {
@@ -72,4 +75,11 @@ func logIOMethod(pool *pgxpool.Pool, logger *slog.Logger) {
 			slog.String("recommended", ioMethodIOURing),
 		)
 	}
+}
+
+// registerPoolMetrics creates and registers the PG pool stats collector with
+// the default Prometheus registry. Duplicate registrations (e.g. during tests
+// that construct the Fx graph multiple times) are silently ignored.
+func registerPoolMetrics(pool *pgxpool.Pool) {
+	_ = prometheus.Register(NewMetricsCollector(pool))
 }

@@ -172,6 +172,22 @@ func (r *PlanRepository) createAddon(ctx context.Context, planID string, addon a
 	return pgutil.MapErr(err, "create plan addon", billing.ErrPlanNotFound)
 }
 
+func (r *PlanRepository) upsertAddon(ctx context.Context, planID string, addon aggregate.Addon) error {
+	err := r.queries.UpsertPlanAddon(ctx, gen.UpsertPlanAddonParams{
+		ID:                pgutil.UUIDToPgtype(addon.ID),
+		PlanID:            pgutil.UUIDToPgtype(planID),
+		Name:              addon.Name,
+		PriceAmount:       addon.Price.Amount,
+		PriceCurrency:     string(addon.Price.Currency),
+		AddonType:         string(addon.Type),
+		ExtraTrafficBytes: addon.ExtraTrafficBytes,
+		ExtraNodes:        addon.ExtraNodes,
+		ExtraFeatureFlags: addon.ExtraFeatureFlags,
+		CreatedAt:         pgutil.TimeToPgtype(r.clock.Now()),
+	})
+	return pgutil.MapErr(err, "upsert plan addon", billing.ErrPlanNotFound)
+}
+
 func (r *PlanRepository) Update(ctx context.Context, plan *aggregate.Plan) error {
 	err := r.queries.UpdatePlan(ctx, gen.UpdatePlanParams{
 		ID:                   pgutil.UUIDToPgtype(plan.ID),
@@ -194,14 +210,22 @@ func (r *PlanRepository) Update(ctx context.Context, plan *aggregate.Plan) error
 		return pgutil.MapErr(err, "update plan", billing.ErrPlanNotFound)
 	}
 
-	// Replace addons: delete all, re-insert.
-	if err := r.queries.DeleteAddonsByPlanID(ctx, pgutil.UUIDToPgtype(plan.ID)); err != nil {
-		return pgutil.MapErr(err, "delete addons for plan", billing.ErrPlanNotFound)
-	}
+	// Upsert each addon, then prune addons removed from the list.
+	// This avoids DELETE ALL + RE-INSERT which breaks FK references
+	// from other tables pointing to addon IDs.
+	retainIDs := make([]pgtype.UUID, 0, len(plan.AvailableAddons))
 	for _, addon := range plan.AvailableAddons {
-		if err := r.createAddon(ctx, plan.ID, addon); err != nil {
-			return fmt.Errorf("recreate addon %s for plan: %w", addon.ID, err)
+		if err := r.upsertAddon(ctx, plan.ID, addon); err != nil {
+			return fmt.Errorf("upsert addon %s for plan: %w", addon.ID, err)
 		}
+		retainIDs = append(retainIDs, pgutil.UUIDToPgtype(addon.ID))
+	}
+
+	if err := r.queries.DeleteRemovedAddons(ctx, gen.DeleteRemovedAddonsParams{
+		PlanID: pgutil.UUIDToPgtype(plan.ID),
+		Ids:    retainIDs,
+	}); err != nil {
+		return pgutil.MapErr(err, "delete removed addons for plan", billing.ErrPlanNotFound)
 	}
 	return nil
 }
