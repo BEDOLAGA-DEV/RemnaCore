@@ -43,8 +43,9 @@ var natsWiring = fx.Options(
 		txRunner txmanager.Runner,
 		logger *slog.Logger,
 		cfg *config.Config,
+		metrics *observability.Metrics,
 	) *natsadapter.OutboxRelay {
-		return natsadapter.NewOutboxRelay(outbox, publisher, txRunner, logger, cfg.Outbox.RelayWorkers)
+		return natsadapter.NewOutboxRelay(outbox, publisher, txRunner, logger, cfg.Outbox.RelayWorkers, metrics)
 	}),
 
 	// NATS subscriber (shared by all consumers)

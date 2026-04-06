@@ -4,12 +4,15 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"sync"
 	"time"
 
+	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/sony/gobreaker/v2"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
@@ -68,9 +71,21 @@ type OutboxRelay struct {
 	publisher   *EventPublisher
 	txRunner    txmanager.Runner
 	logger      *slog.Logger
+	metrics     *observability.Metrics
 	workerCount int
 	natsBreaker *gobreaker.CircuitBreaker[struct{}]
 }
+
+// NATS message metadata header keys for outbox relay.
+const (
+	// HeaderOutboxSequence carries the outbox sequence number for ordering
+	// verification and debugging on the consumer side.
+	HeaderOutboxSequence = "X-Outbox-Sequence"
+
+	// HeaderEventType carries the domain event type so consumers can inspect
+	// it without deserialising the payload.
+	HeaderEventType = "X-Event-Type"
+)
 
 const (
 	// MinOutboxRelayWorkers is the lower bound for worker count to ensure at
@@ -100,12 +115,14 @@ const (
 // NewOutboxRelay creates an OutboxRelay with the given dependencies.
 // workerCount controls the number of parallel relay goroutines; values
 // below MinOutboxRelayWorkers are clamped to MinOutboxRelayWorkers.
+// metrics may be nil; metric recording is skipped when nil (safe for tests).
 func NewOutboxRelay(
 	outbox *postgres.OutboxRepository,
 	publisher *EventPublisher,
 	txRunner txmanager.Runner,
 	logger *slog.Logger,
 	workerCount int,
+	metrics *observability.Metrics,
 ) *OutboxRelay {
 	if workerCount < MinOutboxRelayWorkers {
 		workerCount = MinOutboxRelayWorkers
@@ -129,6 +146,7 @@ func NewOutboxRelay(
 		publisher:   publisher,
 		txRunner:    txRunner,
 		logger:      logger,
+		metrics:     metrics,
 		workerCount: workerCount,
 		natsBreaker: cb,
 	}
@@ -167,11 +185,12 @@ func (r *OutboxRelay) Run(ctx context.Context) {
 // runWorker is the per-worker relay loop. It executes an immediate catch-up
 // pass, then enters a timer-based loop with exponential backoff on idle.
 func (r *OutboxRelay) runWorker(ctx context.Context, workerID int) {
+	workerLabel := strconv.Itoa(workerID)
 	logger := r.logger.With(slog.Int("worker_id", workerID))
 	logger.Info("outbox relay worker started")
 
 	// Immediate catch-up for events stuck from a prior crash.
-	r.relay(ctx, logger)
+	r.relay(ctx, logger, workerLabel)
 
 	currentInterval := OutboxRelayBaseInterval
 	relayTimer := time.NewTimer(currentInterval)
@@ -183,7 +202,7 @@ func (r *OutboxRelay) runWorker(ctx context.Context, workerID int) {
 			logger.Info("outbox relay worker stopping")
 			return
 		case <-relayTimer.C:
-			published := r.relay(ctx, logger)
+			published := r.relay(ctx, logger, workerLabel)
 			if published > 0 {
 				// Reset to base interval when events were found.
 				currentInterval = OutboxRelayBaseInterval
@@ -235,15 +254,18 @@ func (r *OutboxRelay) runCleanup(ctx context.Context) {
 // that were already published to NATS will be deduplicated by JetStream.
 //
 // The logger parameter carries the worker ID so log lines can be correlated
-// to a specific worker.
-func (r *OutboxRelay) relay(ctx context.Context, logger *slog.Logger) int {
+// to a specific worker. The workerLabel is the stringified worker ID used as
+// a Prometheus label value.
+func (r *OutboxRelay) relay(ctx context.Context, logger *slog.Logger, workerLabel string) int {
 	// Skip DB polling entirely when NATS is known to be unreachable.
 	if r.natsBreaker.State() == gobreaker.StateOpen {
 		logger.Debug("outbox relay: NATS circuit open, skipping poll")
 		return 0
 	}
 
+	start := time.Now()
 	var published int
+	var batchSize int
 
 	err := r.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		events, err := r.outbox.GetUnpublished(txCtx, OutboxRelayBatchSize)
@@ -251,7 +273,12 @@ func (r *OutboxRelay) relay(ctx context.Context, logger *slog.Logger) int {
 			return fmt.Errorf("get unpublished: %w", err)
 		}
 
-		if len(events) == 0 {
+		batchSize = len(events)
+
+		if batchSize == 0 {
+			if r.metrics != nil {
+				r.metrics.OutboxRelayEmptyPolls.Inc()
+			}
 			return nil
 		}
 
@@ -260,13 +287,18 @@ func (r *OutboxRelay) relay(ctx context.Context, logger *slog.Logger) int {
 		publishedTimes := make([]time.Time, 0, len(events))
 
 		for _, event := range events {
+			// Build the Watermill message with outbox metadata headers.
+			// The event ID is used as the Watermill message UUID so
+			// JetStream can deduplicate retransmissions via Nats-Msg-Id.
+			msg := message.NewMessage(event.ID, event.Payload)
+			msg.Metadata.Set(HeaderOutboxSequence, strconv.FormatInt(event.SequenceNumber, 10))
+			msg.Metadata.Set(HeaderEventType, event.EventType)
+
 			// Wrap publish in the circuit breaker. On success the breaker
 			// records a success; on failure it records a failure and will
 			// trip open after relayCBConsecutiveFailures consecutive errors.
-			// The event ID is used as the Watermill message UUID so
-			// JetStream can deduplicate retransmissions via Nats-Msg-Id.
 			_, cbErr := r.natsBreaker.Execute(func() (struct{}, error) {
-				return struct{}{}, r.publisher.PublishWithID(txCtx, event.ID, event.EventType, event.Payload)
+				return struct{}{}, r.publisher.PublishRaw(event.EventType, msg)
 			})
 			if cbErr != nil {
 				logger.Warn("outbox relay: failed to publish event, will retry",
@@ -274,6 +306,9 @@ func (r *OutboxRelay) relay(ctx context.Context, logger *slog.Logger) int {
 					slog.String("event_type", event.EventType),
 					slog.Any("error", cbErr),
 				)
+				if r.metrics != nil {
+					r.metrics.OutboxRelayPublishErrors.Inc()
+				}
 				// Skip this event — row lock released on commit, retry next tick.
 				continue
 			}
@@ -307,6 +342,12 @@ func (r *OutboxRelay) relay(ctx context.Context, logger *slog.Logger) int {
 		logger.Error("outbox relay: batch failed",
 			slog.Any("error", err),
 		)
+	}
+
+	// Record metrics after the transaction completes (success or failure).
+	if r.metrics != nil && batchSize > 0 {
+		r.metrics.OutboxRelayBatchSize.WithLabelValues(workerLabel).Observe(float64(batchSize))
+		r.metrics.OutboxRelayBatchLatency.WithLabelValues(workerLabel).Observe(time.Since(start).Seconds())
 	}
 
 	return published

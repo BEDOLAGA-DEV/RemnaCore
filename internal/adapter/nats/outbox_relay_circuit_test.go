@@ -136,14 +136,14 @@ func TestRelay_SkipsDBPollWhenCircuitOpen(t *testing.T) {
 	require.Equal(t, gobreaker.StateOpen, relay.natsBreaker.State())
 
 	// relay() should return 0 without touching txRunner.
-	published := relay.relay(context.Background(), discardLogger())
+	published := relay.relay(context.Background(), discardLogger(), "0")
 
 	assert.Equal(t, 0, published, "relay must return 0 when breaker is open")
 	assert.Equal(t, 0, txRunner.called, "txRunner must not be called when breaker is open")
 }
 
 func TestNewOutboxRelay_InitializesCircuitBreaker(t *testing.T) {
-	relay := NewOutboxRelay(nil, nil, nil, discardLogger(), MinOutboxRelayWorkers)
+	relay := NewOutboxRelay(nil, nil, nil, discardLogger(), MinOutboxRelayWorkers, nil)
 	require.NotNil(t, relay.natsBreaker, "circuit breaker must be initialized")
 	assert.Equal(t, gobreaker.StateClosed, relay.natsBreaker.State(),
 		"circuit breaker should start in closed state")

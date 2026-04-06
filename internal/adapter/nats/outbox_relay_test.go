@@ -34,7 +34,7 @@ func TestNewOutboxRelay(t *testing.T) {
 	t.Run("nil dependencies do not panic", func(t *testing.T) {
 		// NewOutboxRelay should not panic with nil dependencies (constructor only
 		// assigns fields).
-		relay := natsadapter.NewOutboxRelay(nil, nil, nil, nil, natsadapter.MinOutboxRelayWorkers)
+		relay := natsadapter.NewOutboxRelay(nil, nil, nil, nil, natsadapter.MinOutboxRelayWorkers, nil)
 		assert.NotNil(t, relay)
 	})
 
@@ -48,14 +48,14 @@ func TestNewOutboxRelay(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				relay := natsadapter.NewOutboxRelay(nil, nil, nil, nil, tt.input)
+				relay := natsadapter.NewOutboxRelay(nil, nil, nil, nil, tt.input, nil)
 				assert.NotNil(t, relay)
 			})
 		}
 	})
 
 	t.Run("explicit worker count is accepted", func(t *testing.T) {
-		relay := natsadapter.NewOutboxRelay(nil, nil, nil, nil, 4)
+		relay := natsadapter.NewOutboxRelay(nil, nil, nil, nil, 4, nil)
 		assert.NotNil(t, relay)
 	})
 }

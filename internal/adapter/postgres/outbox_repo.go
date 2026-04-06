@@ -17,10 +17,11 @@ import (
 // OutboxEvent represents a single event stored in the transactional outbox
 // table, awaiting relay to the message broker.
 type OutboxEvent struct {
-	ID        string
-	EventType string
-	Payload   []byte
-	CreatedAt time.Time
+	ID             string
+	EventType      string
+	Payload        []byte
+	CreatedAt      time.Time
+	SequenceNumber int64
 }
 
 // OutboxRepository provides access to the public.outbox table. It is used by
@@ -248,9 +249,10 @@ func (r *OutboxRepository) DetachAndDropPartition(ctx context.Context, partition
 // rowToOutboxEvent converts a sqlc-generated row to the adapter-level OutboxEvent.
 func rowToOutboxEvent(row gen.GetUnpublishedOutboxEventsRow) OutboxEvent {
 	return OutboxEvent{
-		ID:        pgutil.PgtypeToUUID(row.ID),
-		EventType: row.EventType,
-		Payload:   row.Payload,
-		CreatedAt: pgutil.PgtypeToTime(row.CreatedAt),
+		ID:             pgutil.PgtypeToUUID(row.ID),
+		EventType:      row.EventType,
+		Payload:        row.Payload,
+		CreatedAt:      pgutil.PgtypeToTime(row.CreatedAt),
+		SequenceNumber: row.SequenceNumber,
 	}
 }
