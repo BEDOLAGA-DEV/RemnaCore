@@ -290,6 +290,23 @@ func (r *OutboxRepository) DetachAndDropPartition(ctx context.Context, partition
 	return nil
 }
 
+// countUnpublishedSQL returns the number of unpublished events across all
+// partitions. This is intentionally a simple count(*) without FOR UPDATE — it
+// is used by the OutboxRelay backlog gauge and does not need transactional
+// isolation.
+const countUnpublishedSQL = `SELECT count(*) FROM public.outbox WHERE published = false`
+
+// CountUnpublished returns the number of events in the outbox that have not
+// yet been published. Used for the outbox backlog Prometheus gauge.
+func (r *OutboxRepository) CountUnpublished(ctx context.Context) (int64, error) {
+	var count int64
+	err := r.pool.QueryRow(ctx, countUnpublishedSQL).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count unpublished outbox events: %w", err)
+	}
+	return count, nil
+}
+
 // rowToOutboxEvent converts a sqlc-generated row to the adapter-level OutboxEvent.
 func rowToOutboxEvent(row gen.GetUnpublishedOutboxEventsRow) OutboxEvent {
 	return OutboxEvent{

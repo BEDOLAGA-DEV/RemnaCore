@@ -34,6 +34,9 @@ const (
 	MetricOutboxRelayBatchLatency  = "platform_outbox_relay_batch_duration_seconds"
 	MetricOutboxRelayPublishErrors = "platform_outbox_relay_publish_errors_total"
 	MetricOutboxRelayEmptyPolls    = "platform_outbox_relay_empty_polls_total"
+
+	MetricEntityLocksActive      = "platform_consumer_entity_locks_active"
+	MetricOutboxUnpublishedCount = "platform_outbox_unpublished_count"
 )
 
 // Metric help string constants.
@@ -65,6 +68,9 @@ const (
 	helpOutboxRelayBatchLatency  = "Duration of outbox relay batch processing in seconds."
 	helpOutboxRelayPublishErrors = "Total number of NATS publish errors in the outbox relay."
 	helpOutboxRelayEmptyPolls    = "Total number of outbox relay polls that returned zero events."
+
+	helpEntityLocksActive      = "Number of active per-entity serialisation locks."
+	helpOutboxUnpublishedCount = "Number of unpublished events in the outbox."
 )
 
 // Label name constants.
@@ -141,8 +147,12 @@ type Metrics struct {
 	EventProcessingLatency *prometheus.HistogramVec
 	EventProcessingLag     *prometheus.HistogramVec
 	EntityLockWaitLatency  *prometheus.HistogramVec
+	EntityLocksActive      prometheus.Gauge
 	DLQPublishedTotal      prometheus.Counter
 	IdempotencyHitTotal    *prometheus.CounterVec
+
+	// Outbox backlog gauge
+	OutboxUnpublishedCount prometheus.Gauge
 }
 
 // registerRuntimeCollectors replaces the default Go and process collectors with
@@ -287,5 +297,15 @@ func NewMetrics() *Metrics {
 			Name: MetricIdempotencyHitTotal,
 			Help: helpIdempotencyHitTotal,
 		}, []string{LabelEventType}),
+
+		EntityLocksActive: promauto.NewGauge(prometheus.GaugeOpts{
+			Name: MetricEntityLocksActive,
+			Help: helpEntityLocksActive,
+		}),
+
+		OutboxUnpublishedCount: promauto.NewGauge(prometheus.GaugeOpts{
+			Name: MetricOutboxUnpublishedCount,
+			Help: helpOutboxUnpublishedCount,
+		}),
 	}
 }

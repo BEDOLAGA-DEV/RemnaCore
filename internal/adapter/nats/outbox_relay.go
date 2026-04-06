@@ -2,6 +2,7 @@ package nats
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -15,6 +16,16 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
+
+// OutboxBacklogPollInterval is how often the relay queries the outbox table for
+// the count of unpublished events and updates the OutboxUnpublishedCount gauge.
+//
+// Suggested Prometheus alert:
+//
+//	- alert: OutboxBacklogGrowing
+//	  expr: delta(platform_outbox_unpublished_count[5m]) > 100
+//	  for: 10m
+const OutboxBacklogPollInterval = 30 * time.Second
 
 // Outbox relay constants control polling frequency, batch size, and retention.
 const (
@@ -92,6 +103,13 @@ const (
 	// HeaderEventType carries the domain event type so consumers can inspect
 	// it without deserialising the payload.
 	HeaderEventType = "X-Event-Type"
+
+	// HeaderTraceParent carries the W3C traceparent value extracted from the
+	// domain event payload. Consumers use this header (via OTel's
+	// TextMapPropagator) to link their processing spans to the originating
+	// business operation's trace. The header name follows the W3C Trace
+	// Context specification.
+	HeaderTraceParent = "traceparent"
 )
 
 const (
@@ -184,6 +202,13 @@ func (r *OutboxRelay) Run(ctx context.Context) {
 	go func() {
 		defer wg.Done()
 		r.runCleanup(ctx)
+	}()
+
+	// Single backlog polling goroutine to keep the OutboxUnpublishedCount gauge current.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		r.pollOutboxBacklog(ctx)
 	}()
 
 	wg.Wait()
@@ -320,6 +345,13 @@ func (r *OutboxRelay) relay(ctx context.Context, logger *slog.Logger, workerLabe
 			msg.Metadata.Set(HeaderOutboxSequence, strconv.FormatInt(event.SequenceNumber, 10))
 			msg.Metadata.Set(HeaderEventType, event.EventType)
 
+			// Propagate W3C traceparent from the event payload to NATS
+			// message metadata so consumers can reconstruct the trace
+			// context without parsing the full payload first.
+			if tp := extractTraceParent(event.Payload); tp != "" {
+				msg.Metadata.Set(HeaderTraceParent, tp)
+			}
+
 			// Wrap publish in the circuit breaker. On success the breaker
 			// records a success; on failure it records a failure and will
 			// trip open after relayCBConsecutiveFailures consecutive errors.
@@ -379,12 +411,73 @@ func (r *OutboxRelay) relay(ctx context.Context, logger *slog.Logger, workerLabe
 	return published
 }
 
-// cleanup removes published events older than the retention period to prevent
-// unbounded table growth.
+// pollOutboxBacklog periodically queries the outbox table for the count of
+// unpublished events and updates the OutboxUnpublishedCount Prometheus gauge.
+// This runs as a single background goroutine started by Run and exits when
+// the context is cancelled. If the metrics dependency is nil, the goroutine
+// returns immediately to avoid panics in test environments.
+func (r *OutboxRelay) pollOutboxBacklog(ctx context.Context) {
+	if r.metrics == nil {
+		return
+	}
+
+	ticker := time.NewTicker(OutboxBacklogPollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			count, err := r.outbox.CountUnpublished(ctx)
+			if err != nil {
+				r.logger.Warn("outbox backlog poll failed", slog.Any("error", err))
+				continue
+			}
+			r.metrics.OutboxUnpublishedCount.Set(float64(count))
+		}
+	}
+}
+
+// cleanup purges published events from the CURRENT partition that are past
+// retention. This complements PartitionManager, which drops entire expired
+// partitions (instant O(1) via DETACH + DROP).
+//
+// Division of responsibility:
+//   - OutboxRelay.cleanup: intra-partition cleanup for the active quarter.
+//     Uses DELETE WHERE published=true AND published_at < retention AND
+//     created_at < retention (partition pruning hint). Generates dead tuples
+//     but only for recently-published events, keeping vacuum scope small.
+//   - PartitionManager.cleanup: drops entire past-retention partitions that
+//     contain no unpublished events and pass the sequence safety check.
+//     Instant, no vacuum.
+//
+// Both run concurrently: relay every hour, PartitionManager every 24 hours.
+// Removing either would leave a gap: relay-only means old partitions persist
+// forever; PM-only means the active partition accumulates published events
+// for the entire quarter before the first drop opportunity.
 func (r *OutboxRelay) cleanup(ctx context.Context) {
 	if err := r.outbox.DeleteOld(ctx, OutboxRetentionPeriod); err != nil {
 		r.logger.Error("outbox relay: failed to clean up old events",
 			slog.Any("error", err),
 		)
 	}
+}
+
+// traceParentEnvelope is a minimal struct for extracting only the trace_parent
+// field from a serialised domain event without fully unmarshalling the payload.
+type traceParentEnvelope struct {
+	TraceParent string `json:"trace_parent"`
+}
+
+// extractTraceParent extracts the trace_parent field from a JSON-encoded domain
+// event payload. Returns an empty string if the field is missing, empty, or the
+// payload is not valid JSON. This avoids a full unmarshal of the event payload
+// in the relay hot path.
+func extractTraceParent(payload []byte) string {
+	var envelope traceParentEnvelope
+	if err := json.Unmarshal(payload, &envelope); err != nil {
+		return ""
+	}
+	return envelope.TraceParent
 }

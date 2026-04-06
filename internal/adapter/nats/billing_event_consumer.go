@@ -14,12 +14,14 @@ import (
 	"github.com/ThreeDotsLabs/watermill/message"
 	nc "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tracing"
 )
 
 // errMissingSubscriptionID is returned when a billing event lacks the required
@@ -104,6 +106,16 @@ const (
 	// DLQDepthPollInterval is how often the consumer queries JetStream for
 	// the current DLQ stream message count and updates the DLQDepth gauge.
 	DLQDepthPollInterval = 30 * time.Second
+
+	// DefaultMessageProcessingTimeout bounds the time for processing a single
+	// event. If a handler exceeds this timeout (e.g., due to a hung DB query
+	// or unresponsive Remnawave API), the context is cancelled, the handler
+	// returns an error, and the message is Nack'd for retry.
+	//
+	// Default: 60 seconds — covers DB lookup + Remnawave API call + retry.
+	// Configure via BillingEventConsumer.messageTimeout for environments
+	// with slower upstream APIs.
+	DefaultMessageProcessingTimeout = 60 * time.Second
 )
 
 // entityLock serialises event processing for a single entity (e.g. one
@@ -139,6 +151,7 @@ type BillingEventConsumer struct {
 	clock          clock.Clock
 	metrics        *observability.Metrics
 	natsConn       *nc.Conn
+	messageTimeout time.Duration
 	entityLocks    sync.Map // map[string]*entityLock — per-entity serialisation
 	inflightWg     sync.WaitGroup
 }
@@ -174,6 +187,7 @@ func NewBillingEventConsumer(
 		clock:          clk,
 		metrics:        metrics,
 		natsConn:       conn,
+		messageTimeout: DefaultMessageProcessingTimeout,
 	}
 }
 
@@ -188,7 +202,8 @@ func (c *BillingEventConsumer) getEntityLock(entityID string) *entityLock {
 
 // evictStaleLocks periodically removes entity locks that have not been used
 // within entityLockTTL. This prevents unbounded memory growth in long-running
-// processes.
+// processes. After each eviction pass, the EntityLocksActive gauge is updated
+// with the number of remaining locks.
 func (c *BillingEventConsumer) evictStaleLocks(ctx context.Context) {
 	ticker := time.NewTicker(entityLockTTL)
 	defer ticker.Stop()
@@ -205,6 +220,15 @@ func (c *BillingEventConsumer) evictStaleLocks(ctx context.Context) {
 					c.entityLocks.Delete(key)
 				}
 				return true
+			})
+
+			var remaining int
+			c.entityLocks.Range(func(_, _ any) bool {
+				remaining++
+				return true
+			})
+			c.recordMetric(func(m *observability.Metrics) {
+				m.EntityLocksActive.Set(float64(remaining))
 			})
 		}
 	}
@@ -338,8 +362,11 @@ func (c *BillingEventConsumer) consumeLoop(ctx context.Context, subject string, 
 			// Use context.Background() so that a cancelled parent context does
 			// not abort an in-flight handler mid-processing (e.g. during a
 			// Remnawave provisioning call). The WaitGroup ensures Drain blocks
-			// until this handler completes.
-			c.handleMessage(context.Background(), subject, msg)
+			// until this handler completes. The timeout prevents handlers from
+			// blocking indefinitely on hung DB queries or unresponsive APIs.
+			msgCtx, cancel := context.WithTimeout(context.Background(), c.messageTimeout)
+			c.handleMessage(msgCtx, subject, msg)
+			cancel()
 			c.inflightWg.Done()
 		}
 	}
@@ -360,6 +387,14 @@ func (c *BillingEventConsumer) consumeLoop(ctx context.Context, subject string, 
 // times. Messages that exceed the retry limit are sent to the dead-letter queue
 // and Ack'd to prevent infinite redelivery.
 func (c *BillingEventConsumer) handleMessage(ctx context.Context, subject string, msg *message.Message) {
+	// Extract W3C trace context from NATS message metadata (set by the outbox
+	// relay) and create a linked span. This connects the consumer processing
+	// to the originating business operation's trace.
+	carrier := propagation.MapCarrier(msg.Metadata)
+	ctx = tracing.ExtractTraceContext(ctx, carrier)
+	ctx, span := tracing.StartSpan(ctx, "billing_event.process")
+	defer span.End()
+
 	start := time.Now()
 
 	// Parse the event first so we can extract EntityID for idempotency.
