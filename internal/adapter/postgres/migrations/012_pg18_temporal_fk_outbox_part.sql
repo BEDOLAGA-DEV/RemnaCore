@@ -15,9 +15,17 @@
 -- Uses '[)' (half-open) to match subscription billing_period semantics:
 -- billing_period is [period_start, period_end), so an invoice at exactly
 -- period_end is considered outside the period.
-ALTER TABLE billing.invoices
-    ADD COLUMN invoice_period tstzrange
-    GENERATED ALWAYS AS (tstzrange(created_at, created_at, '[]')) STORED;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'billing' AND table_name = 'invoices' AND column_name = 'invoice_period'
+    ) THEN
+        ALTER TABLE billing.invoices
+            ADD COLUMN invoice_period tstzrange
+            GENERATED ALWAYS AS (tstzrange(created_at, created_at, '[]')) STORED;
+    END IF;
+END $$;
 
 -- Pre-flight check: verify no existing invoices fall outside their
 -- subscription's billing period. If this SELECT returns rows, fix the data
@@ -38,8 +46,21 @@ ALTER TABLE billing.invoices
 -- existing rows but does NOT block concurrent DML (PG18 zero-downtime pattern).
 DO $$
 BEGIN
-    EXECUTE 'ALTER TABLE billing.subscriptions ADD CONSTRAINT uq_subs_id_period UNIQUE (id, billing_period WITHOUT OVERLAPS)';
-    EXECUTE 'ALTER TABLE billing.invoices ADD CONSTRAINT fk_invoice_sub_period FOREIGN KEY (subscription_id, PERIOD invoice_period) REFERENCES billing.subscriptions (id, PERIOD billing_period) NOT VALID';
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'uq_subs_id_period'
+          AND conrelid = 'billing.subscriptions'::regclass
+    ) THEN
+        EXECUTE 'ALTER TABLE billing.subscriptions ADD CONSTRAINT uq_subs_id_period UNIQUE (id, billing_period WITHOUT OVERLAPS)';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'fk_invoice_sub_period'
+          AND conrelid = 'billing.invoices'::regclass
+    ) THEN
+        EXECUTE 'ALTER TABLE billing.invoices ADD CONSTRAINT fk_invoice_sub_period FOREIGN KEY (subscription_id, PERIOD invoice_period) REFERENCES billing.subscriptions (id, PERIOD billing_period) NOT VALID';
+    END IF;
 END $$;
 
 -- Validate the temporal FK in a separate statement. This scans existing rows
@@ -49,7 +70,14 @@ END $$;
 -- this will fail and must be fixed with a data migration first.
 DO $$
 BEGIN
-    EXECUTE 'ALTER TABLE billing.invoices VALIDATE CONSTRAINT fk_invoice_sub_period';
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'fk_invoice_sub_period'
+          AND conrelid = 'billing.invoices'::regclass
+          AND NOT convalidated
+    ) THEN
+        EXECUTE 'ALTER TABLE billing.invoices VALIDATE CONSTRAINT fk_invoice_sub_period';
+    END IF;
 END $$;
 
 -- ============================================================================
@@ -65,70 +93,97 @@ END $$;
 -- PK changes from (id) to (id, created_at) because PG requires the partition
 -- key in unique/PK constraints. MarkOutboxEventPublished now includes
 -- created_at for partition pruning.
-
--- Step 1: Rename current table and its index.
-ALTER TABLE public.outbox RENAME TO outbox_legacy;
-ALTER INDEX idx_outbox_unpublished RENAME TO idx_outbox_unpublished_legacy;
-
--- Step 2: Detach sequence ownership from the legacy table so it survives the
--- DROP TABLE. PG does NOT rename sequences when tables are renamed — the
--- sequence is still named outbox_sequence_number_seq (from the original
--- BIGSERIAL in migration 009).
-ALTER SEQUENCE outbox_sequence_number_seq OWNED BY NONE;
-
--- Step 3: Create partitioned table with same columns.
--- NOTE: The outbox relay must be stopped before running this migration to
--- prevent events being inserted into outbox_legacy after the data migration.
-CREATE TABLE public.outbox (
-    id              UUID            NOT NULL DEFAULT uuidv7(),
-    event_type      TEXT            NOT NULL,
-    payload         JSONB           NOT NULL,
-    published       BOOLEAN         NOT NULL DEFAULT false,
-    created_at      TIMESTAMPTZ     NOT NULL DEFAULT now(),
-    published_at    TIMESTAMPTZ,
-    sequence_number BIGINT          NOT NULL DEFAULT nextval('outbox_sequence_number_seq'),
-    version         INT             NOT NULL DEFAULT 1,
-    PRIMARY KEY (id, created_at)
-) PARTITION BY RANGE (created_at);
-
--- Step 4: Create partitions — quarterly for 2026-2027 + default for overflow.
 --
--- Partition management strategy:
---   CREATE: Add new yearly partitions via migration before each year starts.
---   CLEANUP: Old partitions can be detached and dropped instead of DELETE:
---     ALTER TABLE public.outbox DETACH PARTITION outbox_2026_q1 CONCURRENTLY;
---     DROP TABLE outbox_2026_q1;
---   The existing DeleteOldPublishedOutboxEvents (DELETE-based) remains as
---   a fallback for intra-partition cleanup of recent published events.
-CREATE TABLE outbox_default PARTITION OF public.outbox DEFAULT;
-CREATE TABLE outbox_2026_q1 PARTITION OF public.outbox
-    FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
-CREATE TABLE outbox_2026_q2 PARTITION OF public.outbox
-    FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
-CREATE TABLE outbox_2026_q3 PARTITION OF public.outbox
-    FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
-CREATE TABLE outbox_2026_q4 PARTITION OF public.outbox
-    FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
-CREATE TABLE outbox_2027_q1 PARTITION OF public.outbox
-    FOR VALUES FROM ('2027-01-01') TO ('2027-04-01');
-CREATE TABLE outbox_2027_q2 PARTITION OF public.outbox
-    FOR VALUES FROM ('2027-04-01') TO ('2027-07-01');
-CREATE TABLE outbox_2027_q3 PARTITION OF public.outbox
-    FOR VALUES FROM ('2027-07-01') TO ('2027-10-01');
-CREATE TABLE outbox_2027_q4 PARTITION OF public.outbox
-    FOR VALUES FROM ('2027-10-01') TO ('2028-01-01');
+-- The entire outbox conversion is guarded: if the outbox table is already
+-- partitioned (relkind = 'p'), the conversion is skipped entirely.
 
--- Step 5: Migrate existing data.
-INSERT INTO public.outbox (id, event_type, payload, published, created_at, published_at, sequence_number, version)
-SELECT id, event_type, payload, published, created_at, published_at, sequence_number, version
-FROM outbox_legacy;
+DO $$
+DECLARE
+    _relkind char;
+BEGIN
+    SELECT relkind INTO _relkind
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = 'outbox';
 
--- Step 6: Drop legacy table (sequence survives since ownership was detached).
-DROP TABLE outbox_legacy;
+    -- If already partitioned, nothing to do.
+    IF _relkind = 'p' THEN
+        RAISE NOTICE 'public.outbox is already partitioned, skipping conversion';
+        RETURN;
+    END IF;
 
--- Step 7: Reassign sequence ownership to the new partitioned table.
-ALTER SEQUENCE outbox_sequence_number_seq OWNED BY public.outbox.sequence_number;
+    -- Step 1: Rename current table and its index.
+    ALTER TABLE public.outbox RENAME TO outbox_legacy;
+    IF EXISTS (
+        SELECT 1 FROM pg_indexes WHERE indexname = 'idx_outbox_unpublished'
+    ) THEN
+        ALTER INDEX idx_outbox_unpublished RENAME TO idx_outbox_unpublished_legacy;
+    END IF;
 
--- Step 8: Recreate partial index for relay query on the partitioned table.
-CREATE INDEX idx_outbox_unpublished ON public.outbox (sequence_number)
-    WHERE published = false;
+    -- Step 2: Detach sequence ownership from the legacy table so it survives the
+    -- DROP TABLE. PG does NOT rename sequences when tables are renamed — the
+    -- sequence is still named outbox_sequence_number_seq (from the original
+    -- BIGSERIAL in migration 009).
+    IF EXISTS (
+        SELECT 1 FROM pg_class WHERE relname = 'outbox_sequence_number_seq' AND relkind = 'S'
+    ) THEN
+        ALTER SEQUENCE outbox_sequence_number_seq OWNED BY NONE;
+    END IF;
+
+    -- Step 3: Create partitioned table with same columns.
+    -- NOTE: The outbox relay must be stopped before running this migration to
+    -- prevent events being inserted into outbox_legacy after the data migration.
+    CREATE TABLE public.outbox (
+        id              UUID            NOT NULL DEFAULT uuidv7(),
+        event_type      TEXT            NOT NULL,
+        payload         JSONB           NOT NULL,
+        published       BOOLEAN         NOT NULL DEFAULT false,
+        created_at      TIMESTAMPTZ     NOT NULL DEFAULT now(),
+        published_at    TIMESTAMPTZ,
+        sequence_number BIGINT          NOT NULL DEFAULT nextval('outbox_sequence_number_seq'),
+        version         INT             NOT NULL DEFAULT 1,
+        PRIMARY KEY (id, created_at)
+    ) PARTITION BY RANGE (created_at);
+
+    -- Step 4: Create partitions — quarterly for 2026-2027 + default for overflow.
+    --
+    -- Partition management strategy:
+    --   CREATE: Add new yearly partitions via migration before each year starts.
+    --   CLEANUP: Old partitions can be detached and dropped instead of DELETE:
+    --     ALTER TABLE public.outbox DETACH PARTITION outbox_2026_q1 CONCURRENTLY;
+    --     DROP TABLE outbox_2026_q1;
+    --   The existing DeleteOldPublishedOutboxEvents (DELETE-based) remains as
+    --   a fallback for intra-partition cleanup of recent published events.
+    CREATE TABLE outbox_default PARTITION OF public.outbox DEFAULT;
+    CREATE TABLE outbox_2026_q1 PARTITION OF public.outbox
+        FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
+    CREATE TABLE outbox_2026_q2 PARTITION OF public.outbox
+        FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
+    CREATE TABLE outbox_2026_q3 PARTITION OF public.outbox
+        FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
+    CREATE TABLE outbox_2026_q4 PARTITION OF public.outbox
+        FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
+    CREATE TABLE outbox_2027_q1 PARTITION OF public.outbox
+        FOR VALUES FROM ('2027-01-01') TO ('2027-04-01');
+    CREATE TABLE outbox_2027_q2 PARTITION OF public.outbox
+        FOR VALUES FROM ('2027-04-01') TO ('2027-07-01');
+    CREATE TABLE outbox_2027_q3 PARTITION OF public.outbox
+        FOR VALUES FROM ('2027-07-01') TO ('2027-10-01');
+    CREATE TABLE outbox_2027_q4 PARTITION OF public.outbox
+        FOR VALUES FROM ('2027-10-01') TO ('2028-01-01');
+
+    -- Step 5: Migrate existing data.
+    INSERT INTO public.outbox (id, event_type, payload, published, created_at, published_at, sequence_number, version)
+    SELECT id, event_type, payload, published, created_at, published_at, sequence_number, version
+    FROM outbox_legacy;
+
+    -- Step 6: Drop legacy table (sequence survives since ownership was detached).
+    DROP TABLE outbox_legacy;
+
+    -- Step 7: Reassign sequence ownership to the new partitioned table.
+    ALTER SEQUENCE outbox_sequence_number_seq OWNED BY public.outbox.sequence_number;
+
+    -- Step 8: Recreate partial index for relay query on the partitioned table.
+    CREATE INDEX idx_outbox_unpublished ON public.outbox (sequence_number)
+        WHERE published = false;
+END $$;

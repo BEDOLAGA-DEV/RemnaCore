@@ -1,6 +1,6 @@
 CREATE SCHEMA IF NOT EXISTS billing;
 
-CREATE TABLE billing.plans (
+CREATE TABLE IF NOT EXISTS billing.plans (
     id UUID PRIMARY KEY,
     name TEXT NOT NULL,
     description TEXT,
@@ -20,7 +20,7 @@ CREATE TABLE billing.plans (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE billing.plan_addons (
+CREATE TABLE IF NOT EXISTS billing.plan_addons (
     id UUID PRIMARY KEY,
     plan_id UUID NOT NULL REFERENCES billing.plans(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
@@ -33,9 +33,9 @@ CREATE TABLE billing.plan_addons (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_addons_plan ON billing.plan_addons (plan_id);
+CREATE INDEX IF NOT EXISTS idx_addons_plan ON billing.plan_addons (plan_id);
 
-CREATE TABLE billing.subscriptions (
+CREATE TABLE IF NOT EXISTS billing.subscriptions (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL,
     plan_id UUID NOT NULL REFERENCES billing.plans(id),
@@ -51,10 +51,10 @@ CREATE TABLE billing.subscriptions (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_subs_user ON billing.subscriptions (user_id);
-CREATE INDEX idx_subs_status ON billing.subscriptions (status);
+CREATE INDEX IF NOT EXISTS idx_subs_user ON billing.subscriptions (user_id);
+CREATE INDEX IF NOT EXISTS idx_subs_status ON billing.subscriptions (status);
 
-CREATE TABLE billing.invoices (
+CREATE TABLE IF NOT EXISTS billing.invoices (
     id UUID PRIMARY KEY,
     subscription_id UUID NOT NULL REFERENCES billing.subscriptions(id),
     user_id UUID NOT NULL,
@@ -68,11 +68,11 @@ CREATE TABLE billing.invoices (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_invoices_sub ON billing.invoices (subscription_id);
-CREATE INDEX idx_invoices_user ON billing.invoices (user_id);
-CREATE INDEX idx_invoices_status ON billing.invoices (status);
+CREATE INDEX IF NOT EXISTS idx_invoices_sub ON billing.invoices (subscription_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_user ON billing.invoices (user_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_status ON billing.invoices (status);
 
-CREATE TABLE billing.invoice_line_items (
+CREATE TABLE IF NOT EXISTS billing.invoice_line_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     invoice_id UUID NOT NULL REFERENCES billing.invoices(id) ON DELETE CASCADE,
     description TEXT NOT NULL,
@@ -82,9 +82,9 @@ CREATE TABLE billing.invoice_line_items (
     quantity INT NOT NULL DEFAULT 1
 );
 
-CREATE INDEX idx_line_items_invoice ON billing.invoice_line_items (invoice_id);
+CREATE INDEX IF NOT EXISTS idx_line_items_invoice ON billing.invoice_line_items (invoice_id);
 
-CREATE TABLE billing.family_groups (
+CREATE TABLE IF NOT EXISTS billing.family_groups (
     id UUID PRIMARY KEY,
     owner_id UUID NOT NULL,
     max_members INT NOT NULL,
@@ -92,9 +92,9 @@ CREATE TABLE billing.family_groups (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX idx_family_owner ON billing.family_groups (owner_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_family_owner ON billing.family_groups (owner_id);
 
-CREATE TABLE billing.family_members (
+CREATE TABLE IF NOT EXISTS billing.family_members (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     family_group_id UUID NOT NULL REFERENCES billing.family_groups(id) ON DELETE CASCADE,
     user_id UUID NOT NULL,
@@ -103,22 +103,26 @@ CREATE TABLE billing.family_members (
     joined_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_family_members_group ON billing.family_members (family_group_id);
-CREATE UNIQUE INDEX idx_family_members_unique ON billing.family_members (family_group_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_family_members_group ON billing.family_members (family_group_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_family_members_unique ON billing.family_members (family_group_id, user_id);
 
 -- Updated_at triggers
+DROP TRIGGER IF EXISTS trigger_plans_updated ON billing.plans;
 CREATE TRIGGER trigger_plans_updated
     BEFORE UPDATE ON billing.plans
     FOR EACH ROW EXECUTE FUNCTION identity.set_updated_at();
 
+DROP TRIGGER IF EXISTS trigger_subs_updated ON billing.subscriptions;
 CREATE TRIGGER trigger_subs_updated
     BEFORE UPDATE ON billing.subscriptions
     FOR EACH ROW EXECUTE FUNCTION identity.set_updated_at();
 
+DROP TRIGGER IF EXISTS trigger_invoices_updated ON billing.invoices;
 CREATE TRIGGER trigger_invoices_updated
     BEFORE UPDATE ON billing.invoices
     FOR EACH ROW EXECUTE FUNCTION identity.set_updated_at();
 
+DROP TRIGGER IF EXISTS trigger_family_updated ON billing.family_groups;
 CREATE TRIGGER trigger_family_updated
     BEFORE UPDATE ON billing.family_groups
     FOR EACH ROW EXECUTE FUNCTION identity.set_updated_at();

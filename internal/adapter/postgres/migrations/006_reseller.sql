@@ -1,6 +1,6 @@
 CREATE SCHEMA IF NOT EXISTS reseller;
 
-CREATE TABLE reseller.tenants (
+CREATE TABLE IF NOT EXISTS reseller.tenants (
     id UUID PRIMARY KEY,
     name TEXT NOT NULL,
     domain TEXT,
@@ -12,10 +12,10 @@ CREATE TABLE reseller.tenants (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX idx_tenant_domain ON reseller.tenants (domain) WHERE domain IS NOT NULL;
-CREATE INDEX idx_tenant_owner ON reseller.tenants (owner_user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tenant_domain ON reseller.tenants (domain) WHERE domain IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_tenant_owner ON reseller.tenants (owner_user_id);
 
-CREATE TABLE reseller.reseller_accounts (
+CREATE TABLE IF NOT EXISTS reseller.reseller_accounts (
     id UUID PRIMARY KEY,
     tenant_id UUID NOT NULL REFERENCES reseller.tenants(id),
     user_id UUID NOT NULL,
@@ -24,9 +24,9 @@ CREATE TABLE reseller.reseller_accounts (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX idx_reseller_user ON reseller.reseller_accounts (tenant_id, user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reseller_user ON reseller.reseller_accounts (tenant_id, user_id);
 
-CREATE TABLE reseller.commissions (
+CREATE TABLE IF NOT EXISTS reseller.commissions (
     id UUID PRIMARY KEY,
     reseller_id UUID NOT NULL REFERENCES reseller.reseller_accounts(id),
     sale_id TEXT NOT NULL,
@@ -37,9 +37,10 @@ CREATE TABLE reseller.commissions (
     paid_at TIMESTAMPTZ
 );
 
-CREATE INDEX idx_commissions_reseller ON reseller.commissions (reseller_id);
-CREATE INDEX idx_commissions_status ON reseller.commissions (status);
+CREATE INDEX IF NOT EXISTS idx_commissions_reseller ON reseller.commissions (reseller_id);
+CREATE INDEX IF NOT EXISTS idx_commissions_status ON reseller.commissions (status);
 
+DROP TRIGGER IF EXISTS trigger_tenant_updated ON reseller.tenants;
 CREATE TRIGGER trigger_tenant_updated
     BEFORE UPDATE ON reseller.tenants
     FOR EACH ROW EXECUTE FUNCTION identity.set_updated_at();

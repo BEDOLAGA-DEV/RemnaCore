@@ -13,4 +13,4 @@ CREATE TABLE IF NOT EXISTS public.outbox (
 );
 
 -- Partial index for the relay query — only scans unpublished rows.
-CREATE INDEX idx_outbox_unpublished ON public.outbox (created_at) WHERE published = false;
+CREATE INDEX IF NOT EXISTS idx_outbox_unpublished ON public.outbox (created_at) WHERE published = false;

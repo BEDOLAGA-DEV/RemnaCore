@@ -23,16 +23,17 @@ CREATE TABLE IF NOT EXISTS multisub.saga_instances (
 );
 
 -- Index for finding running sagas on startup (resume after crash).
-CREATE INDEX idx_saga_instances_running
+CREATE INDEX IF NOT EXISTS idx_saga_instances_running
     ON multisub.saga_instances (saga_type)
     WHERE status = 'running';
 
 -- Index for cleanup of completed/failed sagas.
-CREATE INDEX idx_saga_instances_completed_at
+CREATE INDEX IF NOT EXISTS idx_saga_instances_completed_at
     ON multisub.saga_instances (updated_at)
     WHERE status IN ('completed', 'failed');
 
 -- Reuse the identity.set_updated_at trigger function for automatic updated_at.
+DROP TRIGGER IF EXISTS trigger_saga_instances_updated ON multisub.saga_instances;
 CREATE TRIGGER trigger_saga_instances_updated
     BEFORE UPDATE ON multisub.saga_instances
     FOR EACH ROW EXECUTE FUNCTION identity.set_updated_at();

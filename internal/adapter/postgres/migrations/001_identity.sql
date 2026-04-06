@@ -1,6 +1,6 @@
 CREATE SCHEMA IF NOT EXISTS identity;
 
-CREATE TABLE identity.platform_users (
+CREATE TABLE IF NOT EXISTS identity.platform_users (
     id UUID PRIMARY KEY,
     email TEXT NOT NULL,
     email_lower TEXT NOT NULL GENERATED ALWAYS AS (lower(email)) STORED,
@@ -14,12 +14,12 @@ CREATE TABLE identity.platform_users (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX idx_users_email_lower ON identity.platform_users (email_lower);
-CREATE INDEX idx_users_telegram_id ON identity.platform_users (telegram_id) WHERE telegram_id IS NOT NULL;
-CREATE INDEX idx_users_role ON identity.platform_users (role);
-CREATE INDEX idx_users_tenant ON identity.platform_users (tenant_id) WHERE tenant_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower ON identity.platform_users (email_lower);
+CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON identity.platform_users (telegram_id) WHERE telegram_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_users_role ON identity.platform_users (role);
+CREATE INDEX IF NOT EXISTS idx_users_tenant ON identity.platform_users (tenant_id) WHERE tenant_id IS NOT NULL;
 
-CREATE TABLE identity.sessions (
+CREATE TABLE IF NOT EXISTS identity.sessions (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES identity.platform_users(id) ON DELETE CASCADE,
     refresh_token TEXT NOT NULL,
@@ -27,11 +27,11 @@ CREATE TABLE identity.sessions (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX idx_sessions_refresh_token ON identity.sessions (refresh_token);
-CREATE INDEX idx_sessions_user_id ON identity.sessions (user_id);
-CREATE INDEX idx_sessions_expires ON identity.sessions (expires_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_refresh_token ON identity.sessions (refresh_token);
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON identity.sessions (user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires ON identity.sessions (expires_at);
 
-CREATE TABLE identity.email_verifications (
+CREATE TABLE IF NOT EXISTS identity.email_verifications (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES identity.platform_users(id) ON DELETE CASCADE,
     email TEXT NOT NULL,
@@ -40,8 +40,8 @@ CREATE TABLE identity.email_verifications (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX idx_verifications_token ON identity.email_verifications (token);
-CREATE INDEX idx_verifications_user ON identity.email_verifications (user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_verifications_token ON identity.email_verifications (token);
+CREATE INDEX IF NOT EXISTS idx_verifications_user ON identity.email_verifications (user_id);
 
 -- Auto-update trigger
 CREATE OR REPLACE FUNCTION identity.set_updated_at()
@@ -52,6 +52,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trigger_users_updated_at ON identity.platform_users;
 CREATE TRIGGER trigger_users_updated_at
     BEFORE UPDATE ON identity.platform_users
     FOR EACH ROW EXECUTE FUNCTION identity.set_updated_at();

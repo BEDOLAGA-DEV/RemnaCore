@@ -26,11 +26,19 @@
 ALTER TABLE identity.platform_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE identity.platform_users FORCE ROW LEVEL SECURITY;
 
-CREATE POLICY tenant_isolation_platform_users ON identity.platform_users
-    USING (
-        tenant_id IS NULL
-        OR tenant_id::text = current_setting('app.tenant_id', true)
-    );
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE tablename = 'platform_users' AND schemaname = 'identity' AND policyname = 'tenant_isolation_platform_users'
+    ) THEN
+        CREATE POLICY tenant_isolation_platform_users ON identity.platform_users
+            USING (
+                tenant_id IS NULL
+                OR tenant_id::text = current_setting('app.tenant_id', true)
+            );
+    END IF;
+END $$;
 
 -- ---------------------------------------------------------------------------
 -- reseller.reseller_accounts
@@ -39,7 +47,15 @@ CREATE POLICY tenant_isolation_platform_users ON identity.platform_users
 ALTER TABLE reseller.reseller_accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reseller.reseller_accounts FORCE ROW LEVEL SECURITY;
 
-CREATE POLICY tenant_isolation_reseller_accounts ON reseller.reseller_accounts
-    USING (
-        tenant_id::text = current_setting('app.tenant_id', true)
-    );
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE tablename = 'reseller_accounts' AND schemaname = 'reseller' AND policyname = 'tenant_isolation_reseller_accounts'
+    ) THEN
+        CREATE POLICY tenant_isolation_reseller_accounts ON reseller.reseller_accounts
+            USING (
+                tenant_id::text = current_setting('app.tenant_id', true)
+            );
+    END IF;
+END $$;
