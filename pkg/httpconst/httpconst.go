@@ -1,5 +1,7 @@
-// Package httpconst provides shared HTTP header names and MIME type constants
-// used across the RemnaCore codebase.
+// Package httpconst is a shared kernel package providing HTTP header names and
+// MIME type constants used across the RemnaCore codebase. Multiple layers
+// (gateway, adapter/remnawave, infra, cmd/vpnctl) depend on these constants to
+// avoid magic strings in HTTP handling code.
 package httpconst
 
 const (

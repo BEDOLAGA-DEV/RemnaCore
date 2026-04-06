@@ -1,4 +1,8 @@
-// Package naming provides shared naming conventions used across the platform.
+// Package naming provides Remnawave username generation conventions. Although
+// primarily consumed by the multisub bounded context, it also lives in pkg/
+// because the adapter/remnawave ACL layer uses it to construct usernames when
+// translating between platform and Remnawave models. Keeping it in pkg/ avoids
+// a dependency from adapter/remnawave into internal/domain/multisub.
 package naming
 
 import "fmt"

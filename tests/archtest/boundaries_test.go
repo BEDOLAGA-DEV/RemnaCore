@@ -87,6 +87,10 @@ func TestPluginIsolation(t *testing.T) {
 // TestAdapterDoesNotImportGateway verifies that adapter packages never import
 // gateway packages (and vice versa). These layers communicate only through
 // domain interfaces wired at the composition root.
+//
+// Note: the "gateway_no_adapter" subtest walks filepath.Join("internal",
+// "gateway") recursively, so it covers all sub-packages including
+// internal/gateway/handler/ and internal/gateway/middleware/.
 func TestAdapterDoesNotImportGateway(t *testing.T) {
 	t.Run("adapter_no_gateway", func(t *testing.T) {
 		checkImports(t, filepath.Join("internal", "adapter"), []string{

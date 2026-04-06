@@ -1,3 +1,8 @@
+// Package tenantctx provides context-based tenant ID propagation for
+// multi-tenant row-level security (RLS). Although consumed by only two layers
+// (gateway/middleware sets the tenant ID, adapter/postgres reads it for
+// SET app.tenant_id), it lives in pkg/ because both layers must share the
+// same context key without importing each other.
 package tenantctx
 
 import "context"

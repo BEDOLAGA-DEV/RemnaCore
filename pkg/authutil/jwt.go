@@ -1,3 +1,9 @@
+// Package authutil provides argon2id password hashing and ECDSA JWT
+// token generation/validation. Although it primarily serves the identity
+// bounded context, it lives in pkg/ because the gateway authentication
+// middleware (internal/gateway/middleware) must validate JWT tokens
+// independently, without importing domain code. Placing it in pkg/ breaks
+// the circular dependency: domain/identity -> authutil <- gateway/middleware.
 package authutil
 
 import (

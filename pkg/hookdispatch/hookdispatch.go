@@ -1,7 +1,9 @@
-// Package hookdispatch defines the port interface for dispatching plugin hooks.
-// Domain packages depend on this interface instead of the concrete
-// plugin.HookDispatcher, keeping the dependency arrow from domain -> pkg
-// rather than domain -> internal/plugin.
+// Package hookdispatch defines the port interface for dispatching WASM plugin
+// hooks. Domain packages (billing, payment) depend on this [Dispatcher]
+// interface instead of the concrete plugin.HookDispatcher, keeping the
+// dependency arrow from domain -> pkg rather than domain -> internal/plugin.
+// It lives in pkg/ specifically for dependency inversion: the domain defines
+// what it needs; internal/plugin provides the implementation.
 package hookdispatch
 
 import (

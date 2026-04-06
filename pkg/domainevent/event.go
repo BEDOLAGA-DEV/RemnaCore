@@ -1,5 +1,8 @@
-// Package domainevent provides shared domain event types used across all
-// bounded contexts (identity, billing, multisub, etc.).
+// Package domainevent is a shared kernel package providing the canonical Event
+// type, Publisher interface, and EventType constants used across all bounded
+// contexts (identity, billing, multisub, payment, reseller). Every context
+// produces and/or consumes domain events through these types, making this
+// package the single most widely imported piece of the shared kernel.
 package domainevent
 
 import (

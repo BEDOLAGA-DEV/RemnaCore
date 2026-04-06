@@ -1,5 +1,7 @@
-// Package clock provides a deterministic time abstraction for domain code.
-// Production code uses Real; tests use Mock for reproducible timestamps.
+// Package clock is a shared kernel package providing a deterministic time
+// abstraction for domain code. Production code uses [Real]; tests use [Mock]
+// for reproducible timestamps. Virtually every domain service and several
+// adapters depend on this interface.
 package clock
 
 import "time"

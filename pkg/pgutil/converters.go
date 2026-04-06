@@ -1,5 +1,8 @@
 // Package pgutil provides reusable pgx/pgtype conversion helpers shared
-// across all PostgreSQL repository implementations.
+// across all PostgreSQL repository implementations. Although only consumed by
+// internal/adapter/postgres, it lives in pkg/ to avoid duplicating UUID,
+// timestamp, and nullable type converters across per-context adapter packages
+// and to keep the adapter layer thin.
 package pgutil
 
 import (

@@ -1,7 +1,8 @@
-// Package txmanager defines an interface for running functions within database
-// transactions. Domain services use this interface to guarantee that business
-// writes and outbox event inserts happen atomically, without importing any
-// adapter or infrastructure package.
+// Package txmanager is a shared kernel package defining an interface for
+// running functions within database transactions. Domain services use this
+// interface to guarantee that business writes and outbox event inserts happen
+// atomically, without importing any adapter or infrastructure package.
+// The concrete implementation lives in internal/adapter/postgres.
 package txmanager
 
 import "context"

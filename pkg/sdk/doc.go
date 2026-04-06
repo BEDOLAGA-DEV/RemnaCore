@@ -1,4 +1,7 @@
 // Package sdk provides types and utilities for building RemnaCore plugins.
+// It lives in pkg/ because external plugin authors import it directly from
+// outside the module (plugins/stripe-payment, plugins/telegram-notification);
+// placing it in internal/ would make it inaccessible to plugin code.
 //
 // Plugins are compiled to WebAssembly (WASM) and executed in a sandboxed runtime.
 // They communicate with the platform through exported functions and host functions.

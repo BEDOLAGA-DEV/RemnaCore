@@ -1,6 +1,9 @@
-// Package tracing provides a thin wrapper around the OpenTelemetry tracing API
-// so that domain and infrastructure packages can create spans without coupling
-// to the OTel SDK initialisation code in internal/observability.
+// Package tracing is a shared kernel package providing a thin wrapper around
+// the OpenTelemetry tracing API so that domain and infrastructure packages can
+// create spans without coupling to the OTel SDK initialisation code in
+// internal/observability. It lives in pkg/ (rather than internal/observability)
+// because domain packages must be able to import it without violating the
+// domain isolation rule.
 package tracing
 
 import (

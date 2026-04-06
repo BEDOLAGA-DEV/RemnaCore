@@ -1,6 +1,9 @@
-// Package apierror provides structured API error types with machine-readable
-// codes and HTTP status mapping. Handlers use these instead of bare strings to
-// give API consumers a stable contract for error handling.
+// Package apierror is a shared kernel package providing structured API error
+// types with machine-readable codes and HTTP status mapping. Gateway handlers
+// use these instead of bare strings to give API consumers a stable contract
+// for error handling. It lives in pkg/ so that domain services can return
+// typed errors that gateway handlers can map without an intermediate
+// translation layer.
 package apierror
 
 import "fmt"
