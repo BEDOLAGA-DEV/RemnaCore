@@ -66,6 +66,7 @@ type Invoice struct {
 	Subtotal       vo.Money
 	TotalDiscount  vo.Money
 	Total          vo.Money
+	PricingReason  string
 	Status         InvoiceStatus
 	PaidAt         *time.Time
 	CreatedAt      time.Time
@@ -172,6 +173,25 @@ func (inv *Invoice) Refund(now time.Time) error {
 		AmountCents:    inv.Total.Amount,
 	}, now, inv.ID))
 	return nil
+}
+
+// ApplyPricingModification updates the invoice totals based on a pricing
+// plugin's response. Only non-nil fields are applied. The total is
+// recalculated as subtotal minus discount, floored at zero. This must be
+// called before the invoice is persisted.
+func (inv *Invoice) ApplyPricingModification(subtotal, discount *int64, reason string, now time.Time) {
+	if subtotal != nil {
+		inv.Subtotal = vo.NewMoney(*subtotal, inv.Subtotal.Currency)
+	}
+	if discount != nil {
+		inv.TotalDiscount = vo.NewMoney(*discount, inv.TotalDiscount.Currency)
+	}
+	inv.Total = vo.NewMoney(inv.Subtotal.Amount-inv.TotalDiscount.Amount, inv.Total.Currency)
+	if inv.Total.Amount < 0 {
+		inv.Total = vo.NewMoney(0, inv.Total.Currency)
+	}
+	inv.PricingReason = reason
+	inv.UpdatedAt = now
 }
 
 // calculateTotal computes the subtotal from line items, sums discounts, and

@@ -7,12 +7,21 @@ import (
 	"log/slog"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
 )
 
 // HookPricingCalculate is the plugin hook dispatched to modify invoice pricing.
 const HookPricingCalculate = "pricing.calculate"
+
+// PricingHookResult is the expected response from the pricing.calculate hook.
+// Pointer fields distinguish "not set" from "zero".
+type PricingHookResult struct {
+	Subtotal *int64 `json:"subtotal,omitempty"`
+	Discount *int64 `json:"discount,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+}
 
 // CheckoutService orchestrates the full checkout flow: subscription creation,
 // invoice generation, and payment charge initiation via the payment gateway.
@@ -23,6 +32,7 @@ type CheckoutService struct {
 	publisher   domainevent.Publisher
 	logger      *slog.Logger
 	rateLimiter billing.DomainRateLimiter
+	clock       clock.Clock
 }
 
 // NewCheckoutService creates a CheckoutService with the given dependencies.
@@ -33,6 +43,7 @@ func NewCheckoutService(
 	publisher domainevent.Publisher,
 	logger *slog.Logger,
 	rateLimiter billing.DomainRateLimiter,
+	clk clock.Clock,
 ) *CheckoutService {
 	return &CheckoutService{
 		billing:     billingSvc,
@@ -41,6 +52,7 @@ func NewCheckoutService(
 		publisher:   publisher,
 		logger:      logger,
 		rateLimiter: rateLimiter,
+		clock:       clk,
 	}
 }
 
@@ -112,11 +124,22 @@ func (cs *CheckoutService) StartCheckout(ctx context.Context, req CheckoutReques
 			"subtotal":   inv.Subtotal.Amount,
 			"currency":   string(inv.Total.Currency),
 		})
-		if _, dispatchErr := cs.dispatcher.DispatchSync(ctx, HookPricingCalculate, pricingPayload); dispatchErr != nil {
+		output, dispatchErr := cs.dispatcher.DispatchSync(ctx, HookPricingCalculate, pricingPayload)
+		if dispatchErr != nil {
 			cs.logger.Warn("pricing.calculate hook failed, using original price",
 				slog.String("invoice_id", inv.ID),
 				slog.Any("error", dispatchErr),
 			)
+		} else if output != nil {
+			var pricingResult PricingHookResult
+			if unmarshalErr := json.Unmarshal(output, &pricingResult); unmarshalErr != nil {
+				cs.logger.Warn("pricing.calculate returned invalid JSON, using original price",
+					slog.String("invoice_id", inv.ID),
+					slog.Any("error", unmarshalErr),
+				)
+			} else {
+				inv.ApplyPricingModification(pricingResult.Subtotal, pricingResult.Discount, pricingResult.Reason, cs.clock.Now())
+			}
 		}
 	}
 
