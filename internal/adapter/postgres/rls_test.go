@@ -19,6 +19,7 @@ import (
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
 )
 
 // setupRLSDB starts a PostgreSQL 18 container with identity, reseller, and
@@ -108,7 +109,7 @@ func TestRLS_TenantIsolation(t *testing.T) {
 	// via SET LOCAL for each insert — we need to set the matching tenant).
 	insertWithTenant := func(user *identity.PlatformUser, tenantID string) {
 		t.Helper()
-		err := txm.RunInTx(postgres.WithTenantID(ctx, tenantID), func(txCtx context.Context) error {
+		err := txm.RunInTx(tenantctx.WithTenantID(ctx, tenantID), func(txCtx context.Context) error {
 			return repo.CreateUser(txCtx, user)
 		})
 		require.NoError(t, err)
@@ -121,7 +122,7 @@ func TestRLS_TenantIsolation(t *testing.T) {
 
 	t.Run("tenant_A_sees_own_users_and_platform", func(t *testing.T) {
 		var users []*identity.PlatformUser
-		err := txm.RunInTx(postgres.WithTenantID(ctx, tenantA), func(txCtx context.Context) error {
+		err := txm.RunInTx(tenantctx.WithTenantID(ctx, tenantA), func(txCtx context.Context) error {
 			var listErr error
 			users, listErr = repo.ListUsers(txCtx, 100, 0)
 			return listErr
@@ -136,7 +137,7 @@ func TestRLS_TenantIsolation(t *testing.T) {
 
 	t.Run("tenant_B_sees_own_users_and_platform", func(t *testing.T) {
 		var users []*identity.PlatformUser
-		err := txm.RunInTx(postgres.WithTenantID(ctx, tenantB), func(txCtx context.Context) error {
+		err := txm.RunInTx(tenantctx.WithTenantID(ctx, tenantB), func(txCtx context.Context) error {
 			var listErr error
 			users, listErr = repo.ListUsers(txCtx, 100, 0)
 			return listErr
@@ -166,7 +167,7 @@ func TestRLS_TenantIsolation(t *testing.T) {
 
 	t.Run("get_by_id_respects_rls", func(t *testing.T) {
 		// Tenant A can read its own user by ID.
-		err := txm.RunInTx(postgres.WithTenantID(ctx, tenantA), func(txCtx context.Context) error {
+		err := txm.RunInTx(tenantctx.WithTenantID(ctx, tenantA), func(txCtx context.Context) error {
 			got, getErr := repo.GetUserByID(txCtx, userA.ID)
 			if getErr != nil {
 				return getErr
@@ -177,7 +178,7 @@ func TestRLS_TenantIsolation(t *testing.T) {
 		require.NoError(t, err)
 
 		// Tenant A cannot read tenant B's user by ID.
-		err = txm.RunInTx(postgres.WithTenantID(ctx, tenantA), func(txCtx context.Context) error {
+		err = txm.RunInTx(tenantctx.WithTenantID(ctx, tenantA), func(txCtx context.Context) error {
 			_, getErr := repo.GetUserByID(txCtx, userB.ID)
 			return getErr
 		})

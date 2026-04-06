@@ -17,17 +17,20 @@ const IdempotencyKeyTTL = 24 * time.Hour
 // IdempotencyRepository provides message-level deduplication backed by the
 // multisub.idempotency_keys table.
 type IdempotencyRepository struct {
-	pool    *pgxpool.Pool
-	queries *gen.Queries
+	pool *pgxpool.Pool
 }
 
 // NewIdempotencyRepository returns a new IdempotencyRepository using the given
 // connection pool.
 func NewIdempotencyRepository(pool *pgxpool.Pool) *IdempotencyRepository {
-	return &IdempotencyRepository{
-		pool:    pool,
-		queries: gen.New(pool),
-	}
+	return &IdempotencyRepository{pool: pool}
+}
+
+// q returns a *gen.Queries backed by the active transaction (if any) or the
+// pool. This ensures all methods transparently participate in RunInTx and
+// respect RLS tenant scoping.
+func (r *IdempotencyRepository) q(ctx context.Context) *gen.Queries {
+	return gen.New(DBFromContext(ctx, r.pool))
 }
 
 // TryAcquire attempts to insert an idempotency key. Returns true if this is
@@ -35,7 +38,7 @@ func NewIdempotencyRepository(pool *pgxpool.Pool) *IdempotencyRepository {
 // (duplicate). Uses INSERT ... ON CONFLICT DO NOTHING so the check and insert
 // are atomic.
 func (r *IdempotencyRepository) TryAcquire(ctx context.Context, key string) (bool, error) {
-	result, err := r.queries.TryAcquireIdempotencyKey(ctx, key)
+	result, err := r.q(ctx).TryAcquireIdempotencyKey(ctx, key)
 	if err != nil {
 		return false, fmt.Errorf("try acquire idempotency key: %w", err)
 	}
@@ -48,7 +51,7 @@ func (r *IdempotencyRepository) TryAcquire(ctx context.Context, key string) (boo
 // reprocessed. This is called when event processing fails — without it, the
 // next delivery would be silently skipped as a duplicate.
 func (r *IdempotencyRepository) Release(ctx context.Context, key string) error {
-	if err := r.queries.ReleaseIdempotencyKey(ctx, key); err != nil {
+	if err := r.q(ctx).ReleaseIdempotencyKey(ctx, key); err != nil {
 		return fmt.Errorf("release idempotency key: %w", err)
 	}
 	return nil
@@ -58,7 +61,7 @@ func (r *IdempotencyRepository) Release(ctx context.Context, key string) error {
 // given key. Uses INSERT ... ON CONFLICT DO UPDATE so the counter persists
 // across NATS redeliveries (where Watermill metadata is lost).
 func (r *IdempotencyRepository) IncrementRetry(ctx context.Context, key string) (int, error) {
-	count, err := r.queries.IncrementIdempotencyRetry(ctx, key)
+	count, err := r.q(ctx).IncrementIdempotencyRetry(ctx, key)
 	if err != nil {
 		return 0, fmt.Errorf("increment idempotency retry: %w", err)
 	}
@@ -67,7 +70,7 @@ func (r *IdempotencyRepository) IncrementRetry(ctx context.Context, key string) 
 
 // Cleanup deletes all expired idempotency keys.
 func (r *IdempotencyRepository) Cleanup(ctx context.Context) error {
-	if err := r.queries.CleanupExpiredIdempotencyKeys(ctx); err != nil {
+	if err := r.q(ctx).CleanupExpiredIdempotencyKeys(ctx); err != nil {
 		return fmt.Errorf("cleanup expired idempotency keys: %w", err)
 	}
 	return nil

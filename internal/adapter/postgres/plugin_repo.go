@@ -15,16 +15,19 @@ import (
 
 // PluginRepository implements plugin.PluginRepository backed by PostgreSQL.
 type PluginRepository struct {
-	pool    *pgxpool.Pool
-	queries *gen.Queries
+	pool *pgxpool.Pool
 }
 
 // NewPluginRepository returns a new PluginRepository using the given pool.
 func NewPluginRepository(pool *pgxpool.Pool) *PluginRepository {
-	return &PluginRepository{
-		pool:    pool,
-		queries: gen.New(pool),
-	}
+	return &PluginRepository{pool: pool}
+}
+
+// q returns a *gen.Queries backed by the active transaction (if any) or the
+// pool. This ensures all methods transparently participate in RunInTx and
+// respect RLS tenant scoping.
+func (r *PluginRepository) q(ctx context.Context) *gen.Queries {
+	return gen.New(DBFromContext(ctx, r.pool))
 }
 
 // permissionsToStrings converts typed PermissionScope values to plain strings
@@ -95,7 +98,7 @@ func (r *PluginRepository) Create(ctx context.Context, p *plugin.Plugin) error {
 		return fmt.Errorf("marshal plugin config: %w", err)
 	}
 
-	err = r.queries.CreatePlugin(ctx, gen.CreatePluginParams{
+	err = r.q(ctx).CreatePlugin(ctx, gen.CreatePluginParams{
 		ID:          pgutil.UUIDToPgtype(p.ID),
 		Slug:        p.Slug,
 		Name:        p.Name,
@@ -119,7 +122,7 @@ func (r *PluginRepository) Create(ctx context.Context, p *plugin.Plugin) error {
 }
 
 func (r *PluginRepository) GetByID(ctx context.Context, id string) (*plugin.Plugin, error) {
-	row, err := r.queries.GetPluginByID(ctx, pgutil.UUIDToPgtype(id))
+	row, err := r.q(ctx).GetPluginByID(ctx, pgutil.UUIDToPgtype(id))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get plugin by id", plugin.ErrPluginNotFound)
 	}
@@ -127,7 +130,7 @@ func (r *PluginRepository) GetByID(ctx context.Context, id string) (*plugin.Plug
 }
 
 func (r *PluginRepository) GetBySlug(ctx context.Context, slug string) (*plugin.Plugin, error) {
-	row, err := r.queries.GetPluginBySlug(ctx, slug)
+	row, err := r.q(ctx).GetPluginBySlug(ctx, slug)
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get plugin by slug", plugin.ErrPluginNotFound)
 	}
@@ -135,7 +138,7 @@ func (r *PluginRepository) GetBySlug(ctx context.Context, slug string) (*plugin.
 }
 
 func (r *PluginRepository) GetAll(ctx context.Context) ([]*plugin.Plugin, error) {
-	rows, err := r.queries.GetAllPlugins(ctx)
+	rows, err := r.q(ctx).GetAllPlugins(ctx)
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get all plugins", plugin.ErrPluginNotFound)
 	}
@@ -151,7 +154,7 @@ func (r *PluginRepository) GetAll(ctx context.Context) ([]*plugin.Plugin, error)
 }
 
 func (r *PluginRepository) GetEnabled(ctx context.Context) ([]*plugin.Plugin, error) {
-	rows, err := r.queries.GetEnabledPlugins(ctx, string(plugin.StatusEnabled))
+	rows, err := r.q(ctx).GetEnabledPlugins(ctx, string(plugin.StatusEnabled))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get enabled plugins", plugin.ErrPluginNotFound)
 	}
@@ -167,7 +170,7 @@ func (r *PluginRepository) GetEnabled(ctx context.Context) ([]*plugin.Plugin, er
 }
 
 func (r *PluginRepository) UpdateStatus(ctx context.Context, id string, status plugin.PluginStatus, errorLog string, enabledAt *time.Time) error {
-	err := r.queries.UpdatePluginStatus(ctx, gen.UpdatePluginStatusParams{
+	err := r.q(ctx).UpdatePluginStatus(ctx, gen.UpdatePluginStatusParams{
 		ID:        pgutil.UUIDToPgtype(id),
 		Status:    string(status),
 		ErrorLog:  pgutil.StrPtrOrNil(errorLog),
@@ -181,7 +184,7 @@ func (r *PluginRepository) UpdateConfig(ctx context.Context, id string, config m
 	if err != nil {
 		return fmt.Errorf("marshal config for update: %w", err)
 	}
-	err = r.queries.UpdatePluginConfig(ctx, gen.UpdatePluginConfigParams{
+	err = r.q(ctx).UpdatePluginConfig(ctx, gen.UpdatePluginConfigParams{
 		ID:     pgutil.UUIDToPgtype(id),
 		Config: configJSON,
 	})
@@ -194,7 +197,7 @@ func (r *PluginRepository) UpdatePlugin(ctx context.Context, p *plugin.Plugin) e
 		return fmt.Errorf("marshal plugin manifest for update: %w", err)
 	}
 
-	err = r.queries.UpdatePlugin(ctx, gen.UpdatePluginParams{
+	err = r.q(ctx).UpdatePlugin(ctx, gen.UpdatePluginParams{
 		ID:          pgutil.UUIDToPgtype(p.ID),
 		Name:        p.Name,
 		Version:     p.Version,
@@ -213,12 +216,12 @@ func (r *PluginRepository) UpdatePlugin(ctx context.Context, p *plugin.Plugin) e
 }
 
 func (r *PluginRepository) Delete(ctx context.Context, id string) error {
-	err := r.queries.DeletePlugin(ctx, pgutil.UUIDToPgtype(id))
+	err := r.q(ctx).DeletePlugin(ctx, pgutil.UUIDToPgtype(id))
 	return pgutil.MapErr(err, "delete plugin", plugin.ErrPluginNotFound)
 }
 
 func (r *PluginRepository) GetWASMByHash(ctx context.Context, hash string) ([]byte, error) {
-	data, err := r.queries.GetWASMByHash(ctx, hash)
+	data, err := r.q(ctx).GetWASMByHash(ctx, hash)
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get WASM by hash", plugin.ErrWASMNotFound)
 	}
@@ -226,7 +229,7 @@ func (r *PluginRepository) GetWASMByHash(ctx context.Context, hash string) ([]by
 }
 
 func (r *PluginRepository) StoreWASM(ctx context.Context, hash string, data []byte) error {
-	err := r.queries.StoreWASM(ctx, gen.StoreWASMParams{
+	err := r.q(ctx).StoreWASM(ctx, gen.StoreWASMParams{
 		Hash:      hash,
 		Data:      data,
 		SizeBytes: int64(len(data)),

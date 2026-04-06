@@ -22,18 +22,20 @@ import (
 
 // PlanRepository implements billing.PlanRepository backed by PostgreSQL.
 type PlanRepository struct {
-	pool    *pgxpool.Pool
-	queries *gen.Queries
-	clock   clock.Clock
+	pool  *pgxpool.Pool
+	clock clock.Clock
 }
 
 // NewPlanRepository returns a new PlanRepository using the given pool.
 func NewPlanRepository(pool *pgxpool.Pool, clk clock.Clock) *PlanRepository {
-	return &PlanRepository{
-		pool:    pool,
-		queries: gen.New(pool),
-		clock:   clk,
-	}
+	return &PlanRepository{pool: pool, clock: clk}
+}
+
+// q returns a *gen.Queries backed by the active transaction (if any) or the
+// pool. This ensures all methods transparently participate in RunInTx and
+// respect RLS tenant scoping.
+func (r *PlanRepository) q(ctx context.Context) *gen.Queries {
+	return gen.New(DBFromContext(ctx, r.pool))
 }
 
 func planRowToDomain(row gen.BillingPlan) *aggregate.Plan {
@@ -70,7 +72,7 @@ func addonRowToDomain(row gen.BillingPlanAddon) aggregate.Addon {
 }
 
 func (r *PlanRepository) loadAddons(ctx context.Context, plan *aggregate.Plan) error {
-	addonRows, err := r.queries.GetAddonsByPlanID(ctx, pgutil.UUIDToPgtype(plan.ID))
+	addonRows, err := r.q(ctx).GetAddonsByPlanID(ctx, pgutil.UUIDToPgtype(plan.ID))
 	if err != nil {
 		return pgutil.MapErr(err, "get addons for plan", billing.ErrPlanNotFound)
 	}
@@ -83,7 +85,7 @@ func (r *PlanRepository) loadAddons(ctx context.Context, plan *aggregate.Plan) e
 }
 
 func (r *PlanRepository) GetByID(ctx context.Context, id string) (*aggregate.Plan, error) {
-	row, err := r.queries.GetPlanByID(ctx, pgutil.UUIDToPgtype(id))
+	row, err := r.q(ctx).GetPlanByID(ctx, pgutil.UUIDToPgtype(id))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get plan by id", billing.ErrPlanNotFound)
 	}
@@ -95,7 +97,7 @@ func (r *PlanRepository) GetByID(ctx context.Context, id string) (*aggregate.Pla
 }
 
 func (r *PlanRepository) GetAll(ctx context.Context) ([]*aggregate.Plan, error) {
-	rows, err := r.queries.GetAllPlans(ctx)
+	rows, err := r.q(ctx).GetAllPlans(ctx)
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get all plans", billing.ErrPlanNotFound)
 	}
@@ -110,7 +112,7 @@ func (r *PlanRepository) GetAll(ctx context.Context) ([]*aggregate.Plan, error) 
 }
 
 func (r *PlanRepository) GetActive(ctx context.Context) ([]*aggregate.Plan, error) {
-	rows, err := r.queries.GetActivePlans(ctx)
+	rows, err := r.q(ctx).GetActivePlans(ctx)
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get active plans", billing.ErrPlanNotFound)
 	}
@@ -125,7 +127,7 @@ func (r *PlanRepository) GetActive(ctx context.Context) ([]*aggregate.Plan, erro
 }
 
 func (r *PlanRepository) Create(ctx context.Context, plan *aggregate.Plan) error {
-	err := r.queries.CreatePlan(ctx, gen.CreatePlanParams{
+	err := r.q(ctx).CreatePlan(ctx, gen.CreatePlanParams{
 		ID:                   pgutil.UUIDToPgtype(plan.ID),
 		Name:                 plan.Name,
 		Description:          pgutil.StrPtrOrNil(plan.Description),
@@ -157,7 +159,7 @@ func (r *PlanRepository) Create(ctx context.Context, plan *aggregate.Plan) error
 }
 
 func (r *PlanRepository) createAddon(ctx context.Context, planID string, addon aggregate.Addon) error {
-	err := r.queries.CreatePlanAddon(ctx, gen.CreatePlanAddonParams{
+	err := r.q(ctx).CreatePlanAddon(ctx, gen.CreatePlanAddonParams{
 		ID:                pgutil.UUIDToPgtype(addon.ID),
 		PlanID:            pgutil.UUIDToPgtype(planID),
 		Name:              addon.Name,
@@ -173,7 +175,7 @@ func (r *PlanRepository) createAddon(ctx context.Context, planID string, addon a
 }
 
 func (r *PlanRepository) upsertAddon(ctx context.Context, planID string, addon aggregate.Addon) error {
-	err := r.queries.UpsertPlanAddon(ctx, gen.UpsertPlanAddonParams{
+	err := r.q(ctx).UpsertPlanAddon(ctx, gen.UpsertPlanAddonParams{
 		ID:                pgutil.UUIDToPgtype(addon.ID),
 		PlanID:            pgutil.UUIDToPgtype(planID),
 		Name:              addon.Name,
@@ -189,7 +191,7 @@ func (r *PlanRepository) upsertAddon(ctx context.Context, planID string, addon a
 }
 
 func (r *PlanRepository) Update(ctx context.Context, plan *aggregate.Plan) error {
-	err := r.queries.UpdatePlan(ctx, gen.UpdatePlanParams{
+	err := r.q(ctx).UpdatePlan(ctx, gen.UpdatePlanParams{
 		ID:                   pgutil.UUIDToPgtype(plan.ID),
 		Name:                 plan.Name,
 		Description:          pgutil.StrPtrOrNil(plan.Description),
@@ -221,7 +223,7 @@ func (r *PlanRepository) Update(ctx context.Context, plan *aggregate.Plan) error
 		retainIDs = append(retainIDs, pgutil.UUIDToPgtype(addon.ID))
 	}
 
-	if err := r.queries.DeleteRemovedAddons(ctx, gen.DeleteRemovedAddonsParams{
+	if err := r.q(ctx).DeleteRemovedAddons(ctx, gen.DeleteRemovedAddonsParams{
 		PlanID: pgutil.UUIDToPgtype(plan.ID),
 		Ids:    retainIDs,
 	}); err != nil {
@@ -238,16 +240,19 @@ var _ billing.PlanRepository = (*PlanRepository)(nil)
 
 // SubscriptionRepository implements billing.SubscriptionRepository backed by PostgreSQL.
 type SubscriptionRepository struct {
-	pool    *pgxpool.Pool
-	queries *gen.Queries
+	pool *pgxpool.Pool
 }
 
 // NewSubscriptionRepository returns a new SubscriptionRepository using the given pool.
 func NewSubscriptionRepository(pool *pgxpool.Pool) *SubscriptionRepository {
-	return &SubscriptionRepository{
-		pool:    pool,
-		queries: gen.New(pool),
-	}
+	return &SubscriptionRepository{pool: pool}
+}
+
+// q returns a *gen.Queries backed by the active transaction (if any) or the
+// pool. This ensures all methods transparently participate in RunInTx and
+// respect RLS tenant scoping.
+func (r *SubscriptionRepository) q(ctx context.Context) *gen.Queries {
+	return gen.New(DBFromContext(ctx, r.pool))
 }
 
 // subFields holds the common columns returned by all subscription queries.
@@ -298,7 +303,7 @@ func subRowToDomain[T subRow](row T) *aggregate.Subscription {
 }
 
 func (r *SubscriptionRepository) GetByID(ctx context.Context, id string) (*aggregate.Subscription, error) {
-	row, err := r.queries.GetSubscriptionByID(ctx, pgutil.UUIDToPgtype(id))
+	row, err := r.q(ctx).GetSubscriptionByID(ctx, pgutil.UUIDToPgtype(id))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get subscription by id", billing.ErrSubscriptionNotFound)
 	}
@@ -306,7 +311,7 @@ func (r *SubscriptionRepository) GetByID(ctx context.Context, id string) (*aggre
 }
 
 func (r *SubscriptionRepository) GetByUserID(ctx context.Context, userID string) ([]*aggregate.Subscription, error) {
-	rows, err := r.queries.GetSubscriptionsByUserID(ctx, pgutil.UUIDToPgtype(userID))
+	rows, err := r.q(ctx).GetSubscriptionsByUserID(ctx, pgutil.UUIDToPgtype(userID))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get subscriptions by user id", billing.ErrSubscriptionNotFound)
 	}
@@ -318,7 +323,7 @@ func (r *SubscriptionRepository) GetByUserID(ctx context.Context, userID string)
 }
 
 func (r *SubscriptionRepository) GetActiveByUserID(ctx context.Context, userID string) ([]*aggregate.Subscription, error) {
-	rows, err := r.queries.GetActiveSubscriptionsByUserID(ctx, pgutil.UUIDToPgtype(userID))
+	rows, err := r.q(ctx).GetActiveSubscriptionsByUserID(ctx, pgutil.UUIDToPgtype(userID))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get active subscriptions by user id", billing.ErrSubscriptionNotFound)
 	}
@@ -330,7 +335,7 @@ func (r *SubscriptionRepository) GetActiveByUserID(ctx context.Context, userID s
 }
 
 func (r *SubscriptionRepository) GetAll(ctx context.Context, limit, offset int) ([]*aggregate.Subscription, error) {
-	rows, err := r.queries.GetAllSubscriptions(ctx, gen.GetAllSubscriptionsParams{
+	rows, err := r.q(ctx).GetAllSubscriptions(ctx, gen.GetAllSubscriptionsParams{
 		Limit:  int32(limit),
 		Offset: int32(offset),
 	})
@@ -345,7 +350,7 @@ func (r *SubscriptionRepository) GetAll(ctx context.Context, limit, offset int) 
 }
 
 func (r *SubscriptionRepository) Create(ctx context.Context, sub *aggregate.Subscription) error {
-	err := r.queries.CreateSubscription(ctx, gen.CreateSubscriptionParams{
+	err := r.q(ctx).CreateSubscription(ctx, gen.CreateSubscriptionParams{
 		ID:             pgutil.UUIDToPgtype(sub.ID),
 		UserID:         pgutil.UUIDToPgtype(sub.UserID),
 		PlanID:         pgutil.UUIDToPgtype(sub.PlanID),
@@ -364,7 +369,7 @@ func (r *SubscriptionRepository) Create(ctx context.Context, sub *aggregate.Subs
 }
 
 func (r *SubscriptionRepository) Update(ctx context.Context, sub *aggregate.Subscription) error {
-	err := r.queries.UpdateSubscription(ctx, gen.UpdateSubscriptionParams{
+	err := r.q(ctx).UpdateSubscription(ctx, gen.UpdateSubscriptionParams{
 		ID:             pgutil.UUIDToPgtype(sub.ID),
 		Status:         string(sub.Status),
 		PeriodStart:    pgutil.TimeToPgtype(sub.Period.Start),
@@ -512,16 +517,19 @@ var _ billing.SubscriptionRepository = (*SubscriptionRepository)(nil)
 
 // InvoiceRepository implements billing.InvoiceRepository backed by PostgreSQL.
 type InvoiceRepository struct {
-	pool    *pgxpool.Pool
-	queries *gen.Queries
+	pool *pgxpool.Pool
 }
 
 // NewInvoiceRepository returns a new InvoiceRepository using the given pool.
 func NewInvoiceRepository(pool *pgxpool.Pool) *InvoiceRepository {
-	return &InvoiceRepository{
-		pool:    pool,
-		queries: gen.New(pool),
-	}
+	return &InvoiceRepository{pool: pool}
+}
+
+// q returns a *gen.Queries backed by the active transaction (if any) or the
+// pool. This ensures all methods transparently participate in RunInTx and
+// respect RLS tenant scoping.
+func (r *InvoiceRepository) q(ctx context.Context) *gen.Queries {
+	return gen.New(DBFromContext(ctx, r.pool))
 }
 
 // invFields holds the common columns returned by all invoice queries.
@@ -585,7 +593,7 @@ func lineItemRowToDomain(row gen.BillingInvoiceLineItem) vo.LineItem {
 }
 
 func (r *InvoiceRepository) loadLineItems(ctx context.Context, inv *aggregate.Invoice) error {
-	rows, err := r.queries.GetLineItemsByInvoiceID(ctx, pgutil.UUIDToPgtype(inv.ID))
+	rows, err := r.q(ctx).GetLineItemsByInvoiceID(ctx, pgutil.UUIDToPgtype(inv.ID))
 	if err != nil {
 		return pgutil.MapErr(err, "get line items for invoice", billing.ErrInvoiceNotFound)
 	}
@@ -598,7 +606,7 @@ func (r *InvoiceRepository) loadLineItems(ctx context.Context, inv *aggregate.In
 }
 
 func (r *InvoiceRepository) GetByID(ctx context.Context, id string) (*aggregate.Invoice, error) {
-	row, err := r.queries.GetInvoiceByID(ctx, pgutil.UUIDToPgtype(id))
+	row, err := r.q(ctx).GetInvoiceByID(ctx, pgutil.UUIDToPgtype(id))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get invoice by id", billing.ErrInvoiceNotFound)
 	}
@@ -610,7 +618,7 @@ func (r *InvoiceRepository) GetByID(ctx context.Context, id string) (*aggregate.
 }
 
 func (r *InvoiceRepository) GetBySubscriptionID(ctx context.Context, subID string) ([]*aggregate.Invoice, error) {
-	rows, err := r.queries.GetInvoicesBySubscriptionID(ctx, pgutil.UUIDToPgtype(subID))
+	rows, err := r.q(ctx).GetInvoicesBySubscriptionID(ctx, pgutil.UUIDToPgtype(subID))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get invoices by subscription id", billing.ErrInvoiceNotFound)
 	}
@@ -625,7 +633,7 @@ func (r *InvoiceRepository) GetBySubscriptionID(ctx context.Context, subID strin
 }
 
 func (r *InvoiceRepository) GetPendingByUserID(ctx context.Context, userID string) ([]*aggregate.Invoice, error) {
-	rows, err := r.queries.GetPendingInvoicesByUserID(ctx, pgutil.UUIDToPgtype(userID))
+	rows, err := r.q(ctx).GetPendingInvoicesByUserID(ctx, pgutil.UUIDToPgtype(userID))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get pending invoices by user id", billing.ErrInvoiceNotFound)
 	}
@@ -640,7 +648,7 @@ func (r *InvoiceRepository) GetPendingByUserID(ctx context.Context, userID strin
 }
 
 func (r *InvoiceRepository) GetAll(ctx context.Context, limit, offset int) ([]*aggregate.Invoice, error) {
-	rows, err := r.queries.GetAllInvoices(ctx, gen.GetAllInvoicesParams{
+	rows, err := r.q(ctx).GetAllInvoices(ctx, gen.GetAllInvoicesParams{
 		Limit:  int32(limit),
 		Offset: int32(offset),
 	})
@@ -655,7 +663,7 @@ func (r *InvoiceRepository) GetAll(ctx context.Context, limit, offset int) ([]*a
 }
 
 func (r *InvoiceRepository) Create(ctx context.Context, inv *aggregate.Invoice) error {
-	err := r.queries.CreateInvoice(ctx, gen.CreateInvoiceParams{
+	err := r.q(ctx).CreateInvoice(ctx, gen.CreateInvoiceParams{
 		ID:                  pgutil.UUIDToPgtype(inv.ID),
 		SubscriptionID:      pgutil.UUIDToPgtype(inv.SubscriptionID),
 		UserID:              pgutil.UUIDToPgtype(inv.UserID),
@@ -681,7 +689,7 @@ func (r *InvoiceRepository) Create(ctx context.Context, inv *aggregate.Invoice) 
 }
 
 func (r *InvoiceRepository) createLineItem(ctx context.Context, invoiceID string, item vo.LineItem) error {
-	err := r.queries.CreateInvoiceLineItem(ctx, gen.CreateInvoiceLineItemParams{
+	err := r.q(ctx).CreateInvoiceLineItem(ctx, gen.CreateInvoiceLineItemParams{
 		InvoiceID:   pgutil.UUIDToPgtype(invoiceID),
 		Description: item.Description,
 		ItemType:    string(item.Type),
@@ -693,7 +701,7 @@ func (r *InvoiceRepository) createLineItem(ctx context.Context, invoiceID string
 }
 
 func (r *InvoiceRepository) Update(ctx context.Context, inv *aggregate.Invoice) error {
-	err := r.queries.UpdateInvoice(ctx, gen.UpdateInvoiceParams{
+	err := r.q(ctx).UpdateInvoice(ctx, gen.UpdateInvoiceParams{
 		ID:                  pgutil.UUIDToPgtype(inv.ID),
 		Status:              string(inv.Status),
 		PaidAt:              pgutil.OptTimeToPgtype(inv.PaidAt),
@@ -712,16 +720,19 @@ var _ billing.InvoiceRepository = (*InvoiceRepository)(nil)
 
 // FamilyRepository implements billing.FamilyRepository backed by PostgreSQL.
 type FamilyRepository struct {
-	pool    *pgxpool.Pool
-	queries *gen.Queries
+	pool *pgxpool.Pool
 }
 
 // NewFamilyRepository returns a new FamilyRepository using the given pool.
 func NewFamilyRepository(pool *pgxpool.Pool) *FamilyRepository {
-	return &FamilyRepository{
-		pool:    pool,
-		queries: gen.New(pool),
-	}
+	return &FamilyRepository{pool: pool}
+}
+
+// q returns a *gen.Queries backed by the active transaction (if any) or the
+// pool. This ensures all methods transparently participate in RunInTx and
+// respect RLS tenant scoping.
+func (r *FamilyRepository) q(ctx context.Context) *gen.Queries {
+	return gen.New(DBFromContext(ctx, r.pool))
 }
 
 func familyGroupRowToDomain(row gen.BillingFamilyGroup) *aggregate.FamilyGroup {
@@ -744,7 +755,7 @@ func familyMemberRowToDomain(row gen.BillingFamilyMember) aggregate.FamilyMember
 }
 
 func (r *FamilyRepository) loadMembers(ctx context.Context, fg *aggregate.FamilyGroup) error {
-	rows, err := r.queries.GetFamilyMembersByGroupID(ctx, pgutil.UUIDToPgtype(fg.ID))
+	rows, err := r.q(ctx).GetFamilyMembersByGroupID(ctx, pgutil.UUIDToPgtype(fg.ID))
 	if err != nil {
 		return pgutil.MapErr(err, "get family members", billing.ErrFamilyGroupNotFound)
 	}
@@ -757,7 +768,7 @@ func (r *FamilyRepository) loadMembers(ctx context.Context, fg *aggregate.Family
 }
 
 func (r *FamilyRepository) GetByID(ctx context.Context, id string) (*aggregate.FamilyGroup, error) {
-	row, err := r.queries.GetFamilyGroupByID(ctx, pgutil.UUIDToPgtype(id))
+	row, err := r.q(ctx).GetFamilyGroupByID(ctx, pgutil.UUIDToPgtype(id))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get family group by id", billing.ErrFamilyGroupNotFound)
 	}
@@ -769,7 +780,7 @@ func (r *FamilyRepository) GetByID(ctx context.Context, id string) (*aggregate.F
 }
 
 func (r *FamilyRepository) GetByOwnerID(ctx context.Context, ownerID string) (*aggregate.FamilyGroup, error) {
-	row, err := r.queries.GetFamilyGroupByOwnerID(ctx, pgutil.UUIDToPgtype(ownerID))
+	row, err := r.q(ctx).GetFamilyGroupByOwnerID(ctx, pgutil.UUIDToPgtype(ownerID))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get family group by owner id", billing.ErrFamilyGroupNotFound)
 	}
@@ -781,7 +792,7 @@ func (r *FamilyRepository) GetByOwnerID(ctx context.Context, ownerID string) (*a
 }
 
 func (r *FamilyRepository) Create(ctx context.Context, fg *aggregate.FamilyGroup) error {
-	err := r.queries.CreateFamilyGroup(ctx, gen.CreateFamilyGroupParams{
+	err := r.q(ctx).CreateFamilyGroup(ctx, gen.CreateFamilyGroupParams{
 		ID:         pgutil.UUIDToPgtype(fg.ID),
 		OwnerID:    pgutil.UUIDToPgtype(fg.OwnerID),
 		MaxMembers: int32(fg.MaxMembers),
@@ -801,7 +812,7 @@ func (r *FamilyRepository) Create(ctx context.Context, fg *aggregate.FamilyGroup
 }
 
 func (r *FamilyRepository) createMember(ctx context.Context, groupID string, member aggregate.FamilyMember) error {
-	err := r.queries.CreateFamilyMember(ctx, gen.CreateFamilyMemberParams{
+	err := r.q(ctx).CreateFamilyMember(ctx, gen.CreateFamilyMemberParams{
 		FamilyGroupID: pgutil.UUIDToPgtype(groupID),
 		UserID:        pgutil.UUIDToPgtype(member.UserID),
 		Role:          string(member.Role),
@@ -812,7 +823,7 @@ func (r *FamilyRepository) createMember(ctx context.Context, groupID string, mem
 }
 
 func (r *FamilyRepository) Update(ctx context.Context, fg *aggregate.FamilyGroup) error {
-	err := r.queries.UpdateFamilyGroup(ctx, gen.UpdateFamilyGroupParams{
+	err := r.q(ctx).UpdateFamilyGroup(ctx, gen.UpdateFamilyGroupParams{
 		ID:         pgutil.UUIDToPgtype(fg.ID),
 		MaxMembers: int32(fg.MaxMembers),
 	})
@@ -821,7 +832,7 @@ func (r *FamilyRepository) Update(ctx context.Context, fg *aggregate.FamilyGroup
 	}
 
 	// Replace members: delete all, re-insert.
-	if err := r.queries.DeleteFamilyMembersByGroupID(ctx, pgutil.UUIDToPgtype(fg.ID)); err != nil {
+	if err := r.q(ctx).DeleteFamilyMembersByGroupID(ctx, pgutil.UUIDToPgtype(fg.ID)); err != nil {
 		return pgutil.MapErr(err, "delete family members", billing.ErrFamilyGroupNotFound)
 	}
 	for _, member := range fg.Members {
@@ -833,7 +844,7 @@ func (r *FamilyRepository) Update(ctx context.Context, fg *aggregate.FamilyGroup
 }
 
 func (r *FamilyRepository) Delete(ctx context.Context, id string) error {
-	err := r.queries.DeleteFamilyGroup(ctx, pgutil.UUIDToPgtype(id))
+	err := r.q(ctx).DeleteFamilyGroup(ctx, pgutil.UUIDToPgtype(id))
 	return pgutil.MapErr(err, "delete family group", billing.ErrFamilyGroupNotFound)
 }
 

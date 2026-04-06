@@ -176,10 +176,13 @@ func (r *OutboxRepository) MarkPublishedBatch(ctx context.Context, ids []string,
 	return count, nil
 }
 
-// timeRange returns the minimum and maximum values from a non-empty time slice.
-// The caller must ensure ts is non-empty; this is guaranteed by the len(ids)==0
-// early return in MarkPublishedBatch.
+// timeRange returns the minimum and maximum values from a time slice.
+// Returns zero-value times for an empty slice (defense-in-depth; the caller
+// already guards with len(ids)==0).
 func timeRange(ts []time.Time) (min, max time.Time) {
+	if len(ts) == 0 {
+		return time.Time{}, time.Time{}
+	}
 	min, max = ts[0], ts[0]
 	for _, t := range ts[1:] {
 		if t.Before(min) {

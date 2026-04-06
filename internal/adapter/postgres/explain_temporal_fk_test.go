@@ -40,6 +40,7 @@ var allMigrations = []string{
 	"015_uuidv7_remaining.sql",
 	"016_updated_at_indexes.sql",
 	"017_recreate_indexes_concurrently.sql",
+	"018_row_level_security.sql",
 }
 
 // temporalFKConstraintName is the foreign key constraint that enforces invoices

@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres/gen"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
@@ -32,7 +33,8 @@ func NewTxManager(pool *pgxpool.Pool) *TxManager {
 }
 
 // rlsTenantVariable is the PostgreSQL session variable read by row-level
-// security policies. SET LOCAL scopes it to the current transaction only.
+// security policies. set_config with is_local=true scopes it to the current
+// transaction only.
 const rlsTenantVariable = "app.tenant_id"
 
 // RunInTx executes fn within a database transaction. The transaction is
@@ -41,10 +43,10 @@ const rlsTenantVariable = "app.tenant_id"
 // transaction instead of the pool.
 //
 // If the context carries a tenant ID (set by the TenantRLS middleware via
-// WithTenantID), RunInTx issues SET LOCAL app.tenant_id so that PostgreSQL
-// row-level security policies can enforce tenant isolation at the database
-// level. The setting is scoped to this transaction and automatically cleared
-// on commit/rollback.
+// tenantctx.WithTenantID), RunInTx issues set_config('app.tenant_id', ..., true)
+// so that PostgreSQL row-level security policies can enforce tenant isolation
+// at the database level. The setting is scoped to this transaction and
+// automatically cleared on commit/rollback.
 func (tm *TxManager) RunInTx(ctx context.Context, fn func(ctx context.Context) error) error {
 	tx, err := tm.pool.Begin(ctx)
 	if err != nil {
@@ -52,8 +54,8 @@ func (tm *TxManager) RunInTx(ctx context.Context, fn func(ctx context.Context) e
 	}
 
 	// Propagate tenant ID to PostgreSQL for RLS enforcement.
-	if tenantID := TenantIDFromContext(ctx); tenantID != "" {
-		if _, err := tx.Exec(ctx, "SET LOCAL "+rlsTenantVariable+" = $1", tenantID); err != nil {
+	if tenantID := tenantctx.TenantIDFromContext(ctx); tenantID != "" {
+		if _, err := tx.Exec(ctx, "SELECT set_config($1, $2, true)", rlsTenantVariable, tenantID); err != nil {
 			_ = tx.Rollback(ctx)
 			return fmt.Errorf("set tenant for rls: %w", err)
 		}

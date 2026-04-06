@@ -14,16 +14,19 @@ import (
 
 // PaymentRepository implements payment.PaymentRepository backed by PostgreSQL.
 type PaymentRepository struct {
-	pool    *pgxpool.Pool
-	queries *gen.Queries
+	pool *pgxpool.Pool
 }
 
 // NewPaymentRepository returns a new PaymentRepository using the given pool.
 func NewPaymentRepository(pool *pgxpool.Pool) *PaymentRepository {
-	return &PaymentRepository{
-		pool:    pool,
-		queries: gen.New(pool),
-	}
+	return &PaymentRepository{pool: pool}
+}
+
+// q returns a *gen.Queries backed by the active transaction (if any) or the
+// pool. This ensures all methods transparently participate in RunInTx and
+// respect RLS tenant scoping.
+func (r *PaymentRepository) q(ctx context.Context) *gen.Queries {
+	return gen.New(DBFromContext(ctx, r.pool))
 }
 
 func paymentRowToDomain(row gen.PaymentPaymentRecord) *payment.PaymentRecord {
@@ -53,7 +56,7 @@ func webhookLogRowToDomain(row gen.PaymentWebhookLog) *payment.WebhookLog {
 }
 
 func (r *PaymentRepository) CreatePayment(ctx context.Context, record *payment.PaymentRecord) error {
-	err := r.queries.CreatePaymentRecord(ctx, gen.CreatePaymentRecordParams{
+	err := r.q(ctx).CreatePaymentRecord(ctx, gen.CreatePaymentRecordParams{
 		ID:         pgutil.UUIDToPgtype(record.ID),
 		InvoiceID:  pgutil.UUIDToPgtype(record.InvoiceID),
 		Provider:   record.Provider,
@@ -68,7 +71,7 @@ func (r *PaymentRepository) CreatePayment(ctx context.Context, record *payment.P
 }
 
 func (r *PaymentRepository) GetPaymentByID(ctx context.Context, id string) (*payment.PaymentRecord, error) {
-	row, err := r.queries.GetPaymentRecordByID(ctx, pgutil.UUIDToPgtype(id))
+	row, err := r.q(ctx).GetPaymentRecordByID(ctx, pgutil.UUIDToPgtype(id))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get payment by id", payment.ErrPaymentNotFound)
 	}
@@ -76,7 +79,7 @@ func (r *PaymentRepository) GetPaymentByID(ctx context.Context, id string) (*pay
 }
 
 func (r *PaymentRepository) GetPaymentByExternalID(ctx context.Context, provider, externalID string) (*payment.PaymentRecord, error) {
-	row, err := r.queries.GetPaymentRecordByExternalID(ctx, gen.GetPaymentRecordByExternalIDParams{
+	row, err := r.q(ctx).GetPaymentRecordByExternalID(ctx, gen.GetPaymentRecordByExternalIDParams{
 		Provider:   provider,
 		ExternalID: externalID,
 	})
@@ -87,7 +90,7 @@ func (r *PaymentRepository) GetPaymentByExternalID(ctx context.Context, provider
 }
 
 func (r *PaymentRepository) UpdatePayment(ctx context.Context, record *payment.PaymentRecord) error {
-	err := r.queries.UpdatePaymentRecord(ctx, gen.UpdatePaymentRecordParams{
+	err := r.q(ctx).UpdatePaymentRecord(ctx, gen.UpdatePaymentRecordParams{
 		ID:        pgutil.UUIDToPgtype(record.ID),
 		Status:    string(record.Status),
 		UpdatedAt: pgutil.TimeToPgtype(record.UpdatedAt),
@@ -96,7 +99,7 @@ func (r *PaymentRepository) UpdatePayment(ctx context.Context, record *payment.P
 }
 
 func (r *PaymentRepository) CreateWebhookLog(ctx context.Context, log *payment.WebhookLog) error {
-	err := r.queries.CreateWebhookLog(ctx, gen.CreateWebhookLogParams{
+	err := r.q(ctx).CreateWebhookLog(ctx, gen.CreateWebhookLogParams{
 		ID:          pgutil.UUIDToPgtype(log.ID),
 		Provider:    log.Provider,
 		ExternalID:  log.ExternalID,
@@ -116,7 +119,7 @@ func (r *PaymentRepository) CreateWebhookLog(ctx context.Context, log *payment.W
 }
 
 func (r *PaymentRepository) GetWebhookLog(ctx context.Context, provider, externalID string) (*payment.WebhookLog, error) {
-	row, err := r.queries.GetWebhookLogByProviderExternalID(ctx, gen.GetWebhookLogByProviderExternalIDParams{
+	row, err := r.q(ctx).GetWebhookLogByProviderExternalID(ctx, gen.GetWebhookLogByProviderExternalIDParams{
 		Provider:   provider,
 		ExternalID: externalID,
 	})
@@ -127,7 +130,7 @@ func (r *PaymentRepository) GetWebhookLog(ctx context.Context, provider, externa
 }
 
 func (r *PaymentRepository) UpdateWebhookLog(ctx context.Context, log *payment.WebhookLog) error {
-	err := r.queries.UpdateWebhookLog(ctx, gen.UpdateWebhookLogParams{
+	err := r.q(ctx).UpdateWebhookLog(ctx, gen.UpdateWebhookLogParams{
 		ID:          pgutil.UUIDToPgtype(log.ID),
 		Status:      string(log.Status),
 		ProcessedAt: pgutil.OptTimeToPgtype(log.ProcessedAt),

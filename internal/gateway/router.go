@@ -107,13 +107,16 @@ func NewRouter(p RouterParams) http.Handler {
 	r.Use(middleware.RequestLogger)
 	r.Use(chimiddleware.Compress(GzipCompressionLevel))
 	r.Use(middleware.RateLimit(p.RateLimiter))
-	r.Use(middleware.TenantResolver(p.ResellerService))
-	r.Use(middleware.TenantRLS)
 
-	// Infrastructure endpoints.
+	// Infrastructure endpoints — before tenant resolution so health probes
+	// and metrics scraping never require a tenant header.
 	r.Get("/healthz", p.HealthHandler.Healthz)
 	r.Get("/readyz", p.HealthHandler.Readyz)
 	r.Handle("/metrics", promhttp.Handler())
+
+	// Tenant middleware — only affects routes registered after this point.
+	r.Use(middleware.TenantResolver(p.ResellerService))
+	r.Use(middleware.TenantRLS)
 
 	// Per-endpoint auth rate limit middleware.
 	loginRL := middleware.AuthRateLimit(

@@ -14,16 +14,19 @@ import (
 
 // BindingRepository implements multisub.BindingRepository backed by PostgreSQL.
 type BindingRepository struct {
-	pool    *pgxpool.Pool
-	queries *gen.Queries
+	pool *pgxpool.Pool
 }
 
 // NewBindingRepository returns a new BindingRepository using the given pool.
 func NewBindingRepository(pool *pgxpool.Pool) *BindingRepository {
-	return &BindingRepository{
-		pool:    pool,
-		queries: gen.New(pool),
-	}
+	return &BindingRepository{pool: pool}
+}
+
+// q returns a *gen.Queries backed by the active transaction (if any) or the
+// pool. This ensures all methods transparently participate in RunInTx and
+// respect RLS tenant scoping.
+func (r *BindingRepository) q(ctx context.Context) *gen.Queries {
+	return gen.New(DBFromContext(ctx, r.pool))
 }
 
 func bindingRowToDomain(row gen.MultisubRemnawaveBinding) *aggregate.RemnawaveBinding {
@@ -46,7 +49,7 @@ func bindingRowToDomain(row gen.MultisubRemnawaveBinding) *aggregate.RemnawaveBi
 }
 
 func (r *BindingRepository) GetByID(ctx context.Context, id string) (*aggregate.RemnawaveBinding, error) {
-	row, err := r.queries.GetBindingByID(ctx, pgutil.UUIDToPgtype(id))
+	row, err := r.q(ctx).GetBindingByID(ctx, pgutil.UUIDToPgtype(id))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get binding by id", multisub.ErrBindingNotFound)
 	}
@@ -54,7 +57,7 @@ func (r *BindingRepository) GetByID(ctx context.Context, id string) (*aggregate.
 }
 
 func (r *BindingRepository) GetBySubscriptionID(ctx context.Context, subID string) ([]*aggregate.RemnawaveBinding, error) {
-	rows, err := r.queries.GetBindingsBySubscriptionID(ctx, pgutil.UUIDToPgtype(subID))
+	rows, err := r.q(ctx).GetBindingsBySubscriptionID(ctx, pgutil.UUIDToPgtype(subID))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get bindings by subscription id", multisub.ErrBindingNotFound)
 	}
@@ -66,7 +69,7 @@ func (r *BindingRepository) GetBySubscriptionID(ctx context.Context, subID strin
 }
 
 func (r *BindingRepository) GetByPlatformUserID(ctx context.Context, userID string) ([]*aggregate.RemnawaveBinding, error) {
-	rows, err := r.queries.GetBindingsByPlatformUserID(ctx, pgutil.UUIDToPgtype(userID))
+	rows, err := r.q(ctx).GetBindingsByPlatformUserID(ctx, pgutil.UUIDToPgtype(userID))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get bindings by platform user id", multisub.ErrBindingNotFound)
 	}
@@ -78,7 +81,7 @@ func (r *BindingRepository) GetByPlatformUserID(ctx context.Context, userID stri
 }
 
 func (r *BindingRepository) GetByRemnawaveUUID(ctx context.Context, rwUUID string) (*aggregate.RemnawaveBinding, error) {
-	row, err := r.queries.GetBindingByRemnawaveUUID(ctx, &rwUUID)
+	row, err := r.q(ctx).GetBindingByRemnawaveUUID(ctx, &rwUUID)
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get binding by remnawave uuid", multisub.ErrBindingNotFound)
 	}
@@ -86,7 +89,7 @@ func (r *BindingRepository) GetByRemnawaveUUID(ctx context.Context, rwUUID strin
 }
 
 func (r *BindingRepository) GetActiveBySubscriptionID(ctx context.Context, subID string) ([]*aggregate.RemnawaveBinding, error) {
-	rows, err := r.queries.GetActiveBindingsBySubscriptionID(ctx, pgutil.UUIDToPgtype(subID))
+	rows, err := r.q(ctx).GetActiveBindingsBySubscriptionID(ctx, pgutil.UUIDToPgtype(subID))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get active bindings by subscription id", multisub.ErrBindingNotFound)
 	}
@@ -98,7 +101,7 @@ func (r *BindingRepository) GetActiveBySubscriptionID(ctx context.Context, subID
 }
 
 func (r *BindingRepository) GetAllActive(ctx context.Context) ([]*aggregate.RemnawaveBinding, error) {
-	rows, err := r.queries.GetAllActiveBindings(ctx)
+	rows, err := r.q(ctx).GetAllActiveBindings(ctx)
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get all active bindings", multisub.ErrBindingNotFound)
 	}
@@ -110,7 +113,7 @@ func (r *BindingRepository) GetAllActive(ctx context.Context) ([]*aggregate.Remn
 }
 
 func (r *BindingRepository) GetFailedWithRemnawaveUUID(ctx context.Context) ([]*aggregate.RemnawaveBinding, error) {
-	rows, err := r.queries.GetFailedBindingsWithRemnawaveUUID(ctx)
+	rows, err := r.q(ctx).GetFailedBindingsWithRemnawaveUUID(ctx)
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get failed bindings with remnawave uuid", multisub.ErrBindingNotFound)
 	}
@@ -190,7 +193,7 @@ func (r *BindingRepository) ResetAbandonedReconciling(ctx context.Context, older
 }
 
 func (r *BindingRepository) Create(ctx context.Context, b *aggregate.RemnawaveBinding) error {
-	err := r.queries.CreateBinding(ctx, gen.CreateBindingParams{
+	err := r.q(ctx).CreateBinding(ctx, gen.CreateBindingParams{
 		ID:                 pgutil.UUIDToPgtype(b.ID),
 		SubscriptionID:     pgutil.UUIDToPgtype(b.SubscriptionID),
 		PlatformUserID:     pgutil.UUIDToPgtype(b.PlatformUserID),
@@ -210,7 +213,7 @@ func (r *BindingRepository) Create(ctx context.Context, b *aggregate.RemnawaveBi
 }
 
 func (r *BindingRepository) Update(ctx context.Context, b *aggregate.RemnawaveBinding) error {
-	err := r.queries.UpdateBinding(ctx, gen.UpdateBindingParams{
+	err := r.q(ctx).UpdateBinding(ctx, gen.UpdateBindingParams{
 		ID:                 pgutil.UUIDToPgtype(b.ID),
 		RemnawaveUuid:      pgutil.StrPtrOrNil(b.RemnawaveUUID),
 		RemnawaveShortUuid: pgutil.StrPtrOrNil(b.RemnawaveShortUUID),
@@ -224,7 +227,7 @@ func (r *BindingRepository) Update(ctx context.Context, b *aggregate.RemnawaveBi
 }
 
 func (r *BindingRepository) Delete(ctx context.Context, id string) error {
-	err := r.queries.DeleteBinding(ctx, pgutil.UUIDToPgtype(id))
+	err := r.q(ctx).DeleteBinding(ctx, pgutil.UUIDToPgtype(id))
 	return pgutil.MapErr(err, "delete binding", multisub.ErrBindingNotFound)
 }
 
