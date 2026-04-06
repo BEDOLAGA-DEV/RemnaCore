@@ -27,8 +27,9 @@ const (
 // Discount is immutable.
 type Discount struct {
 	Type      DiscountType
-	Value     int64  // percent (1-100) or fixed amount in cents
-	Code      string // promo code
+	Value     int64    // percent (basis points) or fixed amount in cents
+	Currency  Currency // set for DiscountFixed; empty for DiscountPercent
+	Code      string   // promo code
 	ExpiresAt *time.Time
 }
 
@@ -47,13 +48,14 @@ func NewPercentDiscount(percent int64, code string, expiresAt *time.Time) (Disco
 }
 
 // NewFixedDiscount creates a fixed-amount discount. amount must be > 0.
-func NewFixedDiscount(amount int64, _ Currency, code string, expiresAt *time.Time) (Discount, error) {
+func NewFixedDiscount(amount int64, currency Currency, code string, expiresAt *time.Time) (Discount, error) {
 	if amount <= 0 {
 		return Discount{}, errors.New("fixed discount amount must be greater than zero")
 	}
 	return Discount{
 		Type:      DiscountFixed,
 		Value:     amount,
+		Currency:  currency,
 		Code:      code,
 		ExpiresAt: expiresAt,
 	}, nil
@@ -71,6 +73,9 @@ func (d Discount) Apply(price Money, now time.Time) (Money, error) {
 		discounted := price.Amount * (maxPercent - d.Value) / maxPercent
 		return NewMoney(discounted, price.Currency), nil
 	case DiscountFixed:
+		if d.Currency != "" && d.Currency != price.Currency {
+			return Money{}, ErrCurrencyMismatch
+		}
 		result := max(price.Amount-d.Value, 0)
 		return NewMoney(result, price.Currency), nil
 	default:

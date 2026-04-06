@@ -57,6 +57,7 @@ func TestNewFixedDiscount_Valid(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, DiscountFixed, d.Type)
 	assert.Equal(t, int64(500), d.Value)
+	assert.Equal(t, CurrencyUSD, d.Currency)
 	assert.Equal(t, "FLAT5", d.Code)
 }
 
@@ -210,4 +211,39 @@ func TestDiscount_Immutability(t *testing.T) {
 
 	assert.Equal(t, int64(1000), price.Amount, "original price must not change")
 	assert.Equal(t, int64(500), result.Amount)
+}
+
+func TestDiscount_ApplyFixed_CurrencyMismatch(t *testing.T) {
+	d, err := NewFixedDiscount(500, CurrencyEUR, "EUR5", nil)
+	require.NoError(t, err)
+
+	price := NewMoney(1000, CurrencyUSD) // USD price, EUR discount
+
+	_, err = d.Apply(price, time.Now())
+
+	require.ErrorIs(t, err, ErrCurrencyMismatch)
+}
+
+func TestDiscount_ApplyFixed_CurrencyMatch(t *testing.T) {
+	d, err := NewFixedDiscount(500, CurrencyUSD, "USD5", nil)
+	require.NoError(t, err)
+
+	price := NewMoney(1000, CurrencyUSD)
+
+	result, err := d.Apply(price, time.Now())
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(500), result.Amount)
+	assert.Equal(t, CurrencyUSD, result.Currency)
+}
+
+func TestDiscount_ApplyWithResult_CurrencyMismatch(t *testing.T) {
+	d, err := NewFixedDiscount(500, CurrencyEUR, "EUR5", nil)
+	require.NoError(t, err)
+
+	price := NewMoney(1000, CurrencyUSD)
+
+	_, err = d.ApplyWithResult(price, time.Now())
+
+	require.ErrorIs(t, err, ErrCurrencyMismatch)
 }

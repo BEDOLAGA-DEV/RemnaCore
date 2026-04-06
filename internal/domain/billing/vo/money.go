@@ -165,14 +165,16 @@ func (m Money) LessThanOrEqual(other Money) (bool, error) {
 func (m Money) String() string {
 	major := m.Amount / CentsPerUnit
 	minor := m.Amount % CentsPerUnit
-
-	// Handle negative amounts correctly: -50.50 not -50.-50
-	if m.Amount < 0 && minor != 0 {
-		// minor is already negative, we need the absolute value
-		if minor < 0 {
-			minor = -minor
-		}
+	if minor < 0 {
+		minor = -minor
 	}
 
-	return fmt.Sprintf("%d.%02d %s", major, minor, m.Currency)
+	// When Amount is negative but major truncates to 0 (e.g. -50 cents),
+	// the sign is lost. Restore it explicitly.
+	sign := ""
+	if m.Amount < 0 && major == 0 {
+		sign = "-"
+	}
+
+	return fmt.Sprintf("%s%d.%02d %s", sign, major, minor, m.Currency)
 }

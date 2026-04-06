@@ -497,9 +497,44 @@ func TestMoney_String(t *testing.T) {
 			expected: "0.00 eur",
 		},
 		{
-			name:     "RUB negative",
+			name:     "zero amount no currency",
+			money:    Money{Amount: 0},
+			expected: "0.00 ",
+		},
+		{
+			name:     "positive whole dollars",
+			money:    NewMoney(150, CurrencyUSD),
+			expected: "1.50 usd",
+		},
+		{
+			name:     "RUB negative whole",
 			money:    NewMoney(-5050, CurrencyRUB),
 			expected: "-50.50 rub",
+		},
+		{
+			name:     "negative fractional only -0.50",
+			money:    NewMoney(-50, CurrencyUSD),
+			expected: "-0.50 usd",
+		},
+		{
+			name:     "negative fractional only -0.01",
+			money:    NewMoney(-1, CurrencyUSD),
+			expected: "-0.01 usd",
+		},
+		{
+			name:     "negative fractional only -0.99",
+			money:    NewMoney(-99, CurrencyUSD),
+			expected: "-0.99 usd",
+		},
+		{
+			name:     "negative exactly -1.00",
+			money:    NewMoney(-100, CurrencyUSD),
+			expected: "-1.00 usd",
+		},
+		{
+			name:     "negative with cents -1.50",
+			money:    NewMoney(-150, CurrencyUSD),
+			expected: "-1.50 usd",
 		},
 		{
 			name:     "GBP single digit cents",
