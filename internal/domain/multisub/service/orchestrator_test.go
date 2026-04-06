@@ -42,16 +42,16 @@ func newOrchestrator(
 	deprovisioning := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, txRunner, clk, logger)
 	syncSaga := service.NewSyncSaga(repo, gw, pub, sagaRepo, clk, logger)
 	syncService := service.NewSyncService(repo, syncSaga, pub)
+	lifecycle := service.NewBindingLifecycleService(repo, gw, pub, clk, logger)
 
 	return service.NewMultiSubOrchestrator(
 		provisioning,
 		deprovisioning,
 		syncService,
+		lifecycle,
 		repo,
-		gw,
 		pub,
 		testLogger(),
-		clk,
 	)
 }
 
@@ -295,6 +295,8 @@ func TestOnSubscriptionResumed_EnablesDisabledBindings(t *testing.T) {
 	repo.On("Update", mock.Anything, mock.MatchedBy(func(b *aggregate.RemnawaveBinding) bool {
 		return b.ID == "b-2" && b.Status == aggregate.BindingActive
 	})).Return(nil).Once()
+
+	pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
 	err := orch.OnSubscriptionResumed(ctx, "sub-1")
 

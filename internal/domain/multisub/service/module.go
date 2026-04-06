@@ -6,8 +6,6 @@ import (
 	"log/slog"
 
 	multisubdomain "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
-	multisubagg "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
-	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
 
@@ -22,11 +20,10 @@ type MultiSubOrchestrator struct {
 	provisioning   *ProvisioningSaga
 	deprovisioning *DeprovisioningSaga
 	syncService    *SyncService
+	lifecycle      *BindingLifecycleService
 	bindings       multisubdomain.BindingRepository
-	gateway        multisubdomain.RemnawaveGateway
 	publisher      domainevent.Publisher
 	logger         *slog.Logger
-	clock          clock.Clock
 }
 
 // NewMultiSubOrchestrator creates a MultiSubOrchestrator with its saga
@@ -35,21 +32,19 @@ func NewMultiSubOrchestrator(
 	provisioning *ProvisioningSaga,
 	deprovisioning *DeprovisioningSaga,
 	syncService *SyncService,
+	lifecycle *BindingLifecycleService,
 	bindings multisubdomain.BindingRepository,
-	gateway multisubdomain.RemnawaveGateway,
 	publisher domainevent.Publisher,
 	logger *slog.Logger,
-	clk clock.Clock,
 ) *MultiSubOrchestrator {
 	return &MultiSubOrchestrator{
 		provisioning:   provisioning,
 		deprovisioning: deprovisioning,
 		syncService:    syncService,
+		lifecycle:      lifecycle,
 		bindings:       bindings,
-		gateway:        gateway,
 		publisher:      publisher,
 		logger:         logger,
-		clock:          clk,
 	}
 }
 
@@ -113,120 +108,17 @@ func (o *MultiSubOrchestrator) OnSubscriptionCancelled(ctx context.Context, subs
 }
 
 // OnSubscriptionPaused is called when billing publishes subscription.paused.
-// It disables all active bindings in Remnawave.
+// It delegates to BindingLifecycleService to disable all active bindings.
 //
-// Idempotency: if no active bindings exist (already paused or deprovisioned),
-// the event is treated as a duplicate and the operation is skipped.
+// Idempotency: BindingLifecycleService returns nil if no active bindings exist.
 func (o *MultiSubOrchestrator) OnSubscriptionPaused(ctx context.Context, subscriptionID string) error {
-	bindings, err := o.bindings.GetActiveBySubscriptionID(ctx, subscriptionID)
-	if err != nil {
-		return fmt.Errorf("get active bindings: %w", err)
-	}
-	if len(bindings) == 0 {
-		o.logger.Info("skipping duplicate subscription.paused event",
-			slog.String("subscription_id", subscriptionID),
-		)
-		return nil
-	}
-
-	now := o.clock.Now()
-	for _, binding := range bindings {
-		if binding.RemnawaveUUID == "" {
-			continue
-		}
-		if err := o.gateway.DisableUser(ctx, binding.RemnawaveUUID); err != nil {
-			if failErr := binding.MarkFailed(fmt.Sprintf("remnawave disable: %s", err.Error()), now); failErr != nil {
-				o.logger.Warn("failed to transition binding to failed",
-					slog.String("binding_id", binding.ID),
-					slog.Any("error", failErr),
-				)
-			}
-			if updateErr := o.bindings.Update(ctx, binding); updateErr != nil {
-				o.logger.Warn("failed to update binding status",
-					slog.String("binding_id", binding.ID),
-					slog.Any("error", updateErr),
-				)
-			}
-			continue
-		}
-		if disableErr := binding.Disable(now); disableErr != nil {
-			o.logger.Warn("failed to transition binding to disabled",
-				slog.String("binding_id", binding.ID),
-				slog.Any("error", disableErr),
-			)
-		}
-		if err := o.bindings.Update(ctx, binding); err != nil {
-			o.logger.Warn("failed to update binding status",
-				slog.String("binding_id", binding.ID),
-				slog.Any("error", err),
-			)
-		}
-	}
-
-	return nil
+	return o.lifecycle.DisableAllForSubscription(ctx, subscriptionID)
 }
 
 // OnSubscriptionResumed is called when billing publishes subscription.resumed.
-// It enables all disabled bindings in Remnawave.
+// It delegates to BindingLifecycleService to re-enable all disabled bindings.
 //
-// Idempotency: if no disabled bindings exist (already resumed or never
-// paused), the event is treated as a duplicate and the operation is skipped.
+// Idempotency: BindingLifecycleService returns nil if no disabled bindings exist.
 func (o *MultiSubOrchestrator) OnSubscriptionResumed(ctx context.Context, subscriptionID string) error {
-	bindings, err := o.bindings.GetBySubscriptionID(ctx, subscriptionID)
-	if err != nil {
-		return fmt.Errorf("get bindings: %w", err)
-	}
-
-	hasDisabled := false
-	for _, binding := range bindings {
-		if binding.Status == multisubagg.BindingDisabled {
-			hasDisabled = true
-			break
-		}
-	}
-	if !hasDisabled {
-		o.logger.Info("skipping duplicate subscription.resumed event",
-			slog.String("subscription_id", subscriptionID),
-		)
-		return nil
-	}
-
-	now := o.clock.Now()
-	for _, binding := range bindings {
-		if binding.Status != multisubagg.BindingDisabled {
-			continue
-		}
-		if binding.RemnawaveUUID == "" {
-			continue
-		}
-		if err := o.gateway.EnableUser(ctx, binding.RemnawaveUUID); err != nil {
-			if failErr := binding.MarkFailed(fmt.Sprintf("remnawave enable: %s", err.Error()), now); failErr != nil {
-				o.logger.Warn("failed to transition binding to failed",
-					slog.String("binding_id", binding.ID),
-					slog.Any("error", failErr),
-				)
-			}
-			if updateErr := o.bindings.Update(ctx, binding); updateErr != nil {
-				o.logger.Warn("failed to update binding status",
-					slog.String("binding_id", binding.ID),
-					slog.Any("error", updateErr),
-				)
-			}
-			continue
-		}
-		if enableErr := binding.Enable(now); enableErr != nil {
-			o.logger.Warn("failed to transition binding to active",
-				slog.String("binding_id", binding.ID),
-				slog.Any("error", enableErr),
-			)
-		}
-		if err := o.bindings.Update(ctx, binding); err != nil {
-			o.logger.Warn("failed to update binding status",
-				slog.String("binding_id", binding.ID),
-				slog.Any("error", err),
-			)
-		}
-	}
-
-	return nil
+	return o.lifecycle.EnableAllForSubscription(ctx, subscriptionID)
 }

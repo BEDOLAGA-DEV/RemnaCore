@@ -23,6 +23,7 @@ var multisubWiring = fx.Options(
 	fx.Provide(multisubservice.NewDeprovisioningSaga),
 	fx.Provide(multisubservice.NewSyncSaga),
 	fx.Provide(multisubservice.NewSyncService),
+	fx.Provide(multisubservice.NewBindingLifecycleService),
 	fx.Provide(multisubservice.NewMultiSubOrchestrator),
 	fx.Provide(multisubservice.NewBindingReconciler),
 	fx.Provide(multisubservice.NewSagaCleanupService),
