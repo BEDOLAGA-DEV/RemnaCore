@@ -159,6 +159,47 @@ func TestDiscount_IsExpired_Past(t *testing.T) {
 	assert.True(t, d.IsExpiredAt(time.Now()))
 }
 
+func TestDiscount_ApplyWithResult_Applied(t *testing.T) {
+	d, err := NewPercentDiscount(5000, "HALF", nil) // 50%
+	require.NoError(t, err)
+
+	price := NewMoney(1000, CurrencyUSD)
+	result, err := d.ApplyWithResult(price, time.Now())
+
+	require.NoError(t, err)
+	assert.True(t, result.Applied)
+	assert.Equal(t, int64(1000), result.OriginalPrice.Amount)
+	assert.Equal(t, int64(500), result.DiscountedPrice.Amount)
+	assert.Equal(t, int64(500), result.SavedAmount.Amount)
+	assert.Equal(t, "HALF", result.Code)
+}
+
+func TestDiscount_ApplyWithResult_Expired(t *testing.T) {
+	past := time.Now().Add(-24 * time.Hour)
+	d, err := NewPercentDiscount(5000, "EXPIRED", &past)
+	require.NoError(t, err)
+
+	price := NewMoney(1000, CurrencyUSD)
+	result, err := d.ApplyWithResult(price, time.Now())
+
+	require.NoError(t, err)
+	assert.False(t, result.Applied)
+	assert.Equal(t, int64(0), result.SavedAmount.Amount)
+}
+
+func TestDiscount_ApplyWithResult_FixedExceedsPrice(t *testing.T) {
+	d, err := NewFixedDiscount(2000, CurrencyUSD, "BIG", nil)
+	require.NoError(t, err)
+
+	price := NewMoney(500, CurrencyUSD)
+	result, err := d.ApplyWithResult(price, time.Now())
+
+	require.NoError(t, err)
+	assert.True(t, result.Applied)
+	assert.Equal(t, int64(0), result.DiscountedPrice.Amount)
+	assert.Equal(t, int64(500), result.SavedAmount.Amount) // capped at price
+}
+
 func TestDiscount_Immutability(t *testing.T) {
 	d, err := NewPercentDiscount(5000, "HALF", nil) // 50%
 	require.NoError(t, err)

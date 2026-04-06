@@ -78,6 +78,41 @@ func (d Discount) Apply(price Money, now time.Time) (Money, error) {
 	}
 }
 
+// DiscountResult holds the outcome of applying a discount for audit trail.
+type DiscountResult struct {
+	Applied         bool // false if expired or zero impact
+	OriginalPrice   Money
+	DiscountedPrice Money
+	SavedAmount     Money // difference (original - discounted)
+	Code            string
+}
+
+// ApplyWithResult applies the discount and returns a detailed result for audit.
+// The original Apply method is preserved for backward compatibility.
+func (d Discount) ApplyWithResult(price Money, now time.Time) (DiscountResult, error) {
+	result := DiscountResult{
+		OriginalPrice: price,
+		Code:          d.Code,
+	}
+
+	if d.IsExpiredAt(now) {
+		result.DiscountedPrice = price
+		result.SavedAmount = Zero(price.Currency)
+		return result, nil
+	}
+
+	discounted, err := d.Apply(price, now)
+	if err != nil {
+		return DiscountResult{}, err
+	}
+
+	result.DiscountedPrice = discounted
+	result.SavedAmount = NewMoney(price.Amount-discounted.Amount, price.Currency)
+	result.Applied = result.SavedAmount.Amount > 0
+
+	return result, nil
+}
+
 // IsExpiredAt reports whether the discount has passed its expiration time
 // relative to the given time. Discounts with no expiry never expire.
 func (d Discount) IsExpiredAt(now time.Time) bool {
