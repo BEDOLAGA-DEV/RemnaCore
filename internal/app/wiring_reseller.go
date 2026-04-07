@@ -4,17 +4,17 @@ import (
 	"go.uber.org/fx"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres"
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller"
+	resellerservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/service"
 )
 
 // resellerWiring provides all reseller-domain bindings: tenant and commission
 // repository implementations.
 var resellerWiring = fx.Options(
 	// Reseller domain service
-	fx.Provide(reseller.NewResellerService),
+	fx.Provide(resellerservice.NewResellerService),
 
-	// Reseller repos -> interface bindings
+	// Reseller repos -> interface bindings (service package types for Fx matching)
 	fx.Provide(postgres.NewResellerRepository),
-	fx.Provide(func(repo *postgres.ResellerRepository) reseller.TenantRepository { return repo }),
-	fx.Provide(func(repo *postgres.ResellerRepository) reseller.CommissionRepository { return repo }),
+	fx.Provide(func(repo *postgres.ResellerRepository) resellerservice.TenantRepository { return repo }),
+	fx.Provide(func(repo *postgres.ResellerRepository) resellerservice.CommissionRepository { return repo }),
 )
