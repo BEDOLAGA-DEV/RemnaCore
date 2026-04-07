@@ -5,7 +5,9 @@ import (
 
 	billingaggregate "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	multisubaggregate "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/payment"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // These tests detect drift between Go status constants and the PostgreSQL
@@ -49,6 +51,24 @@ func TestInvoiceStatusesMatchDBSchema(t *testing.T) {
 	actual := toStrings(billingaggregate.AllInvoiceStatuses())
 	assert.ElementsMatch(t, expected, actual,
 		"invoice statuses in Go must match DB CHECK constraint")
+}
+
+// TestPaymentStatusesMatchDBSchema verifies that Go PaymentStatus constants
+// match the expected DB enum values.
+func TestPaymentStatusesMatchDBSchema(t *testing.T) {
+	expected := []string{
+		"pending", "completed", "failed", "refunded",
+	}
+	actual := toStrings(payment.AllPaymentStatuses())
+	assert.ElementsMatch(t, expected, actual,
+		"payment statuses in Go must match DB CHECK constraint")
+}
+
+// TestAllPaymentStatusesHaveTransitions verifies that every payment status
+// has an entry in the transition map.
+func TestAllPaymentStatusesHaveTransitions(t *testing.T) {
+	err := payment.ValidatePaymentTransitions()
+	require.NoError(t, err)
 }
 
 // toStrings converts a slice of any ~string type to []string using generics.

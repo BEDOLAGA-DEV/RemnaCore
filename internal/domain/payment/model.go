@@ -1,6 +1,8 @@
 package payment
 
 import (
+	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,6 +18,48 @@ const (
 	PaymentFailed    PaymentStatus = "failed"
 	PaymentRefunded  PaymentStatus = "refunded"
 )
+
+// paymentTransitions defines the state machine for payment status.
+// Terminal states (failed, refunded) have no valid outbound transitions.
+var paymentTransitions = map[PaymentStatus][]PaymentStatus{
+	PaymentPending:   {PaymentCompleted, PaymentFailed},
+	PaymentCompleted: {PaymentRefunded},
+	PaymentFailed:    {},
+	PaymentRefunded:  {},
+}
+
+// allPaymentStatuses enumerates every PaymentStatus constant.
+// Keep in sync with the const block above.
+var allPaymentStatuses = []PaymentStatus{
+	PaymentPending, PaymentCompleted, PaymentFailed, PaymentRefunded,
+}
+
+// AllPaymentStatuses returns every recognised PaymentStatus constant.
+// Used by schema drift tests to verify Go constants match DB CHECK constraints.
+func AllPaymentStatuses() []PaymentStatus {
+	return append([]PaymentStatus(nil), allPaymentStatuses...)
+}
+
+// ValidatePaymentTransitions checks that every payment status has an entry
+// in the transition map. Called from tests, not at runtime.
+func ValidatePaymentTransitions() error {
+	for _, s := range allPaymentStatuses {
+		if _, ok := paymentTransitions[s]; !ok {
+			return fmt.Errorf("missing transition entry for payment status: %s", s)
+		}
+	}
+	return nil
+}
+
+// canTransitionTo reports whether the payment can move from its current
+// status to the target status.
+func (p *PaymentRecord) canTransitionTo(target PaymentStatus) bool {
+	allowed, ok := paymentTransitions[p.Status]
+	if !ok {
+		return false
+	}
+	return slices.Contains(allowed, target)
+}
 
 // WebhookStatus represents the processing state of a webhook log entry.
 type WebhookStatus string
@@ -88,7 +132,7 @@ func NewPaymentRecord(invoiceID, provider, externalID string, amount int64, curr
 
 // MarkCompleted transitions a pending payment to completed.
 func (p *PaymentRecord) MarkCompleted(now time.Time) error {
-	if p.Status != PaymentPending {
+	if !p.canTransitionTo(PaymentCompleted) {
 		return ErrInvalidPaymentState
 	}
 	p.Status = PaymentCompleted
@@ -105,7 +149,7 @@ func (p *PaymentRecord) MarkCompleted(now time.Time) error {
 
 // MarkFailed transitions a pending payment to failed.
 func (p *PaymentRecord) MarkFailed(reason string, now time.Time) error {
-	if p.Status != PaymentPending {
+	if !p.canTransitionTo(PaymentFailed) {
 		return ErrInvalidPaymentState
 	}
 	p.Status = PaymentFailed
@@ -121,7 +165,7 @@ func (p *PaymentRecord) MarkFailed(reason string, now time.Time) error {
 
 // MarkRefunded transitions a completed payment to refunded.
 func (p *PaymentRecord) MarkRefunded(amount int64, now time.Time) error {
-	if p.Status != PaymentCompleted {
+	if !p.canTransitionTo(PaymentRefunded) {
 		return ErrInvalidPaymentState
 	}
 	p.Status = PaymentRefunded

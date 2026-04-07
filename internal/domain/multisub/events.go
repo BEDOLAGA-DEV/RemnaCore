@@ -10,6 +10,7 @@ import (
 // Multi-subscription event types re-exported from aggregate for backward
 // compatibility. New code should prefer the aggregate constants directly.
 const (
+	EventBindingCreated         = aggregate.EventBindingCreated
 	EventBindingProvisioned     = aggregate.EventBindingProvisioned
 	EventBindingDeprovisioned   = aggregate.EventBindingDeprovisioned
 	EventBindingSyncFailed      = aggregate.EventBindingSyncFailed

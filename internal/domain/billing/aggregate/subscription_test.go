@@ -226,7 +226,7 @@ func TestSubscription_AddAddon(t *testing.T) {
 
 	t.Run("cancelled subscription cannot add addon", func(t *testing.T) {
 		sub := newActiveSub(t, now)
-		require.NoError(t, sub.Cancel(now))
+		require.NoError(t, sub.Cancel("test", now))
 		sub.DomainEvents()
 		spec := permissiveSpec("addon-1")
 
@@ -378,7 +378,7 @@ func TestSubscription_ValidateForInvoicing(t *testing.T) {
 				require.NoError(t, sub.Pause(now))
 			case aggregate.StatusCancelled:
 				require.NoError(t, sub.Activate(now))
-				require.NoError(t, sub.Cancel(now))
+				require.NoError(t, sub.Cancel("test", now))
 			case aggregate.StatusExpired:
 				require.NoError(t, sub.Activate(now))
 				require.NoError(t, sub.Expire(now))

@@ -23,7 +23,7 @@ import (
 
 // totalExpectedEvents is the expected number of event types across all bounded
 // contexts. Update this constant when adding or removing event types.
-const totalExpectedEvents = 64
+const totalExpectedEvents = 65
 
 // TestAllEventTypesInCatalog verifies that every EventType constant defined
 // across all bounded contexts is registered in the event catalog. Adding a
@@ -138,8 +138,9 @@ func collectAllEventTypes() []domainevent.EventType {
 		billingaggregate.EventPlanDeactivated,
 
 		// =====================================================================
-		// MultiSub — Binding events (10)
+		// MultiSub — Binding events (11)
 		// =====================================================================
+		multisubaggregate.EventBindingCreated,
 		multisubaggregate.EventBindingProvisioned,
 		multisubaggregate.EventBindingDeprovisioned,
 		multisubaggregate.EventBindingSyncFailed,

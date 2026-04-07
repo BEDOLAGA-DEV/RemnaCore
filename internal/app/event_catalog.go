@@ -233,6 +233,13 @@ func registerBillingEvents(c *domainevent.EventCatalog) {
 func registerMultisubEvents(c *domainevent.EventCatalog) {
 	// --- Binding lifecycle events (defined in aggregate package) ---
 	c.Register(domainevent.CatalogEntry{
+		Type:        multisubaggregate.EventBindingCreated,
+		Producer:    producerMultisub,
+		Consumers:   []string{},
+		PayloadType: reflect.TypeOf(multisubaggregate.BindingCreatedPayload{}),
+		Version:     1,
+	})
+	c.Register(domainevent.CatalogEntry{
 		Type:        multisubaggregate.EventBindingProvisioned,
 		Producer:    producerMultisub,
 		Consumers:   []string{},

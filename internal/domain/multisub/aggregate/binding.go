@@ -157,7 +157,7 @@ func NewBinding(subID, platformUserID string, purpose BindingPurpose, index int,
 		return nil, ErrNegativeTrafficLimit
 	}
 
-	return &RemnawaveBinding{
+	b := &RemnawaveBinding{
 		ID:                uuid.Must(uuid.NewV7()).String(),
 		SubscriptionID:    subID,
 		PlatformUserID:    platformUserID,
@@ -167,7 +167,13 @@ func NewBinding(subID, platformUserID string, purpose BindingPurpose, index int,
 		TrafficLimitBytes: trafficLimit,
 		CreatedAt:         now,
 		UpdatedAt:         now,
-	}, nil
+	}
+	b.RecordEvent(domainevent.NewTyped(BindingCreatedPayload{
+		BindingID:      b.ID,
+		SubscriptionID: b.SubscriptionID,
+		Purpose:        string(b.Purpose),
+	}, now, b.ID))
+	return b, nil
 }
 
 // transitionTo attempts to move the binding to the target status using the

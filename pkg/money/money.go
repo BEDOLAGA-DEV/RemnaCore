@@ -22,6 +22,15 @@ const (
 // currency unit. Used for display formatting.
 const CentsPerUnit = 100
 
+// ValidCurrencies enumerates the currencies supported by the platform.
+// Used by Validate to reject unknown currency codes.
+var ValidCurrencies = map[Currency]bool{
+	CurrencyUSD: true,
+	CurrencyEUR: true,
+	CurrencyRUB: true,
+	CurrencyGBP: true,
+}
+
 var (
 	// ErrCurrencyMismatch is returned when an arithmetic or comparison
 	// operation is attempted on Money values with different currencies.
@@ -30,6 +39,10 @@ var (
 	// ErrMoneyOverflow is returned when an arithmetic operation would
 	// overflow or underflow the int64 amount.
 	ErrMoneyOverflow = errors.New("monetary amount overflow")
+
+	// ErrInvalidCurrency is returned when a currency code is not in the
+	// ValidCurrencies set.
+	ErrInvalidCurrency = errors.New("unsupported currency")
 )
 
 // Money represents a monetary amount in the smallest unit (cents / kopecks).
@@ -39,9 +52,26 @@ type Money struct {
 	Currency Currency
 }
 
+// ValidateCurrency checks whether the given currency code is in the
+// platform's supported set. Returns ErrInvalidCurrency if not.
+func ValidateCurrency(c Currency) error {
+	if !ValidCurrencies[c] {
+		return fmt.Errorf("%w: %q", ErrInvalidCurrency, c)
+	}
+	return nil
+}
+
 // NewMoney creates a Money value with the given amount and currency.
 func NewMoney(amount int64, currency Currency) Money {
 	return Money{Amount: amount, Currency: currency}
+}
+
+// Validate checks that the Money value uses a supported currency.
+// Callers should invoke this at domain boundaries (e.g., plan creation,
+// invoice construction) rather than relying on constructor enforcement,
+// to preserve backward compatibility with existing struct-literal usage.
+func (m Money) Validate() error {
+	return ValidateCurrency(m.Currency)
 }
 
 // Zero returns a Money value of zero in the given currency.

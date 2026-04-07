@@ -1,3 +1,10 @@
+// model.go re-exports types from aggregate/, service/, and vo/ subpackages
+// for backward compatibility. New code should import subpackages directly:
+//   - identity/aggregate for PlatformUser, Session, EmailVerification
+//   - identity/service for Service, Repository
+//   - identity/vo for Role
+//
+// These aliases will be removed in a future major version.
 package identity
 
 import (

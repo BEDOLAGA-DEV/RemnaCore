@@ -122,6 +122,20 @@ func NewSubscription(userID, planID string, interval vo.BillingInterval, addonID
 		return nil, ErrEmptyPlanID
 	}
 
+	// Deduplicate and reject empty addon IDs.
+	seen := make(map[string]struct{}, len(addonIDs))
+	cleanAddons := make([]string, 0, len(addonIDs))
+	for _, id := range addonIDs {
+		if id == "" {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		cleanAddons = append(cleanAddons, id)
+	}
+
 	period := vo.NewBillingPeriod(now, interval)
 	sub := &Subscription{
 		ID:        uuid.Must(uuid.NewV7()).String(),
@@ -129,7 +143,7 @@ func NewSubscription(userID, planID string, interval vo.BillingInterval, addonID
 		PlanID:    planID,
 		Status:    StatusTrial,
 		Period:    period,
-		AddonIDs:  addonIDs,
+		AddonIDs:  cleanAddons,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
@@ -186,7 +200,9 @@ func (s *Subscription) MarkPastDue(now time.Time) error {
 }
 
 // Cancel moves the subscription to cancelled from any non-terminal state.
-func (s *Subscription) Cancel(now time.Time) error {
+// The reason is stored in the domain event payload for audit and notification
+// purposes (e.g., "user_requested", "non_payment", "admin").
+func (s *Subscription) Cancel(reason string, now time.Time) error {
 	if err := s.transitionTo(StatusCancelled, now); err != nil {
 		return err
 	}
@@ -194,6 +210,7 @@ func (s *Subscription) Cancel(now time.Time) error {
 	s.RecordEvent(domainevent.NewTyped(SubCancelledPayload{
 		SubscriptionID: s.ID,
 		UserID:         s.UserID,
+		Reason:         reason,
 	}, now, s.ID))
 	return nil
 }

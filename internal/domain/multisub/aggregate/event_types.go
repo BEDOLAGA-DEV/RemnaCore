@@ -5,6 +5,7 @@ import "github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 // Event type constants for multisub aggregates. Defined in the aggregate
 // package so that aggregate methods can record events without circular imports.
 const (
+	EventBindingCreated         domainevent.EventType = "binding.created"
 	EventBindingProvisioned     domainevent.EventType = "binding.provisioned"
 	EventBindingDeprovisioned   domainevent.EventType = "binding.deprovisioned"
 	EventBindingSyncFailed      domainevent.EventType = "binding.sync_failed"
@@ -18,6 +19,14 @@ const (
 )
 
 // --- Binding event payloads ---
+
+// BindingCreatedPayload is the typed payload for EventBindingCreated.
+// Recorded when a new RemnawaveBinding is constructed via NewBinding.
+type BindingCreatedPayload struct {
+	BindingID      string `json:"binding_id"`
+	SubscriptionID string `json:"subscription_id"`
+	Purpose        string `json:"purpose"`
+}
 
 // BindingProvisionedPayload is the typed payload for EventBindingProvisioned.
 type BindingProvisionedPayload struct {
@@ -72,6 +81,7 @@ type BindingUnlimitedPayload struct {
 
 // --- EventPayload interface implementations ---
 
+func (BindingCreatedPayload) EventType() domainevent.EventType     { return EventBindingCreated }
 func (BindingProvisionedPayload) EventType() domainevent.EventType { return EventBindingProvisioned }
 func (BindingDeprovisionedPayload) EventType() domainevent.EventType {
 	return EventBindingDeprovisioned
@@ -84,6 +94,7 @@ func (BindingUnlimitedPayload) EventType() domainevent.EventType { return EventB
 
 // Compile-time interface checks.
 var (
+	_ domainevent.EventPayload = BindingCreatedPayload{}
 	_ domainevent.EventPayload = BindingProvisionedPayload{}
 	_ domainevent.EventPayload = BindingDeprovisionedPayload{}
 	_ domainevent.EventPayload = BindingFailedPayload{}

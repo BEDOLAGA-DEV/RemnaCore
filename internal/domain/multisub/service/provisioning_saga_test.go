@@ -81,7 +81,8 @@ func TestProvision_Success(t *testing.T) {
 		ShortUUID: "rw-short-3",
 	}, nil).Once()
 
-	pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil).Times(3)
+	// 3 bindings x 2 events each (binding.created + binding.provisioned) = 6 calls
+	pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil).Times(6)
 
 	results, err := saga.Provision(ctx, service.ProvisionRequest{
 		SubscriptionID:  "sub-1",
@@ -133,7 +134,8 @@ func TestProvision_RemnawaveFail(t *testing.T) {
 		return b.Status == aggregate.BindingActive
 	})).Return(nil).Once()
 
-	pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil).Once()
+	// binding.created + binding.provisioned = 2 events for the successful binding
+	pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil).Times(2)
 
 	// Second binding: gaming - Remnawave fails
 	rwErr := errors.New("connection refused")
@@ -332,7 +334,8 @@ func TestProvision_ZeroMaxBindings_NoLimit(t *testing.T) {
 		ShortUUID: "rw-short-1",
 	}, nil).Once()
 
-	pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil).Once()
+	// binding.created + binding.provisioned = 2 events
+	pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil).Times(2)
 
 	results, err := saga.Provision(ctx, service.ProvisionRequest{
 		SubscriptionID: "sub-1",

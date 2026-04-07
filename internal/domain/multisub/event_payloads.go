@@ -7,6 +7,7 @@ import (
 
 // Payload type aliases re-exported from aggregate for backward compatibility.
 type (
+	BindingCreatedPayload       = aggregate.BindingCreatedPayload
 	BindingProvisionedPayload   = aggregate.BindingProvisionedPayload
 	BindingDeprovisionedPayload = aggregate.BindingDeprovisionedPayload
 	BindingFailedPayload        = aggregate.BindingFailedPayload

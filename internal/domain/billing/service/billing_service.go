@@ -253,7 +253,11 @@ func (s *BillingService) CancelSubscription(ctx context.Context, subID string, r
 			}
 		}
 
-		if err := sub.Cancel(s.clock.Now()); err != nil {
+		cancelReason := ""
+		if reason != nil {
+			cancelReason = *reason
+		}
+		if err := sub.Cancel(cancelReason, s.clock.Now()); err != nil {
 			return fmt.Errorf("cancel subscription: %w", err)
 		}
 
