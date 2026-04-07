@@ -333,10 +333,15 @@ func (c *BillingEventConsumer) handleMessage(ctx context.Context, subject string
 			m.EventsProcessedTotal.WithLabelValues(string(event.Type), observability.StatusFailed).Inc()
 		})
 		// Application-level backoff: Watermill's Message interface does not
-		// expose NakWithDelay, so we sleep before Nack to prevent rapid
-		// redelivery. The sleep is bounded by the message processing timeout
-		// (context deadline) set in consumeLoop.
-		time.Sleep(delay)
+		// expose NakWithDelay, so we wait before Nack to prevent rapid
+		// redelivery. Uses select with context so that shutdown cancellation
+		// interrupts the wait instead of blocking the goroutine.
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			msg.Nack()
+			return
+		}
 		msg.Nack()
 		return
 	}

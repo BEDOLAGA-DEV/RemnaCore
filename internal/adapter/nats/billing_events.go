@@ -3,7 +3,6 @@ package nats
 import (
 	"context"
 
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
 
@@ -27,9 +26,11 @@ func (p *BillingEventPublisher) Publish(ctx context.Context, event domainevent.E
 	return p.publisher.Publish(ctx, topic, event)
 }
 
-// PublishBatch publishes multiple events sequentially to NATS. Unlike the
-// outbox adapter, NATS has no native batch publish — events are sent one at a
-// time but the method satisfies the domainevent.Publisher interface contract.
+// PublishBatch publishes events sequentially to NATS. This is used for
+// direct NATS publish (plugin async, internal notifications) — NOT for
+// domain events which go through the transactional outbox.
+// Partial publish is possible on error; callers should treat this as
+// best-effort notification, not guaranteed delivery.
 func (p *BillingEventPublisher) PublishBatch(ctx context.Context, events []domainevent.Event) error {
 	for _, event := range events {
 		if err := p.Publish(ctx, event); err != nil {
@@ -39,25 +40,3 @@ func (p *BillingEventPublisher) PublishBatch(ctx context.Context, events []domai
 	return nil
 }
 
-// billingEventTopics returns the NATS subjects that carry billing domain events.
-// Used by subscribers to know which topics to listen to.
-func billingEventTopics() []string {
-	return []string{
-		string(billing.EventInvoiceCreated),
-		string(billing.EventInvoicePaid),
-		string(billing.EventInvoiceFailed),
-		string(billing.EventInvoiceRefunded),
-		string(billing.EventSubCreated),
-		string(billing.EventSubActivated),
-		string(billing.EventSubCancelled),
-		string(billing.EventSubRenewed),
-		string(billing.EventSubUpgraded),
-		string(billing.EventSubDowngraded),
-		string(billing.EventSubTrialStarted),
-		string(billing.EventSubTrialEnding),
-		string(billing.EventSubPaused),
-		string(billing.EventSubResumed),
-		string(billing.EventFamilyMemberAdded),
-		string(billing.EventFamilyMemberRemoved),
-	}
-}

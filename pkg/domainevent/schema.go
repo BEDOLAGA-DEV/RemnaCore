@@ -1,6 +1,7 @@
 package domainevent
 
 import (
+	"fmt"
 	"slices"
 	"strconv"
 )
@@ -62,6 +63,31 @@ func (r *SchemaRegistry) LatestVersion(eventType EventType) int {
 		return DefaultEventVersion
 	}
 	return chain[len(chain)-1].FromVersion() + 1
+}
+
+// Validate checks that all registered upcaster chains are continuous
+// (no version gaps). Should be called at startup after all upcasters are
+// registered. Returns nil if no upcasters are registered.
+//
+// A valid chain starts at FromVersion 1 (targeting v2) and each subsequent
+// upcaster has FromVersion = previous FromVersion + 1. A gap means an
+// intermediate version migration is missing and events at that version
+// would silently skip upcasting.
+func (r *SchemaRegistry) Validate() error {
+	for eventType, chain := range r.upcasters {
+		if len(chain) == 0 {
+			continue
+		}
+		// chain is already sorted by FromVersion (Register sorts on insert).
+		for i, u := range chain {
+			expectedFrom := i + 1 // v1->v2, v2->v3, etc.
+			if u.FromVersion() != expectedFrom {
+				return fmt.Errorf("upcaster chain gap for %s: expected FromVersion %d (target v%d), got FromVersion %d (target v%d)",
+					eventType, expectedFrom, expectedFrom+1, u.FromVersion(), u.FromVersion()+1)
+			}
+		}
+	}
+	return nil
 }
 
 // Upcast normalizes an event from an older schema version to the current version.

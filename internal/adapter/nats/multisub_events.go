@@ -3,7 +3,6 @@ package nats
 import (
 	"context"
 
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
 
@@ -26,9 +25,11 @@ func (p *MultiSubEventPublisher) Publish(ctx context.Context, event domainevent.
 	return p.publisher.Publish(ctx, topic, event)
 }
 
-// PublishBatch publishes multiple events sequentially to NATS. Unlike the
-// outbox adapter, NATS has no native batch publish — events are sent one at a
-// time but the method satisfies the domainevent.Publisher interface contract.
+// PublishBatch publishes events sequentially to NATS. This is used for
+// direct NATS publish (plugin async, internal notifications) — NOT for
+// domain events which go through the transactional outbox.
+// Partial publish is possible on error; callers should treat this as
+// best-effort notification, not guaranteed delivery.
 func (p *MultiSubEventPublisher) PublishBatch(ctx context.Context, events []domainevent.Event) error {
 	for _, event := range events {
 		if err := p.Publish(ctx, event); err != nil {
@@ -38,16 +39,3 @@ func (p *MultiSubEventPublisher) PublishBatch(ctx context.Context, events []doma
 	return nil
 }
 
-// multiSubEventTopics returns the NATS subjects that carry multisub domain
-// events. Used by subscribers to know which topics to listen to.
-func multiSubEventTopics() []string {
-	return []string{
-		string(multisub.EventBindingProvisioned),
-		string(multisub.EventBindingDeprovisioned),
-		string(multisub.EventBindingSyncFailed),
-		string(multisub.EventBindingSyncCompleted),
-		string(multisub.EventBindingTrafficExceeded),
-		string(multisub.EventBindingLimited),
-		string(multisub.EventBindingUnlimited),
-	}
-}

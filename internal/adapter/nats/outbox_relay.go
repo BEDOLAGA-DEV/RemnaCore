@@ -588,10 +588,17 @@ func (r *OutboxRelay) cleanup(ctx context.Context) {
 // in a JSON payload without full unmarshaling.
 var traceParentKey = []byte(`"trace_parent":"`)
 
-// extractTraceParent extracts the trace_parent field from a JSON payload
-// without full unmarshaling. Uses byte scanning for performance in the
-// hot path (called once per event in relay batch). Returns an empty string
-// if the field is missing, empty, or the payload is malformed.
+// extractTraceParent extracts trace_parent from JSON payload via byte scanning.
+// This is a FALLBACK for events written before migration 026 added the
+// trace_parent column. The relay prefers the column value; this function
+// is only called when the column is empty.
+//
+// Known limitation: byte scanning can produce false matches if trace_parent
+// appears inside a nested JSON string value. This is acceptable for the
+// fallback path — new events always have the column populated.
+//
+// TODO: Remove this fallback after all pre-026 events expire from outbox
+// retention (30 days after migration 026 deployment).
 func extractTraceParent(payload []byte) string {
 	idx := bytes.Index(payload, traceParentKey)
 	if idx == -1 {

@@ -382,6 +382,83 @@ func TestSchemaRegistry_MultiStepUpcast_EndToEnd(t *testing.T) {
 	assert.Equal(t, 3, registry.LatestVersion("subscription.activated"))
 }
 
+func TestSchemaRegistry_Validate(t *testing.T) {
+	tests := []struct {
+		name      string
+		setup     func(*SchemaRegistry)
+		wantErr   bool
+		errSubstr string
+	}{
+		{
+			name:    "empty registry is valid",
+			setup:   func(_ *SchemaRegistry) {},
+			wantErr: false,
+		},
+		{
+			name: "continuous chain v1->v2->v3 is valid",
+			setup: func(r *SchemaRegistry) {
+				noop := func(d map[string]any) map[string]any { return d }
+				r.Register("sub.activated", testUpcaster{fromVersion: 1, transform: noop})
+				r.Register("sub.activated", testUpcaster{fromVersion: 2, transform: noop})
+			},
+			wantErr: false,
+		},
+		{
+			name: "single upcaster v1->v2 is valid",
+			setup: func(r *SchemaRegistry) {
+				noop := func(d map[string]any) map[string]any { return d }
+				r.Register("user.registered", testUpcaster{fromVersion: 1, transform: noop})
+			},
+			wantErr: false,
+		},
+		{
+			name: "gap: missing v1->v2, only v2->v3 registered",
+			setup: func(r *SchemaRegistry) {
+				noop := func(d map[string]any) map[string]any { return d }
+				r.Register("sub.activated", testUpcaster{fromVersion: 2, transform: noop})
+			},
+			wantErr:   true,
+			errSubstr: "upcaster chain gap for sub.activated",
+		},
+		{
+			name: "gap: v1->v2 and v3->v4, missing v2->v3",
+			setup: func(r *SchemaRegistry) {
+				noop := func(d map[string]any) map[string]any { return d }
+				r.Register("sub.activated", testUpcaster{fromVersion: 1, transform: noop})
+				r.Register("sub.activated", testUpcaster{fromVersion: 3, transform: noop})
+			},
+			wantErr:   true,
+			errSubstr: "upcaster chain gap for sub.activated",
+		},
+		{
+			name: "multiple event types independently valid",
+			setup: func(r *SchemaRegistry) {
+				noop := func(d map[string]any) map[string]any { return d }
+				r.Register("sub.activated", testUpcaster{fromVersion: 1, transform: noop})
+				r.Register("user.registered", testUpcaster{fromVersion: 1, transform: noop})
+				r.Register("user.registered", testUpcaster{fromVersion: 2, transform: noop})
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registry := NewSchemaRegistry()
+			tt.setup(registry)
+
+			err := registry.Validate()
+
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errSubstr)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestSchemaRegistry_OutOfOrderRegistration(t *testing.T) {
 	registry := NewSchemaRegistry()
 

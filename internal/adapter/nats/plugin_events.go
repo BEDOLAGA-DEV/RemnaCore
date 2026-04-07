@@ -147,7 +147,14 @@ func (c *PluginAsyncConsumer) handleMessage(ctx context.Context, msg *message.Me
 			slog.Duration("backoff", delay),
 			slog.Any("error", dispatchErr),
 		)
-		time.Sleep(delay)
+		// Context-aware backoff: select with context so shutdown cancellation
+		// interrupts the wait instead of blocking the goroutine.
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			msg.Nack()
+			return
+		}
 		msg.Nack()
 		return
 	}

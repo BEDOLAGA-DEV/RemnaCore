@@ -82,6 +82,11 @@ var natsWiring = fx.Options(
 		r := domainevent.NewSchemaRegistry()
 		// Reference upcasters: subscription.activated v1->v2
 		r.Register(billingaggregate.EventSubActivated, billingaggregate.SubActivatedV1ToV2{})
+		// Validate upcaster chain continuity at startup. A gap would mean
+		// events at an intermediate version silently skip upcasting.
+		if err := r.Validate(); err != nil {
+			panic("schema registry validation failed: " + err.Error())
+		}
 		return r
 	}),
 

@@ -23,6 +23,10 @@ const (
 	RetentionDay   = 24 * time.Hour
 	RetentionWeek  = 7 * RetentionDay
 	RetentionMonth = 30 * RetentionDay
+
+	// RetentionQuarter is 90 days — used for DLQ where failed events must
+	// survive long enough for investigation and manual replay.
+	RetentionQuarter = 90 * RetentionDay
 )
 
 // DedupWindow is the JetStream message deduplication window.
@@ -100,10 +104,13 @@ func StreamConfigs() []jetstream.StreamConfig {
 			Duplicates: DedupWindow,
 		},
 		{
+			// DLQ retention is longer than domain streams (90 days vs 30 days).
+			// Failed events that are not replayed within 30 days would be silently
+			// lost at domain stream retention. DLQ preserves them for investigation.
 			Name:       StreamDLQ,
 			Subjects:   []string{"dlq.>"},
 			Storage:    jetstream.FileStorage,
-			MaxAge:     RetentionMonth,
+			MaxAge:     RetentionQuarter,
 			Duplicates: DedupWindow,
 		},
 	}
