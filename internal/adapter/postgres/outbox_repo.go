@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"time"
@@ -13,6 +14,13 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pgutil"
 )
+
+// ErrOutboxBackpressure is returned by CheckBackpressure when the outbox
+// unpublished event count exceeds the critical threshold. This is an
+// informational signal — callers should NOT reject events (that would violate
+// transactional guarantees). Instead, use it for circuit-breaking observability
+// at the publisher side.
+var ErrOutboxBackpressure = errors.New("outbox: critical backpressure threshold exceeded")
 
 // MaxRelayAttempts is the maximum number of times the relay will attempt to
 // publish a single outbox event before marking it as permanently failed
@@ -57,10 +65,11 @@ func (r *OutboxRepository) queries(ctx context.Context) *gen.Queries {
 
 // Store saves an event to the outbox table. This should be called within
 // the same database transaction as the business logic that produced the event.
-func (r *OutboxRepository) Store(ctx context.Context, eventType string, payload []byte) error {
+func (r *OutboxRepository) Store(ctx context.Context, eventType string, payload []byte, entityID string) error {
 	err := r.queries(ctx).InsertOutboxEvent(ctx, gen.InsertOutboxEventParams{
 		EventType: eventType,
 		Payload:   payload,
+		EntityID:  entityID,
 	})
 	if err != nil {
 		return fmt.Errorf("store outbox event: %w", err)
@@ -81,6 +90,28 @@ func (r *OutboxRepository) GetUnpublished(ctx context.Context, limit int) ([]Out
 	events := make([]OutboxEvent, 0, len(rows))
 	for _, row := range rows {
 		events = append(events, rowToOutboxEvent(row))
+	}
+	return events, nil
+}
+
+// GetUnpublishedForWorker returns up to limit unpublished events that are
+// assigned to the given workerID via entity_id hash affinity. The query uses
+// abs(hashtext(entity_id)) % workerCount = workerID, ensuring events for the
+// same entity always go to the same worker and preserving per-entity sequence
+// ordering. Like GetUnpublished, this MUST be called within a transaction.
+func (r *OutboxRepository) GetUnpublishedForWorker(ctx context.Context, limit int, workerID, workerCount int) ([]OutboxEvent, error) {
+	rows, err := r.queries(ctx).GetUnpublishedForWorker(ctx, gen.GetUnpublishedForWorkerParams{
+		Limit:       int32(limit),
+		WorkerCount: int32(workerCount),
+		WorkerID:    int32(workerID),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("get unpublished outbox events for worker %d/%d: %w", workerID, workerCount, err)
+	}
+
+	events := make([]OutboxEvent, 0, len(rows))
+	for _, row := range rows {
+		events = append(events, workerRowToOutboxEvent(row))
 	}
 	return events, nil
 }
@@ -216,10 +247,15 @@ func timeRange(ts []time.Time) (min, max time.Time) {
 }
 
 // DeleteOld removes published events whose published_at is older than the
-// given duration. This keeps the outbox table from growing unbounded.
-func (r *OutboxRepository) DeleteOld(ctx context.Context, olderThan time.Duration) error {
+// given duration AND whose created_at is at or after minCreatedAt. This
+// restricts cleanup to the current quarter's partition — older partitions
+// are dropped entirely by PartitionManager.DetachAndDrop (O(1), no vacuum).
+func (r *OutboxRepository) DeleteOld(ctx context.Context, olderThan time.Duration, minCreatedAt time.Time) error {
 	cutoff := pgutil.TimeToPgtype(r.clock.Now().Add(-olderThan))
-	err := r.queries(ctx).DeleteOldPublishedOutboxEvents(ctx, cutoff)
+	err := r.queries(ctx).DeleteOldPublishedOutboxEvents(ctx, gen.DeleteOldPublishedOutboxEventsParams{
+		PublishedAt: cutoff,
+		CreatedAt:   pgutil.TimeToPgtype(minCreatedAt),
+	})
 	if err != nil {
 		return fmt.Errorf("delete old outbox events: %w", err)
 	}
@@ -328,8 +364,61 @@ func (r *OutboxRepository) CountUnpublished(ctx context.Context) (int64, error) 
 	return count, nil
 }
 
+// outboxCriticalThreshold is the number of unpublished events that indicates
+// the outbox is severely backed up. CheckBackpressure returns
+// ErrOutboxBackpressure when the count exceeds this value.
+const outboxCriticalThreshold int64 = 50000
+
+// CheckBackpressure returns ErrOutboxBackpressure if the outbox unpublished
+// event count exceeds the critical threshold. Callers can use this for
+// circuit-breaking observability at the publisher side.
+//
+// This is informational only — events should never be rejected based on this
+// signal, as that would violate transactional guarantees. If the count query
+// fails, nil is returned (fail-open: do not block publishing on count query
+// failure).
+func (r *OutboxRepository) CheckBackpressure(ctx context.Context) error {
+	count, err := r.CountUnpublished(ctx)
+	if err != nil {
+		return nil // Fail open — don't block publishing on count query failure.
+	}
+	if count > outboxCriticalThreshold {
+		return ErrOutboxBackpressure
+	}
+	return nil
+}
+
+// GetLastPublishedSequence returns the highest sequence_number among published
+// outbox events. Returns 0 if no published events exist. Used by the outbox
+// reconciliation check to compare PG outbox state with JetStream stream state.
+func (r *OutboxRepository) GetLastPublishedSequence(ctx context.Context) (int64, error) {
+	seq, err := r.queries(ctx).GetLastPublishedOutboxSequence(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("get last published outbox sequence: %w", err)
+	}
+	return seq, nil
+}
+
 // rowToOutboxEvent converts a sqlc-generated row to the adapter-level OutboxEvent.
 func rowToOutboxEvent(row gen.GetUnpublishedOutboxEventsRow) OutboxEvent {
+	var seqNum int64
+	if row.SequenceNumber != nil {
+		seqNum = *row.SequenceNumber
+	}
+	return OutboxEvent{
+		ID:             pgutil.PgtypeToUUID(row.ID),
+		EventType:      row.EventType,
+		Payload:        row.Payload,
+		CreatedAt:      pgutil.PgtypeToTime(row.CreatedAt),
+		SequenceNumber: seqNum,
+		RelayAttempts:  int(row.RelayAttempts),
+	}
+}
+
+// workerRowToOutboxEvent converts a GetUnpublishedForWorkerRow to OutboxEvent.
+// The row shape is identical to GetUnpublishedOutboxEventsRow but sqlc generates
+// a separate type for each query.
+func workerRowToOutboxEvent(row gen.GetUnpublishedForWorkerRow) OutboxEvent {
 	var seqNum int64
 	if row.SequenceNumber != nil {
 		seqNum = *row.SequenceNumber

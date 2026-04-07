@@ -140,6 +140,20 @@ type entityLock struct {
 //     via entityLocks, while different entities run concurrently.
 //   - Retry + DLQ: failed messages are retried up to MaxMessageRetries times;
 //     permanently failing messages are sent to the dead-letter queue.
+//
+// Event version handling: all events are normalized to the current schema
+// version via SchemaRegistry.Upcast before processing. This allows producers
+// to evolve payloads (adding fields, renaming) while consumers always work
+// with the latest version.
+//
+// To add a new event version:
+//  1. Create a struct implementing domainevent.Upcaster in the domain aggregate package
+//  2. Register it in the SchemaRegistry (internal/app/wiring_nats.go)
+//  3. Bump DefaultEventVersion if ALL producers now emit the new version
+//  4. Old events in NATS will be automatically upcasted on consumption.
+//
+// Events with unknown versions are not rejected — they pass through unchanged
+// and are processed best-effort with a warning log.
 type BillingEventConsumer struct {
 	subscriber     *EventSubscriber
 	handler        SubscriptionEventHandler
@@ -153,9 +167,10 @@ type BillingEventConsumer struct {
 	clock          clock.Clock
 	metrics        *observability.Metrics
 	natsConn       *nc.Conn
-	messageTimeout time.Duration
-	entityLocks    sync.Map // map[string]*entityLock — per-entity serialisation
-	inflightWg     sync.WaitGroup
+	messageTimeout  time.Duration
+	entityLocks     sync.Map // map[string]*entityLock — per-entity serialisation
+	inflightWg      sync.WaitGroup
+	seqTracker      *sequenceTracker
 }
 
 // NewBillingEventConsumer creates a BillingEventConsumer with the given
@@ -194,6 +209,7 @@ func NewBillingEventConsumer(
 		metrics:        metrics,
 		natsConn:       conn,
 		messageTimeout: DefaultMessageProcessingTimeout,
+		seqTracker:     newSequenceTracker(logger, metrics),
 	}
 }
 

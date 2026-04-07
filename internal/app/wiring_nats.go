@@ -44,11 +44,13 @@ var natsWiring = fx.Options(
 		outbox *postgres.OutboxRepository,
 		publisher *natsadapter.EventPublisher,
 		txRunner txmanager.Runner,
+		clk clock.Clock,
 		logger *slog.Logger,
 		cfg *config.Config,
 		metrics *observability.Metrics,
+		conn *nc.Conn,
 	) *natsadapter.OutboxRelay {
-		return natsadapter.NewOutboxRelay(outbox, publisher, txRunner, logger, cfg.Outbox.RelayWorkers, metrics)
+		return natsadapter.NewOutboxRelay(outbox, publisher, txRunner, clk, logger, cfg.Outbox.RelayWorkers, metrics, conn)
 	}),
 
 	// NATS subscriber (shared by all consumers)

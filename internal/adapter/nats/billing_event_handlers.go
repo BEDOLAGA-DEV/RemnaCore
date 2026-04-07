@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/ThreeDotsLabs/watermill"
@@ -145,6 +146,17 @@ func (c *BillingEventConsumer) handleMessage(ctx context.Context, subject string
 	// Upcast old event payloads to the latest schema version before processing.
 	event = c.schemaRegistry.Upcast(event)
 
+	// Warn if the event version exceeds the latest known version. This can
+	// happen when a producer has been upgraded before all consumers. The event
+	// is still processed best-effort — we never reject unknown versions.
+	if latestVersion := c.schemaRegistry.LatestVersion(event.Type); event.Version > latestVersion {
+		c.logger.Warn("event version exceeds latest known schema version, processing best-effort",
+			slog.String("event_type", string(event.Type)),
+			slog.Int("event_version", event.Version),
+			slog.Int("latest_version", latestVersion),
+		)
+	}
+
 	// Record event processing lag: the time between when the event was created
 	// (by the domain service) and when the consumer begins processing it. This
 	// captures outbox relay delay + NATS delivery latency.
@@ -165,6 +177,16 @@ func (c *BillingEventConsumer) handleMessage(ctx context.Context, subject string
 	}
 	if entityID == "" {
 		entityID = extractString(event.Data, "binding_id")
+	}
+
+	// Consumer-side sequence gap detection: extract the outbox sequence
+	// number from NATS message metadata and check for gaps against the
+	// last seen sequence for this entity. This is observability-only —
+	// it logs and increments a counter but never blocks processing.
+	if seqStr := msg.Metadata.Get(HeaderOutboxSequence); seqStr != "" {
+		if seq, parseErr := strconv.ParseInt(seqStr, 10, 64); parseErr == nil {
+			c.seqTracker.checkAndUpdate(entityID, seq)
+		}
 	}
 
 	// Per-event-instance idempotency key: use the domain event ID when

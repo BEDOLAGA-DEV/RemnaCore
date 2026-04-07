@@ -179,6 +179,9 @@ func (pm *PartitionManager) ensure(ctx context.Context) {
 // This is the PartitionManager side of the two-tier outbox cleanup strategy.
 // It drops entire past-retention partitions (instant O(1) via DETACH + DROP)
 // that contain no unpublished events and pass the sequence safety check.
+// Relay cleanup (outbox_relay.go) skips rows in these partitions by scoping
+// its DELETE to created_at >= current quarter start, so there is no redundant
+// DELETE + autovacuum work on partitions destined for DROP.
 //
 // Complementary cleanup by OutboxRelay.cleanup handles intra-partition purging
 // for the active quarter using DELETE WHERE published=true. See the godoc on

@@ -43,7 +43,10 @@ const (
 	MetricHookDispatchDuration      = "platform_hook_dispatch_duration_seconds"
 	MetricHookDispatchTotal         = "platform_hook_dispatch_total"
 	MetricBindingsLimitedTotal      = "platform_bindings_limited_total"
-	MetricWASMRunnerReplacements    = "platform_wasm_runner_replacements_total"
+	MetricWASMRunnerReplacements         = "platform_wasm_runner_replacements_total"
+	MetricOutboxBackpressureTriggered    = "platform_outbox_backpressure_triggered_total"
+	MetricOutboxReconciliationSeqGap     = "platform_outbox_reconciliation_sequence_gap"
+	MetricOutboxSequenceGaps             = "platform_outbox_sequence_gaps_total"
 )
 
 // Metric help string constants.
@@ -84,7 +87,10 @@ const (
 	helpHookDispatchDuration      = "Duration of sync hook dispatches by hook name."
 	helpHookDispatchTotal         = "Total hook dispatches by hook name and result."
 	helpBindingsLimitedTotal      = "Current number of bindings in traffic-limited state."
-	helpWASMRunnerReplacements    = "WASM runners replaced due to max-uses threshold or corruption."
+	helpWASMRunnerReplacements         = "WASM runners replaced due to max-uses threshold or corruption."
+	helpOutboxBackpressureTriggered    = "Times the outbox unpublished count exceeded the backpressure threshold."
+	helpOutboxReconciliationSeqGap     = "Gap between the last published outbox sequence and total JetStream messages. A sustained positive value may indicate missed events from the partial-commit edge case."
+	helpOutboxSequenceGaps             = "Detected sequence gaps in outbox event delivery on the consumer side."
 )
 
 // Label name constants.
@@ -194,6 +200,15 @@ type Metrics struct {
 
 	// WASM runner replacement counter
 	WASMRunnerReplacements *prometheus.CounterVec
+
+	// Outbox backpressure counter
+	OutboxBackpressureTriggered prometheus.Counter
+
+	// Outbox reconciliation sequence gap gauge
+	OutboxReconciliationSeqGap prometheus.Gauge
+
+	// Consumer-side outbox sequence gap counter
+	OutboxSequenceGaps prometheus.Counter
 }
 
 // registerRuntimeCollectors replaces the default Go and process collectors with
@@ -379,5 +394,20 @@ func NewMetrics() *Metrics {
 			Name: MetricWASMRunnerReplacements,
 			Help: helpWASMRunnerReplacements,
 		}, []string{LabelPlugin, LabelReason}),
+
+		OutboxBackpressureTriggered: promauto.NewCounter(prometheus.CounterOpts{
+			Name: MetricOutboxBackpressureTriggered,
+			Help: helpOutboxBackpressureTriggered,
+		}),
+
+		OutboxReconciliationSeqGap: promauto.NewGauge(prometheus.GaugeOpts{
+			Name: MetricOutboxReconciliationSeqGap,
+			Help: helpOutboxReconciliationSeqGap,
+		}),
+
+		OutboxSequenceGaps: promauto.NewCounter(prometheus.CounterOpts{
+			Name: MetricOutboxSequenceGaps,
+			Help: helpOutboxSequenceGaps,
+		}),
 	}
 }

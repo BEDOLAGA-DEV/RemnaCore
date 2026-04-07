@@ -1,8 +1,8 @@
 package nats
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -10,10 +10,12 @@ import (
 	"time"
 
 	"github.com/ThreeDotsLabs/watermill/message"
+	nc "github.com/nats-io/nats.go"
 	"github.com/sony/gobreaker/v2"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
@@ -26,6 +28,18 @@ import (
 //	  expr: delta(platform_outbox_unpublished_count[5m]) > 100
 //	  for: 10m
 const OutboxBacklogPollInterval = 30 * time.Second
+
+// OutboxBackpressureThreshold is the number of unpublished events that triggers
+// a backpressure warning. When exceeded, an error is logged each poll cycle and
+// the OutboxBackpressureTriggered counter is incremented. This is
+// observability-only — events are never rejected.
+//
+// Suggested Prometheus alert:
+//
+//	- alert: OutboxBackpressure
+//	  expr: increase(platform_outbox_backpressure_triggered_total[5m]) > 0
+//	  for: 5m
+const OutboxBackpressureThreshold int64 = 10000
 
 // Outbox relay constants control polling frequency, batch size, and retention.
 const (
@@ -70,9 +84,24 @@ const (
 // the ticker loop, so events stuck from a prior crash are forwarded without
 // waiting for the first tick.
 //
-// Delivery guarantee: at-least-once. If NATS publish succeeds but
-// MarkPublishedBatch fails, the transaction rolls back and the event is
-// re-published on the next tick. Consumers must be idempotent.
+// Delivery guarantee: at-least-once with documented edge cases.
+//
+// Normal flow: GetUnpublished -> NATS Publish -> MarkPublishedBatch -> Commit.
+// JetStream deduplication (10-minute window) prevents duplicate processing.
+//
+// Edge case 1 (most common): Commit fails after NATS publish succeeded.
+// Events are re-published on next tick. JetStream Msg-Id deduplication
+// ensures consumers see each event exactly once.
+//
+// Edge case 2 (rare): MarkPublishedBatch succeeds but PG commit fails
+// (network partition). Events are marked published in PG (on reconnect
+// PG may have committed the transaction), but NATS may not have received
+// them. This is at-most-once for this specific failure mode.
+// Mitigation: reconciliation check compares outbox sequence with JetStream
+// last sequence, and the relay_failed mechanism catches permanently stuck
+// events. The ReconciliationCheck method detects this gap via observability.
+//
+// Consumers must be idempotent regardless of delivery guarantee.
 //
 // Circuit breaker: the relay wraps NATS publishes in a circuit breaker. When
 // NATS is unreachable, the breaker opens after relayCBConsecutiveFailures
@@ -88,10 +117,12 @@ type OutboxRelay struct {
 	outbox      *postgres.OutboxRepository
 	publisher   *EventPublisher
 	txRunner    txmanager.Runner
+	clock       clock.Clock
 	logger      *slog.Logger
 	metrics     *observability.Metrics
 	workerCount int
 	natsBreaker *gobreaker.CircuitBreaker[struct{}]
+	natsConn    *nc.Conn
 }
 
 // NATS message metadata header keys for outbox relay.
@@ -141,13 +172,17 @@ const (
 // workerCount controls the number of parallel relay goroutines; values
 // below MinOutboxRelayWorkers are clamped to MinOutboxRelayWorkers.
 // metrics may be nil; metric recording is skipped when nil (safe for tests).
+// conn is the NATS connection used by ReconciliationCheck to query JetStream
+// stream state; it may be nil if reconciliation is not needed.
 func NewOutboxRelay(
 	outbox *postgres.OutboxRepository,
 	publisher *EventPublisher,
 	txRunner txmanager.Runner,
+	clk clock.Clock,
 	logger *slog.Logger,
 	workerCount int,
 	metrics *observability.Metrics,
+	conn *nc.Conn,
 ) *OutboxRelay {
 	if workerCount < MinOutboxRelayWorkers {
 		workerCount = MinOutboxRelayWorkers
@@ -170,10 +205,12 @@ func NewOutboxRelay(
 		outbox:      outbox,
 		publisher:   publisher,
 		txRunner:    txRunner,
+		clock:       clk,
 		logger:      logger,
 		metrics:     metrics,
 		workerCount: workerCount,
 		natsBreaker: cb,
+		natsConn:    conn,
 	}
 }
 
@@ -211,6 +248,13 @@ func (r *OutboxRelay) Run(ctx context.Context) {
 		r.pollOutboxBacklog(ctx)
 	}()
 
+	// Single reconciliation goroutine to detect outbox-JetStream sequence gaps.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		r.runReconciliation(ctx)
+	}()
+
 	wg.Wait()
 }
 
@@ -230,7 +274,7 @@ func (r *OutboxRelay) runWorker(ctx context.Context, workerID int) {
 	currentBatchSize := OutboxRelayBatchSize
 
 	// Immediate catch-up for events stuck from a prior crash.
-	r.relay(ctx, logger, workerLabel, currentBatchSize)
+	r.relay(ctx, logger, workerID, workerLabel, currentBatchSize)
 
 	currentInterval := OutboxRelayBaseInterval
 	relayTimer := time.NewTimer(currentInterval)
@@ -242,7 +286,7 @@ func (r *OutboxRelay) runWorker(ctx context.Context, workerID int) {
 			logger.Info("outbox relay worker stopping")
 			return
 		case <-relayTimer.C:
-			published := r.relay(ctx, logger, workerLabel, currentBatchSize)
+			published := r.relay(ctx, logger, workerID, workerLabel, currentBatchSize)
 
 			switch {
 			case published == currentBatchSize:
@@ -289,6 +333,12 @@ func (r *OutboxRelay) runCleanup(ctx context.Context) {
 // The transaction ensures that locked rows are invisible to other relay
 // instances.
 //
+// Worker affinity: when workerCount > 1, the query uses
+// abs(hashtext(entity_id)) % workerCount = workerID to ensure events for the
+// same entity always go to the same worker, preserving per-entity ordering.
+// In single-worker mode (workerCount == 1), the original query without hash
+// filtering is used for simplicity.
+//
 // Circuit breaker: if the NATS breaker is open, relay returns 0 immediately
 // without polling the database. This prevents wasteful DB locks during NATS
 // outages.
@@ -302,12 +352,25 @@ func (r *OutboxRelay) runCleanup(ctx context.Context) {
 // If MarkPublishedBatch fails, the entire transaction is rolled back; events
 // that were already published to NATS will be deduplicated by JetStream.
 //
+// Partial-commit edge case: if all NATS publishes succeed and
+// MarkPublishedBatch succeeds within the transaction, but the PG COMMIT
+// itself fails (e.g. network partition), two outcomes are possible:
+//   - PG actually committed before the network error: events are marked
+//     published in PG and delivered to NATS. No data loss.
+//   - PG rolled back: events are NOT marked published, so they will be
+//     re-fetched and re-published on the next tick. JetStream deduplication
+//     prevents consumers from seeing duplicates.
+//
+// In neither case is an event silently lost under normal operation. The
+// ReconciliationCheck method provides observability into sequence gaps
+// between the outbox and JetStream as a defence-in-depth measure.
+//
 // The logger parameter carries the worker ID so log lines can be correlated
 // to a specific worker. The workerLabel is the stringified worker ID used as
 // a Prometheus label value. The batchSize parameter controls how many events
 // are fetched — the caller (runWorker) adjusts this dynamically based on
 // whether previous batches were full.
-func (r *OutboxRelay) relay(ctx context.Context, logger *slog.Logger, workerLabel string, batchSize int) int {
+func (r *OutboxRelay) relay(ctx context.Context, logger *slog.Logger, workerID int, workerLabel string, batchSize int) int {
 	// Skip DB polling entirely when NATS is known to be unreachable.
 	if r.natsBreaker.State() == gobreaker.StateOpen {
 		logger.Debug("outbox relay: NATS circuit open, skipping poll")
@@ -319,9 +382,19 @@ func (r *OutboxRelay) relay(ctx context.Context, logger *slog.Logger, workerLabe
 	var fetchedCount int
 
 	err := r.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
-		events, err := r.outbox.GetUnpublished(txCtx, batchSize)
-		if err != nil {
-			return fmt.Errorf("get unpublished: %w", err)
+		// When multiple workers are active, use entity_id hash affinity so
+		// that events for the same entity always go to the same worker,
+		// preserving per-entity sequence ordering. Single-worker mode uses
+		// the simpler query without hash filtering.
+		var events []postgres.OutboxEvent
+		var fetchErr error
+		if r.workerCount > 1 {
+			events, fetchErr = r.outbox.GetUnpublishedForWorker(txCtx, batchSize, workerID, r.workerCount)
+		} else {
+			events, fetchErr = r.outbox.GetUnpublished(txCtx, batchSize)
+		}
+		if fetchErr != nil {
+			return fmt.Errorf("get unpublished: %w", fetchErr)
 		}
 
 		fetchedCount = len(events)
@@ -471,19 +544,28 @@ func (r *OutboxRelay) pollOutboxBacklog(ctx context.Context) {
 				continue
 			}
 			r.metrics.OutboxUnpublishedCount.Set(float64(count))
+
+			if count > OutboxBackpressureThreshold {
+				r.logger.Error("outbox backpressure: unpublished event count exceeds threshold",
+					slog.Int64("count", count),
+					slog.Int64("threshold", OutboxBackpressureThreshold),
+				)
+				r.metrics.OutboxBackpressureTriggered.Inc()
+			}
 		}
 	}
 }
 
 // cleanup purges published events from the CURRENT partition that are past
-// retention. This complements PartitionManager, which drops entire expired
-// partitions (instant O(1) via DETACH + DROP).
+// retention. Only events in the current quarter are deleted -- older partitions
+// are left for PartitionManager.DetachAndDrop, which is O(1) and avoids
+// autovacuum overhead. See partition_manager.go:cleanup for the complementary
+// partition-drop path.
 //
 // Division of responsibility:
-//   - OutboxRelay.cleanup: intra-partition cleanup for the active quarter.
-//     Uses DELETE WHERE published=true AND published_at < retention AND
-//     created_at < retention (partition pruning hint). Generates dead tuples
-//     but only for recently-published events, keeping vacuum scope small.
+//   - OutboxRelay.cleanup: intra-partition DELETE for the active quarter.
+//     Generates dead tuples but only for recently-published events, keeping
+//     vacuum scope small.
 //   - PartitionManager.cleanup: drops entire past-retention partitions that
 //     contain no unpublished events and pass the sequence safety check.
 //     Instant, no vacuum.
@@ -493,27 +575,49 @@ func (r *OutboxRelay) pollOutboxBacklog(ctx context.Context) {
 // forever; PM-only means the active partition accumulates published events
 // for the entire quarter before the first drop opportunity.
 func (r *OutboxRelay) cleanup(ctx context.Context) {
-	if err := r.outbox.DeleteOld(ctx, OutboxRetentionPeriod); err != nil {
+	// Only clean events in the current quarter's partition.
+	// Older partitions are handled by PartitionManager.DetachAndDrop.
+	currentQStart := currentQuarterStart(r.clock.Now())
+
+	if err := r.outbox.DeleteOld(ctx, OutboxRetentionPeriod, currentQStart); err != nil {
 		r.logger.Error("outbox relay: failed to clean up old events",
 			slog.Any("error", err),
 		)
 	}
 }
 
-// traceParentEnvelope is a minimal struct for extracting only the trace_parent
-// field from a serialised domain event without fully unmarshalling the payload.
-type traceParentEnvelope struct {
-	TraceParent string `json:"trace_parent"`
+// monthsPerQuarter is the number of months in a calendar quarter.
+const monthsPerQuarter = 3
+
+// currentQuarterStart returns the first day of the quarter that contains t.
+// Used to restrict relay cleanup to the active partition, avoiding redundant
+// row-level DELETEs in partitions that PartitionManager will DROP entirely.
+func currentQuarterStart(t time.Time) time.Time {
+	quarter := (int(t.Month()) - 1) / monthsPerQuarter
+	month := time.Month(quarter*monthsPerQuarter + 1)
+	return time.Date(t.Year(), month, 1, 0, 0, 0, 0, time.UTC)
 }
 
-// extractTraceParent extracts the trace_parent field from a JSON-encoded domain
-// event payload. Returns an empty string if the field is missing, empty, or the
-// payload is not valid JSON. This avoids a full unmarshal of the event payload
-// in the relay hot path.
+// traceParentKey is the byte pattern used to locate the trace_parent field
+// in a JSON payload without full unmarshaling.
+var traceParentKey = []byte(`"trace_parent":"`)
+
+// extractTraceParent extracts the trace_parent field from a JSON payload
+// without full unmarshaling. Uses byte scanning for performance in the
+// hot path (called once per event in relay batch). Returns an empty string
+// if the field is missing, empty, or the payload is malformed.
 func extractTraceParent(payload []byte) string {
-	var envelope traceParentEnvelope
-	if err := json.Unmarshal(payload, &envelope); err != nil {
+	idx := bytes.Index(payload, traceParentKey)
+	if idx == -1 {
 		return ""
 	}
-	return envelope.TraceParent
+	start := idx + len(traceParentKey)
+	if start >= len(payload) {
+		return ""
+	}
+	end := bytes.IndexByte(payload[start:], '"')
+	if end <= 0 {
+		return ""
+	}
+	return string(payload[start : start+end])
 }

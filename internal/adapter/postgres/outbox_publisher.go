@@ -61,6 +61,7 @@ func (p *OutboxPublisher) Publish(ctx context.Context, event domainevent.Event) 
 			ID:        pgutil.UUIDToPgtype(event.ID),
 			EventType: string(event.Type),
 			Payload:   payload,
+			EntityID:  event.EntityID,
 		}); err != nil {
 			return fmt.Errorf("outbox publish: %w", err)
 		}
@@ -69,6 +70,7 @@ func (p *OutboxPublisher) Publish(ctx context.Context, event domainevent.Event) 
 		if err := queries.InsertOutboxEvent(ctx, gen.InsertOutboxEventParams{
 			EventType: string(event.Type),
 			Payload:   payload,
+			EntityID:  event.EntityID,
 		}); err != nil {
 			return fmt.Errorf("outbox publish: %w", err)
 		}
