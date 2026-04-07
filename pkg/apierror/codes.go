@@ -38,6 +38,7 @@ var (
 	BillingNoPriceConfigured       = New("BILLING.NO_PRICE_CONFIGURED", "plan has no price configured", http.StatusBadRequest)
 	BillingFamilyNotEnabled        = New("BILLING.FAMILY_NOT_ENABLED", "family sharing not enabled for this plan", http.StatusConflict)
 	BillingPendingPlanInactive     = New("BILLING.PENDING_PLAN_INACTIVE", "pending plan is no longer active", http.StatusConflict)
+	BillingSubNotActiveForInvoice  = New("BILLING.SUBSCRIPTION_NOT_ACTIVE_FOR_INVOICING", "subscription is not active for invoicing", http.StatusConflict)
 	BillingCancellationBlocked     = New("BILLING.CANCELLATION_BLOCKED", "subscription cancellation blocked", http.StatusForbidden)
 	BillingCheckoutBlocked         = New("BILLING.CHECKOUT_BLOCKED", "checkout blocked by plugin", http.StatusForbidden)
 	BillingInvalidTransition       = New("BILLING.INVALID_TRANSITION", "invalid subscription state transition", http.StatusConflict)
@@ -64,6 +65,12 @@ var (
 	BillingEmptyUserID             = New("BILLING.EMPTY_USER_ID", "user ID is required", http.StatusBadRequest)
 	BillingEmptyPlanID             = New("BILLING.EMPTY_PLAN_ID", "plan ID is required", http.StatusBadRequest)
 	BillingEmptyInvoiceID          = New("BILLING.EMPTY_INVOICE_ID", "invoice ID is required", http.StatusBadRequest)
+	BillingEmptyAddonID            = New("BILLING.EMPTY_ADDON_ID", "addon ID must not be empty", http.StatusBadRequest)
+	BillingAddonNotAvailableOnPlan = New("BILLING.ADDON_NOT_AVAILABLE_ON_PLAN", "addon is not available on this plan", http.StatusBadRequest)
+	BillingMaxAddonsExceeded       = New("BILLING.MAX_ADDONS_EXCEEDED", "maximum number of addons exceeded", http.StatusConflict)
+	BillingSubNotActiveForAddon    = New("BILLING.SUBSCRIPTION_NOT_ACTIVE_FOR_ADDON", "subscription must be active or trial to modify addons", http.StatusConflict)
+	BillingAlreadySubscribed       = New("BILLING.ALREADY_SUBSCRIBED", "user already has an active subscription", http.StatusConflict)
+	BillingCountryNotAllowed       = New("BILLING.COUNTRY_NOT_ALLOWED", "plan not available in user's country", http.StatusForbidden)
 )
 
 // MultiSub error codes.

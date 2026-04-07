@@ -9,6 +9,11 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
 )
 
+func TestAllInvoiceStatusesHaveTransitions(t *testing.T) {
+	err := ValidateInvoiceTransitions()
+	require.NoError(t, err)
+}
+
 func TestNewInvoice_Valid(t *testing.T) {
 	items := []vo.LineItem{
 		vo.NewLineItem("Premium Plan", vo.LineItemPlan, vo.NewMoney(999, vo.CurrencyUSD), 1),

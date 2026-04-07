@@ -71,6 +71,7 @@ type Plan struct {
 	MaxRemnawaveBindings int
 	FamilyEnabled        bool
 	MaxFamilyMembers     int
+	MaxAddons            int // 0 = unlimited
 	AvailableAddons      []Addon
 	IsActive             bool
 	CreatedAt            time.Time
@@ -225,6 +226,15 @@ func (p *Plan) HasAddon(addonID string) bool {
 		}
 	}
 	return false
+}
+
+// AvailableAddonIDs returns the IDs of all addons available on this plan.
+func (p *Plan) AvailableAddonIDs() []string {
+	ids := make([]string, len(p.AvailableAddons))
+	for i, a := range p.AvailableAddons {
+		ids[i] = a.ID
+	}
+	return ids
 }
 
 // CalculateTotal returns the base price plus the prices of all selected addons.

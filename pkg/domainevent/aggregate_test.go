@@ -67,3 +67,26 @@ func TestEventRecorder_MultipleFlushes(t *testing.T) {
 	// Empty after second flush.
 	assert.False(t, r.HasEvents())
 }
+
+func TestEventRecorder_DoubleFlushReturnsNil(t *testing.T) {
+	var r EventRecorder
+	r.RecordEvent(NewAt("test.event", nil, time.Now()))
+
+	events1 := r.DomainEvents()
+	assert.Len(t, events1, 1)
+
+	events2 := r.DomainEvents()
+	assert.Nil(t, events2, "second flush without new events should return nil")
+}
+
+func TestEventRecorder_RecordAfterFlushResets(t *testing.T) {
+	var r EventRecorder
+	r.RecordEvent(NewAt("test.event1", nil, time.Now()))
+	_ = r.DomainEvents()
+
+	r.RecordEvent(NewAt("test.event2", nil, time.Now()))
+	events := r.DomainEvents()
+
+	require.Len(t, events, 1)
+	assert.Equal(t, EventType("test.event2"), events[0].Type)
+}

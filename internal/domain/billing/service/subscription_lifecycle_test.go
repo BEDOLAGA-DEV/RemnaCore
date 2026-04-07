@@ -314,7 +314,7 @@ func TestUpgradeSubscription_Success(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, "plan-premium", sub.PlanID)
-	assert.Nil(t, sub.PendingPlanID)
+	assert.True(t, sub.PendingChange.IsZero())
 
 	subs.AssertExpectations(t)
 	plans.AssertExpectations(t)
@@ -391,8 +391,8 @@ func TestDowngradeSubscription_Success(t *testing.T) {
 	err := svc.DowngradeSubscription(ctx, "sub-1", "plan-basic")
 
 	require.NoError(t, err)
-	require.NotNil(t, sub.PendingPlanID)
-	assert.Equal(t, "plan-basic", *sub.PendingPlanID)
+	assert.False(t, sub.PendingChange.IsZero())
+	assert.Equal(t, "plan-basic", sub.PendingChange.PlanID)
 	// PlanID unchanged until next renewal
 	assert.Equal(t, "plan-premium", sub.PlanID)
 

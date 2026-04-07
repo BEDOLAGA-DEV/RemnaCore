@@ -43,6 +43,11 @@ var (
 	// that callers using billing.ErrPendingPlanInactive continue to work.
 	ErrPendingPlanInactive = aggregate.ErrPendingPlanInactive
 
+	// ErrSubscriptionNotActiveForInvoicing is an alias to the aggregate-level
+	// sentinel so that callers using billing.ErrSubscriptionNotActiveForInvoicing
+	// continue to work.
+	ErrSubscriptionNotActiveForInvoicing = aggregate.ErrSubscriptionNotActiveForInvoicing
+
 	// ErrPlanAlreadyActive is an alias to the aggregate-level sentinel so
 	// that callers using billing.ErrPlanAlreadyActive continue to work.
 	ErrPlanAlreadyActive = aggregate.ErrPlanAlreadyActive
@@ -84,4 +89,28 @@ var (
 	// ErrCheckoutBlocked is returned when a plugin blocks checkout via the
 	// checkout.validating hook.
 	ErrCheckoutBlocked = errors.New("checkout blocked by plugin")
+
+	// ErrEmptyAddonID is an alias to the aggregate-level sentinel so
+	// that callers using billing.ErrEmptyAddonID continue to work.
+	ErrEmptyAddonID = aggregate.ErrEmptyAddonID
+
+	// ErrAddonNotAvailableOnPlan is an alias to the aggregate-level sentinel so
+	// that callers using billing.ErrAddonNotAvailableOnPlan continue to work.
+	ErrAddonNotAvailableOnPlan = aggregate.ErrAddonNotAvailableOnPlan
+
+	// ErrMaxAddonsExceeded is an alias to the aggregate-level sentinel so
+	// that callers using billing.ErrMaxAddonsExceeded continue to work.
+	ErrMaxAddonsExceeded = aggregate.ErrMaxAddonsExceeded
+
+	// ErrSubscriptionNotActiveForAddon is an alias to the aggregate-level sentinel so
+	// that callers using billing.ErrSubscriptionNotActiveForAddon continue to work.
+	ErrSubscriptionNotActiveForAddon = aggregate.ErrSubscriptionNotActiveForAddon
+
+	// ErrAlreadySubscribed is an alias to the aggregate-level sentinel so
+	// that callers using billing.ErrAlreadySubscribed continue to work.
+	ErrAlreadySubscribed = aggregate.ErrAlreadySubscribed
+
+	// ErrCountryNotAllowed is an alias to the aggregate-level sentinel so
+	// that callers using billing.ErrCountryNotAllowed continue to work.
+	ErrCountryNotAllowed = aggregate.ErrCountryNotAllowed
 )

@@ -2,6 +2,7 @@ package aggregate
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"time"
 
@@ -55,12 +56,15 @@ var allSubscriptionStatuses = []SubscriptionStatus{
 	StatusCancelled, StatusExpired, StatusPaused,
 }
 
-func init() {
+// ValidateSubscriptionTransitions checks that every subscription status
+// has an entry in the transition map. Called from tests, not at runtime.
+func ValidateSubscriptionTransitions() error {
 	for _, s := range allSubscriptionStatuses {
 		if _, ok := validTransitions[s]; !ok {
-			panic("billing: missing transition entry for subscription status: " + string(s))
+			return fmt.Errorf("missing transition entry for subscription status: %s", s)
 		}
 	}
+	return nil
 }
 
 // Subscription is the aggregate root for a user's subscription.
@@ -94,8 +98,8 @@ type Subscription struct {
 	Status      SubscriptionStatus
 	Period      vo.BillingPeriod
 	AddonIDs      []string
-	AssignedTo    string     // self or familyMemberID
-	PendingPlanID *string    // deferred downgrade; applied on next Renew
+	AssignedTo    string              // self or familyMemberID
+	PendingChange vo.PendingPlanChange // deferred downgrade; applied on next Renew
 	CancelledAt   *time.Time
 	PausedAt      *time.Time
 	CreatedAt     time.Time
@@ -227,10 +231,14 @@ func (s *Subscription) Expire(now time.Time) error {
 }
 
 // AddAddon appends an addon ID to the subscription and records an update event.
-// Returns an error if the addon is already present.
-func (s *Subscription) AddAddon(addonID string, now time.Time) error {
-	if slices.Contains(s.AddonIDs, addonID) {
-		return ErrAddonAlreadyOnSubscription
+// The AddonSpec enforces plan-level constraints: addon must be available on the
+// plan, not already present, and within the max addons limit.
+func (s *Subscription) AddAddon(addonID string, spec AddonSpec, now time.Time) error {
+	if s.Status != StatusActive && s.Status != StatusTrial {
+		return ErrSubscriptionNotActiveForAddon
+	}
+	if err := spec.CanAddAddon(s, addonID); err != nil {
+		return err
 	}
 	s.AddonIDs = append(s.AddonIDs, addonID)
 	s.UpdatedAt = now
@@ -269,7 +277,7 @@ func (s *Subscription) Upgrade(newPlanID string, newPeriod vo.BillingPeriod, now
 	oldPlanID := s.PlanID
 	s.PlanID = newPlanID
 	s.Period = newPeriod
-	s.PendingPlanID = nil // clear deferred downgrade
+	s.PendingChange = vo.PendingPlanChange{} // clear deferred downgrade
 	s.UpdatedAt = now
 	s.RecordEvent(domainevent.NewTyped(SubUpgradedPayload{
 		SubscriptionID: s.ID,
@@ -289,7 +297,11 @@ func (s *Subscription) Downgrade(newPlanID string, now time.Time) error {
 	if newPlanID == s.PlanID {
 		return ErrSamePlan
 	}
-	s.PendingPlanID = &newPlanID
+	s.PendingChange = vo.PendingPlanChange{
+		PlanID:         newPlanID,
+		OriginalPlanID: s.PlanID,
+		RequestedAt:    now,
+	}
 	s.UpdatedAt = now
 	s.RecordEvent(domainevent.NewTyped(SubDowngradedPayload{
 		SubscriptionID: s.ID,
@@ -305,7 +317,7 @@ func (s *Subscription) Downgrade(newPlanID string, now time.Time) error {
 // does not need to construct the new period manually. Only allowed when active
 // and the current billing period has elapsed.
 //
-// If a PendingPlanID was set by a prior Downgrade, it is applied during renewal
+// If a PendingChange was set by a prior Downgrade, it is applied during renewal
 // and the pending field is cleared.
 func (s *Subscription) Renew(now time.Time, pendingPlanActive bool) error {
 	if s.Status != StatusActive {
@@ -314,18 +326,28 @@ func (s *Subscription) Renew(now time.Time, pendingPlanActive bool) error {
 	if now.Before(s.Period.End) {
 		return ErrPeriodNotElapsed
 	}
-	if s.PendingPlanID != nil && !pendingPlanActive {
+	if !s.PendingChange.IsZero() && !pendingPlanActive {
 		return ErrPendingPlanInactive
 	}
 	s.Period = s.Period.Next()
-	if s.PendingPlanID != nil {
-		s.PlanID = *s.PendingPlanID
-		s.PendingPlanID = nil
+	if !s.PendingChange.IsZero() {
+		s.PlanID = s.PendingChange.PlanID
+		s.PendingChange = vo.PendingPlanChange{}
 	}
 	s.UpdatedAt = now
 	s.RecordEvent(domainevent.NewTyped(SubRenewedPayload{
 		SubscriptionID: s.ID,
 		UserID:         s.UserID,
 	}, now, s.ID))
+	return nil
+}
+
+// ValidateForInvoicing checks whether the subscription is in a state that
+// allows invoice creation. Cancelled and expired subscriptions cannot be
+// invoiced. Returns ErrSubscriptionNotActiveForInvoicing for terminal states.
+func (s *Subscription) ValidateForInvoicing() error {
+	if s.Status == StatusCancelled || s.Status == StatusExpired {
+		return ErrSubscriptionNotActiveForInvoicing
+	}
 	return nil
 }

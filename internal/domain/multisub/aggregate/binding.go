@@ -61,12 +61,15 @@ var allBindingStatuses = []BindingStatus{
 	BindingDeprovisioned,
 }
 
-func init() {
+// ValidateBindingTransitions checks that every binding status has an entry
+// in the transition map. Called from tests, not at runtime.
+func ValidateBindingTransitions() error {
 	for _, s := range allBindingStatuses {
 		if _, ok := bindingTransitions[s]; !ok {
-			panic("multisub: missing transition entry for binding status: " + string(s))
+			return fmt.Errorf("missing transition entry for binding status: %s", s)
 		}
 	}
+	return nil
 }
 
 // BindingPurpose describes why a Remnawave user was created.

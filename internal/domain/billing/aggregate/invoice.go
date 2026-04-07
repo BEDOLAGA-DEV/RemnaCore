@@ -61,12 +61,15 @@ var allInvoiceStatuses = []InvoiceStatus{
 	InvoiceFailed, InvoiceRefunded,
 }
 
-func init() {
+// ValidateInvoiceTransitions checks that every invoice status has an entry
+// in the transition map. Called from tests, not at runtime.
+func ValidateInvoiceTransitions() error {
 	for _, s := range allInvoiceStatuses {
 		if _, ok := validInvoiceTransitions[s]; !ok {
-			panic("billing: missing transition entry for invoice status: " + string(s))
+			return fmt.Errorf("missing transition entry for invoice status: %s", s)
 		}
 	}
+	return nil
 }
 
 // Invoice is the aggregate root for a billing invoice.

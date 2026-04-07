@@ -36,3 +36,26 @@ var ErrSamePlan = errors.New("cannot change to the same plan")
 // ErrPendingPlanInactive indicates the pending plan (from a deferred downgrade)
 // is no longer active and cannot be applied during renewal.
 var ErrPendingPlanInactive = errors.New("pending plan is no longer active")
+
+// ErrSubscriptionNotActiveForInvoicing indicates the subscription is in a
+// terminal state (cancelled or expired) and cannot be invoiced.
+var ErrSubscriptionNotActiveForInvoicing = errors.New("subscription is not active for invoicing")
+
+// ErrEmptyAddonID indicates that an addon ID was not provided.
+var ErrEmptyAddonID = errors.New("addon ID must not be empty")
+
+// ErrAddonNotAvailableOnPlan indicates the addon is not available on the subscription's plan.
+var ErrAddonNotAvailableOnPlan = errors.New("addon is not available on this plan")
+
+// ErrMaxAddonsExceeded indicates the subscription has reached the plan's addon limit.
+var ErrMaxAddonsExceeded = errors.New("maximum number of addons exceeded")
+
+// ErrSubscriptionNotActiveForAddon indicates the subscription must be active or trial
+// to add an addon.
+var ErrSubscriptionNotActiveForAddon = errors.New("subscription must be active or trial to modify addons")
+
+// ErrAlreadySubscribed indicates the user already has an active subscription.
+var ErrAlreadySubscribed = errors.New("user already has an active subscription")
+
+// ErrCountryNotAllowed indicates the plan is not available in the user's country.
+var ErrCountryNotAllowed = errors.New("plan not available in user's country")

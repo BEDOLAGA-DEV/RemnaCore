@@ -9,6 +9,11 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
 )
 
+func TestAllBindingStatusesHaveTransitions(t *testing.T) {
+	err := aggregate.ValidateBindingTransitions()
+	require.NoError(t, err)
+}
+
 func mustNewBinding(t *testing.T, subID, platformUserID string, purpose aggregate.BindingPurpose, index int, trafficLimit int64, now time.Time) *aggregate.RemnawaveBinding {
 	t.Helper()
 	b, err := aggregate.NewBinding(subID, platformUserID, purpose, index, trafficLimit, now)

@@ -455,9 +455,11 @@ func (s *BillingService) RemoveFamilyMember(
 	})
 }
 
-// AddSubscriptionAddon adds an addon to a subscription. The read (with FOR
-// UPDATE lock), mutation, update, and outbox event are all performed inside a
-// single database transaction to prevent TOCTOU races.
+// AddSubscriptionAddon adds an addon to a subscription. The plan is loaded to
+// build an AddonSpec that enforces plan-level constraints (available addons,
+// max addons limit). The read (with FOR UPDATE lock), mutation, update, and
+// outbox event are all performed inside a single database transaction to
+// prevent TOCTOU races.
 func (s *BillingService) AddSubscriptionAddon(ctx context.Context, subID, addonID string) error {
 	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		sub, err := s.subs.GetByIDForUpdate(txCtx, subID)
@@ -465,7 +467,13 @@ func (s *BillingService) AddSubscriptionAddon(ctx context.Context, subID, addonI
 			return fmt.Errorf("get subscription: %w", err)
 		}
 
-		if err := sub.AddAddon(addonID, s.clock.Now()); err != nil {
+		plan, err := s.plans.GetByID(txCtx, sub.PlanID)
+		if err != nil {
+			return fmt.Errorf("get plan: %w", err)
+		}
+
+		spec := aggregate.NewAddonSpec(plan)
+		if err := sub.AddAddon(addonID, spec, s.clock.Now()); err != nil {
 			return err
 		}
 

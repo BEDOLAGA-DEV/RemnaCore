@@ -53,6 +53,18 @@ func MapToAPIError(err error) *apierror.Error {
 		return apierror.BillingCheckoutBlocked
 	case errors.Is(err, ErrEmptyInvoiceID):
 		return apierror.BillingEmptyInvoiceID
+	case errors.Is(err, ErrEmptyAddonID):
+		return apierror.BillingEmptyAddonID
+	case errors.Is(err, ErrAddonNotAvailableOnPlan):
+		return apierror.BillingAddonNotAvailableOnPlan
+	case errors.Is(err, ErrMaxAddonsExceeded):
+		return apierror.BillingMaxAddonsExceeded
+	case errors.Is(err, ErrSubscriptionNotActiveForAddon):
+		return apierror.BillingSubNotActiveForAddon
+	case errors.Is(err, ErrAlreadySubscribed):
+		return apierror.BillingAlreadySubscribed
+	case errors.Is(err, ErrCountryNotAllowed):
+		return apierror.BillingCountryNotAllowed
 	default:
 		return nil
 	}

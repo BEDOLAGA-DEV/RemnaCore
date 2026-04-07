@@ -387,7 +387,7 @@ func (r *SubscriptionRepository) Create(ctx context.Context, sub *aggregate.Subs
 		PeriodInterval: string(sub.Period.Interval),
 		AddonIds:       pgutil.StringsToPgtypeUUIDs(sub.AddonIDs),
 		AssignedTo:     pgutil.StrPtrOrNil(sub.AssignedTo),
-		PendingPlanID:  pgutil.OptStrToPgtypeUUID(sub.PendingPlanID),
+		PendingPlanID:  pendingChangeToPgtype(sub.PendingChange),
 		CancelledAt:    pgutil.OptTimeToPgtype(sub.CancelledAt),
 		PausedAt:       pgutil.OptTimeToPgtype(sub.PausedAt),
 		CreatedAt:      pgutil.TimeToPgtype(sub.CreatedAt),
@@ -405,7 +405,7 @@ func (r *SubscriptionRepository) Update(ctx context.Context, sub *aggregate.Subs
 		PeriodInterval: string(sub.Period.Interval),
 		AddonIds:       pgutil.StringsToPgtypeUUIDs(sub.AddonIDs),
 		AssignedTo:     pgutil.StrPtrOrNil(sub.AssignedTo),
-		PendingPlanID:  pgutil.OptStrToPgtypeUUID(sub.PendingPlanID),
+		PendingPlanID:  pendingChangeToPgtype(sub.PendingChange),
 		CancelledAt:    pgutil.OptTimeToPgtype(sub.CancelledAt),
 		PausedAt:       pgutil.OptTimeToPgtype(sub.PausedAt),
 	})
@@ -531,12 +531,32 @@ func subFieldsToDomain(f subFields) *aggregate.Subscription {
 		},
 		AddonIDs:      pgutil.PgtypeUUIDsToStrings(f.AddonIds),
 		AssignedTo:    pgutil.DerefStr(f.AssignedTo),
-		PendingPlanID: pgutil.PgtypeUUIDToOptStr(f.PendingPlanID),
+		PendingChange: pgtypeToPendingChange(f.PendingPlanID),
 		CancelledAt:   pgutil.PgtypeToOptTime(f.CancelledAt),
 		PausedAt:      pgutil.PgtypeToOptTime(f.PausedAt),
 		CreatedAt:     pgutil.PgtypeToTime(f.CreatedAt),
 		UpdatedAt:     pgutil.PgtypeToTime(f.UpdatedAt),
 	}
+}
+
+// pgtypeToPendingChange maps a nullable DB UUID to PendingPlanChange.
+// Only PlanID is persisted in the existing column; OriginalPlanID and
+// RequestedAt are populated at the aggregate level during Downgrade.
+func pgtypeToPendingChange(u pgtype.UUID) vo.PendingPlanChange {
+	if !u.Valid {
+		return vo.PendingPlanChange{}
+	}
+	return vo.PendingPlanChange{
+		PlanID: pgutil.PgtypeToUUID(u),
+	}
+}
+
+// pendingChangeToPgtype maps PendingPlanChange to a nullable DB UUID.
+func pendingChangeToPgtype(pc vo.PendingPlanChange) pgtype.UUID {
+	if pc.IsZero() {
+		return pgtype.UUID{}
+	}
+	return pgutil.UUIDToPgtype(pc.PlanID)
 }
 
 var _ billing.SubscriptionRepository = (*SubscriptionRepository)(nil)

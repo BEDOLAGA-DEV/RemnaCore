@@ -112,7 +112,7 @@ func (s *BillingService) ResumeSubscription(ctx context.Context, subID string) e
 // subscription.renewing hook is dispatched to allow plugins to modify renewal
 // parameters (price, interval, discount).
 //
-// If a PendingPlanID was set by a prior Downgrade, the aggregate applies it
+// If a PendingChange was set by a prior Downgrade, the aggregate applies it
 // during renewal and the new invoice reflects the downgraded plan's pricing.
 func (s *BillingService) RenewSubscription(ctx context.Context, subID string) error {
 	var asyncPayload *subAsyncPayload
@@ -134,8 +134,8 @@ func (s *BillingService) RenewSubscription(ctx context.Context, subID string) er
 		now := s.clock.Now()
 
 		pendingPlanActive := true
-		if sub.PendingPlanID != nil {
-			pendingPlan, err := s.plans.GetByID(txCtx, *sub.PendingPlanID)
+		if !sub.PendingChange.IsZero() {
+			pendingPlan, err := s.plans.GetByID(txCtx, sub.PendingChange.PlanID)
 			if err != nil {
 				return fmt.Errorf("load pending plan: %w", err)
 			}

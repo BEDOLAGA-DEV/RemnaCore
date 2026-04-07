@@ -42,6 +42,8 @@ func MapToAPIError(err error) *apierror.Error {
 		return apierror.BillingInvoiceMustBePaid
 	case errors.Is(err, ErrSubscriptionNotActiveForRenewal):
 		return apierror.BillingSubscriptionNotActive
+	case errors.Is(err, ErrSubscriptionNotActiveForInvoicing):
+		return apierror.BillingSubNotActiveForInvoice
 	case errors.Is(err, ErrPlanAlreadyActive):
 		return apierror.BillingPlanAlreadyActive
 	case errors.Is(err, ErrPlanAlreadyInactive):
@@ -58,6 +60,18 @@ func MapToAPIError(err error) *apierror.Error {
 		return apierror.BillingEmptyUserID
 	case errors.Is(err, ErrEmptyPlanID):
 		return apierror.BillingEmptyPlanID
+	case errors.Is(err, ErrEmptyAddonID):
+		return apierror.BillingEmptyAddonID
+	case errors.Is(err, ErrAddonNotAvailableOnPlan):
+		return apierror.BillingAddonNotAvailableOnPlan
+	case errors.Is(err, ErrMaxAddonsExceeded):
+		return apierror.BillingMaxAddonsExceeded
+	case errors.Is(err, ErrSubscriptionNotActiveForAddon):
+		return apierror.BillingSubNotActiveForAddon
+	case errors.Is(err, ErrAlreadySubscribed):
+		return apierror.BillingAlreadySubscribed
+	case errors.Is(err, ErrCountryNotAllowed):
+		return apierror.BillingCountryNotAllowed
 	default:
 		return nil
 	}
