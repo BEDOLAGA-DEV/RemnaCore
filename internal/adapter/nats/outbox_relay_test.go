@@ -8,6 +8,7 @@ import (
 	natsadapter "github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/nats"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/circuitbreaker"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/timeutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -177,7 +178,7 @@ func TestExtractTraceParent_ByteScanEdgeCases(t *testing.T) {
 	}
 }
 
-func TestCurrentQuarterStart(t *testing.T) {
+func TestQuarterStart(t *testing.T) {
 	tests := []struct {
 		name string
 		when time.Time
@@ -222,7 +223,7 @@ func TestCurrentQuarterStart(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := natsadapter.CurrentQuarterStart(tt.when)
+			got := timeutil.QuarterStart(tt.when)
 			assert.Equal(t, tt.want, got)
 		})
 	}

@@ -5,20 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-
-	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/sdk"
-)
-
-// Hook name constants for traffic lifecycle dispatch points.
-// Pre-hooks (sync) are named "{entity}.{verb}ing" and fire before the state
-// transition. Post-hooks (async) are named "{entity}.{past_tense}.post" and
-// fire after the transition completes.
-const (
-	HookSubLimiting        = "subscription.limiting"
-	HookSubLimitedPost     = "subscription.limited.post"
-	HookSubUnlimiting      = "subscription.unlimiting"
-	HookSubUnlimitedPost   = "subscription.unlimited.post"
-	HookSubTrafficWarning  = "subscription.traffic_warning.post"
 )
 
 // trafficExceededReason is the standard reason passed to LimitBinding when
@@ -48,7 +34,7 @@ func (o *MultiSubOrchestrator) OnBindingTrafficExceeded(
 ) error {
 	// Dispatch subscription.limiting sync hook if available.
 	if o.dispatcher != nil && o.hooksEnabled {
-		req := sdk.SubLimitingRequest{
+		req := SubLimitingPayload{
 			SubscriptionID: subscriptionID,
 			BindingID:      bindingID,
 			UsedBytes:      usedBytes,
@@ -63,7 +49,7 @@ func (o *MultiSubOrchestrator) OnBindingTrafficExceeded(
 		} else {
 			result := o.dispatcher.DispatchSyncSafe(ctx, HookSubLimiting, data)
 			if result.Err == nil && result.Payload != nil {
-				var resp sdk.SubLimitingResponse
+				var resp SubLimitingResponse
 				if unmarshalErr := json.Unmarshal(result.Payload, &resp); unmarshalErr == nil && resp.Block {
 					o.logger.Info("binding limit blocked by plugin",
 						slog.String("binding_id", bindingID),
@@ -80,7 +66,7 @@ func (o *MultiSubOrchestrator) OnBindingTrafficExceeded(
 	}
 
 	// Fire async post-hook for plugin notification.
-	o.dispatchAsync(ctx, HookSubLimitedPost, sdk.SubLimitedNotification{
+	o.dispatchAsync(ctx, HookSubLimitedPost, SubLimitedNotification{
 		SubscriptionID: subscriptionID,
 		BindingID:      bindingID,
 		UsedBytes:      usedBytes,
@@ -106,7 +92,7 @@ func (o *MultiSubOrchestrator) OnBindingTrafficReset(
 ) error {
 	// Dispatch subscription.unlimiting sync hook (informational, no blocking).
 	if o.dispatcher != nil && o.hooksEnabled {
-		req := sdk.SubUnlimitingRequest{
+		req := SubUnlimitingPayload{
 			SubscriptionID: subscriptionID,
 			BindingID:      bindingID,
 		}
@@ -126,7 +112,7 @@ func (o *MultiSubOrchestrator) OnBindingTrafficReset(
 	}
 
 	// Fire async post-hook for plugin notification.
-	o.dispatchAsync(ctx, HookSubUnlimitedPost, sdk.SubUnlimitedNotification{
+	o.dispatchAsync(ctx, HookSubUnlimitedPost, SubUnlimitedNotification{
 		SubscriptionID: subscriptionID,
 		BindingID:      bindingID,
 	})
@@ -146,7 +132,7 @@ func (o *MultiSubOrchestrator) OnTrafficWarning(
 	limitBytes int64,
 	thresholdPct int,
 ) {
-	o.dispatchAsync(ctx, HookSubTrafficWarning, sdk.SubTrafficWarningNotification{
+	o.dispatchAsync(ctx, HookSubTrafficWarning, SubTrafficWarningNotification{
 		SubscriptionID: subscriptionID,
 		BindingID:      bindingID,
 		UsedBytes:      usedBytes,

@@ -13,6 +13,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres/gen"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pgutil"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/timeutil"
 )
 
 // ErrOutboxBackpressure is returned by CheckBackpressure when the outbox
@@ -266,9 +267,6 @@ func (r *OutboxRepository) DeleteOld(ctx context.Context, olderThan time.Duratio
 // Only allows names like outbox_2026_q1, outbox_2027_q3, outbox_default.
 var outboxPartitionPattern = regexp.MustCompile(`^outbox_(\d{4}_q[1-4]|default)$`)
 
-// monthsPerQuarter is the number of months in a calendar quarter.
-const monthsPerQuarter = 3
-
 // quartersPerYear is the number of quarters in a year.
 const quartersPerYear = 4
 
@@ -304,7 +302,7 @@ func (r *OutboxRepository) EnsurePartitions(ctx context.Context, from time.Time,
 // quarters ahead of the given time.
 func quarterOf(t time.Time, offset int) (year int, quarter int) {
 	// Current quarter: (month-1)/3 + 1 gives 1-4.
-	currentQuarter := (int(t.Month()) - 1) / monthsPerQuarter
+	currentQuarter := (int(t.Month()) - 1) / timeutil.MonthsPerQuarter
 	totalQuarters := currentQuarter + offset
 	year = t.Year() + totalQuarters/quartersPerYear
 	quarter = totalQuarters%quartersPerYear + 1
@@ -313,7 +311,7 @@ func quarterOf(t time.Time, offset int) (year int, quarter int) {
 
 // quarterStart returns the first day of the given quarter.
 func quarterStart(year, quarter int) time.Time {
-	month := time.Month((quarter-1)*monthsPerQuarter + 1)
+	month := time.Month((quarter-1)*timeutil.MonthsPerQuarter + 1)
 	return time.Date(year, month, 1, 0, 0, 0, 0, time.UTC)
 }
 

@@ -41,6 +41,7 @@ var multisubWiring = fx.Options(
 	// MultiSub repos -> interface bindings
 	fx.Provide(postgres.NewBindingRepository),
 	fx.Provide(func(repo *postgres.BindingRepository) multisub.BindingRepository { return repo }),
+	fx.Provide(func(repo *postgres.BindingRepository) multisub.BindingReader { return repo }),
 
 	// Saga repository -> interface binding
 	fx.Provide(postgres.NewSagaRepository),

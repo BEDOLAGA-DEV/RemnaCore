@@ -18,6 +18,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/backoff"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/circuitbreaker"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/timeutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
@@ -562,25 +563,13 @@ func (r *OutboxRelay) pollOutboxBacklog(ctx context.Context) {
 func (r *OutboxRelay) cleanup(ctx context.Context) {
 	// Only clean events in the current quarter's partition.
 	// Older partitions are handled by PartitionManager.DetachAndDrop.
-	currentQStart := currentQuarterStart(r.clock.Now())
+	currentQStart := timeutil.QuarterStart(r.clock.Now())
 
 	if err := r.outbox.DeleteOld(ctx, OutboxRetentionPeriod, currentQStart); err != nil {
 		r.logger.Error("outbox relay: failed to clean up old events",
 			slog.Any("error", err),
 		)
 	}
-}
-
-// monthsPerQuarter is the number of months in a calendar quarter.
-const monthsPerQuarter = 3
-
-// currentQuarterStart returns the first day of the quarter that contains t.
-// Used to restrict relay cleanup to the active partition, avoiding redundant
-// row-level DELETEs in partitions that PartitionManager will DROP entirely.
-func currentQuarterStart(t time.Time) time.Time {
-	quarter := (int(t.Month()) - 1) / monthsPerQuarter
-	month := time.Month(quarter*monthsPerQuarter + 1)
-	return time.Date(t.Year(), month, 1, 0, 0, 0, 0, time.UTC)
 }
 
 // traceParentKey is the byte pattern used to locate the trace_parent field

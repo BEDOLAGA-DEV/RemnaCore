@@ -13,13 +13,12 @@ import (
 // MultiSubHandler exposes read-only HTTP endpoints for Remnawave bindings.
 // Provisioning happens automatically when billing events fire.
 type MultiSubHandler struct {
-	bindingRepo multisub.BindingRepository
+	bindings multisub.BindingReader
 }
 
-// NewMultiSubHandler creates a MultiSubHandler backed by the binding
-// repository.
-func NewMultiSubHandler(bindingRepo multisub.BindingRepository) *MultiSubHandler {
-	return &MultiSubHandler{bindingRepo: bindingRepo}
+// NewMultiSubHandler creates a MultiSubHandler backed by the binding reader.
+func NewMultiSubHandler(bindings multisub.BindingReader) *MultiSubHandler {
+	return &MultiSubHandler{bindings: bindings}
 }
 
 // GetMyBindings handles GET /api/bindings -- list user's Remnawave bindings
@@ -31,7 +30,7 @@ func (h *MultiSubHandler) GetMyBindings(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	bindings, err := h.bindingRepo.GetByPlatformUserID(r.Context(), claims.UserID)
+	bindings, err := h.bindings.GetByPlatformUserID(r.Context(), claims.UserID)
 	if err != nil {
 		writeErrorFromDomain(w, err)
 		return
@@ -55,7 +54,7 @@ func (h *MultiSubHandler) GetBindingsBySubscription(w http.ResponseWriter, r *ht
 		return
 	}
 
-	bindings, err := h.bindingRepo.GetBySubscriptionID(r.Context(), subID)
+	bindings, err := h.bindings.GetBySubscriptionID(r.Context(), subID)
 	if err != nil {
 		writeErrorFromDomain(w, err)
 		return
