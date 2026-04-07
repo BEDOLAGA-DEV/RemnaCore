@@ -281,11 +281,11 @@ func (p *PluginInstancePool) Drain(ctx context.Context) error {
 func (p *PluginInstancePool) Close() {
 	p.mu.Lock()
 	p.draining = true
+	close(p.pool)
 	p.mu.Unlock()
 
-	// Close is best-effort during cleanup; error would not change control flow.
-	close(p.pool)
 	for pr := range p.pool {
+		// Close is best-effort during cleanup; error would not change control flow.
 		_ = pr.runner.Close()
 	}
 }
@@ -333,15 +333,18 @@ func (p *PluginInstancePool) replaceInstance() {
 }
 
 // trySendToPool attempts a non-blocking send of a pooled runner to the pool
-// channel. Returns false if the pool is full or has been closed by Drain.
-func (p *PluginInstancePool) trySendToPool(pr *pooledRunner) (sent bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			// Pool channel was closed by Drain — this is expected during
-			// concurrent drain+replace and not a bug.
-			sent = false
-		}
-	}()
+// channel. Returns false if the pool is full or has been closed by Drain/Close.
+// The mutex is held during the send to prevent a race with Close closing the channel.
+func (p *PluginInstancePool) trySendToPool(pr *pooledRunner) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.draining {
+		// Pool is draining or closed — discard the runner.
+		// Close is best-effort during cleanup; error would not change control flow.
+		_ = pr.runner.Close()
+		return false
+	}
 
 	select {
 	case p.pool <- pr:

@@ -1059,7 +1059,6 @@ func TestRelease_ExhaustedRunnerClosedAndReplaced(t *testing.T) {
 
 	pool, err := newPluginInstancePool("release-exhaust", factory, []byte("wasm"), nil, nil, 1)
 	require.NoError(t, err)
-	defer pool.Close()
 
 	ctx := context.Background()
 	r, err := pool.Acquire(ctx)
@@ -1075,12 +1074,15 @@ func TestRelease_ExhaustedRunnerClosedAndReplaced(t *testing.T) {
 	assert.Equal(t, int32(1), closedCount.Load(),
 		"exhausted runner should be closed on release")
 
-	// A replacement should be created asynchronously.
+	// Wait for the async replacement goroutine to finish before closing the pool.
 	assert.Eventually(t, func() bool {
 		// 1 from pool init + 1 replacement
 		return factoryCalls.Load() >= 2
 	}, time.Second, 5*time.Millisecond,
 		"factory should be called to replace exhausted runner")
+
+	// Close after replacement goroutine has completed to avoid data race.
+	pool.Close()
 }
 
 func TestCallHook_RunnerReplacedAfterMaxUses(t *testing.T) {
