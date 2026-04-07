@@ -66,10 +66,10 @@ var billingWiring = fx.Options(
 	fx.Provide(func(r *valkey.DomainRateLimiter) billing.DomainRateLimiter { return r }),
 )
 
-// newBillingService creates a BillingService with hook dispatch functions
-// wired from the Fx container. The hookdispatch.Dispatcher is wrapped in
-// SyncHookFn / AsyncHookFn closures so the domain service never imports
-// hookdispatch or sdk packages.
+// newBillingService creates a BillingService with typed hook functions wired
+// from the Fx container. Each typed hook function wraps the
+// hookdispatch.Dispatcher, handling JSON marshal/unmarshal so the domain
+// service never imports encoding/json or hookdispatch.
 func newBillingService(
 	plans billing.PlanRepository,
 	subs billing.SubscriptionRepository,
@@ -87,8 +87,10 @@ func newBillingService(
 	var opts []billingservice.BillingServiceOption
 	if cfg.FeatureFlags.HooksSubscriptionEnabled && dispatcher != nil {
 		opts = append(opts,
-			billingservice.WithSyncHook(newSyncHookFn(dispatcher, logger)),
-			billingservice.WithAsyncHook(newAsyncHookFn(dispatcher, logger)),
+			billingservice.WithCancelHook(newCancelHookFn(dispatcher, logger)),
+			billingservice.WithRenewHook(newRenewHookFn(dispatcher, logger)),
+			billingservice.WithUpgradeHook(newUpgradeHookFn(dispatcher, logger)),
+			billingservice.WithAsyncHook(newBillingAsyncHookFn(dispatcher, logger)),
 		)
 	}
 	return billingservice.NewBillingService(
@@ -97,7 +99,7 @@ func newBillingService(
 	)
 }
 
-// newCheckoutService creates a CheckoutService with hook dispatch functions
+// newCheckoutService creates a CheckoutService with typed hook functions
 // wired from the Fx container.
 func newCheckoutService(
 	billingSvc *billingservice.BillingService,
@@ -115,8 +117,9 @@ func newCheckoutService(
 	var opts []billingservice.CheckoutServiceOption
 	if cfg.FeatureFlags.HooksSubscriptionEnabled && dispatcher != nil {
 		opts = append(opts,
-			billingservice.WithCheckoutSyncHook(newSyncHookFn(dispatcher, logger)),
-			billingservice.WithCheckoutAsyncHook(newAsyncHookFn(dispatcher, logger)),
+			billingservice.WithCheckoutValidatingHook(newCheckoutValidatingHookFn(dispatcher, logger)),
+			billingservice.WithSubCreatingHook(newSubCreatingHookFn(dispatcher, logger)),
+			billingservice.WithCheckoutAsyncHook(newBillingAsyncHookFn(dispatcher, logger)),
 		)
 	}
 	return billingservice.NewCheckoutService(
@@ -133,31 +136,170 @@ func newCheckoutService(
 	)
 }
 
-// newSyncHookFn creates a SyncHookFn that wraps a hookdispatch.Dispatcher.
-// It marshals the domain payload to JSON, dispatches via DispatchSyncSafe
-// (plugin failures never block), and returns the response payload.
-func newSyncHookFn(d hookdispatch.Dispatcher, logger *slog.Logger) billingservice.SyncHookFn {
-	return func(ctx context.Context, hookName string, payload any) (json.RawMessage, error) {
+// --- Typed sync hook factory functions ---
+//
+// Each function creates a typed hook closure that:
+//  1. Marshals the domain payload to JSON
+//  2. Dispatches via DispatchSyncSafe (plugin failures never block)
+//  3. Unmarshals the response into the domain response type
+//  4. Returns (nil, nil) on any dispatch/unmarshal failure
+
+// newCancelHookFn creates a typed CancelHookFn wrapping hookdispatch.Dispatcher.
+func newCancelHookFn(d hookdispatch.Dispatcher, logger *slog.Logger) billingservice.CancelHookFn {
+	return func(ctx context.Context, payload billingservice.CancellingPayload) (*billingservice.CancellingResponse, error) {
 		data, err := json.Marshal(payload)
 		if err != nil {
-			return nil, fmt.Errorf("marshal hook payload: %w", err)
+			return nil, fmt.Errorf("marshal cancelling hook payload: %w", err)
 		}
-		result := d.DispatchSyncSafe(ctx, hookName, data)
+		result := d.DispatchSyncSafe(ctx, billingservice.HookSubCancelling, data)
 		if result.Err != nil {
 			logger.Warn("hook dispatch failed, proceeding with defaults",
-				slog.String("hook", hookName),
+				slog.String("hook", billingservice.HookSubCancelling),
 				slog.Any("error", result.Err),
 			)
 			return nil, nil
 		}
-		return result.Payload, nil
+		if result.Payload == nil {
+			return nil, nil
+		}
+		var resp billingservice.CancellingResponse
+		if err := json.Unmarshal(result.Payload, &resp); err != nil {
+			logger.Warn("failed to unmarshal hook response, proceeding with defaults",
+				slog.String("hook", billingservice.HookSubCancelling),
+				slog.Any("error", err),
+			)
+			return nil, nil
+		}
+		return &resp, nil
 	}
 }
 
-// newAsyncHookFn creates an AsyncHookFn that wraps a hookdispatch.Dispatcher.
+// newRenewHookFn creates a typed RenewHookFn wrapping hookdispatch.Dispatcher.
+func newRenewHookFn(d hookdispatch.Dispatcher, logger *slog.Logger) billingservice.RenewHookFn {
+	return func(ctx context.Context, payload billingservice.RenewingPayload) (*billingservice.RenewingResponse, error) {
+		data, err := json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("marshal renewing hook payload: %w", err)
+		}
+		result := d.DispatchSyncSafe(ctx, billingservice.HookSubRenewing, data)
+		if result.Err != nil {
+			logger.Warn("hook dispatch failed, proceeding with defaults",
+				slog.String("hook", billingservice.HookSubRenewing),
+				slog.Any("error", result.Err),
+			)
+			return nil, nil
+		}
+		if result.Payload == nil {
+			return nil, nil
+		}
+		var resp billingservice.RenewingResponse
+		if err := json.Unmarshal(result.Payload, &resp); err != nil {
+			logger.Warn("failed to unmarshal hook response, proceeding with defaults",
+				slog.String("hook", billingservice.HookSubRenewing),
+				slog.Any("error", err),
+			)
+			return nil, nil
+		}
+		return &resp, nil
+	}
+}
+
+// newUpgradeHookFn creates a typed UpgradeHookFn wrapping hookdispatch.Dispatcher.
+func newUpgradeHookFn(d hookdispatch.Dispatcher, logger *slog.Logger) billingservice.UpgradeHookFn {
+	return func(ctx context.Context, payload billingservice.UpgradingPayload) (*billingservice.UpgradingResponse, error) {
+		data, err := json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("marshal upgrading hook payload: %w", err)
+		}
+		result := d.DispatchSyncSafe(ctx, billingservice.HookSubUpgrading, data)
+		if result.Err != nil {
+			logger.Warn("hook dispatch failed, proceeding with defaults",
+				slog.String("hook", billingservice.HookSubUpgrading),
+				slog.Any("error", result.Err),
+			)
+			return nil, nil
+		}
+		if result.Payload == nil {
+			return nil, nil
+		}
+		var resp billingservice.UpgradingResponse
+		if err := json.Unmarshal(result.Payload, &resp); err != nil {
+			logger.Warn("failed to unmarshal hook response, proceeding with defaults",
+				slog.String("hook", billingservice.HookSubUpgrading),
+				slog.Any("error", err),
+			)
+			return nil, nil
+		}
+		return &resp, nil
+	}
+}
+
+// newCheckoutValidatingHookFn creates a typed CheckoutValidatingHookFn wrapping
+// hookdispatch.Dispatcher.
+func newCheckoutValidatingHookFn(d hookdispatch.Dispatcher, logger *slog.Logger) billingservice.CheckoutValidatingHookFn {
+	return func(ctx context.Context, payload billingservice.CheckoutValidatingPayload) (*billingservice.CheckoutValidatingResponse, error) {
+		data, err := json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("marshal checkout validating hook payload: %w", err)
+		}
+		result := d.DispatchSyncSafe(ctx, billingservice.HookCheckoutValidating, data)
+		if result.Err != nil {
+			logger.Warn("hook dispatch failed, proceeding with defaults",
+				slog.String("hook", billingservice.HookCheckoutValidating),
+				slog.Any("error", result.Err),
+			)
+			return nil, nil
+		}
+		if result.Payload == nil {
+			return nil, nil
+		}
+		var resp billingservice.CheckoutValidatingResponse
+		if err := json.Unmarshal(result.Payload, &resp); err != nil {
+			logger.Warn("failed to unmarshal hook response, proceeding with defaults",
+				slog.String("hook", billingservice.HookCheckoutValidating),
+				slog.Any("error", err),
+			)
+			return nil, nil
+		}
+		return &resp, nil
+	}
+}
+
+// newSubCreatingHookFn creates a typed SubCreatingHookFn wrapping
+// hookdispatch.Dispatcher.
+func newSubCreatingHookFn(d hookdispatch.Dispatcher, logger *slog.Logger) billingservice.SubCreatingHookFn {
+	return func(ctx context.Context, payload billingservice.SubCreatingPayload) (*billingservice.SubCreatingResponse, error) {
+		data, err := json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("marshal sub creating hook payload: %w", err)
+		}
+		result := d.DispatchSyncSafe(ctx, billingservice.HookSubscriptionCreating, data)
+		if result.Err != nil {
+			logger.Warn("hook dispatch failed, proceeding with defaults",
+				slog.String("hook", billingservice.HookSubscriptionCreating),
+				slog.Any("error", result.Err),
+			)
+			return nil, nil
+		}
+		if result.Payload == nil {
+			return nil, nil
+		}
+		var resp billingservice.SubCreatingResponse
+		if err := json.Unmarshal(result.Payload, &resp); err != nil {
+			logger.Warn("failed to unmarshal hook response, proceeding with defaults",
+				slog.String("hook", billingservice.HookSubscriptionCreating),
+				slog.Any("error", err),
+			)
+			return nil, nil
+		}
+		return &resp, nil
+	}
+}
+
+// newBillingAsyncHookFn creates an AsyncHookFn that wraps a hookdispatch.Dispatcher.
 // It marshals the domain payload to JSON and dispatches asynchronously
 // (fire-and-forget). Marshal errors are logged but never propagated.
-func newAsyncHookFn(d hookdispatch.Dispatcher, logger *slog.Logger) billingservice.AsyncHookFn {
+func newBillingAsyncHookFn(d hookdispatch.Dispatcher, logger *slog.Logger) billingservice.AsyncHookFn {
 	return func(ctx context.Context, hookName string, payload any) {
 		data, err := json.Marshal(payload)
 		if err != nil {

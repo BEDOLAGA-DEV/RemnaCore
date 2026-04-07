@@ -9,7 +9,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
 )
 
-func validPlanParams() (string, string, vo.Money, vo.BillingInterval, int64, int, []string, []string, PlanTier, int, bool, int) {
+func validPlanParams() (string, string, vo.Money, vo.BillingInterval, int64, int, []string, []string, PlanTier, int, bool, int, []Addon) {
 	return "Premium VPN",
 		"High-speed VPN with global coverage",
 		vo.NewMoney(999, vo.CurrencyUSD),
@@ -21,13 +21,14 @@ func validPlanParams() (string, string, vo.Money, vo.BillingInterval, int64, int
 		TierPremium,
 		3,
 		false,
-		0
+		0,
+		nil
 }
 
 func TestNewPlan_Valid(t *testing.T) {
-	name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily := validPlanParams()
+	name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons := validPlanParams()
 
-	plan, err := NewPlan(name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, time.Now())
+	plan, err := NewPlan(name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons, time.Now())
 
 	require.NoError(t, err)
 	assert.NotEmpty(t, plan.ID)
@@ -49,83 +50,83 @@ func TestNewPlan_Valid(t *testing.T) {
 }
 
 func TestNewPlan_EmptyName(t *testing.T) {
-	_, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily := validPlanParams()
+	_, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons := validPlanParams()
 
-	_, err := NewPlan("", desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, time.Now())
+	_, err := NewPlan("", desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons, time.Now())
 
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "name")
 }
 
 func TestNewPlan_ZeroPrice(t *testing.T) {
-	name, desc, _, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily := validPlanParams()
+	name, desc, _, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons := validPlanParams()
 	zeroPrice := vo.NewMoney(0, vo.CurrencyUSD)
 
-	_, err := NewPlan(name, desc, zeroPrice, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, time.Now())
+	_, err := NewPlan(name, desc, zeroPrice, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons, time.Now())
 
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "price")
 }
 
 func TestNewPlan_NegativePrice(t *testing.T) {
-	name, desc, _, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily := validPlanParams()
+	name, desc, _, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons := validPlanParams()
 	negativePrice := vo.NewMoney(-100, vo.CurrencyUSD)
 
-	_, err := NewPlan(name, desc, negativePrice, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, time.Now())
+	_, err := NewPlan(name, desc, negativePrice, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons, time.Now())
 
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "price")
 }
 
 func TestNewPlan_NoCountries(t *testing.T) {
-	name, desc, price, interval, traffic, devices, _, protocols, tier, maxBindings, familyEnabled, maxFamily := validPlanParams()
+	name, desc, price, interval, traffic, devices, _, protocols, tier, maxBindings, familyEnabled, maxFamily, addons := validPlanParams()
 
-	_, err := NewPlan(name, desc, price, interval, traffic, devices, nil, protocols, tier, maxBindings, familyEnabled, maxFamily, time.Now())
+	_, err := NewPlan(name, desc, price, interval, traffic, devices, nil, protocols, tier, maxBindings, familyEnabled, maxFamily, addons, time.Now())
 
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "country")
 }
 
 func TestNewPlan_EmptyCountries(t *testing.T) {
-	name, desc, price, interval, traffic, devices, _, protocols, tier, maxBindings, familyEnabled, maxFamily := validPlanParams()
+	name, desc, price, interval, traffic, devices, _, protocols, tier, maxBindings, familyEnabled, maxFamily, addons := validPlanParams()
 
-	_, err := NewPlan(name, desc, price, interval, traffic, devices, []string{}, protocols, tier, maxBindings, familyEnabled, maxFamily, time.Now())
+	_, err := NewPlan(name, desc, price, interval, traffic, devices, []string{}, protocols, tier, maxBindings, familyEnabled, maxFamily, addons, time.Now())
 
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "country")
 }
 
 func TestNewPlan_FamilyDisabledButMaxFamilyPositive(t *testing.T) {
-	name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, _, _ := validPlanParams()
+	name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, _, _, addons := validPlanParams()
 
-	_, err := NewPlan(name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, false, 5, time.Now())
+	_, err := NewPlan(name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, false, 5, addons, time.Now())
 
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "family")
 }
 
 func TestNewPlan_NegativeTrafficLimit(t *testing.T) {
-	name, desc, price, interval, _, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily := validPlanParams()
+	name, desc, price, interval, _, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons := validPlanParams()
 
-	_, err := NewPlan(name, desc, price, interval, -1, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, time.Now())
+	_, err := NewPlan(name, desc, price, interval, -1, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons, time.Now())
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrNegativeTrafficLimit)
 }
 
 func TestNewPlan_ZeroTrafficLimit(t *testing.T) {
-	name, desc, price, interval, _, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily := validPlanParams()
+	name, desc, price, interval, _, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons := validPlanParams()
 
-	plan, err := NewPlan(name, desc, price, interval, 0, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, time.Now())
+	plan, err := NewPlan(name, desc, price, interval, 0, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons, time.Now())
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), plan.TrafficLimitBytes)
 }
 
 func TestNewPlan_FamilyEnabled(t *testing.T) {
-	name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, _, _ := validPlanParams()
+	name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, _, _, addons := validPlanParams()
 
-	plan, err := NewPlan(name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, true, 5, time.Now())
+	plan, err := NewPlan(name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, true, 5, addons, time.Now())
 
 	require.NoError(t, err)
 	assert.True(t, plan.FamilyEnabled)
@@ -133,8 +134,8 @@ func TestNewPlan_FamilyEnabled(t *testing.T) {
 }
 
 func TestPlan_AddAddon(t *testing.T) {
-	name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily := validPlanParams()
-	plan, err := NewPlan(name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, time.Now())
+	name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons := validPlanParams()
+	plan, err := NewPlan(name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons, time.Now())
 	require.NoError(t, err)
 
 	addon := Addon{
@@ -153,8 +154,8 @@ func TestPlan_AddAddon(t *testing.T) {
 }
 
 func TestPlan_AddAddon_Duplicate(t *testing.T) {
-	name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily := validPlanParams()
-	plan, err := NewPlan(name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, time.Now())
+	name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons := validPlanParams()
+	plan, err := NewPlan(name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons, time.Now())
 	require.NoError(t, err)
 
 	addon := Addon{
@@ -173,8 +174,8 @@ func TestPlan_AddAddon_Duplicate(t *testing.T) {
 }
 
 func TestPlan_HasAddon(t *testing.T) {
-	name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily := validPlanParams()
-	plan, err := NewPlan(name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, time.Now())
+	name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons := validPlanParams()
+	plan, err := NewPlan(name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons, time.Now())
 	require.NoError(t, err)
 
 	addon := Addon{
@@ -194,8 +195,8 @@ func TestPlan_HasAddon(t *testing.T) {
 }
 
 func TestPlan_CalculateTotal_BaseOnly(t *testing.T) {
-	name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily := validPlanParams()
-	plan, err := NewPlan(name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, time.Now())
+	name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons := validPlanParams()
+	plan, err := NewPlan(name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons, time.Now())
 	require.NoError(t, err)
 
 	total, err := plan.CalculateTotal(nil)
@@ -206,8 +207,8 @@ func TestPlan_CalculateTotal_BaseOnly(t *testing.T) {
 }
 
 func TestPlan_CalculateTotal_WithAddons(t *testing.T) {
-	name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily := validPlanParams()
-	plan, err := NewPlan(name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, time.Now())
+	name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons := validPlanParams()
+	plan, err := NewPlan(name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons, time.Now())
 	require.NoError(t, err)
 
 	addon1 := Addon{
@@ -234,8 +235,8 @@ func TestPlan_CalculateTotal_WithAddons(t *testing.T) {
 }
 
 func TestPlan_CalculateTotal_AddonNotFound(t *testing.T) {
-	name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily := validPlanParams()
-	plan, err := NewPlan(name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, time.Now())
+	name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons := validPlanParams()
+	plan, err := NewPlan(name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons, time.Now())
 	require.NoError(t, err)
 
 	_, err = plan.CalculateTotal([]string{"nonexistent"})
@@ -245,8 +246,8 @@ func TestPlan_CalculateTotal_AddonNotFound(t *testing.T) {
 }
 
 func TestPlan_CalculateTotal_PartialAddons(t *testing.T) {
-	name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily := validPlanParams()
-	plan, err := NewPlan(name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, time.Now())
+	name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons := validPlanParams()
+	plan, err := NewPlan(name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons, time.Now())
 	require.NoError(t, err)
 
 	addon1 := Addon{
@@ -414,8 +415,8 @@ func TestPlan_UpdateBasePrice(t *testing.T) {
 // compared to calling validPlanParams + NewPlan in every test.
 func newTestPlan(t *testing.T) *Plan {
 	t.Helper()
-	name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily := validPlanParams()
-	plan, err := NewPlan(name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, time.Now())
+	name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons := validPlanParams()
+	plan, err := NewPlan(name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, addons, time.Now())
 	require.NoError(t, err)
 	return plan
 }

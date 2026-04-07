@@ -186,6 +186,92 @@ func TestContextMapCoversEventCatalogConsumers(t *testing.T) {
 	}
 }
 
+// TestNoUndeclaredCrossContextImports is the explicit bidirectional complement
+// to TestContextMapMatchesRealImports. While TestContextMapMatchesRealImports
+// checks "every cross-context domain import is declared in the map" (code ->
+// map), this test verifies the reverse: every port/ACL entry in the context
+// map that declares a synchronous dependency between two domain contexts has
+// at least one corresponding Go file in either domain or adapter packages
+// that materialises that dependency.
+//
+// A port/ACL entry without any corresponding import indicates a stale entry
+// that should be removed, or an unfinished implementation.
+func TestNoUndeclaredCrossContextImports(t *testing.T) {
+	root := findRepoRoot(t)
+	allowed := app.AllowedSyncImports()
+
+	// For each declared sync dependency, scan the source context's domain
+	// package AND the adapter packages for an import of the target context.
+	for sourceCtx, targets := range allowed {
+		for _, targetCtx := range targets {
+			t.Run(sourceCtx+"->"+targetCtx, func(t *testing.T) {
+				targetPrefix := modulePrefix + "/internal/domain/" + targetCtx
+
+				// Search domain packages of the source context.
+				sourceDomainDir := filepath.Join(root, "internal", "domain", sourceCtx)
+				foundInDomain := hasImportOfPrefix(t, sourceDomainDir, targetPrefix)
+
+				// Search adapter packages (adapters bridge contexts).
+				adapterDir := filepath.Join(root, "internal", "adapter")
+				foundInAdapter := hasImportOfPrefix(t, adapterDir, targetPrefix)
+
+				// Search app wiring (wiring_*.go files may reference both contexts).
+				appDir := filepath.Join(root, "internal", "app")
+				foundInApp := hasImportOfPrefix(t, appDir, targetPrefix)
+
+				if !foundInDomain && !foundInAdapter && !foundInApp {
+					t.Errorf("ContextMap declares %s -> %s (port/acl) but no import of %s found in domain, adapter, or app packages",
+						sourceCtx, targetCtx, targetPrefix)
+				}
+			})
+		}
+	}
+}
+
+// hasImportOfPrefix walks a directory tree and returns true if any non-test Go
+// file imports a path starting with the given prefix. Returns false if the
+// directory does not exist.
+func hasImportOfPrefix(t *testing.T, dir, prefix string) bool {
+	t.Helper()
+
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return false
+	}
+
+	found := false
+	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || found {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		if strings.Contains(path, string(filepath.Separator)+"gen"+string(filepath.Separator)) {
+			return nil
+		}
+
+		fset := token.NewFileSet()
+		f, parseErr := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
+		if parseErr != nil {
+			return nil
+		}
+
+		for _, imp := range f.Imports {
+			importPath := strings.Trim(imp.Path.Value, `"`)
+			if strings.HasPrefix(importPath, prefix) {
+				found = true
+				return filepath.SkipAll
+			}
+		}
+		return nil
+	})
+
+	return found
+}
+
 // TestAllowedSyncImportsConsistency verifies that AllowedSyncImports returns
 // a non-nil map and that the entries match port/acl entries in ContextMap.
 func TestAllowedSyncImportsConsistency(t *testing.T) {

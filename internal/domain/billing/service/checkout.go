@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 
@@ -39,26 +38,31 @@ const pluginBlockedCheckoutReason = "checkout blocked by plugin"
 // This is exposed through the PricingModifier port so that the checkout
 // service does not depend on the hookdispatch package for version pinning.
 type CheckoutService struct {
-	billing       *BillingService
-	invoiceReader billing.InvoiceReader
-	subReader     billing.SubscriptionReader
-	payment       billing.PaymentGateway
-	pricing       billing.PricingModifier
-	publisher     domainevent.Publisher
-	logger        *slog.Logger
-	rateLimiter   billing.DomainRateLimiter
-	clock         clock.Clock
-	syncHook      SyncHookFn  // nil-safe; all dispatches guarded
-	asyncHook     AsyncHookFn // nil-safe; all dispatches guarded
+	billing        *BillingService
+	invoiceReader  billing.InvoiceReader
+	subReader      billing.SubscriptionReader
+	payment        billing.PaymentGateway
+	pricing        billing.PricingModifier
+	publisher      domainevent.Publisher
+	logger         *slog.Logger
+	rateLimiter    billing.DomainRateLimiter
+	clock          clock.Clock
+	validatingHook CheckoutValidatingHookFn // nil-safe; all dispatches guarded
+	creatingHook   SubCreatingHookFn        // nil-safe; all dispatches guarded
+	asyncHook      AsyncHookFn              // nil-safe; all dispatches guarded
 }
 
 // CheckoutServiceOption configures optional dependencies on CheckoutService.
 type CheckoutServiceOption func(*CheckoutService)
 
-// WithCheckoutSyncHook sets the synchronous hook dispatch function for checkout
-// lifecycle hooks (e.g., checkout.validating, subscription.creating).
-func WithCheckoutSyncHook(fn SyncHookFn) CheckoutServiceOption {
-	return func(cs *CheckoutService) { cs.syncHook = fn }
+// WithCheckoutValidatingHook sets the typed checkout.validating sync hook.
+func WithCheckoutValidatingHook(fn CheckoutValidatingHookFn) CheckoutServiceOption {
+	return func(cs *CheckoutService) { cs.validatingHook = fn }
+}
+
+// WithSubCreatingHook sets the typed subscription.creating sync hook.
+func WithSubCreatingHook(fn SubCreatingHookFn) CheckoutServiceOption {
+	return func(cs *CheckoutService) { cs.creatingHook = fn }
 }
 
 // WithCheckoutAsyncHook sets the asynchronous hook dispatch function for
@@ -262,11 +266,11 @@ func (cs *CheckoutService) CompleteCheckout(ctx context.Context, invoiceID strin
 // Returns (true, error) if the plugin blocked the checkout, (false, nil)
 // otherwise. Best-effort: dispatch errors are logged and the checkout proceeds.
 func (cs *CheckoutService) dispatchCheckoutValidating(ctx context.Context, req CheckoutRequest) (bool, error) {
-	if cs.syncHook == nil {
+	if cs.validatingHook == nil {
 		return false, nil
 	}
 
-	hookResp, err := cs.syncHook(ctx, HookCheckoutValidating, CheckoutValidatingPayload{
+	resp, err := cs.validatingHook(ctx, CheckoutValidatingPayload{
 		UserID:    req.UserID,
 		PlanID:    req.PlanID,
 		AddonIDs:  req.AddonIDs,
@@ -279,15 +283,7 @@ func (cs *CheckoutService) dispatchCheckoutValidating(ctx context.Context, req C
 		return false, nil
 	}
 
-	if hookResp == nil {
-		return false, nil
-	}
-
-	var resp CheckoutValidatingResponse
-	if err := json.Unmarshal(hookResp, &resp); err != nil {
-		cs.logger.Warn("failed to unmarshal checkout.validating response, proceeding",
-			slog.Any("error", err),
-		)
+	if resp == nil {
 		return false, nil
 	}
 
@@ -306,11 +302,11 @@ func (cs *CheckoutService) dispatchCheckoutValidating(ctx context.Context, req C
 // Returns possibly-modified addonIDs. Best-effort: dispatch errors fall back
 // to the original addonIDs.
 func (cs *CheckoutService) dispatchSubscriptionCreating(ctx context.Context, req CheckoutRequest, addonIDs []string) []string {
-	if cs.syncHook == nil {
+	if cs.creatingHook == nil {
 		return addonIDs
 	}
 
-	hookResp, err := cs.syncHook(ctx, HookSubscriptionCreating, SubCreatingPayload{
+	resp, err := cs.creatingHook(ctx, SubCreatingPayload{
 		UserID:   req.UserID,
 		PlanID:   req.PlanID,
 		AddonIDs: addonIDs,
@@ -322,15 +318,7 @@ func (cs *CheckoutService) dispatchSubscriptionCreating(ctx context.Context, req
 		return addonIDs
 	}
 
-	if hookResp == nil {
-		return addonIDs
-	}
-
-	var resp SubCreatingResponse
-	if err := json.Unmarshal(hookResp, &resp); err != nil {
-		cs.logger.Warn("failed to unmarshal subscription.creating response, proceeding with defaults",
-			slog.Any("error", err),
-		)
+	if resp == nil {
 		return addonIDs
 	}
 

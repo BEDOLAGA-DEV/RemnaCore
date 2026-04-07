@@ -2,40 +2,24 @@ package payment
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
-	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tracing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
-// Hook names dispatched by the payment facade. All payment logic is delegated
-// to plugins registered for these hooks.
-const (
-	HookCreateCharge  = "payment.create_charge"
-	HookVerifyWebhook = "payment.verify_webhook"
-	HookRefund        = "payment.refund"
-)
-
-// PaymentFacade dispatches payment operations to plugins via the hook
-// dispatcher. It contains NO built-in Stripe/BTCPay logic.
+// PaymentFacade dispatches payment operations to plugins via typed hook
+// functions. It contains NO built-in Stripe/BTCPay logic.
 //
 // # Architectural rationale
 //
 // PaymentFacade intentionally combines domain port, application orchestration,
 // and plugin protocol handling in a single type within the domain layer. This is
 // a pragmatic trade-off for RemnaCore's plugin-first architecture:
-//
-//   - hookdispatch.Dispatcher is a shared kernel package (pkg/hookdispatch), not
-//     an infrastructure adapter. It defines a pure Go interface with no external
-//     dependencies. Domain packages importing it does not create a coupling to
-//     infrastructure -- the dependency arrow points from domain to pkg, which is
-//     the same direction as stdlib imports.
 //
 //   - Payment is 100% plugin-driven. There is no built-in provider logic to
 //     separate from the dispatch mechanism. Extracting a port interface and
@@ -48,10 +32,10 @@ const (
 //     payment invariants are enforced in one place rather than scattered across
 //     a thin domain model and a separate application service.
 //
-// Rationale: in a modular monolith with a single transport layer (chi HTTP),
-// the cost of 4-6 additional files per context (port interface, adapter struct,
-// adapter constructor, Fx wiring, tests) outweighs the benefit when the adapter
-// would be a one-line delegation to the same dispatcher interface.
+//   - Hook functions (CreateChargeHookFn, VerifyWebhookHookFn, RefundHookFn)
+//     are typed function closures injected by the wiring layer. They handle
+//     JSON marshaling, plugin dispatch, and response deserialization, keeping
+//     the payment domain free of encoding/json and hookdispatch imports.
 //
 // When to split: if RemnaCore gains a second transport layer (gRPC/ConnectRPC
 // gateway), is extracted into separate microservices, or if payment orchestration
@@ -59,17 +43,23 @@ const (
 // extract a PaymentDispatcher port in the domain and move plugin protocol
 // handling to an adapter in internal/adapter/plugin/.
 type PaymentFacade struct {
-	dispatcher hookdispatch.Dispatcher
-	repo       PaymentRepository
-	publisher  domainevent.Publisher
-	txRunner   txmanager.Runner
-	logger     *slog.Logger
-	clock      clock.Clock
+	createCharge  CreateChargeHookFn
+	verifyWebhook VerifyWebhookHookFn
+	refund        RefundHookFn
+	repo          PaymentRepository
+	publisher     domainevent.Publisher
+	txRunner      txmanager.Runner
+	logger        *slog.Logger
+	clock         clock.Clock
 }
 
 // NewPaymentFacade creates a PaymentFacade with the given dependencies.
+// The hook functions handle JSON marshaling and plugin dispatch; the domain
+// never touches encoding/json or hookdispatch directly.
 func NewPaymentFacade(
-	dispatcher hookdispatch.Dispatcher,
+	createCharge CreateChargeHookFn,
+	verifyWebhook VerifyWebhookHookFn,
+	refund RefundHookFn,
 	repo PaymentRepository,
 	publisher domainevent.Publisher,
 	txRunner txmanager.Runner,
@@ -77,12 +67,14 @@ func NewPaymentFacade(
 	clk clock.Clock,
 ) *PaymentFacade {
 	return &PaymentFacade{
-		dispatcher: dispatcher,
-		repo:       repo,
-		publisher:  publisher,
-		txRunner:   txRunner,
-		logger:     logger,
-		clock:      clk,
+		createCharge:  createCharge,
+		verifyWebhook: verifyWebhook,
+		refund:        refund,
+		repo:          repo,
+		publisher:     publisher,
+		txRunner:      txRunner,
+		logger:        logger,
+		clock:         clk,
 	}
 }
 
@@ -102,19 +94,9 @@ func (f *PaymentFacade) CreateCharge(ctx context.Context, req CreateChargeReques
 		return nil, ErrMissingCurrency
 	}
 
-	payload, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("marshal create charge request: %w", err)
-	}
-
-	output, err := f.dispatcher.DispatchSync(ctx, HookCreateCharge, payload)
+	result, err := f.createCharge(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrPaymentFailed, err)
-	}
-
-	var result CreateChargeResult
-	if err := json.Unmarshal(output, &result); err != nil {
-		return nil, fmt.Errorf("unmarshal create charge result: %w", err)
 	}
 
 	if result.Provider == "" || result.ExternalID == "" {
@@ -144,7 +126,7 @@ func (f *PaymentFacade) CreateCharge(ctx context.Context, req CreateChargeReques
 		slog.String("external_id", result.ExternalID),
 	)
 
-	return &result, nil
+	return result, nil
 }
 
 // VerifyWebhook dispatches a webhook verification request to the registered
@@ -154,23 +136,13 @@ func (f *PaymentFacade) VerifyWebhook(ctx context.Context, provider string, head
 		return nil, ErrInvalidProvider
 	}
 
-	payload, err := json.Marshal(VerifyWebhookHookRequest{
+	verified, err := f.verifyWebhook(ctx, VerifyWebhookHookRequest{
 		Provider: provider,
 		Headers:  headers,
 		Body:     body,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("marshal verify webhook request: %w", err)
-	}
-
-	output, err := f.dispatcher.DispatchSync(ctx, HookVerifyWebhook, payload)
-	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrVerificationFailed, err)
-	}
-
-	var verified VerifiedPayment
-	if err := json.Unmarshal(output, &verified); err != nil {
-		return nil, fmt.Errorf("unmarshal verified payment: %w", err)
 	}
 
 	if f.publisher != nil {
@@ -189,7 +161,7 @@ func (f *PaymentFacade) VerifyWebhook(ctx context.Context, provider string, head
 		slog.String("status", verified.Status),
 	)
 
-	return &verified, nil
+	return verified, nil
 }
 
 // Refund dispatches a refund request to the registered payment plugin. The
@@ -203,17 +175,12 @@ func (f *PaymentFacade) Refund(ctx context.Context, paymentID string, amount int
 		return fmt.Errorf("get payment for refund: %w", err)
 	}
 
-	payload, err := json.Marshal(RefundHookRequest{
+	err = f.refund(ctx, RefundHookRequest{
 		Provider:   record.Provider,
 		ExternalID: record.ExternalID,
 		Amount:     amount,
 		Reason:     reason,
 	})
-	if err != nil {
-		return fmt.Errorf("marshal refund request: %w", err)
-	}
-
-	_, err = f.dispatcher.DispatchSync(ctx, HookRefund, payload)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrRefundFailed, err)
 	}

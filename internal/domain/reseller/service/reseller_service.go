@@ -12,13 +12,12 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
-// TenantRepository defines the persistence operations for tenants.
+// Deprecated: TenantRepository is kept for backward compatibility. The
+// canonical interface is defined in the reseller domain root (repository.go).
+// New code should reference reseller.TenantRepository directly.
 type TenantRepository interface {
 	CreateTenant(ctx context.Context, tenant *aggregate.Tenant) error
 	GetTenantByID(ctx context.Context, id string) (*aggregate.Tenant, error)
-	// GetTenantByIDForUpdate retrieves a tenant by ID with a SELECT FOR UPDATE
-	// row lock. Must be called within a RunInTx transaction to prevent TOCTOU
-	// races during read-modify-write cycles.
 	GetTenantByIDForUpdate(ctx context.Context, id string) (*aggregate.Tenant, error)
 	GetTenantByDomain(ctx context.Context, domain string) (*aggregate.Tenant, error)
 	GetTenantByAPIKeyHash(ctx context.Context, keyHash string) (*aggregate.Tenant, error)
@@ -26,8 +25,9 @@ type TenantRepository interface {
 	ListTenants(ctx context.Context, limit, offset int) ([]*aggregate.Tenant, error)
 }
 
-// CommissionRepository defines the persistence operations for reseller accounts
-// and commissions.
+// Deprecated: CommissionRepository is kept for backward compatibility. The
+// canonical interface is defined in the reseller domain root (repository.go).
+// New code should reference reseller.CommissionRepository directly.
 type CommissionRepository interface {
 	CreateResellerAccount(ctx context.Context, account *aggregate.ResellerAccount) error
 	GetResellerAccountByID(ctx context.Context, id string) (*aggregate.ResellerAccount, error)
@@ -35,9 +35,6 @@ type CommissionRepository interface {
 
 	CreateCommission(ctx context.Context, commission *aggregate.Commission) error
 	GetCommissionByID(ctx context.Context, id string) (*aggregate.Commission, error)
-	// GetCommissionByIDForUpdate retrieves a commission by ID with a SELECT FOR
-	// UPDATE row lock. Must be called within a RunInTx transaction to prevent
-	// TOCTOU races during read-modify-write cycles.
 	GetCommissionByIDForUpdate(ctx context.Context, id string) (*aggregate.Commission, error)
 	GetPendingCommissions(ctx context.Context, resellerID string) ([]*aggregate.Commission, error)
 	UpdateCommission(ctx context.Context, commission *aggregate.Commission) error

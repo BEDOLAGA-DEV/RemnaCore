@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"testing"
 	"time"
@@ -18,12 +17,16 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 )
 
-// hookRecorder captures sync and async hook dispatch calls for test assertions.
+// hookRecorder captures typed sync and async hook dispatch calls for test assertions.
 type hookRecorder struct {
 	syncCalls  []hookCall
 	asyncCalls []hookCall
-	// syncResp is returned by the SyncHookFn when non-nil.
-	syncResp json.RawMessage
+	// cancelResp is returned by the CancelHookFn when non-nil.
+	cancelResp *CancellingResponse
+	// renewResp is returned by the RenewHookFn when non-nil.
+	renewResp *RenewingResponse
+	// upgradeResp is returned by the UpgradeHookFn when non-nil.
+	upgradeResp *UpgradingResponse
 }
 
 type hookCall struct {
@@ -31,9 +34,19 @@ type hookCall struct {
 	payload  any
 }
 
-func (r *hookRecorder) syncHook(_ context.Context, hookName string, payload any) (json.RawMessage, error) {
-	r.syncCalls = append(r.syncCalls, hookCall{hookName: hookName, payload: payload})
-	return r.syncResp, nil
+func (r *hookRecorder) cancelHook(_ context.Context, payload CancellingPayload) (*CancellingResponse, error) {
+	r.syncCalls = append(r.syncCalls, hookCall{hookName: HookSubCancelling, payload: payload})
+	return r.cancelResp, nil
+}
+
+func (r *hookRecorder) renewHook(_ context.Context, payload RenewingPayload) (*RenewingResponse, error) {
+	r.syncCalls = append(r.syncCalls, hookCall{hookName: HookSubRenewing, payload: payload})
+	return r.renewResp, nil
+}
+
+func (r *hookRecorder) upgradeHook(_ context.Context, payload UpgradingPayload) (*UpgradingResponse, error) {
+	r.syncCalls = append(r.syncCalls, hookCall{hookName: HookSubUpgrading, payload: payload})
+	return r.upgradeResp, nil
 }
 
 func (r *hookRecorder) asyncHook(_ context.Context, hookName string, payload any) {
@@ -65,7 +78,9 @@ func newTestServiceWithHooks() (
 
 	svc := NewBillingService(
 		plans, subs, invoices, families, publisher, prorate, trial, txRunner, clk, slog.Default(),
-		WithSyncHook(recorder.syncHook),
+		WithCancelHook(recorder.cancelHook),
+		WithRenewHook(recorder.renewHook),
+		WithUpgradeHook(recorder.upgradeHook),
 		WithAsyncHook(recorder.asyncHook),
 	)
 	return svc, plans, subs, invoices, families, publisher, recorder
@@ -251,9 +266,7 @@ func TestRenewSubscription_WithRenewingHook(t *testing.T) {
 	plan := samplePlan()
 
 	// Hook returns a price override.
-	hookResp := RenewingResponse{PriceOverride: ptr(int64(799))}
-	hookRespBytes, _ := json.Marshal(hookResp)
-	recorder.syncResp = hookRespBytes
+	recorder.renewResp = &RenewingResponse{PriceOverride: ptr(int64(799))}
 
 	subs.On("GetByIDForUpdate", mock.Anything, "sub-1").Return(sub, nil)
 	subs.On("Update", mock.Anything, sub).Return(nil)
@@ -341,9 +354,7 @@ func TestUpgradeSubscription_WithCreditOverrideHook(t *testing.T) {
 	premiumPlan := samplePlan()
 
 	// Hook overrides credit to zero.
-	hookResp := UpgradingResponse{CreditOverride: ptr(int64(0))}
-	hookRespBytes, _ := json.Marshal(hookResp)
-	recorder.syncResp = hookRespBytes
+	recorder.upgradeResp = &UpgradingResponse{CreditOverride: ptr(int64(0))}
 
 	subs.On("GetByIDForUpdate", mock.Anything, "sub-1").Return(sub, nil)
 	plans.On("GetByID", mock.Anything, "plan-basic").Return(basicPlan, nil)
@@ -458,9 +469,7 @@ func TestCancelSubscription_WithHook_Block(t *testing.T) {
 	ctx := context.Background()
 	sub := activeSubscription("user-1", "plan-premium")
 
-	hookResp := CancellingResponse{Block: true}
-	hookRespBytes, _ := json.Marshal(hookResp)
-	recorder.syncResp = hookRespBytes
+	recorder.cancelResp = &CancellingResponse{Block: true}
 
 	subs.On("GetByIDForUpdate", mock.Anything, "sub-1").Return(sub, nil)
 
@@ -481,9 +490,7 @@ func TestCancelSubscription_WithHook_Allowed(t *testing.T) {
 	ctx := context.Background()
 	sub := activeSubscription("user-1", "plan-premium")
 
-	hookResp := CancellingResponse{Block: false}
-	hookRespBytes, _ := json.Marshal(hookResp)
-	recorder.syncResp = hookRespBytes
+	recorder.cancelResp = &CancellingResponse{Block: false}
 
 	subs.On("GetByIDForUpdate", mock.Anything, "sub-1").Return(sub, nil)
 	subs.On("Update", mock.Anything, sub).Return(nil)

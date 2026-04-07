@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
@@ -105,12 +104,15 @@ func (s *BillingService) RenewSubscription(ctx context.Context, subID string) er
 		}
 
 		// Dispatch subscription.renewing pre-hook — plugin can modify price/discount.
-		hookResp, _ := s.dispatchHook(txCtx, HookSubRenewing, RenewingPayload{
-			SubscriptionID: sub.ID,
-			UserID:         sub.UserID,
-			PlanID:         sub.PlanID,
-			CurrentPeriod:  sub.Period.End.Format("2006-01-02"),
-		})
+		var renewResp *RenewingResponse
+		if s.renewHook != nil {
+			renewResp, _ = s.renewHook(txCtx, RenewingPayload{
+				SubscriptionID: sub.ID,
+				UserID:         sub.UserID,
+				PlanID:         sub.PlanID,
+				CurrentPeriod:  sub.Period.End.Format("2006-01-02"),
+			})
+		}
 
 		now := s.clock.Now()
 
@@ -144,7 +146,7 @@ func (s *BillingService) RenewSubscription(ctx context.Context, subID string) er
 		}
 
 		// Apply plugin price/discount overrides from the renewing hook.
-		applyRenewalHookOverrides(inv, hookResp, now)
+		applyRenewalHookOverrides(inv, renewResp, now)
 
 		if err := s.invoices.Create(txCtx, inv); err != nil {
 			return fmt.Errorf("persist renewal invoice: %w", err)
@@ -201,16 +203,15 @@ func (s *BillingService) UpgradeSubscription(ctx context.Context, subID, newPlan
 		credit := s.prorate.CalculateUpgradeCredit(currentPlan, sub.Period, now)
 
 		// Dispatch subscription.upgrading pre-hook — plugin can modify credit/discount.
-		hookResp, _ := s.dispatchHook(txCtx, HookSubUpgrading, UpgradingPayload{
-			SubscriptionID:  sub.ID,
-			UserID:          sub.UserID,
-			FromPlanID:      sub.PlanID,
-			ToPlanID:        newPlanID,
-			ProrationCredit: credit.Amount,
-		})
-		if hookResp != nil {
-			var resp UpgradingResponse
-			if err := json.Unmarshal(hookResp, &resp); err == nil && resp.CreditOverride != nil {
+		if s.upgradeHook != nil {
+			resp, _ := s.upgradeHook(txCtx, UpgradingPayload{
+				SubscriptionID:  sub.ID,
+				UserID:          sub.UserID,
+				FromPlanID:      sub.PlanID,
+				ToPlanID:        newPlanID,
+				ProrationCredit: credit.Amount,
+			})
+			if resp != nil && resp.CreditOverride != nil {
 				credit = vo.NewMoney(*resp.CreditOverride, credit.Currency)
 			}
 		}
@@ -353,16 +354,15 @@ func (s *BillingService) ExpireSubscription(ctx context.Context, subID string) e
 	return nil
 }
 
+// renewalHookOverrideReason is the reason recorded on invoices modified by the
+// subscription.renewing hook response.
+const renewalHookOverrideReason = "renewal hook override"
+
 // applyRenewalHookOverrides applies price and discount overrides from the
 // subscription.renewing hook response to a renewal invoice. The invoice must be
-// in draft status. Hook parse failures are silently ignored (fallback to
-// original pricing).
-func applyRenewalHookOverrides(inv *aggregate.Invoice, hookResp json.RawMessage, now time.Time) {
-	if hookResp == nil {
-		return
-	}
-	var resp RenewingResponse
-	if err := json.Unmarshal(hookResp, &resp); err != nil {
+// in draft status. Nil responses are silently ignored (fallback to original pricing).
+func applyRenewalHookOverrides(inv *aggregate.Invoice, resp *RenewingResponse, now time.Time) {
+	if resp == nil {
 		return
 	}
 
@@ -380,8 +380,7 @@ func applyRenewalHookOverrides(inv *aggregate.Invoice, hookResp json.RawMessage,
 	}
 
 	if subtotal != nil || discount != nil {
-		reason := "renewal hook override"
-		if err := inv.ApplyPricingModification(subtotal, discount, reason, now); err != nil {
+		if err := inv.ApplyPricingModification(subtotal, discount, renewalHookOverrideReason, now); err != nil {
 			slog.Warn("failed to apply pricing modification",
 				slog.String("invoice_id", inv.ID),
 				slog.Any("error", err),

@@ -81,6 +81,10 @@ type Plan struct {
 // NewPlan creates and validates a new Plan aggregate.
 // Invariants: name not empty, base price positive, at least one country,
 // family disabled must not have maxFamilyMembers > 0.
+//
+// The addons parameter sets the initial AvailableAddons slice directly,
+// producing a single PlanCreated event instead of 1+N PlanUpdated events
+// that would result from calling AddAddon after construction.
 func NewPlan(
 	name, description string,
 	basePrice vo.Money,
@@ -93,6 +97,7 @@ func NewPlan(
 	maxRemnawaveBindings int,
 	familyEnabled bool,
 	maxFamilyMembers int,
+	addons []Addon,
 	now time.Time,
 ) (*Plan, error) {
 	if name == "" {
@@ -125,7 +130,7 @@ func NewPlan(
 		MaxRemnawaveBindings: maxRemnawaveBindings,
 		FamilyEnabled:        familyEnabled,
 		MaxFamilyMembers:     maxFamilyMembers,
-		AvailableAddons:      nil,
+		AvailableAddons:      addons,
 		IsActive:             true,
 		CreatedAt:            now,
 		UpdatedAt:            now,

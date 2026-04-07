@@ -51,9 +51,7 @@ type ResellerService = service.ResellerService
 // NewResellerService is a convenience re-export from the service subpackage.
 var NewResellerService = service.NewResellerService
 
-// --- Repository interface aliases (backward compatibility) ---
-
-type (
-	TenantRepository     = service.TenantRepository
-	CommissionRepository = service.CommissionRepository
-)
+// Note: TenantRepository and CommissionRepository are defined canonically in
+// repository.go (same package). The service subpackage retains structurally
+// identical copies for backward compatibility, but new code should reference
+// reseller.TenantRepository and reseller.CommissionRepository directly.

@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 
 	"go.uber.org/fx"
@@ -69,10 +71,10 @@ var multisubWiring = fx.Options(
 	fx.Invoke(startSagaCleanup),
 )
 
-// newMultiSubOrchestrator creates a MultiSubOrchestrator with the hook
-// dispatcher and feature flag wired from the Fx container via functional
-// options. This replaces the direct fx.Provide(NewMultiSubOrchestrator) call
-// because Fx cannot inject variadic OrchestratorOption arguments.
+// newMultiSubOrchestrator creates a MultiSubOrchestrator with typed hook
+// functions wired from the Fx container via functional options. The
+// hookdispatch.Dispatcher is wrapped in closures so the multisub domain never
+// imports hookdispatch or encoding/json for hook dispatch.
 func newMultiSubOrchestrator(
 	provisioning *multisubservice.ProvisioningSaga,
 	deprovisioning *multisubservice.DeprovisioningSaga,
@@ -85,11 +87,91 @@ func newMultiSubOrchestrator(
 	dispatcher hookdispatch.Dispatcher,
 	cfg *config.Config,
 ) *multisubservice.MultiSubOrchestrator {
+	var opts []multisubservice.OrchestratorOption
+	if cfg.FeatureFlags.HooksSubscriptionEnabled && dispatcher != nil {
+		opts = append(opts,
+			multisubservice.WithLimitingHook(newLimitingHookFn(dispatcher, logger)),
+			multisubservice.WithSyncHook(newMultiSubSyncHookFn(dispatcher, logger)),
+			multisubservice.WithAsyncHook(newMultiSubAsyncHookFn(dispatcher, logger)),
+		)
+	}
+	opts = append(opts, multisubservice.WithHooksEnabled(cfg.FeatureFlags.HooksSubscriptionEnabled))
+
 	return multisubservice.NewMultiSubOrchestrator(
 		provisioning, deprovisioning, syncService, lifecycle, bindings, publisher, clk, logger,
-		multisubservice.WithDispatcher(dispatcher),
-		multisubservice.WithHooksEnabled(cfg.FeatureFlags.HooksSubscriptionEnabled),
+		opts...,
 	)
+}
+
+// newLimitingHookFn creates a typed LimitingHookFn that marshals the payload,
+// dispatches via DispatchSyncSafe, and unmarshals the response.
+func newLimitingHookFn(d hookdispatch.Dispatcher, logger *slog.Logger) multisubservice.LimitingHookFn {
+	return func(ctx context.Context, payload multisubservice.SubLimitingPayload) (*multisubservice.SubLimitingResponse, error) {
+		data, err := json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("marshal limiting hook payload: %w", err)
+		}
+
+		result := d.DispatchSyncSafe(ctx, multisubservice.HookSubLimiting, data)
+		if result.Err != nil {
+			logger.Warn("limiting hook dispatch failed",
+				slog.String("hook", multisubservice.HookSubLimiting),
+				slog.Any("error", result.Err),
+			)
+			return nil, nil
+		}
+		if result.Payload == nil {
+			return nil, nil
+		}
+
+		var resp multisubservice.SubLimitingResponse
+		if err := json.Unmarshal(result.Payload, &resp); err != nil {
+			logger.Warn("failed to unmarshal limiting hook response",
+				slog.Any("error", err),
+			)
+			return nil, nil
+		}
+
+		return &resp, nil
+	}
+}
+
+// newMultiSubSyncHookFn creates a SyncHookFn that wraps a hookdispatch.Dispatcher.
+// It marshals the domain payload to JSON, dispatches via DispatchSyncSafe, and
+// returns the raw response bytes.
+func newMultiSubSyncHookFn(d hookdispatch.Dispatcher, logger *slog.Logger) multisubservice.SyncHookFn {
+	return func(ctx context.Context, hookName string, payload any) ([]byte, error) {
+		data, err := json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("marshal hook payload: %w", err)
+		}
+		result := d.DispatchSyncSafe(ctx, hookName, data)
+		if result.Err != nil {
+			logger.Warn("hook dispatch failed, proceeding with defaults",
+				slog.String("hook", hookName),
+				slog.Any("error", result.Err),
+			)
+			return nil, nil
+		}
+		return result.Payload, nil
+	}
+}
+
+// newMultiSubAsyncHookFn creates an AsyncHookFn that wraps a hookdispatch.Dispatcher.
+// It marshals the domain payload to JSON and dispatches asynchronously
+// (fire-and-forget). Marshal errors are logged but never propagated.
+func newMultiSubAsyncHookFn(d hookdispatch.Dispatcher, logger *slog.Logger) multisubservice.AsyncHookFn {
+	return func(ctx context.Context, hookName string, payload any) {
+		data, err := json.Marshal(payload)
+		if err != nil {
+			logger.Warn("failed to marshal async hook payload",
+				slog.String("hook", hookName),
+				slog.Any("error", err),
+			)
+			return
+		}
+		d.DispatchAsync(ctx, hookName, data)
+	}
 }
 
 // provideVPNProvider creates a plugin-backed VPN provider when the shared VPN

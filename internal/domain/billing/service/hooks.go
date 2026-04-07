@@ -1,19 +1,35 @@
 package service
 
-import (
-	"context"
-	"encoding/json"
-)
+import "context"
 
-// SyncHookFn dispatches a synchronous hook and returns the plugin response.
-// hookName identifies the dispatch point; payload is marshaled to JSON by
-// the implementation. Returns (nil, nil) when no hook is registered or the
-// implementation decides to swallow the error (best-effort semantics).
+// --- Typed hook function types ---
 //
-// This function type replaces the direct hookdispatch.Dispatcher dependency,
-// keeping the billing domain free of plugin-infrastructure imports. The
-// concrete implementation is wired in internal/app/wiring_billing.go.
-type SyncHookFn func(ctx context.Context, hookName string, payload any) (json.RawMessage, error)
+// Each sync hook has its own typed function that accepts a domain payload and
+// returns a typed response pointer. Returns (nil, nil) when no hook is
+// registered or the implementation decides to swallow the error (best-effort
+// semantics). The wiring layer (internal/app/wiring_billing.go) creates
+// concrete implementations that handle JSON marshaling, plugin dispatch, and
+// response deserialization.
+
+// CancelHookFn dispatches the subscription.cancelling sync hook.
+// Returns (nil, nil) when no hook is registered.
+type CancelHookFn func(ctx context.Context, payload CancellingPayload) (*CancellingResponse, error)
+
+// RenewHookFn dispatches the subscription.renewing sync hook.
+// Returns (nil, nil) when no hook is registered.
+type RenewHookFn func(ctx context.Context, payload RenewingPayload) (*RenewingResponse, error)
+
+// UpgradeHookFn dispatches the subscription.upgrading sync hook.
+// Returns (nil, nil) when no hook is registered.
+type UpgradeHookFn func(ctx context.Context, payload UpgradingPayload) (*UpgradingResponse, error)
+
+// CheckoutValidatingHookFn dispatches the checkout.validating sync hook.
+// Returns (nil, nil) when no hook is registered.
+type CheckoutValidatingHookFn func(ctx context.Context, payload CheckoutValidatingPayload) (*CheckoutValidatingResponse, error)
+
+// SubCreatingHookFn dispatches the subscription.creating sync hook.
+// Returns (nil, nil) when no hook is registered.
+type SubCreatingHookFn func(ctx context.Context, payload SubCreatingPayload) (*SubCreatingResponse, error)
 
 // AsyncHookFn dispatches an asynchronous (fire-and-forget) hook. Errors are
 // logged by the implementation but never propagated to the caller.

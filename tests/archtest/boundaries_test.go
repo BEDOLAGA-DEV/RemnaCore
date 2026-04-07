@@ -354,6 +354,72 @@ func TestGatewayHandlerSingleContextRule(t *testing.T) {
 	}
 }
 
+// TestAdminHandlerSingleContextClassification explicitly verifies that the
+// AdminHandler is classified correctly by TestGatewayHandlerSingleContextRule.
+//
+// AdminHandler imports both identity (service at root) and billing (root
+// package for SubscriptionReader/InvoiceReader interfaces). The billing root
+// import is NOT in serviceAtRootContexts because billing's orchestration lives
+// in billing/service, not at the root. Therefore identity is the ONLY service
+// context counted, and the file passes the single-context rule.
+//
+// This test documents this exception and guards against accidental
+// reclassification of the billing root as a service import.
+func TestAdminHandlerSingleContextClassification(t *testing.T) {
+	root := findRepoRoot(t)
+	adminPath := filepath.Join(root, "internal", "gateway", "handler", "admin_handler.go")
+
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, adminPath, nil, parser.ImportsOnly)
+	if err != nil {
+		t.Fatalf("parsing admin_handler.go: %v", err)
+	}
+
+	// Collect service-level contexts using the same classification logic as
+	// TestGatewayHandlerSingleContextRule.
+	serviceContexts := make(map[string]string)
+	for _, imp := range f.Imports {
+		importPath := strings.Trim(imp.Path.Value, `"`)
+		if !strings.HasPrefix(importPath, domainServicePrefix) {
+			continue
+		}
+
+		suffix := strings.TrimPrefix(importPath, domainServicePrefix)
+		parts := strings.SplitN(suffix, "/", 2)
+		ctx := parts[0]
+
+		if len(parts) == 2 && parts[1] == "service" {
+			serviceContexts[ctx] = importPath
+			continue
+		}
+		if len(parts) == 1 && serviceAtRootContexts[ctx] {
+			serviceContexts[ctx] = importPath
+			continue
+		}
+	}
+
+	// AdminHandler must import exactly one service context: identity.
+	// The billing root import should NOT be counted.
+	if len(serviceContexts) != 1 {
+		var imported []string
+		for ctx, pkg := range serviceContexts {
+			imported = append(imported, ctx+" ("+pkg+")")
+		}
+		slices.Sort(imported)
+		t.Errorf("expected 1 service context for admin_handler.go, got %d: %s",
+			len(serviceContexts), strings.Join(imported, ", "))
+	}
+
+	if _, ok := serviceContexts["identity"]; !ok {
+		t.Error("admin_handler.go must count identity as its single service context")
+	}
+
+	if _, ok := serviceContexts["billing"]; ok {
+		t.Error("admin_handler.go billing root import must NOT count as a service context "+
+			"(billing orchestration lives in billing/service, not at root)")
+	}
+}
+
 // TestBillingDomainNoPluginImports verifies that the billing domain does not
 // import pkg/hookdispatch or pkg/sdk. Hook dispatch is an application-layer
 // concern; the billing service uses injected SyncHookFn / AsyncHookFn

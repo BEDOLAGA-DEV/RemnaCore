@@ -2,7 +2,7 @@ package payment_test
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"log/slog"
 	"os"
 	"testing"
@@ -14,7 +14,6 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/payment/paymenttest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
-	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch/hookdispatchtest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager/txmanagertest"
 )
 
@@ -33,24 +32,60 @@ func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 }
 
+// stubCreateCharge returns a CreateChargeHookFn that returns the given result.
+func stubCreateCharge(result *payment.CreateChargeResult, err error) payment.CreateChargeHookFn {
+	return func(_ context.Context, _ payment.CreateChargeRequest) (*payment.CreateChargeResult, error) {
+		return result, err
+	}
+}
+
+// stubVerifyWebhook returns a VerifyWebhookHookFn that returns the given result.
+func stubVerifyWebhook(result *payment.VerifiedPayment, err error) payment.VerifyWebhookHookFn {
+	return func(_ context.Context, _ payment.VerifyWebhookHookRequest) (*payment.VerifiedPayment, error) {
+		return result, err
+	}
+}
+
+// stubRefund returns a RefundHookFn that returns the given error.
+func stubRefund(err error) payment.RefundHookFn {
+	return func(_ context.Context, _ payment.RefundHookRequest) error {
+		return err
+	}
+}
+
+// noopCreateCharge is a no-op CreateChargeHookFn for tests that don't exercise it.
+func noopCreateCharge(_ context.Context, _ payment.CreateChargeRequest) (*payment.CreateChargeResult, error) {
+	return nil, errors.New("unexpected create charge call")
+}
+
+// noopVerifyWebhook is a no-op VerifyWebhookHookFn for tests that don't exercise it.
+func noopVerifyWebhook(_ context.Context, _ payment.VerifyWebhookHookRequest) (*payment.VerifiedPayment, error) {
+	return nil, errors.New("unexpected verify webhook call")
+}
+
+// noopRefund is a no-op RefundHookFn for tests that don't exercise it.
+func noopRefund(_ context.Context, _ payment.RefundHookRequest) error {
+	return errors.New("unexpected refund call")
+}
+
 // --- Tests ---
 
 func TestCreateCharge_Success(t *testing.T) {
-	chargeResult := payment.CreateChargeResult{
+	chargeResult := &payment.CreateChargeResult{
 		Provider:    "stripe",
 		ExternalID:  "pi_123",
 		CheckoutURL: "https://checkout.stripe.com/session/123",
 		Status:      "pending",
 	}
-	resultJSON, _ := json.Marshal(chargeResult)
-
-	dispatcher := &hookdispatchtest.MockDispatcher{}
-	dispatcher.On("DispatchSync", mock.Anything, payment.HookCreateCharge, mock.AnythingOfType("json.RawMessage")).
-		Return(json.RawMessage(resultJSON), nil)
 
 	repo := &paymenttest.MockPaymentRepo{}
 	pub := &eventCollector{}
-	facade := payment.NewPaymentFacade(dispatcher, repo, pub, txmanagertest.NoopTxRunner{}, testLogger(), clock.NewReal())
+	facade := payment.NewPaymentFacade(
+		stubCreateCharge(chargeResult, nil),
+		noopVerifyWebhook,
+		noopRefund,
+		repo, pub, txmanagertest.NoopTxRunner{}, testLogger(), clock.NewReal(),
+	)
 
 	repo.On("CreatePayment", mock.Anything, mock.AnythingOfType("*payment.PaymentRecord")).Return(nil)
 
@@ -73,20 +108,22 @@ func TestCreateCharge_Success(t *testing.T) {
 	assert.Equal(t, payment.EventChargeCreated, pub.events[0].Type)
 
 	repo.AssertExpectations(t)
-	dispatcher.AssertExpectations(t)
 }
 
 func TestCreateCharge_NoHandler(t *testing.T) {
-	// Dispatcher returns the original payload unchanged (no hooks registered).
-	// The facade will try to unmarshal the CreateChargeRequest as a CreateChargeResult,
-	// which won't have provider/external_id, so it should fail.
-	dispatcher := &hookdispatchtest.MockDispatcher{}
-	dispatcher.On("DispatchSync", mock.Anything, payment.HookCreateCharge, mock.AnythingOfType("json.RawMessage")).
-		Return(json.RawMessage(`{"invoice_id":"inv-1","amount":999,"currency":"usd"}`), nil)
+	// Hook returns a result with empty provider/external_id -> should fail.
+	incompleteResult := &payment.CreateChargeResult{
+		Status: "pending",
+	}
 
 	repo := &paymenttest.MockPaymentRepo{}
 	pub := &eventCollector{}
-	facade := payment.NewPaymentFacade(dispatcher, repo, pub, txmanagertest.NoopTxRunner{}, testLogger(), clock.NewReal())
+	facade := payment.NewPaymentFacade(
+		stubCreateCharge(incompleteResult, nil),
+		noopVerifyWebhook,
+		noopRefund,
+		repo, pub, txmanagertest.NoopTxRunner{}, testLogger(), clock.NewReal(),
+	)
 
 	_, err := facade.CreateCharge(context.Background(), payment.CreateChargeRequest{
 		InvoiceID: "inv-1",
@@ -96,15 +133,15 @@ func TestCreateCharge_NoHandler(t *testing.T) {
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, payment.ErrPaymentFailed)
-
-	dispatcher.AssertExpectations(t)
 }
 
 func TestCreateCharge_ValidationErrors(t *testing.T) {
-	dispatcher := &hookdispatchtest.MockDispatcher{}
-	repo := &paymenttest.MockPaymentRepo{}
-	pub := &eventCollector{}
-	facade := payment.NewPaymentFacade(dispatcher, repo, pub, txmanagertest.NoopTxRunner{}, testLogger(), clock.NewReal())
+	facade := payment.NewPaymentFacade(
+		noopCreateCharge,
+		noopVerifyWebhook,
+		noopRefund,
+		&paymenttest.MockPaymentRepo{}, &eventCollector{}, txmanagertest.NoopTxRunner{}, testLogger(), clock.NewReal(),
+	)
 
 	_, err := facade.CreateCharge(context.Background(), payment.CreateChargeRequest{
 		Amount:   999,
@@ -127,7 +164,7 @@ func TestCreateCharge_ValidationErrors(t *testing.T) {
 }
 
 func TestVerifyWebhook_Success(t *testing.T) {
-	verified := payment.VerifiedPayment{
+	verified := &payment.VerifiedPayment{
 		Provider:   "stripe",
 		ExternalID: "pi_123",
 		InvoiceID:  "inv-1",
@@ -135,15 +172,15 @@ func TestVerifyWebhook_Success(t *testing.T) {
 		Currency:   "usd",
 		Status:     "succeeded",
 	}
-	verifiedJSON, _ := json.Marshal(verified)
-
-	dispatcher := &hookdispatchtest.MockDispatcher{}
-	dispatcher.On("DispatchSync", mock.Anything, payment.HookVerifyWebhook, mock.AnythingOfType("json.RawMessage")).
-		Return(json.RawMessage(verifiedJSON), nil)
 
 	repo := &paymenttest.MockPaymentRepo{}
 	pub := &eventCollector{}
-	facade := payment.NewPaymentFacade(dispatcher, repo, pub, txmanagertest.NoopTxRunner{}, testLogger(), clock.NewReal())
+	facade := payment.NewPaymentFacade(
+		noopCreateCharge,
+		stubVerifyWebhook(verified, nil),
+		noopRefund,
+		repo, pub, txmanagertest.NoopTxRunner{}, testLogger(), clock.NewReal(),
+	)
 
 	result, err := facade.VerifyWebhook(context.Background(), "stripe", map[string]string{
 		"stripe-signature": "sig_abc",
@@ -156,15 +193,15 @@ func TestVerifyWebhook_Success(t *testing.T) {
 	assert.Equal(t, "succeeded", result.Status)
 	assert.Len(t, pub.events, 1)
 	assert.Equal(t, payment.EventWebhookReceived, pub.events[0].Type)
-
-	dispatcher.AssertExpectations(t)
 }
 
 func TestVerifyWebhook_InvalidProvider(t *testing.T) {
-	dispatcher := &hookdispatchtest.MockDispatcher{}
-	repo := &paymenttest.MockPaymentRepo{}
-	pub := &eventCollector{}
-	facade := payment.NewPaymentFacade(dispatcher, repo, pub, txmanagertest.NoopTxRunner{}, testLogger(), clock.NewReal())
+	facade := payment.NewPaymentFacade(
+		noopCreateCharge,
+		noopVerifyWebhook,
+		noopRefund,
+		&paymenttest.MockPaymentRepo{}, &eventCollector{}, txmanagertest.NoopTxRunner{}, testLogger(), clock.NewReal(),
+	)
 
 	_, err := facade.VerifyWebhook(context.Background(), "", nil, nil)
 	assert.ErrorIs(t, err, payment.ErrInvalidProvider)
@@ -173,8 +210,12 @@ func TestVerifyWebhook_InvalidProvider(t *testing.T) {
 func TestCheckIdempotency_NewWebhook(t *testing.T) {
 	repo := &paymenttest.MockPaymentRepo{}
 	pub := &eventCollector{}
-	dispatcher := &hookdispatchtest.MockDispatcher{}
-	facade := payment.NewPaymentFacade(dispatcher, repo, pub, txmanagertest.NoopTxRunner{}, testLogger(), clock.NewReal())
+	facade := payment.NewPaymentFacade(
+		noopCreateCharge,
+		noopVerifyWebhook,
+		noopRefund,
+		repo, pub, txmanagertest.NoopTxRunner{}, testLogger(), clock.NewReal(),
+	)
 
 	repo.On("CreateWebhookLog", mock.Anything, mock.AnythingOfType("*payment.WebhookLog")).Return(nil)
 
@@ -188,8 +229,12 @@ func TestCheckIdempotency_NewWebhook(t *testing.T) {
 func TestCheckIdempotency_DuplicateWebhook(t *testing.T) {
 	repo := &paymenttest.MockPaymentRepo{}
 	pub := &eventCollector{}
-	dispatcher := &hookdispatchtest.MockDispatcher{}
-	facade := payment.NewPaymentFacade(dispatcher, repo, pub, txmanagertest.NoopTxRunner{}, testLogger(), clock.NewReal())
+	facade := payment.NewPaymentFacade(
+		noopCreateCharge,
+		noopVerifyWebhook,
+		noopRefund,
+		repo, pub, txmanagertest.NoopTxRunner{}, testLogger(), clock.NewReal(),
+	)
 
 	repo.On("CreateWebhookLog", mock.Anything, mock.AnythingOfType("*payment.WebhookLog")).Return(payment.ErrWebhookDuplicate)
 
@@ -222,16 +267,14 @@ func TestRefund_Success(t *testing.T) {
 		Status:     payment.PaymentCompleted,
 	}
 
-	refundResult := map[string]string{"status": "refunded"}
-	resultJSON, _ := json.Marshal(refundResult)
-
-	dispatcher := &hookdispatchtest.MockDispatcher{}
-	dispatcher.On("DispatchSync", mock.Anything, payment.HookRefund, mock.AnythingOfType("json.RawMessage")).
-		Return(json.RawMessage(resultJSON), nil)
-
 	repo := &paymenttest.MockPaymentRepo{}
 	pub := &eventCollector{}
-	facade := payment.NewPaymentFacade(dispatcher, repo, pub, txmanagertest.NoopTxRunner{}, testLogger(), clock.NewReal())
+	facade := payment.NewPaymentFacade(
+		noopCreateCharge,
+		noopVerifyWebhook,
+		stubRefund(nil),
+		repo, pub, txmanagertest.NoopTxRunner{}, testLogger(), clock.NewReal(),
+	)
 
 	repo.On("GetPaymentByID", mock.Anything, "pay-1").Return(initialRecord, nil)
 	repo.On("GetPaymentByIDForUpdate", mock.Anything, "pay-1").Return(lockedRecord, nil)
@@ -245,5 +288,4 @@ func TestRefund_Success(t *testing.T) {
 	assert.Equal(t, payment.EventRefundCompleted, pub.events[0].Type)
 
 	repo.AssertExpectations(t)
-	dispatcher.AssertExpectations(t)
 }

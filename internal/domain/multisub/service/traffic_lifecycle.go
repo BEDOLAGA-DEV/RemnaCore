@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 )
@@ -33,31 +32,24 @@ func (o *MultiSubOrchestrator) OnBindingTrafficExceeded(
 	limitBytes int64,
 ) error {
 	// Dispatch subscription.limiting sync hook if available.
-	if o.dispatcher != nil && o.hooksEnabled {
-		req := SubLimitingPayload{
+	if o.limitingHook != nil && o.hooksEnabled {
+		resp, err := o.limitingHook(ctx, SubLimitingPayload{
 			SubscriptionID: subscriptionID,
 			BindingID:      bindingID,
 			UsedBytes:      usedBytes,
 			LimitBytes:     limitBytes,
-		}
-		data, err := json.Marshal(req)
+		})
 		if err != nil {
-			o.logger.Warn("failed to marshal limiting hook payload",
+			o.logger.Warn("limiting hook dispatch failed, proceeding with limit",
 				slog.String("binding_id", bindingID),
 				slog.Any("error", err),
 			)
-		} else {
-			result := o.dispatcher.DispatchSyncSafe(ctx, HookSubLimiting, data)
-			if result.Err == nil && result.Payload != nil {
-				var resp SubLimitingResponse
-				if unmarshalErr := json.Unmarshal(result.Payload, &resp); unmarshalErr == nil && resp.Block {
-					o.logger.Info("binding limit blocked by plugin",
-						slog.String("binding_id", bindingID),
-						slog.String("subscription_id", subscriptionID),
-					)
-					return nil
-				}
-			}
+		} else if resp != nil && resp.Block {
+			o.logger.Info("binding limit blocked by plugin",
+				slog.String("binding_id", bindingID),
+				slog.String("subscription_id", subscriptionID),
+			)
+			return nil
 		}
 	}
 
@@ -91,19 +83,16 @@ func (o *MultiSubOrchestrator) OnBindingTrafficReset(
 	subscriptionID string,
 ) error {
 	// Dispatch subscription.unlimiting sync hook (informational, no blocking).
-	if o.dispatcher != nil && o.hooksEnabled {
-		req := SubUnlimitingPayload{
+	if o.syncHook != nil && o.hooksEnabled {
+		_, err := o.syncHook(ctx, HookSubUnlimiting, SubUnlimitingPayload{
 			SubscriptionID: subscriptionID,
 			BindingID:      bindingID,
-		}
-		data, err := json.Marshal(req)
+		})
 		if err != nil {
-			o.logger.Warn("failed to marshal unlimiting hook payload",
+			o.logger.Warn("unlimiting hook dispatch failed, proceeding",
 				slog.String("binding_id", bindingID),
 				slog.Any("error", err),
 			)
-		} else {
-			o.dispatcher.DispatchSyncSafe(ctx, HookSubUnlimiting, data)
 		}
 	}
 
@@ -141,19 +130,11 @@ func (o *MultiSubOrchestrator) OnTrafficWarning(
 	})
 }
 
-// dispatchAsync fires an async hook if dispatcher is available and hooks are
-// enabled. Errors are logged but never propagated (fire-and-forget).
+// dispatchAsync fires an async hook if the async hook function is available
+// and hooks are enabled. Errors are logged but never propagated (fire-and-forget).
 func (o *MultiSubOrchestrator) dispatchAsync(ctx context.Context, hookName string, payload any) {
-	if o.dispatcher == nil || !o.hooksEnabled {
+	if o.asyncHook == nil || !o.hooksEnabled {
 		return
 	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		o.logger.Warn("failed to marshal async hook payload",
-			slog.String("hook", hookName),
-			slog.Any("error", err),
-		)
-		return
-	}
-	o.dispatcher.DispatchAsync(ctx, hookName, data)
+	o.asyncHook(ctx, hookName, payload)
 }

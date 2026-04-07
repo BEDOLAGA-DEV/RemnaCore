@@ -1,5 +1,29 @@
 package service
 
+import "context"
+
+// SyncHookFn dispatches a synchronous hook and returns the typed response.
+// hookName identifies the dispatch point; payload is marshaled to JSON by
+// the implementation. Returns (nil, nil) when no hook is registered or the
+// implementation decides to swallow the error (best-effort semantics).
+//
+// This function type replaces the direct hookdispatch.Dispatcher dependency,
+// keeping the multisub domain free of plugin-infrastructure imports. The
+// concrete implementation is wired in internal/app/wiring_multisub.go.
+type SyncHookFn func(ctx context.Context, hookName string, payload any) ([]byte, error)
+
+// AsyncHookFn dispatches an asynchronous (fire-and-forget) hook. Errors are
+// logged by the implementation but never propagated to the caller.
+//
+// This function type replaces the direct hookdispatch.Dispatcher dependency
+// for post-commit notifications.
+type AsyncHookFn func(ctx context.Context, hookName string, payload any)
+
+// LimitingHookFn dispatches the subscription.limiting sync hook and returns
+// a typed response. The implementation handles JSON marshaling, plugin dispatch,
+// and response deserialization. Returns (nil, nil) when no hook is registered.
+type LimitingHookFn func(ctx context.Context, payload SubLimitingPayload) (*SubLimitingResponse, error)
+
 // Hook name constants for traffic lifecycle dispatch points.
 // Pre-hooks (sync) are named "{entity}.{verb}ing" and fire before the state
 // transition. Post-hooks (async) are named "{entity}.{past_tense}.post" and

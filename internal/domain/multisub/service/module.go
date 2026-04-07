@@ -9,7 +9,6 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
-	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
 )
 
 // MultiSubOrchestrator is the facade that coordinates billing lifecycle events
@@ -28,16 +27,30 @@ type MultiSubOrchestrator struct {
 	publisher      domainevent.Publisher
 	clock          clock.Clock
 	logger         *slog.Logger
-	dispatcher     hookdispatch.Dispatcher // nil-safe; all dispatches guarded
-	hooksEnabled   bool                    // subscription lifecycle hooks feature flag
+	limitingHook   LimitingHookFn // nil-safe; all dispatches guarded
+	syncHook       SyncHookFn     // nil-safe; all dispatches guarded
+	asyncHook      AsyncHookFn    // nil-safe; all dispatches guarded
+	hooksEnabled   bool           // subscription lifecycle hooks feature flag
 }
 
 // OrchestratorOption configures optional dependencies on MultiSubOrchestrator.
 type OrchestratorOption func(*MultiSubOrchestrator)
 
-// WithDispatcher sets the WASM hook dispatcher for subscription traffic hooks.
-func WithDispatcher(d hookdispatch.Dispatcher) OrchestratorOption {
-	return func(o *MultiSubOrchestrator) { o.dispatcher = d }
+// WithLimitingHook sets the typed subscription.limiting sync hook function.
+func WithLimitingHook(fn LimitingHookFn) OrchestratorOption {
+	return func(o *MultiSubOrchestrator) { o.limitingHook = fn }
+}
+
+// WithSyncHook sets the generic sync hook dispatch function for informational
+// pre-hooks (e.g., subscription.unlimiting) that do not need typed responses.
+func WithSyncHook(fn SyncHookFn) OrchestratorOption {
+	return func(o *MultiSubOrchestrator) { o.syncHook = fn }
+}
+
+// WithAsyncHook sets the async hook dispatch function for post-commit
+// notifications (e.g., subscription.limited.post).
+func WithAsyncHook(fn AsyncHookFn) OrchestratorOption {
+	return func(o *MultiSubOrchestrator) { o.asyncHook = fn }
 }
 
 // WithHooksEnabled enables subscription lifecycle hook dispatch points.
