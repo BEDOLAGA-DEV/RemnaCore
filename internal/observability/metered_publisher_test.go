@@ -21,6 +21,15 @@ func (s *stubPublisher) Publish(_ context.Context, _ domainevent.Event) error {
 	return s.err
 }
 
+func (s *stubPublisher) PublishBatch(_ context.Context, events []domainevent.Event) error {
+	for range events {
+		if s.err != nil {
+			return s.err
+		}
+	}
+	return nil
+}
+
 func newTestMetrics() *Metrics {
 	return &Metrics{
 		EventPublishFailures: prometheus.NewCounterVec(prometheus.CounterOpts{

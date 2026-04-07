@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/ThreeDotsLabs/watermill/message"
@@ -128,12 +127,12 @@ type OutboxRelay struct {
 	natsBreaker *gobreaker.CircuitBreaker[struct{}]
 	natsConn    *nc.Conn
 
-	// Delta-based reconciliation state. These track the previous check's
-	// values so the reconciliation can compare deltas instead of all-time
-	// totals, avoiding the apples-to-oranges comparison between monotonic
-	// outbox sequences and JetStream message counts.
-	lastReconciledSeq atomic.Int64
-	lastJSSeq         atomic.Int64
+	// Per-stream reconciliation state. Each entry tracks the LastSeq from
+	// the previous reconciliation check for one JetStream stream. Comparing
+	// per-stream deltas avoids the previous apples-to-oranges problem of
+	// summing LastSeq across unrelated streams into one number.
+	lastStreamSeqMu sync.Mutex
+	lastStreamSeq   map[string]int64
 }
 
 // NATS message metadata header keys for outbox relay.
@@ -196,15 +195,16 @@ func NewOutboxRelay(
 	cb := circuitbreaker.NewBreaker[struct{}](relayCBName, cbCfg, nil)
 
 	return &OutboxRelay{
-		outbox:      outbox,
-		publisher:   publisher,
-		txRunner:    txRunner,
-		clock:       clk,
-		logger:      logger,
-		metrics:     metrics,
-		workerCount: workerCount,
-		natsBreaker: cb,
-		natsConn:    conn,
+		outbox:        outbox,
+		publisher:     publisher,
+		txRunner:      txRunner,
+		clock:         clk,
+		logger:        logger,
+		metrics:       metrics,
+		workerCount:   workerCount,
+		natsBreaker:   cb,
+		natsConn:      conn,
+		lastStreamSeq: make(map[string]int64, len(domainStreams)),
 	}
 }
 

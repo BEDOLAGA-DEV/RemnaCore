@@ -64,12 +64,17 @@ func (r *SchemaRegistry) LatestVersion(eventType EventType) int {
 	return chain[len(chain)-1].FromVersion() + 1
 }
 
-// Upcast applies all necessary upcasters to bring the event's data to the
-// latest schema version. If no upcasters are registered for the event type,
-// or the event is already at the latest version, returns the event unchanged.
+// Upcast normalizes an event from an older schema version to the current version.
 //
-// The event's Data field must be map[string]any (the result of JSON
-// unmarshalling). If it is not, the event is returned unchanged.
+// Design constraint: Upcast operates on events with map[string]any Data (the
+// representation after JSON deserialization from NATS). Events with typed Data
+// (in-process or test scenarios) are passed through unchanged -- upcasting is
+// only needed for cross-process event consumption where schema evolution occurs.
+// This is intentional: typed payloads are always at the current version because
+// they were constructed by code that already knows the latest schema.
+//
+// If no upcasters are registered for the event type, or the event is already at
+// the latest version, returns the event unchanged.
 func (r *SchemaRegistry) Upcast(event Event) Event {
 	chain := r.upcasters[event.Type]
 	if len(chain) == 0 {

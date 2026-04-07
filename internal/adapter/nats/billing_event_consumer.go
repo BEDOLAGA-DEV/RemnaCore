@@ -39,9 +39,17 @@ const (
 	// to the wait time before Nack'ing the message at that attempt number.
 	// Watermill's Message interface does not support NakWithDelay, so the
 	// backoff is implemented as a sleep before Nack.
-	RetryDelay1 = 5 * time.Second
-	RetryDelay2 = 30 * time.Second
-	RetryDelay3 = 2 * time.Minute
+	//
+	// These delays are intentionally kept short (max 10s) because the sleep
+	// blocks the consumer goroutine and holds the per-entity lock for the
+	// entire duration. A 2-minute sleep (the previous RetryDelay3) would
+	// block all events for that entity for 2 minutes, which is unacceptable
+	// for subscription lifecycle events that trigger Remnawave provisioning.
+	// If longer backoff is needed in the future, move to a scheduled re-queue
+	// pattern (write a retry record with attempt_at, poll in background).
+	RetryDelay1 = 2 * time.Second
+	RetryDelay2 = 5 * time.Second
+	RetryDelay3 = 10 * time.Second
 
 	// retryJitterFraction is the fraction of the delay added as random jitter
 	// to prevent thundering herd on retries. A value of 0.2 means up to 20%

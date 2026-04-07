@@ -28,6 +28,11 @@ func (ec *eventCollector) Publish(_ context.Context, event domainevent.Event) er
 	return nil
 }
 
+func (ec *eventCollector) PublishBatch(_ context.Context, events []domainevent.Event) error {
+	ec.events = append(ec.events, events...)
+	return nil
+}
+
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 }

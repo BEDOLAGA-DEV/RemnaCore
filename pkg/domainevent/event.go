@@ -149,6 +149,12 @@ func NewTyped(payload EventPayload, ts time.Time, entityID string) Event {
 
 // Publisher abstracts event dispatching so domain services are not coupled to
 // any particular messaging infrastructure.
+//
+// PublishBatch inserts all events in a single round-trip (e.g. one INSERT with
+// UNNEST for the outbox adapter). PublishAll calls PublishBatch instead of
+// looping Publish, preventing partial-publish when the Nth insert fails and
+// the first N-1 are already committed.
 type Publisher interface {
 	Publish(ctx context.Context, event Event) error
+	PublishBatch(ctx context.Context, events []Event) error
 }

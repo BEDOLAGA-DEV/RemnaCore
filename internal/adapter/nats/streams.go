@@ -25,13 +25,23 @@ const (
 	RetentionMonth = 30 * RetentionDay
 )
 
-// DedupWindow is the JetStream message deduplication window for durable
-// streams. Set to 1 hour to cover relay lag scenarios where MarkPublishedBatch
-// rolls back after NATS publish success. The previous 10-minute window was too
-// short — if the relay falls behind by more than 10 minutes, the dedup window
-// expires and retransmissions are no longer deduplicated. One hour covers
-// realistic lag scenarios without significant NATS memory overhead: each dedup
-// entry is approximately 64 bytes (msg ID), so 10K events/hour costs ~640KB.
+// DedupWindow is the JetStream message deduplication window.
+//
+// Set to 60 minutes to cover relay lag scenarios:
+//   - If MarkPublishedBatch succeeds but TX COMMIT fails, events are
+//     re-published on next tick. Dedup prevents consumer duplicates.
+//   - If the relay falls behind by more than DedupWindow, duplicates MAY
+//     reach consumers. Consumer-side IdempotencyChecker provides
+//     additional protection for billing events.
+//
+// Memory cost: ~64 bytes per msg ID.
+//   - At 10K events/hour = ~640KB/hour.
+//   - At 100K events/hour = ~6.4MB -- well within NATS server capacity.
+//
+// If the relay consistently lags > 60 minutes, this indicates a systemic
+// issue that should trigger the OutboxBackpressureThreshold alert, not be
+// masked by a larger dedup window.
+//
 // The default JetStream dedup window (2 minutes) is far too short for the
 // outbox relay circuit breaker backoff (up to 60s) plus deploy time.
 const DedupWindow = 60 * time.Minute

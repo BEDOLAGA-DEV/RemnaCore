@@ -103,7 +103,7 @@ const (
 	helpBindingsLimitedTotal      = "Current number of bindings in traffic-limited state."
 	helpWASMRunnerReplacements         = "WASM runners replaced due to max-uses threshold or corruption."
 	helpOutboxBackpressureTriggered    = "Times the outbox unpublished count exceeded the backpressure threshold."
-	helpOutboxReconciliationSeqGap     = "Gap between the last published outbox sequence and total JetStream messages. A sustained positive value may indicate missed events from the partial-commit edge case."
+	helpOutboxReconciliationSeqGap     = "Per-stream JetStream LastSeq delta since the last reconciliation check. A zero value on a stream that should be active may indicate a delivery gap."
 	helpOutboxSequenceGaps             = "Detected sequence gaps in outbox event delivery on the consumer side."
 	helpHookCircuitBreakerTrips        = "Times a per-hook circuit breaker opened due to sustained plugin failures."
 
@@ -136,6 +136,7 @@ const (
 	LabelResult    = "result"
 	LabelReason    = "reason"
 	LabelCacheName = "cache_name"
+	LabelStream    = "stream"
 )
 
 // DefaultHTTPBuckets defines histogram buckets for HTTP request durations.
@@ -236,8 +237,8 @@ type Metrics struct {
 	// Outbox backpressure counter
 	OutboxBackpressureTriggered prometheus.Counter
 
-	// Outbox reconciliation sequence gap gauge
-	OutboxReconciliationSeqGap prometheus.Gauge
+	// Outbox reconciliation per-stream sequence gap gauge
+	OutboxReconciliationSeqGap *prometheus.GaugeVec
 
 	// Consumer-side outbox sequence gap counter
 	OutboxSequenceGaps prometheus.Counter
@@ -451,10 +452,10 @@ func NewMetrics() *Metrics {
 			Help: helpOutboxBackpressureTriggered,
 		}),
 
-		OutboxReconciliationSeqGap: promauto.NewGauge(prometheus.GaugeOpts{
+		OutboxReconciliationSeqGap: promauto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: MetricOutboxReconciliationSeqGap,
 			Help: helpOutboxReconciliationSeqGap,
-		}),
+		}, []string{LabelStream}),
 
 		OutboxSequenceGaps: promauto.NewCounter(prometheus.CounterOpts{
 			Name: MetricOutboxSequenceGaps,

@@ -197,16 +197,26 @@ func (c *BillingEventConsumer) handleMessage(ctx context.Context, subject string
 		})
 	}
 
-	// Resolve entity ID: prefer the top-level EntityID field; fall back to
+	// Resolve entity ID: prefer the top-level EntityID field (set by
+	// NewTyped/NewWithEntity at event construction time). Fall back to
 	// extracting subscription_id or binding_id from the data payload for
-	// backward compat with events published before the EntityID migration
-	// and for binding traffic events that use binding_id as the entity key.
+	// backward compat with events published before the EntityID migration.
+	//
+	// New events MUST set EntityID via NewTyped or NewWithEntity. The Data
+	// fallback exists only for legacy events still in NATS retention and
+	// should be removed once all pre-migration events have expired.
 	entityID := event.EntityID
 	if entityID == "" {
 		entityID = extractStringFromData(event.Data, "subscription_id")
-	}
-	if entityID == "" {
-		entityID = extractStringFromData(event.Data, "binding_id")
+		if entityID == "" {
+			entityID = extractStringFromData(event.Data, "binding_id")
+		}
+		if entityID != "" {
+			c.logger.Debug("event missing EntityID, resolved from Data fallback",
+				slog.String("event_type", string(event.Type)),
+				slog.String("entity_id", entityID),
+			)
+		}
 	}
 
 	// Consumer-side sequence gap detection: extract the outbox sequence

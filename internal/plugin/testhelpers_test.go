@@ -20,6 +20,11 @@ func (p *testPublisher) Publish(_ context.Context, event domainevent.Event) erro
 	return nil
 }
 
+func (p *testPublisher) PublishBatch(_ context.Context, events []domainevent.Event) error {
+	p.events = append(p.events, events...)
+	return nil
+}
+
 // syncTestPublisher is a thread-safe event publisher for tests that involve
 // goroutines (e.g., DispatchAsync). Use this instead of testPublisher when
 // events may be published from a background goroutine.
@@ -32,6 +37,13 @@ func (p *syncTestPublisher) Publish(_ context.Context, event domainevent.Event) 
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.events = append(p.events, event)
+	return nil
+}
+
+func (p *syncTestPublisher) PublishBatch(_ context.Context, events []domainevent.Event) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.events = append(p.events, events...)
 	return nil
 }
 
@@ -70,6 +82,15 @@ func (p *failNTimesPublisher) Publish(_ context.Context, _ domainevent.Event) er
 		return fmt.Errorf("simulated publish failure %d", p.failures)
 	}
 	p.successes++
+	return nil
+}
+
+func (p *failNTimesPublisher) PublishBatch(_ context.Context, events []domainevent.Event) error {
+	for _, event := range events {
+		if err := p.Publish(context.Background(), event); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

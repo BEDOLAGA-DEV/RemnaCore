@@ -27,6 +27,18 @@ func (p *BillingEventPublisher) Publish(ctx context.Context, event domainevent.E
 	return p.publisher.Publish(ctx, topic, event)
 }
 
+// PublishBatch publishes multiple events sequentially to NATS. Unlike the
+// outbox adapter, NATS has no native batch publish — events are sent one at a
+// time but the method satisfies the domainevent.Publisher interface contract.
+func (p *BillingEventPublisher) PublishBatch(ctx context.Context, events []domainevent.Event) error {
+	for _, event := range events {
+		if err := p.Publish(ctx, event); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // billingEventTopics returns the NATS subjects that carry billing domain events.
 // Used by subscribers to know which topics to listen to.
 func billingEventTopics() []string {

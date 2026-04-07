@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres/gen"
@@ -12,6 +13,17 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pgutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tracing"
 )
+
+// insertOutboxBatchSQL inserts multiple outbox events in a single statement
+// using UNNEST over parallel arrays. All events with an ID use this path;
+// events without an ID (backward compat) are inserted individually via
+// the existing sqlc-generated InsertOutboxEvent query.
+//
+// The UNNEST approach ensures all events are inserted in one round-trip within
+// the same transaction, preventing partial-publish when one insert fails.
+const insertOutboxBatchSQL = `
+INSERT INTO public.outbox (id, event_type, payload, entity_id, trace_parent)
+SELECT unnest($1::uuid[]), unnest($2::text[]), unnest($3::jsonb[]), unnest($4::text[]), unnest($5::text[])`
 
 // OutboxPublisher implements domainevent.Publisher by writing events to the
 // transactional outbox table instead of directly to the message broker. When
@@ -30,7 +42,7 @@ func NewOutboxPublisher(pool *pgxpool.Pool) *OutboxPublisher {
 	return &OutboxPublisher{pool: pool}
 }
 
-// Publish serializes the domain event to JSON and stores it in the outbox
+// Publish serializes a single domain event to JSON and stores it in the outbox
 // table. If the context carries a transaction (set by TxManager.RunInTx), the
 // insert uses that transaction, ensuring the outbox write is atomic with the
 // business logic. Otherwise the insert goes directly to the pool.
@@ -40,41 +52,76 @@ func NewOutboxPublisher(pool *pgxpool.Pool) *OutboxPublisher {
 // ensures the outbox row ID, NATS Msg-Id, and consumer idempotency key are all
 // the same domain event ID. Events without an ID (backward compat) fall back
 // to the DB-generated gen_random_uuid() default.
+//
+// For multiple events, prefer PublishBatch which inserts all rows in a single
+// round-trip, preventing partial-publish on error.
 func (p *OutboxPublisher) Publish(ctx context.Context, event domainevent.Event) error {
-	// Inject W3C traceparent from the active span so that downstream consumers
-	// (via the outbox relay) can correlate their processing spans with the
-	// originating business operation.
-	if event.TraceParent == "" {
-		event.TraceParent = tracing.FormatTraceParent(ctx)
+	return p.PublishBatch(ctx, []domainevent.Event{event})
+}
+
+// PublishBatch serializes all domain events to JSON and inserts them into the
+// outbox table in a single round-trip. Events with an ID are batch-inserted
+// via INSERT ... SELECT UNNEST; events without an ID (backward compat) fall
+// back to individual inserts. If the context carries a transaction, all
+// inserts participate in that transaction, guaranteeing atomicity.
+//
+// This prevents the partial-publish problem where the Nth individual Publish
+// fails after N-1 rows are already committed. PublishAll delegates here.
+func (p *OutboxPublisher) PublishBatch(ctx context.Context, events []domainevent.Event) error {
+	if len(events) == 0 {
+		return nil
 	}
 
-	payload, err := json.Marshal(event)
-	if err != nil {
-		return fmt.Errorf("marshal outbox event: %w", err)
-	}
+	// Inject W3C traceparent once from the active span.
+	traceParent := tracing.FormatTraceParent(ctx)
 
 	db := DBFromContext(ctx, p.pool)
-	queries := gen.New(db)
 
-	if event.ID != "" {
-		if err := queries.InsertOutboxEventWithID(ctx, gen.InsertOutboxEventWithIDParams{
-			ID:          pgutil.UUIDToPgtype(event.ID),
-			EventType:   string(event.Type),
-			Payload:     payload,
-			EntityID:    event.EntityID,
-			TraceParent: event.TraceParent,
-		}); err != nil {
-			return fmt.Errorf("outbox publish: %w", err)
+	// Partition events into those with IDs (batch-insertable) and those
+	// without (backward compat, individual insert).
+	var (
+		batchIDs         []pgtype.UUID
+		batchEventTypes  []string
+		batchPayloads    [][]byte
+		batchEntityIDs   []string
+		batchTraceParent []string
+	)
+
+	for i := range events {
+		if events[i].TraceParent == "" {
+			events[i].TraceParent = traceParent
 		}
-	} else {
-		// Backward compat: old events without ID use DB-generated default.
-		if err := queries.InsertOutboxEvent(ctx, gen.InsertOutboxEventParams{
-			EventType:   string(event.Type),
-			Payload:     payload,
-			EntityID:    event.EntityID,
-			TraceParent: event.TraceParent,
-		}); err != nil {
-			return fmt.Errorf("outbox publish: %w", err)
+
+		payload, err := json.Marshal(events[i])
+		if err != nil {
+			return fmt.Errorf("marshal outbox event %s: %w", events[i].Type, err)
+		}
+
+		if events[i].ID != "" {
+			batchIDs = append(batchIDs, pgutil.UUIDToPgtype(events[i].ID))
+			batchEventTypes = append(batchEventTypes, string(events[i].Type))
+			batchPayloads = append(batchPayloads, payload)
+			batchEntityIDs = append(batchEntityIDs, events[i].EntityID)
+			batchTraceParent = append(batchTraceParent, events[i].TraceParent)
+		} else {
+			// Backward compat: old events without ID use DB-generated default.
+			queries := gen.New(db)
+			if err := queries.InsertOutboxEvent(ctx, gen.InsertOutboxEventParams{
+				EventType:   string(events[i].Type),
+				Payload:     payload,
+				EntityID:    events[i].EntityID,
+				TraceParent: events[i].TraceParent,
+			}); err != nil {
+				return fmt.Errorf("outbox publish (no-id): %w", err)
+			}
+		}
+	}
+
+	if len(batchIDs) > 0 {
+		if _, err := db.Exec(ctx, insertOutboxBatchSQL,
+			batchIDs, batchEventTypes, batchPayloads, batchEntityIDs, batchTraceParent,
+		); err != nil {
+			return fmt.Errorf("outbox publish batch: %w", err)
 		}
 	}
 

@@ -31,6 +31,11 @@ func (p *checkoutTestPublisher) Publish(_ context.Context, event domainevent.Eve
 	return nil
 }
 
+func (p *checkoutTestPublisher) PublishBatch(_ context.Context, events []domainevent.Event) error {
+	p.events = append(p.events, events...)
+	return nil
+}
+
 func checkoutLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 }

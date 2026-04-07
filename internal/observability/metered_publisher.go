@@ -30,3 +30,16 @@ func (p *MeteredPublisher) Publish(ctx context.Context, event domainevent.Event)
 	}
 	return err
 }
+
+// PublishBatch delegates to the inner publisher. On error, it increments the
+// EventPublishFailures counter once per event in the batch (all share the same
+// failure) and returns the original error unchanged.
+func (p *MeteredPublisher) PublishBatch(ctx context.Context, events []domainevent.Event) error {
+	err := p.inner.PublishBatch(ctx, events)
+	if err != nil {
+		for _, event := range events {
+			p.metrics.EventPublishFailures.WithLabelValues(string(event.Type)).Inc()
+		}
+	}
+	return err
+}

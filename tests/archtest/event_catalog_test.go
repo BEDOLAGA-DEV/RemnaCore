@@ -1,6 +1,8 @@
 package archtest
 
 import (
+	"encoding/json"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -197,6 +199,85 @@ func collectAllEventTypes() []domainevent.EventType {
 		// Infra events (1)
 		// =====================================================================
 		health.EventNodeHealthChanged,
+	}
+}
+
+// TestEventPayloadJSONRoundTrip verifies that every typed event payload struct
+// in the catalog can survive a JSON marshal/unmarshal roundtrip. This catches:
+//   - Missing json tags (fields serialize as Go field names instead of snake_case)
+//   - Unexported fields (silently dropped during serialization)
+//   - Empty payload structs (serialize to "{}" which is almost certainly a bug)
+//
+// Events with nil PayloadType (plugin events, infra events using map[string]any)
+// are skipped -- they have no typed struct to validate.
+func TestEventPayloadJSONRoundTrip(t *testing.T) {
+	catalog := app.BuildEventCatalog()
+
+	for eventType, entry := range catalog.All() {
+		if entry.PayloadType == nil {
+			continue // skip events with map[string]any payloads (plugin/infra events)
+		}
+
+		t.Run(string(eventType), func(t *testing.T) {
+			// Create zero-value instance of the payload struct.
+			instance := reflect.New(entry.PayloadType).Interface()
+
+			// Marshal to JSON.
+			data, err := json.Marshal(instance)
+			require.NoError(t, err, "marshal failed for %s payload %s", eventType, entry.PayloadType.Name())
+
+			// Unmarshal back to map to inspect field names.
+			var m map[string]any
+			err = json.Unmarshal(data, &m)
+			require.NoError(t, err, "unmarshal failed for %s payload %s", eventType, entry.PayloadType.Name())
+
+			// Verify at least one field exists (not an empty struct).
+			assert.NotEmpty(t, m,
+				"payload %s for event %s serializes to empty JSON object -- "+
+					"add exported fields with json tags", entry.PayloadType.Name(), eventType)
+		})
+	}
+}
+
+// TestEventPayloadFieldsHaveJSONTags verifies that every exported field in
+// typed payload structs has an explicit json struct tag. Fields without tags
+// serialize as their Go name (PascalCase), which violates the snake_case JSON
+// convention and causes deserialization failures in cross-language consumers.
+func TestEventPayloadFieldsHaveJSONTags(t *testing.T) {
+	catalog := app.BuildEventCatalog()
+
+	for eventType, entry := range catalog.All() {
+		if entry.PayloadType == nil {
+			continue
+		}
+
+		t.Run(string(eventType), func(t *testing.T) {
+			checkJSONTags(t, entry.PayloadType, string(eventType))
+		})
+	}
+}
+
+// checkJSONTags recursively checks that all exported fields in a struct type
+// have json tags. Embedded structs are traversed recursively.
+func checkJSONTags(t *testing.T, typ reflect.Type, eventType string) {
+	t.Helper()
+
+	for i := range typ.NumField() {
+		field := typ.Field(i)
+		if !field.IsExported() {
+			continue
+		}
+
+		// Recurse into embedded structs.
+		if field.Anonymous && field.Type.Kind() == reflect.Struct {
+			checkJSONTags(t, field.Type, eventType)
+			continue
+		}
+
+		tag := field.Tag.Get("json")
+		assert.NotEmpty(t, tag,
+			"field %s.%s in event %s has no json tag",
+			typ.Name(), field.Name, eventType)
 	}
 }
 
