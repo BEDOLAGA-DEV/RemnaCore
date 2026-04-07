@@ -44,11 +44,14 @@ FROM identity.email_verifications WHERE token = $1;
 -- name: DeleteEmailVerification :exec
 DELETE FROM identity.email_verifications WHERE id = $1;
 
--- name: DeleteExpiredSessions :exec
+-- name: DeleteExpiredSessions :execrows
 DELETE FROM identity.sessions WHERE expires_at < now();
 
--- name: DeleteExpiredVerifications :exec
+-- name: DeleteExpiredVerifications :execrows
 DELETE FROM identity.email_verifications WHERE expires_at < now();
+
+-- name: DeleteExpiredPasswordResets :execrows
+DELETE FROM identity.password_resets WHERE expires_at < now();
 
 -- name: GetUserByTelegramID :one
 SELECT id, email, password_hash, display_name, email_verified, telegram_id, role, tenant_id, created_at, updated_at

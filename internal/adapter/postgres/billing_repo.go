@@ -39,24 +39,71 @@ func (r *PlanRepository) q(ctx context.Context) *gen.Queries {
 	return gen.New(DBFromContext(ctx, r.pool))
 }
 
-func planRowToDomain(row gen.BillingPlan) *aggregate.Plan {
+// planFields holds the common columns returned by all plan queries.
+type planFields struct {
+	ID                   pgtype.UUID
+	Name                 string
+	Description          *string
+	BasePriceAmount      int64
+	BasePriceCurrency    string
+	BillingInterval      string
+	TrafficLimitBytes    int64
+	DeviceLimit          int32
+	AllowedCountries     []string
+	AllowedProtocols     []string
+	Tier                 string
+	MaxRemnawaveBindings int32
+	FamilyEnabled        bool
+	MaxFamilyMembers     int32
+	MaxAddons            int32
+	IsActive             bool
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+}
+
+// planRow is a constraint matching all sqlc-generated plan row types.
+type planRow interface {
+	gen.GetPlanByIDRow | gen.GetAllPlansRow | gen.GetActivePlansRow
+}
+
+// extractPlanFields extracts the common fields from any plan row type.
+func extractPlanFields[T planRow](row T) planFields {
+	switch r := any(row).(type) {
+	case gen.GetPlanByIDRow:
+		return planFields{r.ID, r.Name, r.Description, r.BasePriceAmount, r.BasePriceCurrency, r.BillingInterval, r.TrafficLimitBytes, r.DeviceLimit, r.AllowedCountries, r.AllowedProtocols, r.Tier, r.MaxRemnawaveBindings, r.FamilyEnabled, r.MaxFamilyMembers, r.MaxAddons, r.IsActive, r.CreatedAt, r.UpdatedAt}
+	case gen.GetAllPlansRow:
+		return planFields{r.ID, r.Name, r.Description, r.BasePriceAmount, r.BasePriceCurrency, r.BillingInterval, r.TrafficLimitBytes, r.DeviceLimit, r.AllowedCountries, r.AllowedProtocols, r.Tier, r.MaxRemnawaveBindings, r.FamilyEnabled, r.MaxFamilyMembers, r.MaxAddons, r.IsActive, r.CreatedAt, r.UpdatedAt}
+	case gen.GetActivePlansRow:
+		return planFields{r.ID, r.Name, r.Description, r.BasePriceAmount, r.BasePriceCurrency, r.BillingInterval, r.TrafficLimitBytes, r.DeviceLimit, r.AllowedCountries, r.AllowedProtocols, r.Tier, r.MaxRemnawaveBindings, r.FamilyEnabled, r.MaxFamilyMembers, r.MaxAddons, r.IsActive, r.CreatedAt, r.UpdatedAt}
+	default:
+		panic("unreachable: unhandled planRow type")
+	}
+}
+
+// planRowToDomain converts any sqlc-generated plan row type to domain.
+func planRowToDomain[T planRow](row T) *aggregate.Plan {
+	return planFieldsToDomain(extractPlanFields(row))
+}
+
+func planFieldsToDomain(f planFields) *aggregate.Plan {
 	return &aggregate.Plan{
-		ID:                   pgutil.PgtypeToUUID(row.ID),
-		Name:                 row.Name,
-		Description:          pgutil.DerefStr(row.Description),
-		BasePrice:            vo.NewMoney(row.BasePriceAmount, vo.Currency(row.BasePriceCurrency)),
-		Interval:             vo.BillingInterval(row.BillingInterval),
-		TrafficLimitBytes:    row.TrafficLimitBytes,
-		DeviceLimit:          int(row.DeviceLimit),
-		AllowedCountries:     row.AllowedCountries,
-		AllowedProtocols:     row.AllowedProtocols,
-		Tier:                 aggregate.PlanTier(row.Tier),
-		MaxRemnawaveBindings: int(row.MaxRemnawaveBindings),
-		FamilyEnabled:        row.FamilyEnabled,
-		MaxFamilyMembers:     int(row.MaxFamilyMembers),
-		IsActive:             row.IsActive,
-		CreatedAt:            pgutil.PgtypeToTime(row.CreatedAt),
-		UpdatedAt:            pgutil.PgtypeToTime(row.UpdatedAt),
+		ID:                   pgutil.PgtypeToUUID(f.ID),
+		Name:                 f.Name,
+		Description:          pgutil.DerefStr(f.Description),
+		BasePrice:            vo.NewMoney(f.BasePriceAmount, vo.Currency(f.BasePriceCurrency)),
+		Interval:             vo.BillingInterval(f.BillingInterval),
+		TrafficLimitBytes:    f.TrafficLimitBytes,
+		DeviceLimit:          int(f.DeviceLimit),
+		AllowedCountries:     f.AllowedCountries,
+		AllowedProtocols:     f.AllowedProtocols,
+		Tier:                 aggregate.PlanTier(f.Tier),
+		MaxRemnawaveBindings: int(f.MaxRemnawaveBindings),
+		FamilyEnabled:        f.FamilyEnabled,
+		MaxFamilyMembers:     int(f.MaxFamilyMembers),
+		MaxAddons:            int(f.MaxAddons),
+		IsActive:             f.IsActive,
+		CreatedAt:            pgutil.PgtypeToTime(f.CreatedAt),
+		UpdatedAt:            pgutil.PgtypeToTime(f.UpdatedAt),
 	}
 }
 
@@ -143,6 +190,7 @@ func (r *PlanRepository) Create(ctx context.Context, plan *aggregate.Plan) error
 		MaxRemnawaveBindings: int32(plan.MaxRemnawaveBindings),
 		FamilyEnabled:        plan.FamilyEnabled,
 		MaxFamilyMembers:     int32(plan.MaxFamilyMembers),
+		MaxAddons:            int32(plan.MaxAddons),
 		IsActive:             plan.IsActive,
 		CreatedAt:            pgutil.TimeToPgtype(plan.CreatedAt),
 		UpdatedAt:            pgutil.TimeToPgtype(plan.UpdatedAt),
@@ -207,6 +255,7 @@ func (r *PlanRepository) Update(ctx context.Context, plan *aggregate.Plan) error
 		MaxRemnawaveBindings: int32(plan.MaxRemnawaveBindings),
 		FamilyEnabled:        plan.FamilyEnabled,
 		MaxFamilyMembers:     int32(plan.MaxFamilyMembers),
+		MaxAddons:            int32(plan.MaxAddons),
 		IsActive:             plan.IsActive,
 	})
 	if err != nil {
@@ -257,23 +306,25 @@ func (r *SubscriptionRepository) q(ctx context.Context) *gen.Queries {
 }
 
 // subFields holds the common columns returned by all subscription queries.
-// Using an intermediate struct avoids a 13-parameter function and eliminates
+// Using an intermediate struct avoids a 15-parameter function and eliminates
 // the risk of silently swapping same-typed positional arguments.
 type subFields struct {
-	ID             pgtype.UUID
-	UserID         pgtype.UUID
-	PlanID         pgtype.UUID
-	Status         string
-	PeriodStart    pgtype.Timestamptz
-	PeriodEnd      pgtype.Timestamptz
-	PeriodInterval string
-	AddonIds       []pgtype.UUID
-	AssignedTo     *string
-	PendingPlanID  pgtype.UUID
-	CancelledAt    pgtype.Timestamptz
-	PausedAt       pgtype.Timestamptz
-	CreatedAt      pgtype.Timestamptz
-	UpdatedAt      pgtype.Timestamptz
+	ID                    pgtype.UUID
+	UserID                pgtype.UUID
+	PlanID                pgtype.UUID
+	Status                string
+	PeriodStart           pgtype.Timestamptz
+	PeriodEnd             pgtype.Timestamptz
+	PeriodInterval        string
+	AddonIds              []pgtype.UUID
+	AssignedTo            *string
+	PendingPlanID         pgtype.UUID
+	PendingOriginalPlanID pgtype.UUID
+	PendingRequestedAt    pgtype.Timestamptz
+	CancelledAt           pgtype.Timestamptz
+	PausedAt              pgtype.Timestamptz
+	CreatedAt             pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
 }
 
 // subRow is a constraint matching all sqlc-generated subscription row types.
@@ -287,13 +338,13 @@ type subRow interface {
 func extractSubFields[T subRow](row T) subFields {
 	switch r := any(row).(type) {
 	case gen.GetSubscriptionByIDRow:
-		return subFields{r.ID, r.UserID, r.PlanID, r.Status, r.PeriodStart, r.PeriodEnd, r.PeriodInterval, r.AddonIds, r.AssignedTo, r.PendingPlanID, r.CancelledAt, r.PausedAt, r.CreatedAt, r.UpdatedAt}
+		return subFields{r.ID, r.UserID, r.PlanID, r.Status, r.PeriodStart, r.PeriodEnd, r.PeriodInterval, r.AddonIds, r.AssignedTo, r.PendingPlanID, r.PendingOriginalPlanID, r.PendingRequestedAt, r.CancelledAt, r.PausedAt, r.CreatedAt, r.UpdatedAt}
 	case gen.GetSubscriptionsByUserIDRow:
-		return subFields{r.ID, r.UserID, r.PlanID, r.Status, r.PeriodStart, r.PeriodEnd, r.PeriodInterval, r.AddonIds, r.AssignedTo, r.PendingPlanID, r.CancelledAt, r.PausedAt, r.CreatedAt, r.UpdatedAt}
+		return subFields{r.ID, r.UserID, r.PlanID, r.Status, r.PeriodStart, r.PeriodEnd, r.PeriodInterval, r.AddonIds, r.AssignedTo, r.PendingPlanID, r.PendingOriginalPlanID, r.PendingRequestedAt, r.CancelledAt, r.PausedAt, r.CreatedAt, r.UpdatedAt}
 	case gen.GetActiveSubscriptionsByUserIDRow:
-		return subFields{r.ID, r.UserID, r.PlanID, r.Status, r.PeriodStart, r.PeriodEnd, r.PeriodInterval, r.AddonIds, r.AssignedTo, r.PendingPlanID, r.CancelledAt, r.PausedAt, r.CreatedAt, r.UpdatedAt}
+		return subFields{r.ID, r.UserID, r.PlanID, r.Status, r.PeriodStart, r.PeriodEnd, r.PeriodInterval, r.AddonIds, r.AssignedTo, r.PendingPlanID, r.PendingOriginalPlanID, r.PendingRequestedAt, r.CancelledAt, r.PausedAt, r.CreatedAt, r.UpdatedAt}
 	case gen.GetAllSubscriptionsRow:
-		return subFields{r.ID, r.UserID, r.PlanID, r.Status, r.PeriodStart, r.PeriodEnd, r.PeriodInterval, r.AddonIds, r.AssignedTo, r.PendingPlanID, r.CancelledAt, r.PausedAt, r.CreatedAt, r.UpdatedAt}
+		return subFields{r.ID, r.UserID, r.PlanID, r.Status, r.PeriodStart, r.PeriodEnd, r.PeriodInterval, r.AddonIds, r.AssignedTo, r.PendingPlanID, r.PendingOriginalPlanID, r.PendingRequestedAt, r.CancelledAt, r.PausedAt, r.CreatedAt, r.UpdatedAt}
 	default:
 		panic("unreachable: unhandled subRow type")
 	}
@@ -316,7 +367,8 @@ func (r *SubscriptionRepository) GetByID(ctx context.Context, id string) (*aggre
 // acquires a FOR UPDATE row lock. Must be called within a transaction.
 const getSubscriptionByIDForUpdateSQL = `
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
-       addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
+       addon_ids, assigned_to, pending_plan_id, pending_original_plan_id, pending_requested_at,
+       cancelled_at, paused_at, created_at, updated_at
 FROM billing.subscriptions WHERE id = $1 FOR UPDATE
 `
 
@@ -328,7 +380,8 @@ func (r *SubscriptionRepository) GetByIDForUpdate(ctx context.Context, id string
 	err := row.Scan(
 		&f.ID, &f.UserID, &f.PlanID, &f.Status,
 		&f.PeriodStart, &f.PeriodEnd, &f.PeriodInterval,
-		&f.AddonIds, &f.AssignedTo, &f.PendingPlanID, &f.CancelledAt, &f.PausedAt,
+		&f.AddonIds, &f.AssignedTo, &f.PendingPlanID, &f.PendingOriginalPlanID, &f.PendingRequestedAt,
+		&f.CancelledAt, &f.PausedAt,
 		&f.CreatedAt, &f.UpdatedAt,
 	)
 	if err != nil {
@@ -378,36 +431,40 @@ func (r *SubscriptionRepository) GetAll(ctx context.Context, limit, offset int) 
 
 func (r *SubscriptionRepository) Create(ctx context.Context, sub *aggregate.Subscription) error {
 	err := r.q(ctx).CreateSubscription(ctx, gen.CreateSubscriptionParams{
-		ID:             pgutil.UUIDToPgtype(sub.ID),
-		UserID:         pgutil.UUIDToPgtype(sub.UserID),
-		PlanID:         pgutil.UUIDToPgtype(sub.PlanID),
-		Status:         string(sub.Status),
-		PeriodStart:    pgutil.TimeToPgtype(sub.Period.Start),
-		PeriodEnd:      pgutil.TimeToPgtype(sub.Period.End),
-		PeriodInterval: string(sub.Period.Interval),
-		AddonIds:       pgutil.StringsToPgtypeUUIDs(sub.AddonIDs),
-		AssignedTo:     pgutil.StrPtrOrNil(sub.AssignedTo),
-		PendingPlanID:  pendingChangeToPgtype(sub.PendingChange),
-		CancelledAt:    pgutil.OptTimeToPgtype(sub.CancelledAt),
-		PausedAt:       pgutil.OptTimeToPgtype(sub.PausedAt),
-		CreatedAt:      pgutil.TimeToPgtype(sub.CreatedAt),
-		UpdatedAt:      pgutil.TimeToPgtype(sub.UpdatedAt),
+		ID:                    pgutil.UUIDToPgtype(sub.ID),
+		UserID:                pgutil.UUIDToPgtype(sub.UserID),
+		PlanID:                pgutil.UUIDToPgtype(sub.PlanID),
+		Status:                string(sub.Status),
+		PeriodStart:           pgutil.TimeToPgtype(sub.Period.Start),
+		PeriodEnd:             pgutil.TimeToPgtype(sub.Period.End),
+		PeriodInterval:        string(sub.Period.Interval),
+		AddonIds:              pgutil.StringsToPgtypeUUIDs(sub.AddonIDs),
+		AssignedTo:            pgutil.StrPtrOrNil(sub.AssignedTo),
+		PendingPlanID:         pendingChangeToPlanID(sub.PendingChange),
+		PendingOriginalPlanID: pendingChangeToOriginalPlanID(sub.PendingChange),
+		PendingRequestedAt:    pendingChangeToRequestedAt(sub.PendingChange),
+		CancelledAt:           pgutil.OptTimeToPgtype(sub.CancelledAt),
+		PausedAt:              pgutil.OptTimeToPgtype(sub.PausedAt),
+		CreatedAt:             pgutil.TimeToPgtype(sub.CreatedAt),
+		UpdatedAt:             pgutil.TimeToPgtype(sub.UpdatedAt),
 	})
 	return pgutil.MapErr(err, "create subscription", billing.ErrSubscriptionNotFound)
 }
 
 func (r *SubscriptionRepository) Update(ctx context.Context, sub *aggregate.Subscription) error {
 	err := r.q(ctx).UpdateSubscription(ctx, gen.UpdateSubscriptionParams{
-		ID:             pgutil.UUIDToPgtype(sub.ID),
-		Status:         string(sub.Status),
-		PeriodStart:    pgutil.TimeToPgtype(sub.Period.Start),
-		PeriodEnd:      pgutil.TimeToPgtype(sub.Period.End),
-		PeriodInterval: string(sub.Period.Interval),
-		AddonIds:       pgutil.StringsToPgtypeUUIDs(sub.AddonIDs),
-		AssignedTo:     pgutil.StrPtrOrNil(sub.AssignedTo),
-		PendingPlanID:  pendingChangeToPgtype(sub.PendingChange),
-		CancelledAt:    pgutil.OptTimeToPgtype(sub.CancelledAt),
-		PausedAt:       pgutil.OptTimeToPgtype(sub.PausedAt),
+		ID:                    pgutil.UUIDToPgtype(sub.ID),
+		Status:                string(sub.Status),
+		PeriodStart:           pgutil.TimeToPgtype(sub.Period.Start),
+		PeriodEnd:             pgutil.TimeToPgtype(sub.Period.End),
+		PeriodInterval:        string(sub.Period.Interval),
+		AddonIds:              pgutil.StringsToPgtypeUUIDs(sub.AddonIDs),
+		AssignedTo:            pgutil.StrPtrOrNil(sub.AssignedTo),
+		PendingPlanID:         pendingChangeToPlanID(sub.PendingChange),
+		PendingOriginalPlanID: pendingChangeToOriginalPlanID(sub.PendingChange),
+		PendingRequestedAt:    pendingChangeToRequestedAt(sub.PendingChange),
+		CancelledAt:           pgutil.OptTimeToPgtype(sub.CancelledAt),
+		PausedAt:              pgutil.OptTimeToPgtype(sub.PausedAt),
 	})
 	return pgutil.MapErr(err, "update subscription", billing.ErrSubscriptionNotFound)
 }
@@ -441,7 +498,8 @@ func (r *SubscriptionRepository) UpdateStatus(ctx context.Context, id string, ne
 // This bypasses sqlc, which does not support the @> operator on tstzrange.
 const getActiveSubscriptionByUserAtTimeSQL = `
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
-       addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
+       addon_ids, assigned_to, pending_plan_id, pending_original_plan_id, pending_requested_at,
+       cancelled_at, paused_at, created_at, updated_at
 FROM billing.subscriptions
 WHERE user_id = $1
   AND billing_period @> $2::timestamptz
@@ -458,7 +516,8 @@ func (r *SubscriptionRepository) GetActiveByUserAtTime(ctx context.Context, user
 	err := row.Scan(
 		&f.ID, &f.UserID, &f.PlanID, &f.Status,
 		&f.PeriodStart, &f.PeriodEnd, &f.PeriodInterval,
-		&f.AddonIds, &f.AssignedTo, &f.PendingPlanID, &f.CancelledAt, &f.PausedAt,
+		&f.AddonIds, &f.AssignedTo, &f.PendingPlanID, &f.PendingOriginalPlanID, &f.PendingRequestedAt,
+		&f.CancelledAt, &f.PausedAt,
 		&f.CreatedAt, &f.UpdatedAt,
 	)
 	if err != nil {
@@ -475,7 +534,8 @@ func (r *SubscriptionRepository) GetActiveByUserAtTime(ctx context.Context, user
 // This bypasses sqlc, which does not support the && operator on tstzrange.
 const getOverlappingSubscriptionsSQL = `
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
-       addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
+       addon_ids, assigned_to, pending_plan_id, pending_original_plan_id, pending_requested_at,
+       cancelled_at, paused_at, created_at, updated_at
 FROM billing.subscriptions
 WHERE user_id = $1
   AND plan_id = $2
@@ -503,7 +563,8 @@ func (r *SubscriptionRepository) GetOverlapping(ctx context.Context, userID, pla
 		if err := rows.Scan(
 			&f.ID, &f.UserID, &f.PlanID, &f.Status,
 			&f.PeriodStart, &f.PeriodEnd, &f.PeriodInterval,
-			&f.AddonIds, &f.AssignedTo, &f.PendingPlanID, &f.CancelledAt, &f.PausedAt,
+			&f.AddonIds, &f.AssignedTo, &f.PendingPlanID, &f.PendingOriginalPlanID, &f.PendingRequestedAt,
+			&f.CancelledAt, &f.PausedAt,
 			&f.CreatedAt, &f.UpdatedAt,
 		); err != nil {
 			return nil, pgutil.MapErr(err, "scan overlapping subscription", billing.ErrSubscriptionNotFound)
@@ -531,7 +592,7 @@ func subFieldsToDomain(f subFields) *aggregate.Subscription {
 		},
 		AddonIDs:      pgutil.PgtypeUUIDsToStrings(f.AddonIds),
 		AssignedTo:    pgutil.DerefStr(f.AssignedTo),
-		PendingChange: pgtypeToPendingChange(f.PendingPlanID),
+		PendingChange: pgtypeToPendingChange(f.PendingPlanID, f.PendingOriginalPlanID, f.PendingRequestedAt),
 		CancelledAt:   pgutil.PgtypeToOptTime(f.CancelledAt),
 		PausedAt:      pgutil.PgtypeToOptTime(f.PausedAt),
 		CreatedAt:     pgutil.PgtypeToTime(f.CreatedAt),
@@ -539,24 +600,42 @@ func subFieldsToDomain(f subFields) *aggregate.Subscription {
 	}
 }
 
-// pgtypeToPendingChange maps a nullable DB UUID to PendingPlanChange.
-// Only PlanID is persisted in the existing column; OriginalPlanID and
-// RequestedAt are populated at the aggregate level during Downgrade.
-func pgtypeToPendingChange(u pgtype.UUID) vo.PendingPlanChange {
-	if !u.Valid {
+// pgtypeToPendingChange maps the three pending-change DB columns to the
+// PendingPlanChange value object. Returns a zero VO when no pending change
+// exists (pending_plan_id is NULL).
+func pgtypeToPendingChange(planID, originalPlanID pgtype.UUID, requestedAt pgtype.Timestamptz) vo.PendingPlanChange {
+	if !planID.Valid {
 		return vo.PendingPlanChange{}
 	}
 	return vo.PendingPlanChange{
-		PlanID: pgutil.PgtypeToUUID(u),
+		PlanID:         pgutil.PgtypeToUUID(planID),
+		OriginalPlanID: pgutil.PgtypeToUUID(originalPlanID),
+		RequestedAt:    pgutil.PgtypeToTime(requestedAt),
 	}
 }
 
-// pendingChangeToPgtype maps PendingPlanChange to a nullable DB UUID.
-func pendingChangeToPgtype(pc vo.PendingPlanChange) pgtype.UUID {
+// pendingChangeToPlanID maps PendingPlanChange.PlanID to a nullable DB UUID.
+func pendingChangeToPlanID(pc vo.PendingPlanChange) pgtype.UUID {
 	if pc.IsZero() {
 		return pgtype.UUID{}
 	}
 	return pgutil.UUIDToPgtype(pc.PlanID)
+}
+
+// pendingChangeToOriginalPlanID maps PendingPlanChange.OriginalPlanID to a nullable DB UUID.
+func pendingChangeToOriginalPlanID(pc vo.PendingPlanChange) pgtype.UUID {
+	if pc.IsZero() {
+		return pgtype.UUID{}
+	}
+	return pgutil.UUIDToPgtype(pc.OriginalPlanID)
+}
+
+// pendingChangeToRequestedAt maps PendingPlanChange.RequestedAt to a nullable DB Timestamptz.
+func pendingChangeToRequestedAt(pc vo.PendingPlanChange) pgtype.Timestamptz {
+	if pc.IsZero() {
+		return pgtype.Timestamptz{}
+	}
+	return pgutil.TimeToPgtype(pc.RequestedAt)
 }
 
 // getExpiredActiveSubscriptionsSQL fetches active subscriptions whose billing
@@ -565,7 +644,8 @@ func pendingChangeToPgtype(pc vo.PendingPlanChange) pgtype.UUID {
 // so that the oldest elapsed subscriptions are processed first.
 const getExpiredActiveSubscriptionsSQL = `
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
-       addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
+       addon_ids, assigned_to, pending_plan_id, pending_original_plan_id, pending_requested_at,
+       cancelled_at, paused_at, created_at, updated_at
 FROM billing.subscriptions
 WHERE status = 'active'
   AND period_end < $1
@@ -591,7 +671,8 @@ func (r *SubscriptionRepository) GetExpiredActive(ctx context.Context, before ti
 		if err := rows.Scan(
 			&f.ID, &f.UserID, &f.PlanID, &f.Status,
 			&f.PeriodStart, &f.PeriodEnd, &f.PeriodInterval,
-			&f.AddonIds, &f.AssignedTo, &f.PendingPlanID, &f.CancelledAt, &f.PausedAt,
+			&f.AddonIds, &f.AssignedTo, &f.PendingPlanID, &f.PendingOriginalPlanID, &f.PendingRequestedAt,
+			&f.CancelledAt, &f.PausedAt,
 			&f.CreatedAt, &f.UpdatedAt,
 		); err != nil {
 			return nil, pgutil.MapErr(err, "scan expired active subscription", billing.ErrSubscriptionNotFound)

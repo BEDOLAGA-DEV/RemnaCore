@@ -131,3 +131,18 @@ func (m *MockRepository) DeleteUserPasswordResets(ctx context.Context, userID st
 	return args.Error(0)
 }
 
+func (m *MockRepository) DeleteExpiredSessions(ctx context.Context) (int64, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+func (m *MockRepository) DeleteExpiredVerifications(ctx context.Context) (int64, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+func (m *MockRepository) DeleteExpiredPasswordResets(ctx context.Context) (int64, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(int64), args.Error(1)
+}
+

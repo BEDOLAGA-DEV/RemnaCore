@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -16,6 +17,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
+	identityservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
@@ -35,6 +37,15 @@ var identityWiring = fx.Options(
 	fx.Provide(func(repo identity.Repository, pub domainevent.Publisher, txRunner txmanager.Runner, jwt *authutil.JWTIssuer, clk clock.Clock, cfg *config.Config) *identity.Service {
 		return identity.NewService(repo, pub, txRunner, jwt, clk, cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL)
 	}),
+
+	// Identity cleanup scheduler — uses concrete repo type which satisfies
+	// the narrow CleanupRepository interface via structural typing.
+	fx.Provide(func(repo *postgres.IdentityRepository, logger *slog.Logger) *identityservice.CleanupScheduler {
+		return identityservice.NewCleanupScheduler(repo, logger)
+	}),
+
+	// Lifecycle hooks
+	fx.Invoke(startIdentityCleanup),
 
 	// Bindings: interface -> implementation (identity)
 	fx.Provide(postgres.NewIdentityRepository),
@@ -120,4 +131,27 @@ func loadECDSAPublicKey(path string) (*ecdsa.PublicKey, error) {
 	}
 
 	return ecPub, nil
+}
+
+// startIdentityCleanup spawns the identity cleanup scheduler as a background
+// goroutine managed by the Fx lifecycle. It periodically removes expired
+// sessions, email verifications, and password resets.
+func startIdentityCleanup(lc fx.Lifecycle, scheduler *identityservice.CleanupScheduler, logger *slog.Logger) {
+	lc.Append(fx.Hook{
+		OnStart: func(_ context.Context) error {
+			cleanupCtx, cancel := context.WithCancel(context.Background())
+			go func() {
+				logger.Info("identity cleanup scheduler started")
+				scheduler.Run(cleanupCtx)
+			}()
+			lc.Append(fx.Hook{
+				OnStop: func(_ context.Context) error {
+					logger.Info("identity cleanup scheduler stopping")
+					cancel()
+					return nil
+				},
+			})
+			return nil
+		},
+	})
 }

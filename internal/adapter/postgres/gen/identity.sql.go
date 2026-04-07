@@ -130,22 +130,40 @@ func (q *Queries) DeleteEmailVerification(ctx context.Context, id pgtype.UUID) e
 	return err
 }
 
-const deleteExpiredSessions = `-- name: DeleteExpiredSessions :exec
+const deleteExpiredPasswordResets = `-- name: DeleteExpiredPasswordResets :execrows
+DELETE FROM identity.password_resets WHERE expires_at < now()
+`
+
+func (q *Queries) DeleteExpiredPasswordResets(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteExpiredPasswordResets)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteExpiredSessions = `-- name: DeleteExpiredSessions :execrows
 DELETE FROM identity.sessions WHERE expires_at < now()
 `
 
-func (q *Queries) DeleteExpiredSessions(ctx context.Context) error {
-	_, err := q.db.Exec(ctx, deleteExpiredSessions)
-	return err
+func (q *Queries) DeleteExpiredSessions(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteExpiredSessions)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
-const deleteExpiredVerifications = `-- name: DeleteExpiredVerifications :exec
+const deleteExpiredVerifications = `-- name: DeleteExpiredVerifications :execrows
 DELETE FROM identity.email_verifications WHERE expires_at < now()
 `
 
-func (q *Queries) DeleteExpiredVerifications(ctx context.Context) error {
-	_, err := q.db.Exec(ctx, deleteExpiredVerifications)
-	return err
+func (q *Queries) DeleteExpiredVerifications(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteExpiredVerifications)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deletePasswordReset = `-- name: DeletePasswordReset :exec

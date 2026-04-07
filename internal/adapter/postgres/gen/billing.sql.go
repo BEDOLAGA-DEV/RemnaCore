@@ -150,9 +150,9 @@ INSERT INTO billing.plans (
     billing_interval, traffic_limit_bytes, device_limit,
     allowed_countries, allowed_protocols, tier,
     max_remnawave_bindings, family_enabled, max_family_members,
-    is_active, created_at, updated_at
+    max_addons, is_active, created_at, updated_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
 )
 `
 
@@ -171,6 +171,7 @@ type CreatePlanParams struct {
 	MaxRemnawaveBindings int32              `json:"max_remnawave_bindings"`
 	FamilyEnabled        bool               `json:"family_enabled"`
 	MaxFamilyMembers     int32              `json:"max_family_members"`
+	MaxAddons            int32              `json:"max_addons"`
 	IsActive             bool               `json:"is_active"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
@@ -195,6 +196,7 @@ func (q *Queries) CreatePlan(ctx context.Context, arg CreatePlanParams) error {
 		arg.MaxRemnawaveBindings,
 		arg.FamilyEnabled,
 		arg.MaxFamilyMembers,
+		arg.MaxAddons,
 		arg.IsActive,
 		arg.CreatedAt,
 		arg.UpdatedAt,
@@ -246,25 +248,28 @@ const createSubscription = `-- name: CreateSubscription :exec
 
 INSERT INTO billing.subscriptions (
     id, user_id, plan_id, status, period_start, period_end, period_interval,
-    addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+    addon_ids, assigned_to, pending_plan_id, pending_original_plan_id, pending_requested_at,
+    cancelled_at, paused_at, created_at, updated_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 `
 
 type CreateSubscriptionParams struct {
-	ID             pgtype.UUID        `json:"id"`
-	UserID         pgtype.UUID        `json:"user_id"`
-	PlanID         pgtype.UUID        `json:"plan_id"`
-	Status         string             `json:"status"`
-	PeriodStart    pgtype.Timestamptz `json:"period_start"`
-	PeriodEnd      pgtype.Timestamptz `json:"period_end"`
-	PeriodInterval string             `json:"period_interval"`
-	AddonIds       []pgtype.UUID      `json:"addon_ids"`
-	AssignedTo     *string            `json:"assigned_to"`
-	PendingPlanID  pgtype.UUID        `json:"pending_plan_id"`
-	CancelledAt    pgtype.Timestamptz `json:"cancelled_at"`
-	PausedAt       pgtype.Timestamptz `json:"paused_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID                    pgtype.UUID        `json:"id"`
+	UserID                pgtype.UUID        `json:"user_id"`
+	PlanID                pgtype.UUID        `json:"plan_id"`
+	Status                string             `json:"status"`
+	PeriodStart           pgtype.Timestamptz `json:"period_start"`
+	PeriodEnd             pgtype.Timestamptz `json:"period_end"`
+	PeriodInterval        string             `json:"period_interval"`
+	AddonIds              []pgtype.UUID      `json:"addon_ids"`
+	AssignedTo            *string            `json:"assigned_to"`
+	PendingPlanID         pgtype.UUID        `json:"pending_plan_id"`
+	PendingOriginalPlanID pgtype.UUID        `json:"pending_original_plan_id"`
+	PendingRequestedAt    pgtype.Timestamptz `json:"pending_requested_at"`
+	CancelledAt           pgtype.Timestamptz `json:"cancelled_at"`
+	PausedAt              pgtype.Timestamptz `json:"paused_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
 }
 
 // ============================================================================
@@ -282,6 +287,8 @@ func (q *Queries) CreateSubscription(ctx context.Context, arg CreateSubscription
 		arg.AddonIds,
 		arg.AssignedTo,
 		arg.PendingPlanID,
+		arg.PendingOriginalPlanID,
+		arg.PendingRequestedAt,
 		arg.CancelledAt,
 		arg.PausedAt,
 		arg.CreatedAt,
@@ -345,19 +352,40 @@ SELECT id, name, description, base_price_amount, base_price_currency,
        billing_interval, traffic_limit_bytes, device_limit,
        allowed_countries, allowed_protocols, tier,
        max_remnawave_bindings, family_enabled, max_family_members,
-       is_active, created_at, updated_at
+       max_addons, is_active, created_at, updated_at
 FROM billing.plans WHERE is_active = true ORDER BY created_at
 `
 
-func (q *Queries) GetActivePlans(ctx context.Context) ([]BillingPlan, error) {
+type GetActivePlansRow struct {
+	ID                   pgtype.UUID        `json:"id"`
+	Name                 string             `json:"name"`
+	Description          *string            `json:"description"`
+	BasePriceAmount      int64              `json:"base_price_amount"`
+	BasePriceCurrency    string             `json:"base_price_currency"`
+	BillingInterval      string             `json:"billing_interval"`
+	TrafficLimitBytes    int64              `json:"traffic_limit_bytes"`
+	DeviceLimit          int32              `json:"device_limit"`
+	AllowedCountries     []string           `json:"allowed_countries"`
+	AllowedProtocols     []string           `json:"allowed_protocols"`
+	Tier                 string             `json:"tier"`
+	MaxRemnawaveBindings int32              `json:"max_remnawave_bindings"`
+	FamilyEnabled        bool               `json:"family_enabled"`
+	MaxFamilyMembers     int32              `json:"max_family_members"`
+	MaxAddons            int32              `json:"max_addons"`
+	IsActive             bool               `json:"is_active"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetActivePlans(ctx context.Context) ([]GetActivePlansRow, error) {
 	rows, err := q.db.Query(ctx, getActivePlans)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []BillingPlan{}
+	items := []GetActivePlansRow{}
 	for rows.Next() {
-		var i BillingPlan
+		var i GetActivePlansRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
@@ -373,6 +401,7 @@ func (q *Queries) GetActivePlans(ctx context.Context) ([]BillingPlan, error) {
 			&i.MaxRemnawaveBindings,
 			&i.FamilyEnabled,
 			&i.MaxFamilyMembers,
+			&i.MaxAddons,
 			&i.IsActive,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -389,25 +418,28 @@ func (q *Queries) GetActivePlans(ctx context.Context) ([]BillingPlan, error) {
 
 const getActiveSubscriptionsByUserID = `-- name: GetActiveSubscriptionsByUserID :many
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
-       addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
+       addon_ids, assigned_to, pending_plan_id, pending_original_plan_id, pending_requested_at,
+       cancelled_at, paused_at, created_at, updated_at
 FROM billing.subscriptions WHERE user_id = $1 AND status IN ('trial', 'active') ORDER BY created_at DESC
 `
 
 type GetActiveSubscriptionsByUserIDRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	UserID         pgtype.UUID        `json:"user_id"`
-	PlanID         pgtype.UUID        `json:"plan_id"`
-	Status         string             `json:"status"`
-	PeriodStart    pgtype.Timestamptz `json:"period_start"`
-	PeriodEnd      pgtype.Timestamptz `json:"period_end"`
-	PeriodInterval string             `json:"period_interval"`
-	AddonIds       []pgtype.UUID      `json:"addon_ids"`
-	AssignedTo     *string            `json:"assigned_to"`
-	PendingPlanID  pgtype.UUID        `json:"pending_plan_id"`
-	CancelledAt    pgtype.Timestamptz `json:"cancelled_at"`
-	PausedAt       pgtype.Timestamptz `json:"paused_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID                    pgtype.UUID        `json:"id"`
+	UserID                pgtype.UUID        `json:"user_id"`
+	PlanID                pgtype.UUID        `json:"plan_id"`
+	Status                string             `json:"status"`
+	PeriodStart           pgtype.Timestamptz `json:"period_start"`
+	PeriodEnd             pgtype.Timestamptz `json:"period_end"`
+	PeriodInterval        string             `json:"period_interval"`
+	AddonIds              []pgtype.UUID      `json:"addon_ids"`
+	AssignedTo            *string            `json:"assigned_to"`
+	PendingPlanID         pgtype.UUID        `json:"pending_plan_id"`
+	PendingOriginalPlanID pgtype.UUID        `json:"pending_original_plan_id"`
+	PendingRequestedAt    pgtype.Timestamptz `json:"pending_requested_at"`
+	CancelledAt           pgtype.Timestamptz `json:"cancelled_at"`
+	PausedAt              pgtype.Timestamptz `json:"paused_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
 }
 
 func (q *Queries) GetActiveSubscriptionsByUserID(ctx context.Context, userID pgtype.UUID) ([]GetActiveSubscriptionsByUserIDRow, error) {
@@ -430,6 +462,8 @@ func (q *Queries) GetActiveSubscriptionsByUserID(ctx context.Context, userID pgt
 			&i.AddonIds,
 			&i.AssignedTo,
 			&i.PendingPlanID,
+			&i.PendingOriginalPlanID,
+			&i.PendingRequestedAt,
 			&i.CancelledAt,
 			&i.PausedAt,
 			&i.CreatedAt,
@@ -549,19 +583,40 @@ SELECT id, name, description, base_price_amount, base_price_currency,
        billing_interval, traffic_limit_bytes, device_limit,
        allowed_countries, allowed_protocols, tier,
        max_remnawave_bindings, family_enabled, max_family_members,
-       is_active, created_at, updated_at
+       max_addons, is_active, created_at, updated_at
 FROM billing.plans ORDER BY created_at
 `
 
-func (q *Queries) GetAllPlans(ctx context.Context) ([]BillingPlan, error) {
+type GetAllPlansRow struct {
+	ID                   pgtype.UUID        `json:"id"`
+	Name                 string             `json:"name"`
+	Description          *string            `json:"description"`
+	BasePriceAmount      int64              `json:"base_price_amount"`
+	BasePriceCurrency    string             `json:"base_price_currency"`
+	BillingInterval      string             `json:"billing_interval"`
+	TrafficLimitBytes    int64              `json:"traffic_limit_bytes"`
+	DeviceLimit          int32              `json:"device_limit"`
+	AllowedCountries     []string           `json:"allowed_countries"`
+	AllowedProtocols     []string           `json:"allowed_protocols"`
+	Tier                 string             `json:"tier"`
+	MaxRemnawaveBindings int32              `json:"max_remnawave_bindings"`
+	FamilyEnabled        bool               `json:"family_enabled"`
+	MaxFamilyMembers     int32              `json:"max_family_members"`
+	MaxAddons            int32              `json:"max_addons"`
+	IsActive             bool               `json:"is_active"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetAllPlans(ctx context.Context) ([]GetAllPlansRow, error) {
 	rows, err := q.db.Query(ctx, getAllPlans)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []BillingPlan{}
+	items := []GetAllPlansRow{}
 	for rows.Next() {
-		var i BillingPlan
+		var i GetAllPlansRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
@@ -577,6 +632,7 @@ func (q *Queries) GetAllPlans(ctx context.Context) ([]BillingPlan, error) {
 			&i.MaxRemnawaveBindings,
 			&i.FamilyEnabled,
 			&i.MaxFamilyMembers,
+			&i.MaxAddons,
 			&i.IsActive,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -593,7 +649,8 @@ func (q *Queries) GetAllPlans(ctx context.Context) ([]BillingPlan, error) {
 
 const getAllSubscriptions = `-- name: GetAllSubscriptions :many
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
-       addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
+       addon_ids, assigned_to, pending_plan_id, pending_original_plan_id, pending_requested_at,
+       cancelled_at, paused_at, created_at, updated_at
 FROM billing.subscriptions ORDER BY created_at DESC
 LIMIT $1 OFFSET $2
 `
@@ -604,20 +661,22 @@ type GetAllSubscriptionsParams struct {
 }
 
 type GetAllSubscriptionsRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	UserID         pgtype.UUID        `json:"user_id"`
-	PlanID         pgtype.UUID        `json:"plan_id"`
-	Status         string             `json:"status"`
-	PeriodStart    pgtype.Timestamptz `json:"period_start"`
-	PeriodEnd      pgtype.Timestamptz `json:"period_end"`
-	PeriodInterval string             `json:"period_interval"`
-	AddonIds       []pgtype.UUID      `json:"addon_ids"`
-	AssignedTo     *string            `json:"assigned_to"`
-	PendingPlanID  pgtype.UUID        `json:"pending_plan_id"`
-	CancelledAt    pgtype.Timestamptz `json:"cancelled_at"`
-	PausedAt       pgtype.Timestamptz `json:"paused_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID                    pgtype.UUID        `json:"id"`
+	UserID                pgtype.UUID        `json:"user_id"`
+	PlanID                pgtype.UUID        `json:"plan_id"`
+	Status                string             `json:"status"`
+	PeriodStart           pgtype.Timestamptz `json:"period_start"`
+	PeriodEnd             pgtype.Timestamptz `json:"period_end"`
+	PeriodInterval        string             `json:"period_interval"`
+	AddonIds              []pgtype.UUID      `json:"addon_ids"`
+	AssignedTo            *string            `json:"assigned_to"`
+	PendingPlanID         pgtype.UUID        `json:"pending_plan_id"`
+	PendingOriginalPlanID pgtype.UUID        `json:"pending_original_plan_id"`
+	PendingRequestedAt    pgtype.Timestamptz `json:"pending_requested_at"`
+	CancelledAt           pgtype.Timestamptz `json:"cancelled_at"`
+	PausedAt              pgtype.Timestamptz `json:"paused_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
 }
 
 func (q *Queries) GetAllSubscriptions(ctx context.Context, arg GetAllSubscriptionsParams) ([]GetAllSubscriptionsRow, error) {
@@ -640,6 +699,8 @@ func (q *Queries) GetAllSubscriptions(ctx context.Context, arg GetAllSubscriptio
 			&i.AddonIds,
 			&i.AssignedTo,
 			&i.PendingPlanID,
+			&i.PendingOriginalPlanID,
+			&i.PendingRequestedAt,
 			&i.CancelledAt,
 			&i.PausedAt,
 			&i.CreatedAt,
@@ -977,13 +1038,34 @@ SELECT id, name, description, base_price_amount, base_price_currency,
        billing_interval, traffic_limit_bytes, device_limit,
        allowed_countries, allowed_protocols, tier,
        max_remnawave_bindings, family_enabled, max_family_members,
-       is_active, created_at, updated_at
+       max_addons, is_active, created_at, updated_at
 FROM billing.plans WHERE id = $1
 `
 
-func (q *Queries) GetPlanByID(ctx context.Context, id pgtype.UUID) (BillingPlan, error) {
+type GetPlanByIDRow struct {
+	ID                   pgtype.UUID        `json:"id"`
+	Name                 string             `json:"name"`
+	Description          *string            `json:"description"`
+	BasePriceAmount      int64              `json:"base_price_amount"`
+	BasePriceCurrency    string             `json:"base_price_currency"`
+	BillingInterval      string             `json:"billing_interval"`
+	TrafficLimitBytes    int64              `json:"traffic_limit_bytes"`
+	DeviceLimit          int32              `json:"device_limit"`
+	AllowedCountries     []string           `json:"allowed_countries"`
+	AllowedProtocols     []string           `json:"allowed_protocols"`
+	Tier                 string             `json:"tier"`
+	MaxRemnawaveBindings int32              `json:"max_remnawave_bindings"`
+	FamilyEnabled        bool               `json:"family_enabled"`
+	MaxFamilyMembers     int32              `json:"max_family_members"`
+	MaxAddons            int32              `json:"max_addons"`
+	IsActive             bool               `json:"is_active"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetPlanByID(ctx context.Context, id pgtype.UUID) (GetPlanByIDRow, error) {
 	row := q.db.QueryRow(ctx, getPlanByID, id)
-	var i BillingPlan
+	var i GetPlanByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
@@ -999,6 +1081,7 @@ func (q *Queries) GetPlanByID(ctx context.Context, id pgtype.UUID) (BillingPlan,
 		&i.MaxRemnawaveBindings,
 		&i.FamilyEnabled,
 		&i.MaxFamilyMembers,
+		&i.MaxAddons,
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -1011,7 +1094,8 @@ const getRecentlyUpdatedSubscriptions = `-- name: GetRecentlyUpdatedSubscription
 
 
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
-       addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
+       addon_ids, assigned_to, pending_plan_id, pending_original_plan_id, pending_requested_at,
+       cancelled_at, paused_at, created_at, updated_at
 FROM billing.subscriptions
 ORDER BY updated_at DESC
 LIMIT $1 OFFSET $2
@@ -1023,20 +1107,22 @@ type GetRecentlyUpdatedSubscriptionsParams struct {
 }
 
 type GetRecentlyUpdatedSubscriptionsRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	UserID         pgtype.UUID        `json:"user_id"`
-	PlanID         pgtype.UUID        `json:"plan_id"`
-	Status         string             `json:"status"`
-	PeriodStart    pgtype.Timestamptz `json:"period_start"`
-	PeriodEnd      pgtype.Timestamptz `json:"period_end"`
-	PeriodInterval string             `json:"period_interval"`
-	AddonIds       []pgtype.UUID      `json:"addon_ids"`
-	AssignedTo     *string            `json:"assigned_to"`
-	PendingPlanID  pgtype.UUID        `json:"pending_plan_id"`
-	CancelledAt    pgtype.Timestamptz `json:"cancelled_at"`
-	PausedAt       pgtype.Timestamptz `json:"paused_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID                    pgtype.UUID        `json:"id"`
+	UserID                pgtype.UUID        `json:"user_id"`
+	PlanID                pgtype.UUID        `json:"plan_id"`
+	Status                string             `json:"status"`
+	PeriodStart           pgtype.Timestamptz `json:"period_start"`
+	PeriodEnd             pgtype.Timestamptz `json:"period_end"`
+	PeriodInterval        string             `json:"period_interval"`
+	AddonIds              []pgtype.UUID      `json:"addon_ids"`
+	AssignedTo            *string            `json:"assigned_to"`
+	PendingPlanID         pgtype.UUID        `json:"pending_plan_id"`
+	PendingOriginalPlanID pgtype.UUID        `json:"pending_original_plan_id"`
+	PendingRequestedAt    pgtype.Timestamptz `json:"pending_requested_at"`
+	CancelledAt           pgtype.Timestamptz `json:"cancelled_at"`
+	PausedAt              pgtype.Timestamptz `json:"paused_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
 }
 
 // NOTE: UpdateSubscriptionStatus uses PG18 native OLD/NEW RETURNING syntax
@@ -1070,6 +1156,8 @@ func (q *Queries) GetRecentlyUpdatedSubscriptions(ctx context.Context, arg GetRe
 			&i.AddonIds,
 			&i.AssignedTo,
 			&i.PendingPlanID,
+			&i.PendingOriginalPlanID,
+			&i.PendingRequestedAt,
 			&i.CancelledAt,
 			&i.PausedAt,
 			&i.CreatedAt,
@@ -1087,25 +1175,28 @@ func (q *Queries) GetRecentlyUpdatedSubscriptions(ctx context.Context, arg GetRe
 
 const getSubscriptionByID = `-- name: GetSubscriptionByID :one
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
-       addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
+       addon_ids, assigned_to, pending_plan_id, pending_original_plan_id, pending_requested_at,
+       cancelled_at, paused_at, created_at, updated_at
 FROM billing.subscriptions WHERE id = $1
 `
 
 type GetSubscriptionByIDRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	UserID         pgtype.UUID        `json:"user_id"`
-	PlanID         pgtype.UUID        `json:"plan_id"`
-	Status         string             `json:"status"`
-	PeriodStart    pgtype.Timestamptz `json:"period_start"`
-	PeriodEnd      pgtype.Timestamptz `json:"period_end"`
-	PeriodInterval string             `json:"period_interval"`
-	AddonIds       []pgtype.UUID      `json:"addon_ids"`
-	AssignedTo     *string            `json:"assigned_to"`
-	PendingPlanID  pgtype.UUID        `json:"pending_plan_id"`
-	CancelledAt    pgtype.Timestamptz `json:"cancelled_at"`
-	PausedAt       pgtype.Timestamptz `json:"paused_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID                    pgtype.UUID        `json:"id"`
+	UserID                pgtype.UUID        `json:"user_id"`
+	PlanID                pgtype.UUID        `json:"plan_id"`
+	Status                string             `json:"status"`
+	PeriodStart           pgtype.Timestamptz `json:"period_start"`
+	PeriodEnd             pgtype.Timestamptz `json:"period_end"`
+	PeriodInterval        string             `json:"period_interval"`
+	AddonIds              []pgtype.UUID      `json:"addon_ids"`
+	AssignedTo            *string            `json:"assigned_to"`
+	PendingPlanID         pgtype.UUID        `json:"pending_plan_id"`
+	PendingOriginalPlanID pgtype.UUID        `json:"pending_original_plan_id"`
+	PendingRequestedAt    pgtype.Timestamptz `json:"pending_requested_at"`
+	CancelledAt           pgtype.Timestamptz `json:"cancelled_at"`
+	PausedAt              pgtype.Timestamptz `json:"paused_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
 }
 
 func (q *Queries) GetSubscriptionByID(ctx context.Context, id pgtype.UUID) (GetSubscriptionByIDRow, error) {
@@ -1122,6 +1213,8 @@ func (q *Queries) GetSubscriptionByID(ctx context.Context, id pgtype.UUID) (GetS
 		&i.AddonIds,
 		&i.AssignedTo,
 		&i.PendingPlanID,
+		&i.PendingOriginalPlanID,
+		&i.PendingRequestedAt,
 		&i.CancelledAt,
 		&i.PausedAt,
 		&i.CreatedAt,
@@ -1132,25 +1225,28 @@ func (q *Queries) GetSubscriptionByID(ctx context.Context, id pgtype.UUID) (GetS
 
 const getSubscriptionByIDForUpdate = `-- name: GetSubscriptionByIDForUpdate :one
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
-       addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
+       addon_ids, assigned_to, pending_plan_id, pending_original_plan_id, pending_requested_at,
+       cancelled_at, paused_at, created_at, updated_at
 FROM billing.subscriptions WHERE id = $1 FOR UPDATE
 `
 
 type GetSubscriptionByIDForUpdateRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	UserID         pgtype.UUID        `json:"user_id"`
-	PlanID         pgtype.UUID        `json:"plan_id"`
-	Status         string             `json:"status"`
-	PeriodStart    pgtype.Timestamptz `json:"period_start"`
-	PeriodEnd      pgtype.Timestamptz `json:"period_end"`
-	PeriodInterval string             `json:"period_interval"`
-	AddonIds       []pgtype.UUID      `json:"addon_ids"`
-	AssignedTo     *string            `json:"assigned_to"`
-	PendingPlanID  pgtype.UUID        `json:"pending_plan_id"`
-	CancelledAt    pgtype.Timestamptz `json:"cancelled_at"`
-	PausedAt       pgtype.Timestamptz `json:"paused_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID                    pgtype.UUID        `json:"id"`
+	UserID                pgtype.UUID        `json:"user_id"`
+	PlanID                pgtype.UUID        `json:"plan_id"`
+	Status                string             `json:"status"`
+	PeriodStart           pgtype.Timestamptz `json:"period_start"`
+	PeriodEnd             pgtype.Timestamptz `json:"period_end"`
+	PeriodInterval        string             `json:"period_interval"`
+	AddonIds              []pgtype.UUID      `json:"addon_ids"`
+	AssignedTo            *string            `json:"assigned_to"`
+	PendingPlanID         pgtype.UUID        `json:"pending_plan_id"`
+	PendingOriginalPlanID pgtype.UUID        `json:"pending_original_plan_id"`
+	PendingRequestedAt    pgtype.Timestamptz `json:"pending_requested_at"`
+	CancelledAt           pgtype.Timestamptz `json:"cancelled_at"`
+	PausedAt              pgtype.Timestamptz `json:"paused_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
 }
 
 func (q *Queries) GetSubscriptionByIDForUpdate(ctx context.Context, id pgtype.UUID) (GetSubscriptionByIDForUpdateRow, error) {
@@ -1167,6 +1263,8 @@ func (q *Queries) GetSubscriptionByIDForUpdate(ctx context.Context, id pgtype.UU
 		&i.AddonIds,
 		&i.AssignedTo,
 		&i.PendingPlanID,
+		&i.PendingOriginalPlanID,
+		&i.PendingRequestedAt,
 		&i.CancelledAt,
 		&i.PausedAt,
 		&i.CreatedAt,
@@ -1177,25 +1275,28 @@ func (q *Queries) GetSubscriptionByIDForUpdate(ctx context.Context, id pgtype.UU
 
 const getSubscriptionsByUserID = `-- name: GetSubscriptionsByUserID :many
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
-       addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
+       addon_ids, assigned_to, pending_plan_id, pending_original_plan_id, pending_requested_at,
+       cancelled_at, paused_at, created_at, updated_at
 FROM billing.subscriptions WHERE user_id = $1 ORDER BY created_at DESC
 `
 
 type GetSubscriptionsByUserIDRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	UserID         pgtype.UUID        `json:"user_id"`
-	PlanID         pgtype.UUID        `json:"plan_id"`
-	Status         string             `json:"status"`
-	PeriodStart    pgtype.Timestamptz `json:"period_start"`
-	PeriodEnd      pgtype.Timestamptz `json:"period_end"`
-	PeriodInterval string             `json:"period_interval"`
-	AddonIds       []pgtype.UUID      `json:"addon_ids"`
-	AssignedTo     *string            `json:"assigned_to"`
-	PendingPlanID  pgtype.UUID        `json:"pending_plan_id"`
-	CancelledAt    pgtype.Timestamptz `json:"cancelled_at"`
-	PausedAt       pgtype.Timestamptz `json:"paused_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID                    pgtype.UUID        `json:"id"`
+	UserID                pgtype.UUID        `json:"user_id"`
+	PlanID                pgtype.UUID        `json:"plan_id"`
+	Status                string             `json:"status"`
+	PeriodStart           pgtype.Timestamptz `json:"period_start"`
+	PeriodEnd             pgtype.Timestamptz `json:"period_end"`
+	PeriodInterval        string             `json:"period_interval"`
+	AddonIds              []pgtype.UUID      `json:"addon_ids"`
+	AssignedTo            *string            `json:"assigned_to"`
+	PendingPlanID         pgtype.UUID        `json:"pending_plan_id"`
+	PendingOriginalPlanID pgtype.UUID        `json:"pending_original_plan_id"`
+	PendingRequestedAt    pgtype.Timestamptz `json:"pending_requested_at"`
+	CancelledAt           pgtype.Timestamptz `json:"cancelled_at"`
+	PausedAt              pgtype.Timestamptz `json:"paused_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
 }
 
 func (q *Queries) GetSubscriptionsByUserID(ctx context.Context, userID pgtype.UUID) ([]GetSubscriptionsByUserIDRow, error) {
@@ -1218,6 +1319,8 @@ func (q *Queries) GetSubscriptionsByUserID(ctx context.Context, userID pgtype.UU
 			&i.AddonIds,
 			&i.AssignedTo,
 			&i.PendingPlanID,
+			&i.PendingOriginalPlanID,
+			&i.PendingRequestedAt,
 			&i.CancelledAt,
 			&i.PausedAt,
 			&i.CreatedAt,
@@ -1285,7 +1388,7 @@ SET name = $2, description = $3, base_price_amount = $4, base_price_currency = $
     billing_interval = $6, traffic_limit_bytes = $7, device_limit = $8,
     allowed_countries = $9, allowed_protocols = $10, tier = $11,
     max_remnawave_bindings = $12, family_enabled = $13, max_family_members = $14,
-    is_active = $15
+    max_addons = $15, is_active = $16
 WHERE id = $1
 `
 
@@ -1304,6 +1407,7 @@ type UpdatePlanParams struct {
 	MaxRemnawaveBindings int32       `json:"max_remnawave_bindings"`
 	FamilyEnabled        bool        `json:"family_enabled"`
 	MaxFamilyMembers     int32       `json:"max_family_members"`
+	MaxAddons            int32       `json:"max_addons"`
 	IsActive             bool        `json:"is_active"`
 }
 
@@ -1323,6 +1427,7 @@ func (q *Queries) UpdatePlan(ctx context.Context, arg UpdatePlanParams) error {
 		arg.MaxRemnawaveBindings,
 		arg.FamilyEnabled,
 		arg.MaxFamilyMembers,
+		arg.MaxAddons,
 		arg.IsActive,
 	)
 	return err
@@ -1331,21 +1436,24 @@ func (q *Queries) UpdatePlan(ctx context.Context, arg UpdatePlanParams) error {
 const updateSubscription = `-- name: UpdateSubscription :exec
 UPDATE billing.subscriptions
 SET status = $2, period_start = $3, period_end = $4, period_interval = $5,
-    addon_ids = $6, assigned_to = $7, pending_plan_id = $8, cancelled_at = $9, paused_at = $10
+    addon_ids = $6, assigned_to = $7, pending_plan_id = $8, pending_original_plan_id = $9,
+    pending_requested_at = $10, cancelled_at = $11, paused_at = $12
 WHERE id = $1
 `
 
 type UpdateSubscriptionParams struct {
-	ID             pgtype.UUID        `json:"id"`
-	Status         string             `json:"status"`
-	PeriodStart    pgtype.Timestamptz `json:"period_start"`
-	PeriodEnd      pgtype.Timestamptz `json:"period_end"`
-	PeriodInterval string             `json:"period_interval"`
-	AddonIds       []pgtype.UUID      `json:"addon_ids"`
-	AssignedTo     *string            `json:"assigned_to"`
-	PendingPlanID  pgtype.UUID        `json:"pending_plan_id"`
-	CancelledAt    pgtype.Timestamptz `json:"cancelled_at"`
-	PausedAt       pgtype.Timestamptz `json:"paused_at"`
+	ID                    pgtype.UUID        `json:"id"`
+	Status                string             `json:"status"`
+	PeriodStart           pgtype.Timestamptz `json:"period_start"`
+	PeriodEnd             pgtype.Timestamptz `json:"period_end"`
+	PeriodInterval        string             `json:"period_interval"`
+	AddonIds              []pgtype.UUID      `json:"addon_ids"`
+	AssignedTo            *string            `json:"assigned_to"`
+	PendingPlanID         pgtype.UUID        `json:"pending_plan_id"`
+	PendingOriginalPlanID pgtype.UUID        `json:"pending_original_plan_id"`
+	PendingRequestedAt    pgtype.Timestamptz `json:"pending_requested_at"`
+	CancelledAt           pgtype.Timestamptz `json:"cancelled_at"`
+	PausedAt              pgtype.Timestamptz `json:"paused_at"`
 }
 
 func (q *Queries) UpdateSubscription(ctx context.Context, arg UpdateSubscriptionParams) error {
@@ -1358,6 +1466,8 @@ func (q *Queries) UpdateSubscription(ctx context.Context, arg UpdateSubscription
 		arg.AddonIds,
 		arg.AssignedTo,
 		arg.PendingPlanID,
+		arg.PendingOriginalPlanID,
+		arg.PendingRequestedAt,
 		arg.CancelledAt,
 		arg.PausedAt,
 	)

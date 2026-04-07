@@ -89,3 +89,9 @@ RETURNING retry_count;
 
 -- name: CleanupExpiredIdempotencyKeys :exec
 DELETE FROM multisub.idempotency_keys WHERE expires_at < now();
+
+-- name: CleanupOldIdempotencyKeys :execrows
+DELETE FROM multisub.idempotency_keys WHERE created_at < $1;
+
+-- name: CleanupOldBindingSyncLog :execrows
+DELETE FROM multisub.binding_sync_log WHERE created_at < $1;

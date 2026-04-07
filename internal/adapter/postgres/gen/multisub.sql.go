@@ -21,6 +21,30 @@ func (q *Queries) CleanupExpiredIdempotencyKeys(ctx context.Context) error {
 	return err
 }
 
+const cleanupOldBindingSyncLog = `-- name: CleanupOldBindingSyncLog :execrows
+DELETE FROM multisub.binding_sync_log WHERE created_at < $1
+`
+
+func (q *Queries) CleanupOldBindingSyncLog(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error) {
+	result, err := q.db.Exec(ctx, cleanupOldBindingSyncLog, createdAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const cleanupOldIdempotencyKeys = `-- name: CleanupOldIdempotencyKeys :execrows
+DELETE FROM multisub.idempotency_keys WHERE created_at < $1
+`
+
+func (q *Queries) CleanupOldIdempotencyKeys(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error) {
+	result, err := q.db.Exec(ctx, cleanupOldIdempotencyKeys, createdAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const createBinding = `-- name: CreateBinding :exec
 
 INSERT INTO multisub.remnawave_bindings (

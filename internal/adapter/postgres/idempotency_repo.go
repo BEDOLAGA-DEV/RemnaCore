@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres/gen"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pgutil"
 )
 
 // IdempotencyKeyTTL is the retention period for idempotency keys before
@@ -74,4 +75,14 @@ func (r *IdempotencyRepository) Cleanup(ctx context.Context) error {
 		return fmt.Errorf("cleanup expired idempotency keys: %w", err)
 	}
 	return nil
+}
+
+// CleanupOldKeys deletes idempotency keys older than the given cutoff time.
+// Returns the number of rows deleted.
+func (r *IdempotencyRepository) CleanupOldKeys(ctx context.Context, cutoff time.Time) (int64, error) {
+	n, err := r.q(ctx).CleanupOldIdempotencyKeys(ctx, pgutil.TimeToPgtype(cutoff))
+	if err != nil {
+		return 0, fmt.Errorf("cleanup old idempotency keys: %w", err)
+	}
+	return n, nil
 }

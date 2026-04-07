@@ -272,5 +272,33 @@ func (r *IdentityRepository) DeleteUserPasswordResets(ctx context.Context, userI
 	return pgutil.MapErr(err, "delete user password resets", identity.ErrNotFound)
 }
 
+// ---------------------------------------------------------------------------
+// Cleanup operations for expired data
+// ---------------------------------------------------------------------------
+
+func (r *IdentityRepository) DeleteExpiredSessions(ctx context.Context) (int64, error) {
+	n, err := r.q(ctx).DeleteExpiredSessions(ctx)
+	if err != nil {
+		return 0, pgutil.MapErr(err, "delete expired sessions", identity.ErrNotFound)
+	}
+	return n, nil
+}
+
+func (r *IdentityRepository) DeleteExpiredVerifications(ctx context.Context) (int64, error) {
+	n, err := r.q(ctx).DeleteExpiredVerifications(ctx)
+	if err != nil {
+		return 0, pgutil.MapErr(err, "delete expired verifications", identity.ErrNotFound)
+	}
+	return n, nil
+}
+
+func (r *IdentityRepository) DeleteExpiredPasswordResets(ctx context.Context) (int64, error) {
+	n, err := r.q(ctx).DeleteExpiredPasswordResets(ctx)
+	if err != nil {
+		return 0, pgutil.MapErr(err, "delete expired password resets", identity.ErrNotFound)
+	}
+	return n, nil
+}
+
 // compile-time interface check
 var _ identity.Repository = (*IdentityRepository)(nil)

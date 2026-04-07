@@ -47,6 +47,11 @@ type Repository interface {
 	GetPasswordResetByToken(ctx context.Context, token string) (*aggregate.PasswordReset, error)
 	DeletePasswordReset(ctx context.Context, id string) error
 	DeleteUserPasswordResets(ctx context.Context, userID string) error
+
+	// Cleanup operations for expired data. Return the number of rows deleted.
+	DeleteExpiredSessions(ctx context.Context) (int64, error)
+	DeleteExpiredVerifications(ctx context.Context) (int64, error)
+	DeleteExpiredPasswordResets(ctx context.Context) (int64, error)
 }
 
 // Service implements the core identity use-cases: registration, login, email

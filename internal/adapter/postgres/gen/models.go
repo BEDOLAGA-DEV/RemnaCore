@@ -26,8 +26,9 @@ type BillingFamilyMember struct {
 }
 
 type BillingInvoice struct {
-	ID                  pgtype.UUID        `json:"id"`
-	SubscriptionID      pgtype.UUID        `json:"subscription_id"`
+	ID             pgtype.UUID `json:"id"`
+	SubscriptionID pgtype.UUID `json:"subscription_id"`
+	// References identity.platform_users.id (no FK: cross-schema boundary, enforced by application)
 	UserID              pgtype.UUID        `json:"user_id"`
 	SubtotalAmount      int64              `json:"subtotal_amount"`
 	TotalDiscountAmount int64              `json:"total_discount_amount"`
@@ -69,6 +70,7 @@ type BillingPlan struct {
 	IsActive             bool               `json:"is_active"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	MaxAddons            int32              `json:"max_addons"`
 }
 
 type BillingPlanAddon struct {
@@ -85,20 +87,23 @@ type BillingPlanAddon struct {
 }
 
 type BillingSubscription struct {
-	ID             pgtype.UUID        `json:"id"`
-	UserID         pgtype.UUID        `json:"user_id"`
-	PlanID         pgtype.UUID        `json:"plan_id"`
-	Status         string             `json:"status"`
-	PeriodStart    pgtype.Timestamptz `json:"period_start"`
-	PeriodEnd      pgtype.Timestamptz `json:"period_end"`
-	PeriodInterval string             `json:"period_interval"`
-	AddonIds       []pgtype.UUID      `json:"addon_ids"`
-	AssignedTo     *string            `json:"assigned_to"`
-	CancelledAt    pgtype.Timestamptz `json:"cancelled_at"`
-	PausedAt       pgtype.Timestamptz `json:"paused_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	PendingPlanID  pgtype.UUID        `json:"pending_plan_id"`
+	ID pgtype.UUID `json:"id"`
+	// References identity.platform_users.id (no FK: cross-schema boundary, enforced by application)
+	UserID                pgtype.UUID        `json:"user_id"`
+	PlanID                pgtype.UUID        `json:"plan_id"`
+	Status                string             `json:"status"`
+	PeriodStart           pgtype.Timestamptz `json:"period_start"`
+	PeriodEnd             pgtype.Timestamptz `json:"period_end"`
+	PeriodInterval        string             `json:"period_interval"`
+	AddonIds              []pgtype.UUID      `json:"addon_ids"`
+	AssignedTo            *string            `json:"assigned_to"`
+	CancelledAt           pgtype.Timestamptz `json:"cancelled_at"`
+	PausedAt              pgtype.Timestamptz `json:"paused_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+	PendingPlanID         pgtype.UUID        `json:"pending_plan_id"`
+	PendingOriginalPlanID pgtype.UUID        `json:"pending_original_plan_id"`
+	PendingRequestedAt    pgtype.Timestamptz `json:"pending_requested_at"`
 }
 
 type IdentityEmailVerification struct {
@@ -157,8 +162,10 @@ type MultisubIdempotencyKey struct {
 }
 
 type MultisubRemnawaveBinding struct {
-	ID                 pgtype.UUID        `json:"id"`
-	SubscriptionID     pgtype.UUID        `json:"subscription_id"`
+	ID pgtype.UUID `json:"id"`
+	// References billing.subscriptions.id (no FK: cross-schema boundary, enforced by application)
+	SubscriptionID pgtype.UUID `json:"subscription_id"`
+	// References identity.platform_users.id (no FK: cross-schema boundary, enforced by application)
 	PlatformUserID     pgtype.UUID        `json:"platform_user_id"`
 	RemnawaveUuid      *string            `json:"remnawave_uuid"`
 	RemnawaveShortUuid *string            `json:"remnawave_short_uuid"`
@@ -203,7 +210,8 @@ type Outbox struct {
 }
 
 type PaymentPaymentRecord struct {
-	ID         pgtype.UUID        `json:"id"`
+	ID pgtype.UUID `json:"id"`
+	// References billing.invoices.id (no FK: cross-schema boundary, enforced by application)
 	InvoiceID  pgtype.UUID        `json:"invoice_id"`
 	Provider   string             `json:"provider"`
 	ExternalID string             `json:"external_id"`
@@ -274,8 +282,9 @@ type ResellerCommission struct {
 }
 
 type ResellerResellerAccount struct {
-	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	// References identity.platform_users.id (no FK: cross-schema boundary, enforced by application)
 	UserID         pgtype.UUID        `json:"user_id"`
 	CommissionRate int32              `json:"commission_rate"`
 	Balance        int64              `json:"balance"`

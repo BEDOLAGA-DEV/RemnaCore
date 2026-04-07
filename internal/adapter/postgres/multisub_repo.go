@@ -299,4 +299,14 @@ func (r *BindingRepository) Delete(ctx context.Context, id string) error {
 	return pgutil.MapErr(err, "delete binding", multisub.ErrBindingNotFound)
 }
 
+// CleanupOldSyncLog deletes binding_sync_log entries older than the given
+// cutoff time. Returns the number of rows deleted.
+func (r *BindingRepository) CleanupOldSyncLog(ctx context.Context, cutoff time.Time) (int64, error) {
+	n, err := r.q(ctx).CleanupOldBindingSyncLog(ctx, pgutil.TimeToPgtype(cutoff))
+	if err != nil {
+		return 0, pgutil.MapErr(err, "cleanup old binding sync log", multisub.ErrBindingNotFound)
+	}
+	return n, nil
+}
+
 var _ multisub.BindingRepository = (*BindingRepository)(nil)

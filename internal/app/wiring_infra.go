@@ -6,6 +6,7 @@ import (
 
 	"go.uber.org/fx"
 
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/infra"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/infra/health"
@@ -14,15 +15,21 @@ import (
 )
 
 // infraWiring provides infrastructure service lifecycle hooks: health monitor,
-// speed test server, and subscription proxy.
+// speed test server, subscription proxy, and data cleanup scheduler.
 var infraWiring = fx.Options(
 	// Infrastructure services module
 	infra.Module,
+
+	// Data cleanup scheduler for cross-domain infrastructure data
+	fx.Provide(func(idempotency *postgres.IdempotencyRepository, bindings *postgres.BindingRepository, logger *slog.Logger) *infra.DataCleanupScheduler {
+		return infra.NewDataCleanupScheduler(idempotency, bindings, logger)
+	}),
 
 	// Lifecycle hooks
 	fx.Invoke(startHealthMonitor),
 	fx.Invoke(startSpeedTest),
 	fx.Invoke(startSubscriptionProxy),
+	fx.Invoke(startDataCleanup),
 )
 
 // startHealthMonitor runs the node health monitor as a background goroutine.
@@ -89,6 +96,29 @@ func startSubscriptionProxy(lc fx.Lifecycle, sp *proxy.SubscriptionProxy, cfg *c
 			lc.Append(fx.Hook{
 				OnStop: func(_ context.Context) error {
 					logger.Info("subscription proxy stopping")
+					cancel()
+					return nil
+				},
+			})
+			return nil
+		},
+	})
+}
+
+// startDataCleanup spawns the cross-domain data cleanup scheduler as a
+// background goroutine managed by the Fx lifecycle. It periodically removes
+// old idempotency keys (>7 days) and binding sync log entries (>90 days).
+func startDataCleanup(lc fx.Lifecycle, scheduler *infra.DataCleanupScheduler, logger *slog.Logger) {
+	lc.Append(fx.Hook{
+		OnStart: func(_ context.Context) error {
+			cleanupCtx, cancel := context.WithCancel(context.Background())
+			go func() {
+				logger.Info("data cleanup scheduler started")
+				scheduler.Run(cleanupCtx)
+			}()
+			lc.Append(fx.Hook{
+				OnStop: func(_ context.Context) error {
+					logger.Info("data cleanup scheduler stopping")
 					cancel()
 					return nil
 				},
