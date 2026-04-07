@@ -5,17 +5,14 @@
 -- WHERE (created_at, id) < ($2, $3). Without a matching composite index
 -- PostgreSQL falls back to a sequential scan or a sort on every page fetch.
 --
--- These indexes cover both the first-page query (no WHERE, just ORDER BY)
--- and subsequent pages (WHERE + ORDER BY) because the sort order matches
--- the index definition.
---
--- NOTE: CONCURRENTLY cannot run inside a transaction block.
--- Atlas runs each top-level statement as a separate implicit transaction
--- when not wrapped in BEGIN/COMMIT, which is required here.
+-- Using regular CREATE INDEX (not CONCURRENTLY) because Atlas wraps
+-- migrations in a transaction block. For production tables with heavy
+-- write load, apply these indexes manually with CONCURRENTLY outside
+-- of the migration framework.
 -- ============================================================================
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_subs_cursor
+CREATE INDEX IF NOT EXISTS idx_subs_cursor
     ON billing.subscriptions (created_at DESC, id DESC);
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_invoices_cursor
+CREATE INDEX IF NOT EXISTS idx_invoices_cursor
     ON billing.invoices (created_at DESC, id DESC);
