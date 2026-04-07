@@ -433,6 +433,110 @@ func TestBillingDomainNoPluginImports(t *testing.T) {
 	checkImports(t, filepath.Join("internal", "domain", "billing"), forbidden)
 }
 
+// maxHandlerDomainContexts is the maximum number of distinct domain contexts a
+// single handler file may import. Keeping this low prevents handlers from
+// becoming orchestrators that coordinate across bounded contexts -- that work
+// belongs in domain services or sagas.
+const maxHandlerDomainContexts = 2
+
+// handlerDomainContextExcludedPackages lists shared-kernel packages that look
+// like domain imports but do not count toward the context budget.
+var handlerDomainContextExcludedPackages = map[string]bool{
+	"plugin": true, // internal/plugin is infrastructure, not a domain context
+}
+
+// TestHandlerMaxDomainContextImports verifies that each file in
+// internal/gateway/handler/ imports at most maxHandlerDomainContexts distinct
+// domain contexts (excluding response.go which is an intentional mapper).
+//
+// Both type-level imports (e.g., internal/domain/billing) and service-level
+// imports (e.g., internal/domain/billing/service) count. billing and
+// billing/aggregate are grouped as a single "billing" context.
+func TestHandlerMaxDomainContextImports(t *testing.T) {
+	root := findRepoRoot(t)
+	handlerDir := filepath.Join(root, "internal", "gateway", "handler")
+
+	err := filepath.Walk(handlerDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+		if strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		if gatewayHandlerExcludedFiles[filepath.Base(path)] {
+			return nil
+		}
+
+		fset := token.NewFileSet()
+		f, parseErr := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
+		if parseErr != nil {
+			return nil
+		}
+
+		relPath, _ := filepath.Rel(root, path)
+		if relPath == "" {
+			relPath = path
+		}
+
+		// Collect distinct domain contexts imported by this file.
+		contexts := make(map[string]string) // context name -> first import path
+
+		for _, imp := range f.Imports {
+			importPath := strings.Trim(imp.Path.Value, `"`)
+
+			// Check for internal/domain/* imports.
+			if !strings.HasPrefix(importPath, domainServicePrefix) {
+				// Check for internal/plugin (has MapToAPIError but is infra).
+				if importPath == modulePrefix+"/internal/plugin" {
+					continue
+				}
+				continue
+			}
+
+			// Strip prefix to get e.g. "billing/service", "billing/aggregate",
+			// "identity", "multisub".
+			suffix := strings.TrimPrefix(importPath, domainServicePrefix)
+			parts := strings.SplitN(suffix, "/", 2)
+			ctx := parts[0]
+
+			if handlerDomainContextExcludedPackages[ctx] {
+				continue
+			}
+
+			// Group billing + billing/aggregate + billing/service as one
+			// context. Same for any context with sub-packages.
+			if _, seen := contexts[ctx]; !seen {
+				contexts[ctx] = importPath
+			}
+		}
+
+		if len(contexts) > maxHandlerDomainContexts {
+			var imported []string
+			for ctx, pkg := range contexts {
+				imported = append(imported, ctx+" ("+pkg+")")
+			}
+			slices.Sort(imported)
+			t.Errorf(
+				"%s imports %d domain contexts; max %d allowed: %s",
+				relPath, len(contexts), maxHandlerDomainContexts,
+				strings.Join(imported, ", "),
+			)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		t.Fatalf("walking handler dir: %v", err)
+	}
+}
+
 // checkImports walks dir, parses each non-test .go file, and fails the test for
 // every import whose path starts with any of the forbiddenPrefixes.
 func checkImports(t *testing.T, dir string, forbiddenPrefixes []string) {

@@ -1,3 +1,8 @@
+// response.go imports all domain packages to register error mappers.
+// This is an intentional gateway-layer concern: the response writer must
+// map any domain error to an API error code. Each context exports its own
+// MapToAPIError function, keeping the logic distributed -- this file only
+// assembles the chain. Adding a new context requires adding one line here.
 package handler
 
 import (

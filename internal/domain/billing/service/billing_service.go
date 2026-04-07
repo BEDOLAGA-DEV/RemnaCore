@@ -96,33 +96,37 @@ func WithAsyncHook(fn AsyncHookFn) BillingServiceOption {
 	return func(s *BillingService) { s.asyncHook = fn }
 }
 
+// BillingDeps groups the core dependencies for BillingService. Using a struct
+// avoids a long positional parameter list and makes adding new dependencies a
+// backward-compatible change.
+type BillingDeps struct {
+	Plans     billing.PlanRepository
+	Subs      billing.SubscriptionRepository
+	Invoices  billing.InvoiceRepository
+	Families  billing.FamilyRepository
+	Publisher domainevent.Publisher
+	Prorate   *ProrateCalculator
+	Trial     *TrialManager
+	TxRunner  txmanager.Runner
+	Clock     clock.Clock
+	Logger    *slog.Logger
+}
+
 // NewBillingService creates a BillingService with the given dependencies.
 // Optional dependencies (dispatcher, feature flags) are configured via
 // BillingServiceOption functions to keep the constructor backward-compatible.
-func NewBillingService(
-	plans billing.PlanRepository,
-	subs billing.SubscriptionRepository,
-	invoices billing.InvoiceRepository,
-	families billing.FamilyRepository,
-	publisher domainevent.Publisher,
-	prorate *ProrateCalculator,
-	trial *TrialManager,
-	txRunner txmanager.Runner,
-	clk clock.Clock,
-	logger *slog.Logger,
-	opts ...BillingServiceOption,
-) *BillingService {
+func NewBillingService(deps BillingDeps, opts ...BillingServiceOption) *BillingService {
 	s := &BillingService{
-		plans:     plans,
-		subs:      subs,
-		invoices:  invoices,
-		families:  families,
-		publisher: publisher,
-		prorate:   prorate,
-		trial:     trial,
-		txRunner:  txRunner,
-		clock:     clk,
-		logger:    logger,
+		plans:     deps.Plans,
+		subs:      deps.Subs,
+		invoices:  deps.Invoices,
+		families:  deps.Families,
+		publisher: deps.Publisher,
+		prorate:   deps.Prorate,
+		trial:     deps.Trial,
+		txRunner:  deps.TxRunner,
+		clock:     deps.Clock,
+		logger:    deps.Logger,
 	}
 	for _, opt := range opts {
 		opt(s)

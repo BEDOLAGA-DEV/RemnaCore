@@ -1,3 +1,7 @@
+// NOTE: This file uses encoding/json for saga state serialization (checkpoint
+// persistence). This is an intentional infrastructure concern within the domain
+// service -- saga state is inherently persistence-aware. The hook dispatch
+// protocol (hookdispatch/sdk) has been fully extracted to the wiring layer.
 package service
 
 import (

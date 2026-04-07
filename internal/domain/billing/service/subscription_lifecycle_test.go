@@ -77,7 +77,18 @@ func newTestServiceWithHooks() (
 	recorder := &hookRecorder{}
 
 	svc := NewBillingService(
-		plans, subs, invoices, families, publisher, prorate, trial, txRunner, clk, slog.Default(),
+		BillingDeps{
+			Plans:     plans,
+			Subs:      subs,
+			Invoices:  invoices,
+			Families:  families,
+			Publisher: publisher,
+			Prorate:   prorate,
+			Trial:     trial,
+			TxRunner:  txRunner,
+			Clock:     clk,
+			Logger:    slog.Default(),
+		},
 		WithCancelHook(recorder.cancelHook),
 		WithRenewHook(recorder.renewHook),
 		WithUpgradeHook(recorder.upgradeHook),

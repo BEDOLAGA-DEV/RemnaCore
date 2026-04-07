@@ -94,7 +94,18 @@ func newBillingService(
 		)
 	}
 	return billingservice.NewBillingService(
-		plans, subs, invoices, families, publisher, prorate, trial, txRunner, clk, logger,
+		billingservice.BillingDeps{
+			Plans:     plans,
+			Subs:      subs,
+			Invoices:  invoices,
+			Families:  families,
+			Publisher: publisher,
+			Prorate:   prorate,
+			Trial:     trial,
+			TxRunner:  txRunner,
+			Clock:     clk,
+			Logger:    logger,
+		},
 		opts...,
 	)
 }

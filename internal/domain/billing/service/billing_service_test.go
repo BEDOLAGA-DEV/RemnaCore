@@ -34,7 +34,18 @@ func newTestBillingService() (
 	txRunner := billingtest.NoopTxRunner{}
 	clk := clock.NewReal()
 
-	svc := NewBillingService(plans, subs, invoices, families, publisher, prorate, trial, txRunner, clk, slog.Default())
+	svc := NewBillingService(BillingDeps{
+		Plans:     plans,
+		Subs:      subs,
+		Invoices:  invoices,
+		Families:  families,
+		Publisher: publisher,
+		Prorate:   prorate,
+		Trial:     trial,
+		TxRunner:  txRunner,
+		Clock:     clk,
+		Logger:    slog.Default(),
+	})
 	return svc, plans, subs, invoices, families, publisher
 }
 

@@ -97,11 +97,20 @@ func newLifecycleHarness(t *testing.T) *lifecycleHarness {
 	billPub := new(billingtest.MockEventPublisher)
 	prorate := billingservice.NewProrateCalculator()
 	trial := billingservice.NewTrialManager(billingservice.DefaultTrialDays)
-	billingSvc := billingservice.NewBillingService(
-		plans, subs, invoices, families, billPub, prorate, trial,
-		billingtest.NoopTxRunner{}, clock.NewReal(), slog.Default(),
-	)
-	billingHandler := handler.NewBillingHandler(billingSvc, plans, subs, invoices)
+	billingSvc := billingservice.NewBillingService(billingservice.BillingDeps{
+		Plans:     plans,
+		Subs:      subs,
+		Invoices:  invoices,
+		Families:  families,
+		Publisher: billPub,
+		Prorate:   prorate,
+		Trial:     trial,
+		TxRunner:  billingtest.NoopTxRunner{},
+		Clock:     clock.NewReal(),
+		Logger:    slog.Default(),
+	})
+	addonSvc := billingservice.NewAddonService(subs, plans, billPub, billingtest.NoopTxRunner{}, clock.NewReal(), slog.Default())
+	billingHandler := handler.NewBillingHandler(billingSvc, addonSvc, plans, subs, invoices)
 
 	// Multisub wiring.
 	bindings := new(multisubtest.MockBindingRepo)
