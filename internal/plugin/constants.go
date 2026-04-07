@@ -69,6 +69,9 @@ const (
 	MaxRunnerUses = 10_000
 )
 
+// MaxWASMBinarySize is the maximum allowed size for a WASM plugin binary (50 MB).
+const MaxWASMBinarySize = 50 << 20
+
 // WASMHashAlgorithm identifies the hash algorithm used for content-addressable
 // WASM binary storage.
 const WASMHashAlgorithm = "sha256"

@@ -99,9 +99,10 @@ type PluginInstancePool struct {
 	drained  chan struct{} // closed when active reaches 0 after drain starts
 }
 
-// newPluginInstancePool pre-creates size WASM instances and returns a pool.
-// If any instance fails to create, already-created instances are closed and
-// the error is returned.
+// newPluginInstancePool pre-creates WASM instances and returns a pool. If some
+// instances fail to create, the pool is returned with the successfully created
+// instances (minimum 1). Remaining slots are filled asynchronously in the
+// background. If no instance can be created at all, an error is returned.
 func newPluginInstancePool(slug string, factory WASMRunnerFactory, wasm []byte, config map[string]string, manifest *Manifest, size int) (*PluginInstancePool, error) {
 	if size <= 0 {
 		size = DefaultPoolSize
@@ -127,17 +128,56 @@ func newPluginInstancePool(slug string, factory WASMRunnerFactory, wasm []byte, 
 		drained:  make(chan struct{}),
 	}
 
-	// Pre-create all instances.
-	for i := range size {
+	// Pre-create instances, tolerating partial failure.
+	var created int
+	var lastErr error
+	for range size {
 		runner, err := factory(slug, wasm, config, limits)
 		if err != nil {
-			p.Close() // cleanup already created
-			return nil, fmt.Errorf("create instance %d for %s: %w", i, slug, err)
+			lastErr = err
+			continue
 		}
 		p.pool <- &pooledRunner{runner: runner}
+		created++
+	}
+
+	if created == 0 {
+		// No runners at all — unusable pool.
+		p.Close()
+		return nil, fmt.Errorf("create all %d instances for %s: %w", size, slug, lastErr)
+	}
+
+	if created < size {
+		slog.Warn("plugin pool partially initialized",
+			slog.String("slug", slug),
+			slog.Int("created", created),
+			slog.Int("requested", size),
+			slog.Any("last_error", lastErr),
+		)
+		go p.backgroundFill(size - created)
 	}
 
 	return p, nil
+}
+
+// backgroundFill attempts to create count additional WASM runners and add them
+// to the pool. It stops on the first creation failure or if the pool is
+// draining/full.
+func (p *PluginInstancePool) backgroundFill(count int) {
+	for range count {
+		runner, err := p.factory(p.slug, p.wasm, p.config, p.limits)
+		if err != nil {
+			slog.Warn("background pool fill failed",
+				slog.String("slug", p.slug),
+				slog.Any("error", err),
+			)
+			return
+		}
+		if !p.trySendToPool(&pooledRunner{runner: runner}) {
+			// Pool is full or draining; trySendToPool already closed the runner.
+			return
+		}
+	}
 }
 
 // Acquire gets an instance from the pool, blocking until one is available or

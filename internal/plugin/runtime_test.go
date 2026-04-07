@@ -419,8 +419,7 @@ func TestPluginInstancePool_AcquireReleaseCycle(t *testing.T) {
 	pool.Release(r3)
 }
 
-func TestPluginInstancePool_FactoryError_CleansUp(t *testing.T) {
-	var closedCount atomic.Int32
+func TestPluginInstancePool_PartialFactoryError_GracefulDegradation(t *testing.T) {
 	callCount := 0
 
 	factory := func(_ string, wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
@@ -428,15 +427,40 @@ func TestPluginInstancePool_FactoryError_CleansUp(t *testing.T) {
 		if callCount == 3 {
 			return nil, errors.New("factory error on 3rd instance")
 		}
-		return &trackingMockRunner{onClose: func() { closedCount.Add(1) }}, nil
+		return &mockRunner{}, nil
+	}
+
+	pool, err := newPluginInstancePool("test", factory, []byte("wasm"), nil, nil, 4)
+	require.NoError(t, err, "partial pool failure should not return error when at least 1 runner created")
+
+	// 3 out of 4 instances should have been created synchronously
+	// (the 4th may be filling in background).
+	ctx := context.Background()
+	r1, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+	r2, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+	r3, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+
+	pool.Release(r1)
+	pool.Release(r2)
+	pool.Release(r3)
+}
+
+func TestPluginInstancePool_TotalFactoryFailure_ReturnsError(t *testing.T) {
+	var closedCount atomic.Int32
+
+	factory := func(_ string, wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
+		return nil, errors.New("every factory call fails")
 	}
 
 	_, err := newPluginInstancePool("test", factory, []byte("wasm"), nil, nil, 4)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "create instance 2")
+	require.Error(t, err, "pool with zero created runners should fail")
+	assert.Contains(t, err.Error(), "every factory call fails")
 
-	// The 2 successfully created instances should have been closed.
-	assert.Equal(t, int32(2), closedCount.Load())
+	// No instances to close since none were created.
+	assert.Equal(t, int32(0), closedCount.Load())
 }
 
 func TestRuntimePool_SetRunnerForTest(t *testing.T) {

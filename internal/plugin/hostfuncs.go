@@ -308,8 +308,18 @@ func (hf *HostFunctions) ConfigGet(pluginSlug, key string) (string, error) {
 	return val, nil
 }
 
+// pluginEventPrefix is the required namespace prefix for all plugin-emitted
+// events. Events without this prefix are auto-prefixed with
+// "plugin.{slug}.{eventType}" to prevent collision with domain events.
+const pluginEventPrefix = "plugin."
+
 // EmitEvent publishes a domain event on behalf of a plugin.
 // Requires the notifications:emit permission scope.
+//
+// Plugin-emitted events are automatically namespaced: if the event type does
+// not already start with "plugin.", it is rewritten to
+// "plugin.{pluginSlug}.{eventType}". This prevents plugins from spoofing
+// domain events (e.g., "subscription.activated").
 func (hf *HostFunctions) EmitEvent(ctx context.Context, pluginSlug string, eventType string, payload []byte) error {
 	if hf.Publisher == nil {
 		return fmt.Errorf("event publisher not configured")
@@ -320,6 +330,11 @@ func (hf *HostFunctions) EmitEvent(ctx context.Context, pluginSlug string, event
 	}
 	if !hf.Permissions.HasPermission(p, PermNotificationsEmit) {
 		return fmt.Errorf("%w: plugin %q lacks notifications:emit permission", ErrPermissionDenied, pluginSlug)
+	}
+
+	// Enforce plugin event namespace to prevent collision with domain events.
+	if !strings.HasPrefix(eventType, pluginEventPrefix) {
+		eventType = pluginEventPrefix + pluginSlug + "." + eventType
 	}
 
 	event := domainevent.NewAt(domainevent.EventType(eventType), map[string]any{
@@ -368,7 +383,7 @@ func (hf *HostFunctions) getOrCreateHTTPLimiter(slug string, maxPerMin int) *htt
 	if v, ok := hf.httpLimiters.Load(slug); ok {
 		return v.(*httpRateLimiter)
 	}
-	limiter := newHTTPRateLimiter(maxPerMin, time.Minute)
+	limiter := newHTTPRateLimiter(maxPerMin, time.Minute, hf.Clock)
 	actual, _ := hf.httpLimiters.LoadOrStore(slug, limiter)
 	return actual.(*httpRateLimiter)
 }

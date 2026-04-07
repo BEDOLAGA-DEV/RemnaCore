@@ -181,7 +181,7 @@ func (d *HookDispatcher) executePluginStep(ctx context.Context, reg HookRegistra
 	breakerKey := reg.PluginSlug + breakerKeySeparator + hookName
 	breaker := d.circuitBreakers.get(breakerKey)
 
-	if !breaker.allow() {
+	if !breaker.allow(d.circuitBreakers.now()) {
 		d.logger.Warn("hook circuit breaker open, skipping plugin",
 			"plugin", reg.PluginSlug,
 			"hook", hookName,
@@ -217,7 +217,7 @@ func (d *HookDispatcher) executePluginStep(ctx context.Context, reg HookRegistra
 	d.recordHookDuration(reg.PluginSlug, hookName, elapsed.Seconds())
 
 	if callErr != nil {
-		breaker.recordFailure()
+		breaker.recordFailure(d.circuitBreakers.now())
 		d.recordHookError(reg.PluginSlug, hookName)
 		d.recordHookTotal(reg.PluginSlug, hookName, "error")
 
@@ -252,7 +252,7 @@ func (d *HookDispatcher) executePluginStep(ctx context.Context, reg HookRegistra
 
 	var result sdk.HookResult
 	if err := json.Unmarshal(output, &result); err != nil {
-		breaker.recordFailure()
+		breaker.recordFailure(d.circuitBreakers.now())
 		d.recordHookError(reg.PluginSlug, hookName)
 		d.recordHookTotal(reg.PluginSlug, hookName, "error")
 		return &dispatchStep{err: fmt.Errorf("invalid hook result from plugin %q: %w", reg.PluginSlug, err), elapsed: elapsed}

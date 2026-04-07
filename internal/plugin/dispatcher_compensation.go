@@ -22,6 +22,12 @@ const MaxCompensationDuration = 15 * time.Second
 // Uses a detached context (context.Background) because the original request
 // context may already be cancelled, but compensation must still run to undo
 // side-effects.
+//
+// IMPORTANT: Compensation hooks MUST be idempotent. If a business operation
+// is retried after partial compensation, previously compensated plugins will
+// receive their .compensate hook again. There is no built-in tracking of
+// which compensations have already executed — plugins must handle duplicates
+// gracefully (e.g., by checking current state before reverting).
 func (d *HookDispatcher) compensateChain(hookName string, executedPlugins []string, originalPayload json.RawMessage) []hookdispatch.FailedCompensation {
 	compensateHook := hookName + compensateHookSuffix
 

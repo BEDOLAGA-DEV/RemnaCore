@@ -3,24 +3,30 @@ package plugin
 import (
 	"sync"
 	"time"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 )
 
 // httpRateLimiter is a simple sliding-window rate limiter that tracks call
-// timestamps within a fixed window. It is safe for concurrent use.
+// timestamps within a fixed window. It uses an injected clock for
+// deterministic testing. It is safe for concurrent use.
 type httpRateLimiter struct {
 	mu     sync.Mutex
 	calls  []time.Time
 	limit  int
 	window time.Duration
+	clock  clock.Clock
 }
 
 // newHTTPRateLimiter creates a rate limiter that allows at most limit calls
-// within the given window duration.
-func newHTTPRateLimiter(limit int, window time.Duration) *httpRateLimiter {
+// within the given window duration. The provided clock is used for all
+// timestamp operations, enabling deterministic tests.
+func newHTTPRateLimiter(limit int, window time.Duration, clk clock.Clock) *httpRateLimiter {
 	return &httpRateLimiter{
 		limit:  limit,
 		window: window,
 		calls:  make([]time.Time, 0, limit),
+		clock:  clk,
 	}
 }
 
@@ -31,7 +37,7 @@ func (l *httpRateLimiter) Allow() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	now := time.Now()
+	now := l.clock.Now()
 	cutoff := now.Add(-l.window)
 
 	// Compact: keep only calls within the window.

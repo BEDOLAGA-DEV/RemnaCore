@@ -80,6 +80,11 @@ func (lm *LifecycleManager) Install(ctx context.Context, manifestBytes, wasmByte
 		return nil, fmt.Errorf("%w: slug %q", ErrPluginAlreadyExists, manifest.Plugin.ID)
 	}
 
+	// Enforce WASM binary size limit before any persistence.
+	if len(wasmBytes) > MaxWASMBinarySize {
+		return nil, fmt.Errorf("%w: %d bytes (max %d)", ErrWASMBinaryTooLarge, len(wasmBytes), MaxWASMBinarySize)
+	}
+
 	p, err := NewPlugin(manifest, wasmBytes, lm.clock.Now())
 	if err != nil {
 		return nil, err
@@ -328,7 +333,23 @@ func (lm *LifecycleManager) HotReload(ctx context.Context, pluginID string, mani
 		return fmt.Errorf("config validation: %w", err)
 	}
 
+	// Enforce WASM binary size limit before any persistence.
+	if len(wasmBytes) > MaxWASMBinarySize {
+		return fmt.Errorf("%w: %d bytes (max %d)", ErrWASMBinaryTooLarge, len(wasmBytes), MaxWASMBinarySize)
+	}
+
 	oldVersion := old.Version
+
+	// Cache old WASM bytes once for potential rollback. This avoids redundant
+	// CAS fetches in each rollback path and guarantees the bytes are available
+	// even if the CAS store becomes temporarily unreachable mid-reload.
+	var oldWASMBytes []byte
+	if old.WASMHash != "" {
+		oldWASMBytes, err = lm.repo.GetWASMByHash(ctx, old.WASMHash)
+		if err != nil {
+			return fmt.Errorf("fetch old WASM for rollback safety: %w", err)
+		}
+	}
 
 	// Content-addressable WASM storage for the new version.
 	wasmHash := computeWASMHash(wasmBytes)
@@ -375,18 +396,10 @@ func (lm *LifecycleManager) HotReload(ctx context.Context, pluginID string, mani
 
 	// 6. Pre-compile new WASM and install as the active pool.
 	if err := lm.runtime.LoadPlugin(updated); err != nil {
-		// Rollback: re-install old plugin if the old pool was detached.
+		// Rollback: re-install old plugin using cached WASM bytes.
 		if oldPool != nil {
-			// Resolve WASM from CAS for rollback (Install clears WASMBytes).
-			if old.WASMBytes == nil && old.WASMHash != "" {
-				oldWasm, wasmErr := lm.repo.GetWASMByHash(ctx, old.WASMHash)
-				if wasmErr != nil {
-					lm.logger.Error("hot reload rollback: failed to fetch old WASM from CAS",
-						slog.String("slug", old.Slug), slog.Any("error", wasmErr))
-					lm.repo.UpdateStatus(ctx, old.ID, StatusError, "rollback failed: WASM not in CAS", nil)
-					return fmt.Errorf("hot reload rollback: old WASM unavailable: %w", err)
-				}
-				old.WASMBytes = oldWasm
+			if oldWASMBytes != nil {
+				old.WASMBytes = oldWASMBytes
 			}
 			if loadErr := lm.runtime.LoadPlugin(old); loadErr != nil {
 				lm.logger.Error("failed to restore old pool after load failure",
@@ -408,23 +421,16 @@ func (lm *LifecycleManager) HotReload(ctx context.Context, pluginID string, mani
 
 	// 8. Persist the updated plugin to database.
 	if err := lm.repo.UpdatePlugin(ctx, updated); err != nil {
-		// Rollback: atomically swap back to old hooks and reload old WASM.
+		// Rollback: atomically swap back to old hooks and reload old WASM
+		// using cached bytes.
 		var oldRegs []HookRegistration
 		if old.Manifest != nil {
 			oldRegs = old.Manifest.HookRegistrations(old.ID)
 		}
 		lm.dispatcher.SwapHooks(old.Slug, oldRegs)
 
-		// Resolve WASM from CAS for rollback (Install clears WASMBytes).
-		if old.WASMBytes == nil && old.WASMHash != "" {
-			oldWasm, wasmErr := lm.repo.GetWASMByHash(ctx, old.WASMHash)
-			if wasmErr != nil {
-				lm.logger.Error("hot reload rollback: failed to fetch old WASM from CAS",
-					slog.String("slug", old.Slug), slog.Any("error", wasmErr))
-				lm.repo.UpdateStatus(ctx, old.ID, StatusError, "rollback failed: WASM not in CAS", nil)
-				return fmt.Errorf("persist hot reload: %w", err)
-			}
-			old.WASMBytes = oldWasm
+		if oldWASMBytes != nil {
+			old.WASMBytes = oldWASMBytes
 		}
 		if loadErr := lm.runtime.LoadPlugin(old); loadErr != nil {
 			lm.logger.Error("hot reload rollback failed — plugin in broken state",

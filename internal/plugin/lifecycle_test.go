@@ -462,6 +462,32 @@ version = "1.0.0"
 	assert.ErrorIs(t, err, ErrInvalidManifest)
 }
 
+func TestInstall_WASMBinaryTooLarge(t *testing.T) {
+	lm, _, _, _ := newTestLifecycleManager()
+	ctx := context.Background()
+
+	oversized := make([]byte, MaxWASMBinarySize+1)
+	_, err := lm.Install(ctx, validManifestTOML, oversized)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrWASMBinaryTooLarge)
+}
+
+func TestHotReload_WASMBinaryTooLarge(t *testing.T) {
+	lm, _, _, _ := newTestLifecycleManager()
+	ctx := context.Background()
+
+	p, err := lm.Install(ctx, validManifestTOML, []byte("fake-wasm"))
+	require.NoError(t, err)
+
+	err = lm.Enable(ctx, p.ID)
+	require.NoError(t, err)
+
+	oversized := make([]byte, MaxWASMBinarySize+1)
+	err = lm.HotReload(ctx, p.ID, hotReloadManifestV2, oversized)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrWASMBinaryTooLarge)
+}
+
 func TestEnable_NotFound(t *testing.T) {
 	lm, _, _, _ := newTestLifecycleManager()
 	ctx := context.Background()

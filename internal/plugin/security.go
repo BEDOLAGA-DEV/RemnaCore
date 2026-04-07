@@ -67,9 +67,9 @@
 // Plugin key-value storage is namespaced by plugin slug. Each plugin can only
 // access its own keys:
 //
-//   - Key validation via [ValidateStorageKey] rejects path traversal (".."),
-//     path separators ("/" and "\"), null bytes, control characters, and
-//     oversized keys.
+//   - Key validation via [ValidateStorageKey] rejects path separators ("/"
+//     and "\"), null bytes, control characters, and oversized keys. Bare ".."
+//     without slashes is safe and allowed (e.g., "config..v2").
 //   - Quota enforcement is atomic: an advisory lock per plugin slug prevents
 //     concurrent Set requests from bypassing the quota check (TOCTOU-safe).
 //     See StorageAdvisoryLock in plugin_storage_repo.go.

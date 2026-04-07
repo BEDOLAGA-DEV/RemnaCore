@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/sdk"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -390,7 +391,23 @@ func TestEmitEvent_WithNotificationsEmitPermission(t *testing.T) {
 
 	err := hf.EmitEvent(context.Background(), "test-plugin", "test.event", []byte(`{}`))
 	require.NoError(t, err)
-	assert.Len(t, pub.events, 1)
+	require.Len(t, pub.events, 1)
+	// Event type should be auto-prefixed with plugin namespace.
+	assert.Equal(t, domainevent.EventType("plugin.test-plugin.test.event"), pub.events[0].Type)
+}
+
+func TestEmitEvent_AlreadyNamespaced(t *testing.T) {
+	p := testPluginWithPerms([]PermissionScope{PermNotificationsEmit})
+	pub := &testPublisher{}
+
+	hf := newTestHostFunctions(t, p, nil)
+	hf.Publisher = pub
+
+	err := hf.EmitEvent(context.Background(), "test-plugin", "plugin.test-plugin.custom", []byte(`{}`))
+	require.NoError(t, err)
+	require.Len(t, pub.events, 1)
+	// Already has plugin. prefix — should not be double-prefixed.
+	assert.Equal(t, domainevent.EventType("plugin.test-plugin.custom"), pub.events[0].Type)
 }
 
 func TestEmitEvent_WithoutNotificationsEmitPermission(t *testing.T) {

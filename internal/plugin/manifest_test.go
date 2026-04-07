@@ -491,6 +491,53 @@ async = ["system.shutdown"]`,
 	}
 }
 
+func TestValidatePluginVersion(t *testing.T) {
+	tests := []struct {
+		name    string
+		version string
+		wantErr bool
+	}{
+		{"major.minor.patch", "1.0.0", false},
+		{"major.minor", "1.0", false},
+		{"zero version", "0.0.1", false},
+		{"large numbers", "10.20.30", false},
+		{"single number", "1", true},
+		{"four components", "1.0.0.0", true},
+		{"non-numeric major", "abc.0.0", true},
+		{"non-numeric minor", "1.x.0", true},
+		{"non-numeric patch", "1.0.beta", true},
+		{"empty string", "", true},
+		{"v prefix", "v1.0.0", true},
+		{"spaces", "1. 0.0", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validatePluginVersion(tt.version)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestParseManifest_RejectsInvalidVersion(t *testing.T) {
+	tomlStr := `
+[plugin]
+id          = "bad-version"
+name        = "Bad Version"
+version     = "not-semver"
+sdk_version = "1.0.0"
+
+[hooks]
+sync = ["invoice.created"]
+`
+	_, err := ParseManifest([]byte(tomlStr))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrInvalidManifest)
+}
+
 func TestParseManifest_AcceptsAllowedHookPrefixes(t *testing.T) {
 	for _, prefix := range AllowedHookPrefixes {
 		hookName := prefix + "test_event"

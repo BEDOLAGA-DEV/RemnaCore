@@ -43,13 +43,13 @@ type hookBreaker struct {
 // allow reports whether the breaker permits a call. Returns true when the
 // breaker is closed, half-open (for test calls), or when the reset timeout
 // has elapsed on an open breaker.
-func (b *hookBreaker) allow() bool {
+func (b *hookBreaker) allow(now time.Time) bool {
 	state := hookBreakerState(b.state.Load())
 	switch state {
 	case hookBreakerClosed:
 		return true
 	case hookBreakerOpen:
-		if time.Now().UnixNano()-b.lastFailure.Load() > HookBreakerResetTimeout.Nanoseconds() {
+		if now.UnixNano()-b.lastFailure.Load() > HookBreakerResetTimeout.Nanoseconds() {
 			if b.state.CompareAndSwap(int32(hookBreakerOpen), int32(hookBreakerHalfOpen)) {
 				b.halfOpen.Store(0)
 			}
@@ -72,8 +72,8 @@ func (b *hookBreaker) recordSuccess() {
 
 // recordFailure increments the failure counter. When the consecutive failure
 // count reaches HookBreakerFailureThreshold, the breaker opens.
-func (b *hookBreaker) recordFailure() {
-	b.lastFailure.Store(time.Now().UnixNano())
+func (b *hookBreaker) recordFailure(now time.Time) {
+	b.lastFailure.Store(now.UnixNano())
 	newCount := b.failures.Add(1)
 
 	state := hookBreakerState(b.state.Load())
@@ -100,6 +100,7 @@ func (b *hookBreaker) isOpen() bool {
 type hookCircuitBreakers struct {
 	mu       sync.RWMutex
 	breakers map[string]*hookBreaker
+	nowFn    func() time.Time // injectable for testing
 }
 
 // breakerKeySeparator separates plugin slug from hook name in the breaker map key.
@@ -109,7 +110,13 @@ const breakerKeySeparator = ":"
 func newHookCircuitBreakers() *hookCircuitBreakers {
 	return &hookCircuitBreakers{
 		breakers: make(map[string]*hookBreaker),
+		nowFn:    time.Now,
 	}
+}
+
+// now returns the current time using the injectable clock function.
+func (cb *hookCircuitBreakers) now() time.Time {
+	return cb.nowFn()
 }
 
 // get returns the breaker for the given key, creating one lazily if it does

@@ -10,8 +10,7 @@ const MaxStorageKeyLen = 256
 
 var (
 	// ErrInvalidStorageKey indicates that a storage key contains forbidden
-	// characters such as path traversal sequences, path separators, null bytes,
-	// or control characters.
+	// characters such as path separators, null bytes, or control characters.
 	ErrInvalidStorageKey = fmt.Errorf("storage key contains invalid characters")
 
 	// ErrStorageKeyTooLong indicates that a storage key exceeds MaxStorageKeyLen.
@@ -31,17 +30,17 @@ const minPrintableASCII = 0x20
 const deleteControlChar = 0x7f
 
 // ValidateStorageKey checks that a plugin storage key is safe and well-formed.
-// Keys must not contain path traversal sequences (..), path separators (/ \),
-// null bytes, or control characters. Keys are limited to MaxStorageKeyLen bytes.
+// Keys must not contain path separators (/ \), null bytes, or control
+// characters. Keys are limited to MaxStorageKeyLen bytes.
+//
+// Note: bare ".." without slashes is safe because path separators are already
+// rejected — there is no traversal risk. Keys like "config..v2" are valid.
 func ValidateStorageKey(key string) error {
 	if key == "" {
 		return ErrStorageKeyEmpty
 	}
 	if len(key) > MaxStorageKeyLen {
 		return ErrStorageKeyTooLong
-	}
-	if strings.Contains(key, "..") {
-		return ErrInvalidStorageKey
 	}
 	if strings.ContainsAny(key, "/\\") {
 		return ErrInvalidStorageKey

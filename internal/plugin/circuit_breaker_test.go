@@ -18,62 +18,65 @@ import (
 
 func TestHookBreaker_AllowWhenClosed(t *testing.T) {
 	b := &hookBreaker{}
-	assert.True(t, b.allow(), "closed breaker should allow calls")
+	assert.True(t, b.allow(time.Now()), "closed breaker should allow calls")
 }
 
 func TestHookBreaker_OpensAfterThreshold(t *testing.T) {
 	b := &hookBreaker{}
+	now := time.Now()
 
 	for i := int64(0); i < HookBreakerFailureThreshold; i++ {
-		b.recordFailure()
+		b.recordFailure(now)
 	}
 
 	assert.True(t, b.isOpen(), "breaker should be open after reaching failure threshold")
-	assert.False(t, b.allow(), "open breaker should reject calls")
+	assert.False(t, b.allow(now), "open breaker should reject calls")
 }
 
 func TestHookBreaker_DoesNotOpenBelowThreshold(t *testing.T) {
 	b := &hookBreaker{}
+	now := time.Now()
 
 	for i := int64(0); i < HookBreakerFailureThreshold-1; i++ {
-		b.recordFailure()
+		b.recordFailure(now)
 	}
 
 	assert.False(t, b.isOpen(), "breaker should remain closed below threshold")
-	assert.True(t, b.allow(), "breaker below threshold should allow calls")
+	assert.True(t, b.allow(now), "breaker below threshold should allow calls")
 }
 
 func TestHookBreaker_SuccessResetsFailureCount(t *testing.T) {
 	b := &hookBreaker{}
+	now := time.Now()
 
 	// Record failures up to threshold-1.
 	for i := int64(0); i < HookBreakerFailureThreshold-1; i++ {
-		b.recordFailure()
+		b.recordFailure(now)
 	}
 
 	// A success resets the counter.
 	b.recordSuccess()
 
 	// One more failure should not open the breaker.
-	b.recordFailure()
+	b.recordFailure(now)
 	assert.False(t, b.isOpen(), "breaker should not open after success reset")
 }
 
 func TestHookBreaker_TransitionsToHalfOpenAfterTimeout(t *testing.T) {
 	b := &hookBreaker{}
+	now := time.Now()
 
 	// Open the breaker.
 	for i := int64(0); i < HookBreakerFailureThreshold; i++ {
-		b.recordFailure()
+		b.recordFailure(now)
 	}
 	require.True(t, b.isOpen())
 
-	// Simulate time passing beyond the reset timeout by backdating lastFailure.
-	pastTime := time.Now().Add(-HookBreakerResetTimeout - time.Second)
-	b.lastFailure.Store(pastTime.UnixNano())
+	// Advance time beyond the reset timeout.
+	future := now.Add(HookBreakerResetTimeout + time.Second)
 
 	// Next allow() call should transition to half-open and permit a test call.
-	assert.True(t, b.allow(), "breaker should transition to half-open after timeout")
+	assert.True(t, b.allow(future), "breaker should transition to half-open after timeout")
 	assert.Equal(t, int32(hookBreakerHalfOpen), b.state.Load())
 }
 
@@ -85,14 +88,14 @@ func TestHookBreaker_HalfOpen_SuccessCloses(t *testing.T) {
 
 	assert.Equal(t, int32(hookBreakerClosed), b.state.Load(),
 		"successful test call should close the breaker")
-	assert.True(t, b.allow())
+	assert.True(t, b.allow(time.Now()))
 }
 
 func TestHookBreaker_HalfOpen_FailureReopens(t *testing.T) {
 	b := &hookBreaker{}
 	b.state.Store(int32(hookBreakerHalfOpen))
 
-	b.recordFailure()
+	b.recordFailure(time.Now())
 
 	assert.Equal(t, int32(hookBreakerOpen), b.state.Load(),
 		"failed test call should reopen the breaker")
@@ -102,12 +105,13 @@ func TestHookBreaker_HalfOpen_LimitsTestCalls(t *testing.T) {
 	b := &hookBreaker{}
 	b.state.Store(int32(hookBreakerHalfOpen))
 	b.halfOpen.Store(0)
+	now := time.Now()
 
 	// First call allowed.
-	assert.True(t, b.allow(), "first half-open call should be allowed")
+	assert.True(t, b.allow(now), "first half-open call should be allowed")
 
 	// Second call rejected (max is 1).
-	assert.False(t, b.allow(), "second half-open call should be rejected")
+	assert.False(t, b.allow(now), "second half-open call should be rejected")
 }
 
 // --- hookCircuitBreakers registry tests ---
@@ -154,6 +158,14 @@ func TestHookCircuitBreakers_RemoveByPlugin(t *testing.T) {
 	assert.Len(t, cb.breakers, 1, "only plugin-b breaker should remain")
 	_, exists := cb.breakers["plugin-b:hook1"]
 	assert.True(t, exists)
+}
+
+func TestHookCircuitBreakers_NowFnInjectable(t *testing.T) {
+	fixedTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	cb := newHookCircuitBreakers()
+	cb.nowFn = func() time.Time { return fixedTime }
+
+	assert.Equal(t, fixedTime, cb.now())
 }
 
 // --- Integration tests: circuit breaker in DispatchSync ---
@@ -230,6 +242,10 @@ func TestDispatchSync_CircuitBreakerRecovers(t *testing.T) {
 	var shouldFail atomic.Bool
 	shouldFail.Store(true)
 
+	// Use a fixed clock so we can control breaker timing precisely.
+	currentTime := time.Now()
+	fakeClock := func() time.Time { return currentTime }
+
 	d, _ := dispatcherWithMock(t, map[string]func(ctx context.Context, funcName string, input []byte) ([]byte, error){
 		"flaky-plugin": func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
 			if shouldFail.Load() {
@@ -238,6 +254,9 @@ func TestDispatchSync_CircuitBreakerRecovers(t *testing.T) {
 			return hookResultBytes(sdk.ActionContinue, nil, ""), nil
 		},
 	})
+
+	// Inject testable clock into circuit breakers.
+	d.circuitBreakers.nowFn = fakeClock
 
 	d.RegisterHooks([]HookRegistration{
 		{PluginID: "id-flaky", PluginSlug: "flaky-plugin", HookName: "order.create", HookType: HookSync, Priority: 10, FuncName: "order.create"},
@@ -254,11 +273,8 @@ func TestDispatchSync_CircuitBreakerRecovers(t *testing.T) {
 	_, err := d.DispatchSync(context.Background(), "order.create", payload)
 	require.ErrorIs(t, err, ErrCircuitBreakerOpen)
 
-	// Simulate reset timeout by backdating the lastFailure timestamp.
-	breakerKey := "flaky-plugin" + breakerKeySeparator + "order.create"
-	breaker := d.circuitBreakers.get(breakerKey)
-	pastTime := time.Now().Add(-HookBreakerResetTimeout - time.Second)
-	breaker.lastFailure.Store(pastTime.UnixNano())
+	// Advance time beyond the reset timeout using the injectable clock.
+	currentTime = currentTime.Add(HookBreakerResetTimeout + time.Second)
 
 	// Now the plugin is healthy.
 	shouldFail.Store(false)
@@ -285,7 +301,7 @@ func TestUnregisterHooks_ClearsCircuitBreakers(t *testing.T) {
 	// Manually create a breaker entry.
 	breaker := d.circuitBreakers.get("plugin-a" + breakerKeySeparator + "hook1")
 	for i := int64(0); i < HookBreakerFailureThreshold; i++ {
-		breaker.recordFailure()
+		breaker.recordFailure(time.Now())
 	}
 	require.True(t, breaker.isOpen())
 
@@ -307,7 +323,7 @@ func TestSwapHooks_ResetsCircuitBreakers(t *testing.T) {
 	// Open the breaker.
 	breaker := d.circuitBreakers.get("plugin-a" + breakerKeySeparator + "hook1")
 	for i := int64(0); i < HookBreakerFailureThreshold; i++ {
-		breaker.recordFailure()
+		breaker.recordFailure(time.Now())
 	}
 	require.True(t, breaker.isOpen())
 

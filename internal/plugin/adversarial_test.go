@@ -227,8 +227,6 @@ func TestAdversarial_StorageKeyPathTraversal(t *testing.T) {
 		{"nested traversal", "../../etc/passwd"},
 		{"slash in key", "other-plugin/data"},
 		{"backslash in key", "other-plugin\\data"},
-		{"double dot only", ".."},
-		{"double dot with extension", "..credentials"},
 	}
 
 	for _, tt := range tests {

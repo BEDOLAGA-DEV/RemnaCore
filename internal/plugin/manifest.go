@@ -3,6 +3,7 @@ package plugin
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	toml "github.com/pelletier/go-toml/v2"
@@ -129,6 +130,9 @@ func (m *Manifest) Validate() error {
 	if m.Plugin.Version == "" {
 		return fmt.Errorf("%w: plugin.version is required", ErrInvalidManifest)
 	}
+	if err := validatePluginVersion(m.Plugin.Version); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidManifest, err)
+	}
 	if m.Plugin.SDKVersion == "" {
 		return fmt.Errorf("%w: sdk_version is required", ErrInvalidManifest)
 	}
@@ -147,6 +151,27 @@ func (m *Manifest) Validate() error {
 		}
 	}
 
+	return nil
+}
+
+// Version component count bounds for plugin version validation.
+const (
+	minVersionComponents = 2 // major.minor
+	maxVersionComponents = 3 // major.minor.patch
+)
+
+// validatePluginVersion checks that a version string follows the
+// major.minor or major.minor.patch format with numeric-only components.
+func validatePluginVersion(version string) error {
+	parts := strings.Split(version, ".")
+	if len(parts) < minVersionComponents || len(parts) > maxVersionComponents {
+		return fmt.Errorf("version must be major.minor or major.minor.patch, got %q", version)
+	}
+	for _, p := range parts {
+		if _, err := strconv.Atoi(p); err != nil {
+			return fmt.Errorf("version component %q is not a number", p)
+		}
+	}
 	return nil
 }
 

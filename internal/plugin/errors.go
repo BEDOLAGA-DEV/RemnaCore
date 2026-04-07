@@ -25,4 +25,5 @@ var (
 	ErrWASMNotFound          = errors.New("WASM binary not found in content store")
 	ErrMissingConfig         = errors.New("plugin missing required configuration")
 	ErrCircuitBreakerOpen    = errors.New("hook circuit breaker open")
+	ErrWASMBinaryTooLarge    = errors.New("WASM binary exceeds maximum size")
 )
