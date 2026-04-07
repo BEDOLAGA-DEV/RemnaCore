@@ -121,7 +121,10 @@ func (f *PaymentFacade) CreateCharge(ctx context.Context, req CreateChargeReques
 		return nil, fmt.Errorf("%w: plugin returned incomplete result", ErrPaymentFailed)
 	}
 
-	record := NewPaymentRecord(req.InvoiceID, result.Provider, result.ExternalID, req.Amount, req.Currency, f.clock.Now())
+	record, err := NewPaymentRecord(req.InvoiceID, result.Provider, result.ExternalID, req.Amount, req.Currency, f.clock.Now())
+	if err != nil {
+		return nil, fmt.Errorf("create payment record: %w", err)
+	}
 	if err := f.repo.CreatePayment(ctx, record); err != nil {
 		return nil, fmt.Errorf("persist payment record: %w", err)
 	}

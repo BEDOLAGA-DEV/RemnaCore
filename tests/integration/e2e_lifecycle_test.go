@@ -320,16 +320,17 @@ func TestFullLifecycle(t *testing.T) {
 		require.NotEmpty(t, accessToken, "phase3 must populate accessToken")
 
 		plan := &aggregate.Plan{
-			ID:               lifecycleTestPlanID,
-			Name:             lifecycleTestPlanName,
-			BasePrice:        vo.Money{Amount: lifecycleTestPlanPriceCents, Currency: vo.CurrencyUSD},
-			Interval:         vo.IntervalMonth,
-			IsActive:         true,
-			AllowedCountries: []string{"US"},
+			ID:        lifecycleTestPlanID,
+			Name:      lifecycleTestPlanName,
+			BasePrice: vo.Money{Amount: lifecycleTestPlanPriceCents, Currency: vo.CurrencyUSD},
+			Interval:  vo.IntervalMonth,
+			IsActive:  true,
 		}
 
 		h.plans.On("GetByID", mock.Anything, lifecycleTestPlanID).
 			Return(plan, nil).Once()
+		h.subs.On("GetActiveByUserID", mock.Anything, mock.Anything).
+			Return([]*aggregate.Subscription{}, nil).Once()
 		h.subs.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Subscription")).
 			Return(nil).Once()
 		h.invoices.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Invoice")).

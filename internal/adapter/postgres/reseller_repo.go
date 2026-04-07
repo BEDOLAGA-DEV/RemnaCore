@@ -10,6 +10,7 @@ import (
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres/gen"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/money"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pgutil"
 )
 
@@ -78,8 +79,7 @@ func commissionRowToDomain(row gen.ResellerCommission) *reseller.Commission {
 		ID:         pgutil.PgtypeToUUID(row.ID),
 		ResellerID: pgutil.PgtypeToUUID(row.ResellerID),
 		SaleID:     row.SaleID,
-		Amount:     row.Amount,
-		Currency:   row.Currency,
+		Amount:     money.NewMoney(row.Amount, money.Currency(row.Currency)),
 		Status:     reseller.CommissionStatus(row.Status),
 		CreatedAt:  pgutil.PgtypeToTime(row.CreatedAt),
 		PaidAt:     pgutil.PgtypeToOptTime(row.PaidAt),
@@ -259,8 +259,8 @@ func (r *ResellerRepository) CreateCommission(ctx context.Context, commission *r
 		ID:         pgutil.UUIDToPgtype(commission.ID),
 		ResellerID: pgutil.UUIDToPgtype(commission.ResellerID),
 		SaleID:     commission.SaleID,
-		Amount:     commission.Amount,
-		Currency:   commission.Currency,
+		Amount:     commission.Amount.Amount,
+		Currency:   string(commission.Amount.Currency),
 		Status:     string(commission.Status),
 		CreatedAt:  pgutil.TimeToPgtype(commission.CreatedAt),
 		PaidAt:     pgutil.OptTimeToPgtype(commission.PaidAt),

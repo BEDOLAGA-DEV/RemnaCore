@@ -266,8 +266,12 @@ func (s *Subscription) RemoveAddon(addonID string, now time.Time) error {
 }
 
 // Upgrade changes the subscription to a new plan immediately.
-// Only active subscriptions can be upgraded.
-func (s *Subscription) Upgrade(newPlanID string, newPeriod vo.BillingPeriod, now time.Time) error {
+// Only active subscriptions can be upgraded. The UpgradeSpec validates that
+// the target plan is active before the transition proceeds.
+func (s *Subscription) Upgrade(newPlanID string, newPeriod vo.BillingPeriod, spec UpgradeSpec, now time.Time) error {
+	if err := spec.CanUpgrade(); err != nil {
+		return err
+	}
 	if s.Status != StatusActive {
 		return ErrInvalidTransition
 	}

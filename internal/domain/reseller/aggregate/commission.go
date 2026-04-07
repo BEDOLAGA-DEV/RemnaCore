@@ -8,6 +8,7 @@ import (
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/vo"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/money"
 )
 
 // CommissionStatus is an alias for the vo.CommissionStatus value object.
@@ -35,8 +36,7 @@ type Commission struct {
 	ID         string
 	ResellerID string
 	SaleID     string // subscription or invoice ID
-	Amount     int64  // cents
-	Currency   string
+	Amount     money.Money
 	Status     CommissionStatus
 	CreatedAt  time.Time
 	PaidAt     *time.Time
@@ -66,7 +66,7 @@ func (c *Commission) MarkPaid(now time.Time) error {
 	c.RecordEvent(domainevent.NewTyped(CommissionPaidPayload{
 		CommissionID: c.ID,
 		ResellerID:   c.ResellerID,
-		Amount:       c.Amount,
+		Amount:       c.Amount.Amount,
 	}, now, c.ID))
 	return nil
 }
@@ -81,12 +81,13 @@ func NewCommission(resellerID, saleID string, saleAmount int64, commissionRate i
 		return nil, fmt.Errorf("commission for sale %s: %w", saleID, err)
 	}
 
+	amt := money.NewMoney(amount, money.Currency(currency))
+
 	c := &Commission{
 		ID:         uuid.Must(uuid.NewV7()).String(),
 		ResellerID: resellerID,
 		SaleID:     saleID,
-		Amount:     amount,
-		Currency:   currency,
+		Amount:     amt,
 		Status:     CommissionPending,
 		CreatedAt:  now,
 	}

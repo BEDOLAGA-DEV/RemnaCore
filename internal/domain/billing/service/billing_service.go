@@ -16,9 +16,10 @@ import (
 
 // CreateSubscriptionCmd holds the parameters for creating a new subscription.
 type CreateSubscriptionCmd struct {
-	UserID   string
-	PlanID   string
-	AddonIDs []string
+	UserID      string
+	PlanID      string
+	AddonIDs    []string
+	UserCountry string // optional; empty = all countries allowed
 }
 
 // BillingService implements CQRS command handlers for the billing domain.
@@ -156,7 +157,25 @@ func (s *BillingService) CreateSubscription(
 		return nil, nil, fmt.Errorf("get plan: %w", err)
 	}
 
-	if err := (aggregate.CheckoutEligibility{Plan: plan}).Check(); err != nil {
+	// Check for existing active subscription to prevent duplicate purchases.
+	hasActiveSub := false
+	existingSubs, err := s.subs.GetActiveByUserID(ctx, cmd.UserID)
+	if err != nil {
+		s.logger.Warn("failed to check existing subscriptions, proceeding",
+			slog.String("user_id", cmd.UserID),
+			slog.Any("error", err),
+		)
+	} else if len(existingSubs) > 0 {
+		hasActiveSub = true
+	}
+
+	eligibility := aggregate.CheckoutEligibility{
+		Plan:                  plan,
+		HasActiveSubscription: hasActiveSub,
+		AllowedCountries:      plan.AllowedCountries,
+		UserCountry:           cmd.UserCountry,
+	}
+	if err := eligibility.Check(); err != nil {
 		return nil, nil, fmt.Errorf("checkout eligibility: %w", err)
 	}
 

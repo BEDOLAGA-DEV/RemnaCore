@@ -30,10 +30,16 @@ func TestSubscription_Upgrade(t *testing.T) {
 	now := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
 	newPeriod := vo.NewBillingPeriod(now, vo.IntervalYear)
 
+	activeSpec := aggregate.UpgradeSpec{
+		FromPlanTier: aggregate.TierBasic,
+		ToPlanTier:   aggregate.TierPremium,
+		ToPlanActive: true,
+	}
+
 	t.Run("active subscription upgrades immediately", func(t *testing.T) {
 		sub := newActiveSub(t, now)
 
-		err := sub.Upgrade("plan-premium", newPeriod, now)
+		err := sub.Upgrade("plan-premium", newPeriod, activeSpec, now)
 
 		require.NoError(t, err)
 		assert.Equal(t, "plan-premium", sub.PlanID)
@@ -58,7 +64,7 @@ func TestSubscription_Upgrade(t *testing.T) {
 		// still in trial — not active
 		sub.DomainEvents()
 
-		err = sub.Upgrade("plan-premium", newPeriod, now)
+		err = sub.Upgrade("plan-premium", newPeriod, activeSpec, now)
 
 		assert.ErrorIs(t, err, aggregate.ErrInvalidTransition)
 		assert.Equal(t, "plan-old", sub.PlanID, "plan must not change on failure")
@@ -67,9 +73,23 @@ func TestSubscription_Upgrade(t *testing.T) {
 	t.Run("upgrade to same plan returns ErrSamePlan", func(t *testing.T) {
 		sub := newActiveSub(t, now)
 
-		err := sub.Upgrade("plan-old", newPeriod, now)
+		err := sub.Upgrade("plan-old", newPeriod, activeSpec, now)
 
 		assert.ErrorIs(t, err, aggregate.ErrSamePlan)
+	})
+
+	t.Run("upgrade to inactive plan returns ErrPendingPlanInactive", func(t *testing.T) {
+		sub := newActiveSub(t, now)
+		inactiveSpec := aggregate.UpgradeSpec{
+			FromPlanTier: aggregate.TierBasic,
+			ToPlanTier:   aggregate.TierPremium,
+			ToPlanActive: false,
+		}
+
+		err := sub.Upgrade("plan-premium", newPeriod, inactiveSpec, now)
+
+		assert.ErrorIs(t, err, aggregate.ErrPendingPlanInactive)
+		assert.Equal(t, "plan-old", sub.PlanID, "plan must not change on failure")
 	})
 }
 
@@ -305,7 +325,12 @@ func TestSubscription_Upgrade_ClearsPendingChange(t *testing.T) {
 
 		// Upgrade overrides the pending downgrade.
 		upgradeTime := now.Add(time.Hour)
-		require.NoError(t, sub.Upgrade("plan-premium", newPeriod, upgradeTime))
+		spec := aggregate.UpgradeSpec{
+			FromPlanTier: aggregate.TierBasic,
+			ToPlanTier:   aggregate.TierPremium,
+			ToPlanActive: true,
+		}
+		require.NoError(t, sub.Upgrade("plan-premium", newPeriod, spec, upgradeTime))
 		assert.True(t, sub.PendingChange.IsZero(), "upgrade must clear pending change")
 		assert.Equal(t, "plan-premium", sub.PlanID)
 		sub.DomainEvents() // drain

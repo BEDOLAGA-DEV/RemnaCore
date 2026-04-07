@@ -46,8 +46,25 @@ type PaymentRecord struct {
 }
 
 // NewPaymentRecord creates a new PaymentRecord in pending status and records
-// a ChargeCreated event.
-func NewPaymentRecord(invoiceID, provider, externalID string, amount int64, currency string, now time.Time) *PaymentRecord {
+// a ChargeCreated event. Returns an error if required fields are missing or
+// the amount is not positive.
+func NewPaymentRecord(invoiceID, provider, externalID string, amount int64, currency string, now time.Time) (*PaymentRecord, error) {
+	if invoiceID == "" {
+		return nil, ErrMissingInvoiceID
+	}
+	if provider == "" {
+		return nil, ErrInvalidProvider
+	}
+	if externalID == "" {
+		return nil, ErrMissingExternalID
+	}
+	if amount <= 0 {
+		return nil, ErrMissingAmount
+	}
+	if currency == "" {
+		return nil, ErrMissingCurrency
+	}
+
 	p := &PaymentRecord{
 		ID:         uuid.Must(uuid.NewV7()).String(),
 		InvoiceID:  invoiceID,
@@ -66,7 +83,7 @@ func NewPaymentRecord(invoiceID, provider, externalID string, amount int64, curr
 		ExternalID: p.ExternalID,
 		Amount:     p.Amount,
 	}, now, p.ID))
-	return p
+	return p, nil
 }
 
 // MarkCompleted transitions a pending payment to completed.

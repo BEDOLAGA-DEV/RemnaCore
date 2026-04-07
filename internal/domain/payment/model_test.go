@@ -11,7 +11,8 @@ import (
 func TestNewPaymentRecord_RecordsChargeCreatedEvent(t *testing.T) {
 	now := time.Date(2026, 4, 6, 12, 0, 0, 0, time.UTC)
 
-	record := NewPaymentRecord("inv-1", "stripe", "pi_123", 999, "usd", now)
+	record, err := NewPaymentRecord("inv-1", "stripe", "pi_123", 999, "usd", now)
+	require.NoError(t, err)
 
 	require.True(t, record.HasEvents())
 	events := record.DomainEvents()
@@ -31,13 +32,93 @@ func TestNewPaymentRecord_RecordsChargeCreatedEvent(t *testing.T) {
 	assert.Equal(t, int64(999), payload.Amount)
 }
 
+func TestNewPaymentRecord_Validation(t *testing.T) {
+	now := time.Date(2026, 4, 6, 12, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name       string
+		invoiceID  string
+		provider   string
+		externalID string
+		amount     int64
+		currency   string
+		wantErr    error
+	}{
+		{
+			name:       "empty invoice ID",
+			invoiceID:  "",
+			provider:   "stripe",
+			externalID: "pi_123",
+			amount:     999,
+			currency:   "usd",
+			wantErr:    ErrMissingInvoiceID,
+		},
+		{
+			name:       "empty provider",
+			invoiceID:  "inv-1",
+			provider:   "",
+			externalID: "pi_123",
+			amount:     999,
+			currency:   "usd",
+			wantErr:    ErrInvalidProvider,
+		},
+		{
+			name:       "empty external ID",
+			invoiceID:  "inv-1",
+			provider:   "stripe",
+			externalID: "",
+			amount:     999,
+			currency:   "usd",
+			wantErr:    ErrMissingExternalID,
+		},
+		{
+			name:       "zero amount",
+			invoiceID:  "inv-1",
+			provider:   "stripe",
+			externalID: "pi_123",
+			amount:     0,
+			currency:   "usd",
+			wantErr:    ErrMissingAmount,
+		},
+		{
+			name:       "negative amount",
+			invoiceID:  "inv-1",
+			provider:   "stripe",
+			externalID: "pi_123",
+			amount:     -100,
+			currency:   "usd",
+			wantErr:    ErrMissingAmount,
+		},
+		{
+			name:       "empty currency",
+			invoiceID:  "inv-1",
+			provider:   "stripe",
+			externalID: "pi_123",
+			amount:     999,
+			currency:   "",
+			wantErr:    ErrMissingCurrency,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			record, err := NewPaymentRecord(tt.invoiceID, tt.provider, tt.externalID, tt.amount, tt.currency, now)
+
+			require.Error(t, err)
+			assert.ErrorIs(t, err, tt.wantErr)
+			assert.Nil(t, record)
+		})
+	}
+}
+
 func TestMarkCompleted_RecordsChargeCompletedEvent(t *testing.T) {
 	now := time.Date(2026, 4, 6, 12, 0, 0, 0, time.UTC)
-	record := NewPaymentRecord("inv-1", "stripe", "pi_123", 999, "usd", now)
+	record, err := NewPaymentRecord("inv-1", "stripe", "pi_123", 999, "usd", now)
+	require.NoError(t, err)
 	record.DomainEvents() // flush creation event
 
 	completedAt := now.Add(time.Hour)
-	err := record.MarkCompleted(completedAt)
+	err = record.MarkCompleted(completedAt)
 
 	require.NoError(t, err)
 	assert.Equal(t, PaymentCompleted, record.Status)
@@ -83,11 +164,12 @@ func TestMarkCompleted_RejectsNonPending(t *testing.T) {
 
 func TestMarkFailed_RecordsChargeFailedEvent(t *testing.T) {
 	now := time.Date(2026, 4, 6, 12, 0, 0, 0, time.UTC)
-	record := NewPaymentRecord("inv-1", "stripe", "pi_123", 999, "usd", now)
+	record, err := NewPaymentRecord("inv-1", "stripe", "pi_123", 999, "usd", now)
+	require.NoError(t, err)
 	record.DomainEvents() // flush creation event
 
 	failedAt := now.Add(time.Hour)
-	err := record.MarkFailed("card declined", failedAt)
+	err = record.MarkFailed("card declined", failedAt)
 
 	require.NoError(t, err)
 	assert.Equal(t, PaymentFailed, record.Status)
@@ -133,7 +215,8 @@ func TestMarkFailed_RejectsNonPending(t *testing.T) {
 
 func TestMarkRefunded_RecordsRefundCompletedEvent(t *testing.T) {
 	now := time.Date(2026, 4, 6, 12, 0, 0, 0, time.UTC)
-	record := NewPaymentRecord("inv-1", "stripe", "pi_123", 999, "usd", now)
+	record, err := NewPaymentRecord("inv-1", "stripe", "pi_123", 999, "usd", now)
+	require.NoError(t, err)
 	record.DomainEvents() // flush creation event
 
 	// Transition to completed first.
@@ -143,7 +226,7 @@ func TestMarkRefunded_RecordsRefundCompletedEvent(t *testing.T) {
 
 	refundedAt := completedAt.Add(time.Hour)
 	refundAmount := int64(500)
-	err := record.MarkRefunded(refundAmount, refundedAt)
+	err = record.MarkRefunded(refundAmount, refundedAt)
 
 	require.NoError(t, err)
 	assert.Equal(t, PaymentRefunded, record.Status)

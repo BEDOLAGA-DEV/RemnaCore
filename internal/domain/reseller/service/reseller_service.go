@@ -238,7 +238,7 @@ func (s *ResellerService) RecordCommission(ctx context.Context, resellerID, sale
 			return fmt.Errorf("finding reseller account: %w", err)
 		}
 
-		newBalance := account.Balance + commission.Amount
+		newBalance := account.Balance + commission.Amount.Amount
 		if err := s.commissions.UpdateResellerBalance(txCtx, resellerID, newBalance); err != nil {
 			return fmt.Errorf("updating reseller balance: %w", err)
 		}

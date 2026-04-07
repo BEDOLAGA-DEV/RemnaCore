@@ -68,6 +68,7 @@ func TestStartCheckout_Success(t *testing.T) {
 
 	plan := samplePlan()
 	plans.On("GetByID", mock.Anything, "plan-premium").Return(plan, nil)
+	subs.On("GetActiveByUserID", mock.Anything, "user-1").Return([]*aggregate.Subscription{}, nil)
 	subs.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Subscription")).Return(nil)
 	invoices.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Invoice")).Return(nil)
 	billingPub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
@@ -188,6 +189,7 @@ func TestStartCheckout_RateLimiterError_FailsOpen(t *testing.T) {
 
 	plan := samplePlan()
 	plans.On("GetByID", mock.Anything, "plan-premium").Return(plan, nil)
+	subs.On("GetActiveByUserID", mock.Anything, "user-1").Return([]*aggregate.Subscription{}, nil)
 	subs.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Subscription")).Return(nil)
 	invoices.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Invoice")).Return(nil)
 	billingPub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
@@ -234,6 +236,7 @@ func TestStartCheckout_PricingModifier_DiscountApplied(t *testing.T) {
 
 	plan := samplePlan()
 	plans.On("GetByID", mock.Anything, "plan-premium").Return(plan, nil)
+	subs.On("GetActiveByUserID", mock.Anything, "user-1").Return([]*aggregate.Subscription{}, nil)
 	subs.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Subscription")).Return(nil)
 	invoices.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Invoice")).Return(nil)
 	billingPub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
@@ -286,6 +289,7 @@ func TestStartCheckout_PricingModifier_Error_OriginalPrice(t *testing.T) {
 
 	plan := samplePlan()
 	plans.On("GetByID", mock.Anything, "plan-premium").Return(plan, nil)
+	subs.On("GetActiveByUserID", mock.Anything, "user-1").Return([]*aggregate.Subscription{}, nil)
 	subs.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Subscription")).Return(nil)
 	invoices.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Invoice")).Return(nil)
 	billingPub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
@@ -331,6 +335,7 @@ func TestStartCheckout_PricingModifier_NilResult_OriginalPrice(t *testing.T) {
 
 	plan := samplePlan()
 	plans.On("GetByID", mock.Anything, "plan-premium").Return(plan, nil)
+	subs.On("GetActiveByUserID", mock.Anything, "user-1").Return([]*aggregate.Subscription{}, nil)
 	subs.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Subscription")).Return(nil)
 	invoices.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Invoice")).Return(nil)
 	billingPub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)

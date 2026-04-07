@@ -212,14 +212,14 @@ func TestBillingFlow(t *testing.T) {
 		token := billingAccessToken(t, h.jwt)
 
 		plan := &aggregate.Plan{
-			ID:               "plan-1",
-			Name:             "Basic",
-			BasePrice:        vo.Money{Amount: 999, Currency: "USD"},
-			Interval:         vo.IntervalMonth,
-			IsActive:         true,
-			AllowedCountries: []string{"US"},
+			ID:        "plan-1",
+			Name:      "Basic",
+			BasePrice: vo.Money{Amount: 999, Currency: "USD"},
+			Interval:  vo.IntervalMonth,
+			IsActive:  true,
 		}
 		h.plans.On("GetByID", mock.Anything, "plan-1").Return(plan, nil)
+		h.subs.On("GetActiveByUserID", mock.Anything, mock.Anything).Return([]*aggregate.Subscription{}, nil)
 		h.subs.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Subscription")).Return(nil)
 		h.invoices.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Invoice")).Return(nil)
 		h.pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)

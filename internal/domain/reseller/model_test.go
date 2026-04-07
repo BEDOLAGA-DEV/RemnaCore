@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/money"
 )
 
 func TestNewTenant(t *testing.T) {
@@ -93,8 +95,8 @@ func TestNewCommission(t *testing.T) {
 	assert.NotEmpty(t, commission.ID)
 	assert.Equal(t, "reseller-1", commission.ResellerID)
 	assert.Equal(t, "sale-abc", commission.SaleID)
-	assert.Equal(t, int64(1500), commission.Amount) // 15% of 10000
-	assert.Equal(t, "USD", commission.Currency)
+	assert.Equal(t, int64(1500), commission.Amount.Amount) // 15% of 10000
+	assert.True(t, commission.Amount.IsPositive())
 	assert.Equal(t, CommissionPending, commission.Status)
 	assert.Nil(t, commission.PaidAt)
 	assert.False(t, commission.CreatedAt.IsZero())
@@ -103,20 +105,21 @@ func TestNewCommission(t *testing.T) {
 func TestNewCommission_ZeroRate(t *testing.T) {
 	commission, err := NewCommission("reseller-1", "sale-abc", 10000, 0, "USD", time.Now())
 	require.NoError(t, err)
-	assert.Equal(t, int64(0), commission.Amount)
+	assert.Equal(t, int64(0), commission.Amount.Amount)
+	assert.True(t, commission.Amount.IsZero())
 }
 
 func TestNewCommission_FullRate(t *testing.T) {
 	commission, err := NewCommission("reseller-1", "sale-abc", 10000, 100, "USD", time.Now())
 	require.NoError(t, err)
-	assert.Equal(t, int64(10000), commission.Amount)
+	assert.Equal(t, int64(10000), commission.Amount.Amount)
 }
 
 func TestNewCommission_RoundsDown(t *testing.T) {
 	// 33% of 100 cents = 33 cents (integer division rounds down).
 	commission, err := NewCommission("reseller-1", "sale-abc", 100, 33, "USD", time.Now())
 	require.NoError(t, err)
-	assert.Equal(t, int64(33), commission.Amount)
+	assert.Equal(t, int64(33), commission.Amount.Amount)
 }
 
 func TestNewCommission_Overflow(t *testing.T) {
@@ -150,7 +153,7 @@ func TestNewCommission_NoOverflowForSafeValues(t *testing.T) {
 	// A large but safe sale amount that fits in int64 after multiplication.
 	commission, err := NewCommission("reseller-1", "sale-abc", 1_000_000_000_00, 50, "USD", time.Now())
 	require.NoError(t, err)
-	assert.Equal(t, int64(500_000_000_00), commission.Amount)
+	assert.Equal(t, int64(500_000_000_00), commission.Amount.Amount)
 }
 
 func TestNewCommission_RecordsCreationEvent(t *testing.T) {
@@ -165,7 +168,7 @@ func TestNewCommission_RecordsCreationEvent(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, commission.ID, payload.CommissionID)
 	assert.Equal(t, "reseller-1", payload.ResellerID)
-	assert.Equal(t, int64(1500), payload.Amount)
+	assert.Equal(t, int64(1500), payload.Amount) // event payload keeps raw int64 for serialization
 }
 
 func TestCommission_MarkPaid(t *testing.T) {
@@ -201,8 +204,7 @@ func TestCommission_MarkPaid(t *testing.T) {
 				ID:         "comm-1",
 				ResellerID: "reseller-1",
 				SaleID:     "sale-1",
-				Amount:     1500,
-				Currency:   "USD",
+				Amount:     money.NewMoney(1500, money.Currency("USD")),
 				Status:     tt.status,
 				CreatedAt:  time.Now(),
 			}

@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/money"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/resellertest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
@@ -134,7 +136,7 @@ func TestRecordCommission_Success(t *testing.T) {
 
 	assert.NotEmpty(t, commission.ID)
 	assert.Equal(t, "reseller-1", commission.ResellerID)
-	assert.Equal(t, int64(1500), commission.Amount) // 15% of 10000
+	assert.Equal(t, int64(1500), commission.Amount.Amount) // 15% of 10000
 	assert.Equal(t, reseller.CommissionPending, commission.Status)
 
 	commissionRepo.AssertExpectations(t)
@@ -222,8 +224,8 @@ func TestGetPendingCommissions_Success(t *testing.T) {
 	ctx := context.Background()
 
 	expected := []*reseller.Commission{
-		{ID: "c1", ResellerID: "reseller-1", Amount: 1000, Status: reseller.CommissionPending},
-		{ID: "c2", ResellerID: "reseller-1", Amount: 2000, Status: reseller.CommissionPending},
+		{ID: "c1", ResellerID: "reseller-1", Amount: money.NewMoney(1000, money.CurrencyUSD), Status: reseller.CommissionPending},
+		{ID: "c2", ResellerID: "reseller-1", Amount: money.NewMoney(2000, money.CurrencyUSD), Status: reseller.CommissionPending},
 	}
 
 	commissionRepo.On("GetPendingCommissions", ctx, "reseller-1").Return(expected, nil)

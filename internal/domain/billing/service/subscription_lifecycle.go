@@ -217,7 +217,12 @@ func (s *BillingService) UpgradeSubscription(ctx context.Context, subID, newPlan
 
 		oldPlanID := sub.PlanID
 		newPeriod := vo.NewBillingPeriod(now, newPlan.Interval)
-		if err := sub.Upgrade(newPlanID, newPeriod, now); err != nil {
+		upgradeSpec := aggregate.UpgradeSpec{
+			FromPlanTier: currentPlan.Tier,
+			ToPlanTier:   newPlan.Tier,
+			ToPlanActive: newPlan.IsActive,
+		}
+		if err := sub.Upgrade(newPlanID, newPeriod, upgradeSpec, now); err != nil {
 			return fmt.Errorf("upgrade subscription: %w", err)
 		}
 

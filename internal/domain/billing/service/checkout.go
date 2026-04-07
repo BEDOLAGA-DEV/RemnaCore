@@ -101,12 +101,13 @@ func NewCheckoutService(
 
 // CheckoutRequest holds the parameters for starting a checkout flow.
 type CheckoutRequest struct {
-	UserID    string
-	UserEmail string
-	PlanID    string
-	AddonIDs  []string
-	ReturnURL string
-	CancelURL string
+	UserID      string
+	UserEmail   string
+	PlanID      string
+	AddonIDs    []string
+	ReturnURL   string
+	CancelURL   string
+	UserCountry string // optional; empty = all countries allowed
 }
 
 // CheckoutResult holds the output of a started checkout flow.
@@ -165,9 +166,10 @@ func (cs *CheckoutService) StartCheckout(ctx context.Context, req CheckoutReques
 
 	// 1. Create subscription + invoice via billing service.
 	sub, inv, err := cs.billing.CreateSubscription(ctx, CreateSubscriptionCmd{
-		UserID:   req.UserID,
-		PlanID:   req.PlanID,
-		AddonIDs: addonIDs,
+		UserID:      req.UserID,
+		PlanID:      req.PlanID,
+		AddonIDs:    addonIDs,
+		UserCountry: req.UserCountry,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create subscription: %w", err)
