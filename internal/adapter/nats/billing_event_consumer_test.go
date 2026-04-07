@@ -632,6 +632,14 @@ func newTestConsumerMetrics() *observability.Metrics {
 			Name: "test_idempotency_hit_total",
 			Help: "test metric",
 		}, []string{observability.LabelEventType}),
+		EntityLocksActive: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "test_entity_locks_active",
+			Help: "test metric",
+		}),
+		EntityLocksEvicted: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "test_entity_locks_evicted_total",
+			Help: "test metric",
+		}),
 	}
 }
 
@@ -1069,4 +1077,139 @@ func TestHandleChargeCompleted_CompleteCheckoutError(t *testing.T) {
 	released := idem.releasedKeys()
 	require.Len(t, released, 1,
 		"idempotency key must be released after CompleteCheckout failure for retry")
+}
+
+func TestEvictStaleLocks_RemovesExpiredAndKeepsActive(t *testing.T) {
+	// Verify that the eviction logic correctly distinguishes stale locks from
+	// fresh ones. Because evictStaleLocks uses a real time.Ticker (which won't
+	// fire in a unit test), we test the eviction body by seeding entity locks
+	// with known timestamps and running getEntityLock + manual cutoff logic
+	// that mirrors the ticker case.
+	metrics := newTestConsumerMetrics()
+	baseTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	mockClock := clock.NewMock(baseTime)
+
+	consumer := &BillingEventConsumer{
+		logger:  discardLogger(),
+		clock:   mockClock,
+		metrics: metrics,
+	}
+
+	// Seed entity locks: one fresh (at baseTime), two stale (older than TTL).
+	staleLock1 := &entityLock{}
+	staleLock1.lastUsed.Store(baseTime.Add(-entityLockTTL - time.Second).UnixNano())
+	consumer.entityLocks.Store("sub-stale-1", staleLock1)
+
+	staleLock2 := &entityLock{}
+	staleLock2.lastUsed.Store(baseTime.Add(-entityLockTTL - 5*time.Minute).UnixNano())
+	consumer.entityLocks.Store("sub-stale-2", staleLock2)
+
+	// Advance clock past the TTL cutoff.
+	mockClock.Advance(entityLockTTL + time.Second)
+
+	// Fresh lock: lastUsed = now (after advance), so it survives eviction.
+	freshLock := &entityLock{}
+	freshLock.lastUsed.Store(mockClock.Now().UnixNano())
+	consumer.entityLocks.Store("sub-fresh", freshLock)
+
+	// Run the eviction logic inline (mirrors the ticker case body).
+	cutoff := mockClock.Now().Add(-entityLockTTL).UnixNano()
+	var evicted int
+	consumer.entityLocks.Range(func(key, value any) bool {
+		lock := value.(*entityLock)
+		if lock.lastUsed.Load() < cutoff {
+			consumer.entityLocks.Delete(key)
+			evicted++
+		}
+		return true
+	})
+	metrics.EntityLocksEvicted.Add(float64(evicted))
+
+	var remaining int
+	consumer.entityLocks.Range(func(_, _ any) bool {
+		remaining++
+		return true
+	})
+	metrics.EntityLocksActive.Set(float64(remaining))
+
+	assert.Equal(t, 2, evicted, "two stale locks must be evicted")
+	assert.Equal(t, 1, remaining, "only the fresh lock must survive eviction")
+
+	_, freshExists := consumer.entityLocks.Load("sub-fresh")
+	assert.True(t, freshExists, "fresh lock must not be evicted")
+	_, stale1Exists := consumer.entityLocks.Load("sub-stale-1")
+	assert.False(t, stale1Exists, "stale lock 1 must be evicted")
+	_, stale2Exists := consumer.entityLocks.Load("sub-stale-2")
+	assert.False(t, stale2Exists, "stale lock 2 must be evicted")
+
+	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.EntityLocksActive),
+		"EntityLocksActive gauge must reflect remaining locks after eviction")
+	assert.Equal(t, float64(2), testutil.ToFloat64(metrics.EntityLocksEvicted),
+		"EntityLocksEvicted counter must equal number of evicted locks")
+}
+
+func TestEvictStaleLocks_NoEvictionsWhenAllFresh(t *testing.T) {
+	metrics := newTestConsumerMetrics()
+	baseTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	mockClock := clock.NewMock(baseTime)
+
+	consumer := &BillingEventConsumer{
+		logger:  discardLogger(),
+		clock:   mockClock,
+		metrics: metrics,
+	}
+
+	// Seed two fresh locks.
+	for _, id := range []string{"sub-a", "sub-b"} {
+		lock := &entityLock{}
+		lock.lastUsed.Store(baseTime.UnixNano())
+		consumer.entityLocks.Store(id, lock)
+	}
+
+	// Advance clock by less than TTL — nothing should be evicted.
+	mockClock.Advance(entityLockTTL / 2)
+
+	cutoff := mockClock.Now().Add(-entityLockTTL).UnixNano()
+	var evicted int
+	consumer.entityLocks.Range(func(key, value any) bool {
+		lock := value.(*entityLock)
+		if lock.lastUsed.Load() < cutoff {
+			consumer.entityLocks.Delete(key)
+			evicted++
+		}
+		return true
+	})
+	metrics.EntityLocksEvicted.Add(float64(evicted))
+
+	var remaining int
+	consumer.entityLocks.Range(func(_, _ any) bool {
+		remaining++
+		return true
+	})
+
+	assert.Equal(t, 0, evicted, "no locks should be evicted when all are within TTL")
+	assert.Equal(t, 2, remaining, "all locks must survive when within TTL")
+}
+
+func TestEvictStaleLocks_ExitsOnContextCancel(t *testing.T) {
+	consumer := &BillingEventConsumer{
+		logger: discardLogger(),
+		clock:  clock.NewReal(),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	done := make(chan struct{})
+	go func() {
+		consumer.evictStaleLocks(ctx)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// success — evictStaleLocks exited promptly on context cancellation
+	case <-time.After(1 * time.Second):
+		t.Fatal("evictStaleLocks must exit when context is cancelled")
+	}
 }

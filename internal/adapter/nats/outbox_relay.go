@@ -337,6 +337,15 @@ func (r *OutboxRelay) relay(ctx context.Context, logger *slog.Logger, workerLabe
 		publishedIDs := make([]string, 0, len(events))
 		publishedTimes := make([]time.Time, 0, len(events))
 
+		// Track events that failed to publish so we can increment their
+		// relay_attempts within this transaction. This is safe because the
+		// row locks (FOR UPDATE SKIP LOCKED) are held until commit.
+		type failedEvent struct {
+			event postgres.OutboxEvent
+			err   error
+		}
+		var failedEvents []failedEvent
+
 		for _, event := range events {
 			// Build the Watermill message with outbox metadata headers.
 			// The event ID is used as the Watermill message UUID so
@@ -359,19 +368,46 @@ func (r *OutboxRelay) relay(ctx context.Context, logger *slog.Logger, workerLabe
 				return struct{}{}, r.publisher.PublishRaw(event.EventType, msg)
 			})
 			if cbErr != nil {
-				logger.Warn("outbox relay: failed to publish event, will retry",
+				logger.Warn("outbox relay: failed to publish event",
 					slog.String("event_id", event.ID),
 					slog.String("event_type", event.EventType),
+					slog.Int("attempt", event.RelayAttempts+1),
 					slog.Any("error", cbErr),
 				)
 				if r.metrics != nil {
 					r.metrics.OutboxRelayPublishErrors.Inc()
 				}
-				// Skip this event — row lock released on commit, retry next tick.
+				failedEvents = append(failedEvents, failedEvent{event: event, err: cbErr})
 				continue
 			}
 			publishedIDs = append(publishedIDs, event.ID)
 			publishedTimes = append(publishedTimes, event.CreatedAt)
+		}
+
+		// Increment relay_attempts for each failed event. When the new
+		// count reaches MaxRelayAttempts, the SQL sets relay_failed=true
+		// and the event is permanently excluded from future relay polls.
+		for _, fe := range failedEvents {
+			if incErr := r.outbox.IncrementRelayAttempts(txCtx, fe.event.ID, fe.event.CreatedAt); incErr != nil {
+				logger.Error("outbox relay: failed to increment relay attempts",
+					slog.String("event_id", fe.event.ID),
+					slog.Any("error", incErr),
+				)
+				continue
+			}
+
+			newAttempts := fe.event.RelayAttempts + 1
+			if newAttempts >= postgres.MaxRelayAttempts {
+				logger.Error("outbox relay: event dead-lettered after max attempts",
+					slog.String("event_id", fe.event.ID),
+					slog.String("event_type", fe.event.EventType),
+					slog.Int("attempts", newAttempts),
+					slog.Any("last_error", fe.err),
+				)
+				if r.metrics != nil {
+					r.metrics.OutboxRelayDeadEvents.Inc()
+				}
+			}
 		}
 
 		if len(publishedIDs) == 0 {

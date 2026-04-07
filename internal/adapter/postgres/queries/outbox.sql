@@ -11,12 +11,25 @@ INSERT INTO public.outbox (id, event_type, payload)
 VALUES ($1, $2, $3);
 
 -- name: GetUnpublishedOutboxEvents :many
-SELECT id, event_type, payload, created_at, sequence_number
+-- Fetches unpublished events that have not been marked as permanently failed.
+-- The relay_failed filter ensures dead-lettered events are excluded from polling.
+SELECT id, event_type, payload, created_at, sequence_number, relay_attempts
 FROM public.outbox
-WHERE published = false
+WHERE published = false AND relay_failed = false
 ORDER BY sequence_number
 LIMIT $1
 FOR UPDATE SKIP LOCKED;
+
+-- name: IncrementRelayAttempts :exec
+-- Atomically increments the relay_attempts counter for a failed event. When
+-- the new count reaches $2 (MaxRelayAttempts), relay_failed is set to true,
+-- permanently excluding the event from relay polling. The event remains in the
+-- table for manual inspection.
+-- created_at is required for partition pruning on the range-partitioned outbox.
+UPDATE public.outbox
+SET relay_attempts = relay_attempts + 1,
+    relay_failed = CASE WHEN relay_attempts + 1 >= $2 THEN true ELSE false END
+WHERE id = $1 AND created_at = $3;
 
 -- name: MarkOutboxEventPublished :exec
 -- Includes created_at for partition pruning on the range-partitioned outbox.

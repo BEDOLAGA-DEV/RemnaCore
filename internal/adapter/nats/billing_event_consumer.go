@@ -208,8 +208,9 @@ func (c *BillingEventConsumer) getEntityLock(entityID string) *entityLock {
 
 // evictStaleLocks periodically removes entity locks that have not been used
 // within entityLockTTL. This prevents unbounded memory growth in long-running
-// processes. After each eviction pass, the EntityLocksActive gauge is updated
-// with the number of remaining locks.
+// processes. After each eviction pass, the EntityLocksEvicted counter is
+// incremented by the number of evicted locks and the EntityLocksActive gauge
+// is updated with the number of remaining locks.
 func (c *BillingEventConsumer) evictStaleLocks(ctx context.Context) {
 	ticker := time.NewTicker(entityLockTTL)
 	defer ticker.Stop()
@@ -220,10 +221,12 @@ func (c *BillingEventConsumer) evictStaleLocks(ctx context.Context) {
 			return
 		case <-ticker.C:
 			cutoff := c.clock.Now().Add(-entityLockTTL).UnixNano()
+			var evicted int
 			c.entityLocks.Range(func(key, value any) bool {
 				lock := value.(*entityLock)
 				if lock.lastUsed.Load() < cutoff {
 					c.entityLocks.Delete(key)
+					evicted++
 				}
 				return true
 			})
@@ -234,8 +237,16 @@ func (c *BillingEventConsumer) evictStaleLocks(ctx context.Context) {
 				return true
 			})
 			c.recordMetric(func(m *observability.Metrics) {
+				m.EntityLocksEvicted.Add(float64(evicted))
 				m.EntityLocksActive.Set(float64(remaining))
 			})
+
+			if evicted > 0 {
+				c.logger.Debug("evicted stale entity locks",
+					slog.Int("evicted", evicted),
+					slog.Int("remaining", remaining),
+				)
+			}
 		}
 	}
 }

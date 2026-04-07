@@ -24,9 +24,9 @@ func (q *Queries) DeleteOldPublishedOutboxEvents(ctx context.Context, publishedA
 }
 
 const getUnpublishedOutboxEvents = `-- name: GetUnpublishedOutboxEvents :many
-SELECT id, event_type, payload, created_at, sequence_number
+SELECT id, event_type, payload, created_at, sequence_number, relay_attempts
 FROM public.outbox
-WHERE published = false
+WHERE published = false AND relay_failed = false
 ORDER BY sequence_number
 LIMIT $1
 FOR UPDATE SKIP LOCKED
@@ -37,9 +37,12 @@ type GetUnpublishedOutboxEventsRow struct {
 	EventType      string             `json:"event_type"`
 	Payload        []byte             `json:"payload"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	SequenceNumber int64              `json:"sequence_number"`
+	SequenceNumber *int64             `json:"sequence_number"`
+	RelayAttempts  int32              `json:"relay_attempts"`
 }
 
+// Fetches unpublished events that have not been marked as permanently failed.
+// The relay_failed filter ensures dead-lettered events are excluded from polling.
 func (q *Queries) GetUnpublishedOutboxEvents(ctx context.Context, limit int32) ([]GetUnpublishedOutboxEventsRow, error) {
 	rows, err := q.db.Query(ctx, getUnpublishedOutboxEvents, limit)
 	if err != nil {
@@ -55,6 +58,7 @@ func (q *Queries) GetUnpublishedOutboxEvents(ctx context.Context, limit int32) (
 			&i.Payload,
 			&i.CreatedAt,
 			&i.SequenceNumber,
+			&i.RelayAttempts,
 		); err != nil {
 			return nil, err
 		}
@@ -64,6 +68,29 @@ func (q *Queries) GetUnpublishedOutboxEvents(ctx context.Context, limit int32) (
 		return nil, err
 	}
 	return items, nil
+}
+
+const incrementRelayAttempts = `-- name: IncrementRelayAttempts :exec
+UPDATE public.outbox
+SET relay_attempts = relay_attempts + 1,
+    relay_failed = CASE WHEN relay_attempts + 1 >= $2 THEN true ELSE false END
+WHERE id = $1 AND created_at = $3
+`
+
+type IncrementRelayAttemptsParams struct {
+	ID            pgtype.UUID        `json:"id"`
+	RelayAttempts int32              `json:"relay_attempts"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+// Atomically increments the relay_attempts counter for a failed event. When
+// the new count reaches $2 (MaxRelayAttempts), relay_failed is set to true,
+// permanently excluding the event from relay polling. The event remains in the
+// table for manual inspection.
+// created_at is required for partition pruning on the range-partitioned outbox.
+func (q *Queries) IncrementRelayAttempts(ctx context.Context, arg IncrementRelayAttemptsParams) error {
+	_, err := q.db.Exec(ctx, incrementRelayAttempts, arg.ID, arg.RelayAttempts, arg.CreatedAt)
+	return err
 }
 
 const insertOutboxEvent = `-- name: InsertOutboxEvent :exec

@@ -34,8 +34,10 @@ const (
 	MetricOutboxRelayBatchLatency  = "platform_outbox_relay_batch_duration_seconds"
 	MetricOutboxRelayPublishErrors = "platform_outbox_relay_publish_errors_total"
 	MetricOutboxRelayEmptyPolls    = "platform_outbox_relay_empty_polls_total"
+	MetricOutboxRelayDeadEvents    = "platform_outbox_relay_dead_events_total"
 
 	MetricEntityLocksActive      = "platform_consumer_entity_locks_active"
+	MetricEntityLocksEvicted     = "platform_consumer_entity_locks_evicted_total"
 	MetricOutboxUnpublishedCount = "platform_outbox_unpublished_count"
 
 	MetricHookDispatchDuration = "platform_hook_dispatch_duration_seconds"
@@ -72,8 +74,10 @@ const (
 	helpOutboxRelayBatchLatency  = "Duration of outbox relay batch processing in seconds."
 	helpOutboxRelayPublishErrors = "Total number of NATS publish errors in the outbox relay."
 	helpOutboxRelayEmptyPolls    = "Total number of outbox relay polls that returned zero events."
+	helpOutboxRelayDeadEvents    = "Total events that exceeded max relay attempts and were marked as relay_failed."
 
 	helpEntityLocksActive      = "Number of active per-entity serialisation locks."
+	helpEntityLocksEvicted     = "Total number of entity locks evicted due to TTL expiration."
 	helpOutboxUnpublishedCount = "Number of unpublished events in the outbox."
 
 	helpHookDispatchDuration = "Duration of sync hook dispatches by hook name."
@@ -160,6 +164,7 @@ type Metrics struct {
 	OutboxRelayBatchLatency  *prometheus.HistogramVec
 	OutboxRelayPublishErrors prometheus.Counter
 	OutboxRelayEmptyPolls    prometheus.Counter
+	OutboxRelayDeadEvents    prometheus.Counter
 
 	// DLQ metrics
 	DLQDepth prometheus.Gauge
@@ -170,6 +175,7 @@ type Metrics struct {
 	EventProcessingLag     *prometheus.HistogramVec
 	EntityLockWaitLatency  *prometheus.HistogramVec
 	EntityLocksActive      prometheus.Gauge
+	EntityLocksEvicted     prometheus.Counter
 	DLQPublishedTotal      prometheus.Counter
 	IdempotencyHitTotal    *prometheus.CounterVec
 
@@ -294,6 +300,11 @@ func NewMetrics() *Metrics {
 			Help: helpOutboxRelayEmptyPolls,
 		}),
 
+		OutboxRelayDeadEvents: promauto.NewCounter(prometheus.CounterOpts{
+			Name: MetricOutboxRelayDeadEvents,
+			Help: helpOutboxRelayDeadEvents,
+		}),
+
 		EventsProcessedTotal: promauto.NewCounterVec(prometheus.CounterOpts{
 			Name: MetricEventsProcessedTotal,
 			Help: helpEventsProcessedTotal,
@@ -330,6 +341,11 @@ func NewMetrics() *Metrics {
 		EntityLocksActive: promauto.NewGauge(prometheus.GaugeOpts{
 			Name: MetricEntityLocksActive,
 			Help: helpEntityLocksActive,
+		}),
+
+		EntityLocksEvicted: promauto.NewCounter(prometheus.CounterOpts{
+			Name: MetricEntityLocksEvicted,
+			Help: helpEntityLocksEvicted,
 		}),
 
 		OutboxUnpublishedCount: promauto.NewGauge(prometheus.GaugeOpts{

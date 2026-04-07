@@ -14,6 +14,12 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pgutil"
 )
 
+// MaxRelayAttempts is the maximum number of times the relay will attempt to
+// publish a single outbox event before marking it as permanently failed
+// (relay_failed=true). After this threshold, the event is excluded from relay
+// polling and must be inspected manually.
+const MaxRelayAttempts = 10
+
 // OutboxEvent represents a single event stored in the transactional outbox
 // table, awaiting relay to the message broker.
 type OutboxEvent struct {
@@ -22,6 +28,7 @@ type OutboxEvent struct {
 	Payload        []byte
 	CreatedAt      time.Time
 	SequenceNumber int64
+	RelayAttempts  int
 }
 
 // OutboxRepository provides access to the public.outbox table. It is used by
@@ -94,6 +101,22 @@ func (r *OutboxRepository) MarkPublished(ctx context.Context, id string, created
 	})
 	if err != nil {
 		return fmt.Errorf("mark outbox event published: %w", err)
+	}
+	return nil
+}
+
+// IncrementRelayAttempts atomically increments the relay_attempts counter for
+// a single event. When the new count reaches MaxRelayAttempts, the SQL
+// statement sets relay_failed=true, permanently excluding the event from
+// relay polling. Both id and createdAt are required for partition pruning.
+func (r *OutboxRepository) IncrementRelayAttempts(ctx context.Context, id string, createdAt time.Time) error {
+	err := r.queries(ctx).IncrementRelayAttempts(ctx, gen.IncrementRelayAttemptsParams{
+		ID:            pgutil.UUIDToPgtype(id),
+		RelayAttempts: int32(MaxRelayAttempts),
+		CreatedAt:     pgutil.TimeToPgtype(createdAt),
+	})
+	if err != nil {
+		return fmt.Errorf("increment relay attempts: %w", err)
 	}
 	return nil
 }
@@ -290,11 +313,12 @@ func (r *OutboxRepository) DetachAndDropPartition(ctx context.Context, partition
 	return nil
 }
 
-// countUnpublishedSQL returns the number of unpublished events across all
-// partitions. This is intentionally a simple count(*) without FOR UPDATE — it
-// is used by the OutboxRelay backlog gauge and does not need transactional
-// isolation.
-const countUnpublishedSQL = `SELECT count(*) FROM public.outbox WHERE published = false`
+// countUnpublishedSQL returns the number of active unpublished events across
+// all partitions. Events marked as relay_failed are excluded because they are
+// no longer being actively retried. This is intentionally a simple count(*)
+// without FOR UPDATE — it is used by the OutboxRelay backlog gauge and does
+// not need transactional isolation.
+const countUnpublishedSQL = `SELECT count(*) FROM public.outbox WHERE published = false AND relay_failed = false`
 
 // CountUnpublished returns the number of events in the outbox that have not
 // yet been published. Used for the outbox backlog Prometheus gauge.
@@ -309,11 +333,16 @@ func (r *OutboxRepository) CountUnpublished(ctx context.Context) (int64, error) 
 
 // rowToOutboxEvent converts a sqlc-generated row to the adapter-level OutboxEvent.
 func rowToOutboxEvent(row gen.GetUnpublishedOutboxEventsRow) OutboxEvent {
+	var seqNum int64
+	if row.SequenceNumber != nil {
+		seqNum = *row.SequenceNumber
+	}
 	return OutboxEvent{
 		ID:             pgutil.PgtypeToUUID(row.ID),
 		EventType:      row.EventType,
 		Payload:        row.Payload,
 		CreatedAt:      pgutil.PgtypeToTime(row.CreatedAt),
-		SequenceNumber: row.SequenceNumber,
+		SequenceNumber: seqNum,
+		RelayAttempts:  int(row.RelayAttempts),
 	}
 }
