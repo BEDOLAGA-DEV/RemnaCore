@@ -108,6 +108,33 @@ func (q *Queries) GetPaymentRecordByExternalID(ctx context.Context, arg GetPayme
 	return i, err
 }
 
+const getPaymentRecordByExternalIDForUpdate = `-- name: GetPaymentRecordByExternalIDForUpdate :one
+SELECT id, invoice_id, provider, external_id, amount, currency, status, created_at, updated_at
+FROM payment.payment_records WHERE provider = $1 AND external_id = $2 FOR UPDATE
+`
+
+type GetPaymentRecordByExternalIDForUpdateParams struct {
+	Provider   string `json:"provider"`
+	ExternalID string `json:"external_id"`
+}
+
+func (q *Queries) GetPaymentRecordByExternalIDForUpdate(ctx context.Context, arg GetPaymentRecordByExternalIDForUpdateParams) (PaymentPaymentRecord, error) {
+	row := q.db.QueryRow(ctx, getPaymentRecordByExternalIDForUpdate, arg.Provider, arg.ExternalID)
+	var i PaymentPaymentRecord
+	err := row.Scan(
+		&i.ID,
+		&i.InvoiceID,
+		&i.Provider,
+		&i.ExternalID,
+		&i.Amount,
+		&i.Currency,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getPaymentRecordByID = `-- name: GetPaymentRecordByID :one
 SELECT id, invoice_id, provider, external_id, amount, currency, status, created_at, updated_at
 FROM payment.payment_records WHERE id = $1
@@ -115,6 +142,28 @@ FROM payment.payment_records WHERE id = $1
 
 func (q *Queries) GetPaymentRecordByID(ctx context.Context, id pgtype.UUID) (PaymentPaymentRecord, error) {
 	row := q.db.QueryRow(ctx, getPaymentRecordByID, id)
+	var i PaymentPaymentRecord
+	err := row.Scan(
+		&i.ID,
+		&i.InvoiceID,
+		&i.Provider,
+		&i.ExternalID,
+		&i.Amount,
+		&i.Currency,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getPaymentRecordByIDForUpdate = `-- name: GetPaymentRecordByIDForUpdate :one
+SELECT id, invoice_id, provider, external_id, amount, currency, status, created_at, updated_at
+FROM payment.payment_records WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) GetPaymentRecordByIDForUpdate(ctx context.Context, id pgtype.UUID) (PaymentPaymentRecord, error) {
+	row := q.db.QueryRow(ctx, getPaymentRecordByIDForUpdate, id)
 	var i PaymentPaymentRecord
 	err := row.Scan(
 		&i.ID,

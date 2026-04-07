@@ -26,7 +26,7 @@ func TestDLQConstants(t *testing.T) {
 	})
 }
 
-func TestExtractString(t *testing.T) {
+func TestExtractStringFromData(t *testing.T) {
 	tests := []struct {
 		name     string
 		data     any
@@ -67,7 +67,7 @@ func TestExtractString(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := extractString(tt.data, tt.key)
+			result := extractStringFromData(tt.data, tt.key)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -81,11 +81,11 @@ func TestNewBillingEventConsumer_WithPublisher(t *testing.T) {
 
 func TestDLQPayload_EntityIDAndEventTypeSerialization(t *testing.T) {
 	tests := []struct {
-		name      string
-		payload   DLQPayload
-		wantID    string
-		wantType  string
-		wantOmit  bool // whether entity_id/event_type should be omitted
+		name     string
+		payload  DLQPayload
+		wantID   string
+		wantType string
+		wantOmit bool // whether entity_id/event_type should be omitted
 	}{
 		{
 			name: "enriched payload includes entity_id and event_type",

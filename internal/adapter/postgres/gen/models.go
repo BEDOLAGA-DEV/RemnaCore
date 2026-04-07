@@ -26,20 +26,19 @@ type BillingFamilyMember struct {
 }
 
 type BillingInvoice struct {
-	ID                  pgtype.UUID                      `json:"id"`
-	SubscriptionID      pgtype.UUID                      `json:"subscription_id"`
-	UserID              pgtype.UUID                      `json:"user_id"`
-	SubtotalAmount      int64                            `json:"subtotal_amount"`
-	TotalDiscountAmount int64                            `json:"total_discount_amount"`
-	TotalAmount         int64                            `json:"total_amount"`
-	Currency            string                           `json:"currency"`
-	PricingReason       string                           `json:"pricing_reason"`
-	Discounts           []byte                           `json:"discounts"`
-	Status              string                           `json:"status"`
-	PaidAt              pgtype.Timestamptz               `json:"paid_at"`
-	CreatedAt           pgtype.Timestamptz               `json:"created_at"`
-	UpdatedAt           pgtype.Timestamptz               `json:"updated_at"`
-	InvoicePeriod       pgtype.Range[pgtype.Timestamptz] `json:"invoice_period"`
+	ID                  pgtype.UUID        `json:"id"`
+	SubscriptionID      pgtype.UUID        `json:"subscription_id"`
+	UserID              pgtype.UUID        `json:"user_id"`
+	SubtotalAmount      int64              `json:"subtotal_amount"`
+	TotalDiscountAmount int64              `json:"total_discount_amount"`
+	TotalAmount         int64              `json:"total_amount"`
+	Currency            string             `json:"currency"`
+	Status              string             `json:"status"`
+	PaidAt              pgtype.Timestamptz `json:"paid_at"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	PricingReason       string             `json:"pricing_reason"`
+	Discounts           []byte             `json:"discounts"`
 }
 
 type BillingInvoiceLineItem struct {
@@ -86,21 +85,20 @@ type BillingPlanAddon struct {
 }
 
 type BillingSubscription struct {
-	ID             pgtype.UUID                      `json:"id"`
-	UserID         pgtype.UUID                      `json:"user_id"`
-	PlanID         pgtype.UUID                      `json:"plan_id"`
-	Status         string                           `json:"status"`
-	PeriodStart    pgtype.Timestamptz               `json:"period_start"`
-	PeriodEnd      pgtype.Timestamptz               `json:"period_end"`
-	PeriodInterval string                           `json:"period_interval"`
-	AddonIds       []pgtype.UUID                    `json:"addon_ids"`
-	AssignedTo     *string                          `json:"assigned_to"`
-	PendingPlanID  pgtype.UUID                      `json:"pending_plan_id"`
-	CancelledAt    pgtype.Timestamptz               `json:"cancelled_at"`
-	PausedAt       pgtype.Timestamptz               `json:"paused_at"`
-	CreatedAt      pgtype.Timestamptz               `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz               `json:"updated_at"`
-	BillingPeriod  pgtype.Range[pgtype.Timestamptz] `json:"billing_period"`
+	ID             pgtype.UUID        `json:"id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	PlanID         pgtype.UUID        `json:"plan_id"`
+	Status         string             `json:"status"`
+	PeriodStart    pgtype.Timestamptz `json:"period_start"`
+	PeriodEnd      pgtype.Timestamptz `json:"period_end"`
+	PeriodInterval string             `json:"period_interval"`
+	AddonIds       []pgtype.UUID      `json:"addon_ids"`
+	AssignedTo     *string            `json:"assigned_to"`
+	CancelledAt    pgtype.Timestamptz `json:"cancelled_at"`
+	PausedAt       pgtype.Timestamptz `json:"paused_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	PendingPlanID  pgtype.UUID        `json:"pending_plan_id"`
 }
 
 type IdentityEmailVerification struct {
@@ -170,10 +168,10 @@ type MultisubRemnawaveBinding struct {
 	TrafficLimitBytes  int64              `json:"traffic_limit_bytes"`
 	AllowedNodes       []string           `json:"allowed_nodes"`
 	InboundTags        []string           `json:"inbound_tags"`
-	FailReason         string             `json:"fail_reason"`
 	SyncedAt           pgtype.Timestamptz `json:"synced_at"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	FailReason         string             `json:"fail_reason"`
 }
 
 type MultisubSagaInstance struct {
@@ -196,107 +194,12 @@ type Outbox struct {
 	Published      bool               `json:"published"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	PublishedAt    pgtype.Timestamptz `json:"published_at"`
-	SequenceNumber int64              `json:"sequence_number"`
+	SequenceNumber *int64             `json:"sequence_number"`
 	Version        int32              `json:"version"`
-}
-
-type Outbox2026Q1 struct {
-	ID             pgtype.UUID        `json:"id"`
-	EventType      string             `json:"event_type"`
-	Payload        []byte             `json:"payload"`
-	Published      bool               `json:"published"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	PublishedAt    pgtype.Timestamptz `json:"published_at"`
-	SequenceNumber int64              `json:"sequence_number"`
-	Version        int32              `json:"version"`
-}
-
-type Outbox2026Q2 struct {
-	ID             pgtype.UUID        `json:"id"`
-	EventType      string             `json:"event_type"`
-	Payload        []byte             `json:"payload"`
-	Published      bool               `json:"published"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	PublishedAt    pgtype.Timestamptz `json:"published_at"`
-	SequenceNumber int64              `json:"sequence_number"`
-	Version        int32              `json:"version"`
-}
-
-type Outbox2026Q3 struct {
-	ID             pgtype.UUID        `json:"id"`
-	EventType      string             `json:"event_type"`
-	Payload        []byte             `json:"payload"`
-	Published      bool               `json:"published"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	PublishedAt    pgtype.Timestamptz `json:"published_at"`
-	SequenceNumber int64              `json:"sequence_number"`
-	Version        int32              `json:"version"`
-}
-
-type Outbox2026Q4 struct {
-	ID             pgtype.UUID        `json:"id"`
-	EventType      string             `json:"event_type"`
-	Payload        []byte             `json:"payload"`
-	Published      bool               `json:"published"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	PublishedAt    pgtype.Timestamptz `json:"published_at"`
-	SequenceNumber int64              `json:"sequence_number"`
-	Version        int32              `json:"version"`
-}
-
-type Outbox2027Q1 struct {
-	ID             pgtype.UUID        `json:"id"`
-	EventType      string             `json:"event_type"`
-	Payload        []byte             `json:"payload"`
-	Published      bool               `json:"published"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	PublishedAt    pgtype.Timestamptz `json:"published_at"`
-	SequenceNumber int64              `json:"sequence_number"`
-	Version        int32              `json:"version"`
-}
-
-type Outbox2027Q2 struct {
-	ID             pgtype.UUID        `json:"id"`
-	EventType      string             `json:"event_type"`
-	Payload        []byte             `json:"payload"`
-	Published      bool               `json:"published"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	PublishedAt    pgtype.Timestamptz `json:"published_at"`
-	SequenceNumber int64              `json:"sequence_number"`
-	Version        int32              `json:"version"`
-}
-
-type Outbox2027Q3 struct {
-	ID             pgtype.UUID        `json:"id"`
-	EventType      string             `json:"event_type"`
-	Payload        []byte             `json:"payload"`
-	Published      bool               `json:"published"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	PublishedAt    pgtype.Timestamptz `json:"published_at"`
-	SequenceNumber int64              `json:"sequence_number"`
-	Version        int32              `json:"version"`
-}
-
-type Outbox2027Q4 struct {
-	ID             pgtype.UUID        `json:"id"`
-	EventType      string             `json:"event_type"`
-	Payload        []byte             `json:"payload"`
-	Published      bool               `json:"published"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	PublishedAt    pgtype.Timestamptz `json:"published_at"`
-	SequenceNumber int64              `json:"sequence_number"`
-	Version        int32              `json:"version"`
-}
-
-type OutboxDefault struct {
-	ID             pgtype.UUID        `json:"id"`
-	EventType      string             `json:"event_type"`
-	Payload        []byte             `json:"payload"`
-	Published      bool               `json:"published"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	PublishedAt    pgtype.Timestamptz `json:"published_at"`
-	SequenceNumber int64              `json:"sequence_number"`
-	Version        int32              `json:"version"`
+	RelayAttempts  int32              `json:"relay_attempts"`
+	RelayFailed    bool               `json:"relay_failed"`
+	EntityID       string             `json:"entity_id"`
+	TraceParent    string             `json:"trace_parent"`
 }
 
 type PaymentPaymentRecord struct {

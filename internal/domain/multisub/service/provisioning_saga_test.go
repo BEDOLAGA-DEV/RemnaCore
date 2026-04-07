@@ -55,7 +55,7 @@ func TestProvision_Success(t *testing.T) {
 	calc := service.NewBindingCalculator()
 	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, nil, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
 	plan := newPlanSnapshotForSaga()
 
 	// Expect 3 bindings: base + gaming + 1 family member
@@ -116,7 +116,7 @@ func TestProvision_RemnawaveFail(t *testing.T) {
 	calc := service.NewBindingCalculator()
 	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, nil, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
 	plan := newPlanSnapshotForSaga()
 
 	// First binding: base - succeeds fully
@@ -174,7 +174,7 @@ func TestProvision_CompensationOnDBFail(t *testing.T) {
 	calc := service.NewBindingCalculator()
 	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, nil, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
 	plan := newPlanSnapshotForSaga()
 
 	// Create binding in DB succeeds
@@ -221,7 +221,7 @@ func TestProvision_CompensationRetryOnDeleteFail(t *testing.T) {
 	calc := service.NewBindingCalculator()
 	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, nil, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
 	plan := newPlanSnapshotForSaga()
 
 	// Create binding in DB succeeds
@@ -270,7 +270,7 @@ func TestProvision_MaxBindingsExceeded(t *testing.T) {
 	calc := service.NewBindingCalculator()
 	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, nil, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
 
 	// Plan allows only 2 bindings, but base + gaming + 2 family = 4 specs
 	plan := multisub.PlanSnapshot{
@@ -313,7 +313,7 @@ func TestProvision_ZeroMaxBindings_NoLimit(t *testing.T) {
 	calc := service.NewBindingCalculator()
 	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, nil, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
 
 	// MaxRemnawaveBindings=0 means no limit enforced
 	plan := multisub.PlanSnapshot{
@@ -358,7 +358,7 @@ func TestProvision_SagaPersistence(t *testing.T) {
 	calc := service.NewBindingCalculator()
 	sagaRepo := new(multisubtest.MockSagaRepo)
 
-	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, nil, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
 
 	plan := multisub.PlanSnapshot{
 		ID:                   "plan-basic",
@@ -404,7 +404,7 @@ func TestProvision_PublishFail_RollbackAndCompensate(t *testing.T) {
 	calc := service.NewBindingCalculator()
 	sagaRepo := newPermissiveSagaRepo()
 
-	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
+	saga := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, nil, txmanagertest.NoopTxRunner{}, clock.NewReal(), slog.Default())
 	plan := multisub.PlanSnapshot{
 		ID:                   "plan-basic",
 		TrafficLimitBytes:    100_000_000_000,

@@ -135,6 +135,27 @@ func (q *Queries) GetCommissionByID(ctx context.Context, id pgtype.UUID) (Resell
 	return i, err
 }
 
+const getCommissionByIDForUpdate = `-- name: GetCommissionByIDForUpdate :one
+SELECT id, reseller_id, sale_id, amount, currency, status, created_at, paid_at
+FROM reseller.commissions WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) GetCommissionByIDForUpdate(ctx context.Context, id pgtype.UUID) (ResellerCommission, error) {
+	row := q.db.QueryRow(ctx, getCommissionByIDForUpdate, id)
+	var i ResellerCommission
+	err := row.Scan(
+		&i.ID,
+		&i.ResellerID,
+		&i.SaleID,
+		&i.Amount,
+		&i.Currency,
+		&i.Status,
+		&i.CreatedAt,
+		&i.PaidAt,
+	)
+	return i, err
+}
+
 const getPendingCommissions = `-- name: GetPendingCommissions :many
 SELECT id, reseller_id, sale_id, amount, currency, status, created_at, paid_at
 FROM reseller.commissions
@@ -178,6 +199,25 @@ FROM reseller.reseller_accounts WHERE id = $1
 
 func (q *Queries) GetResellerAccountByID(ctx context.Context, id pgtype.UUID) (ResellerResellerAccount, error) {
 	row := q.db.QueryRow(ctx, getResellerAccountByID, id)
+	var i ResellerResellerAccount
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.UserID,
+		&i.CommissionRate,
+		&i.Balance,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getResellerAccountByIDForUpdate = `-- name: GetResellerAccountByIDForUpdate :one
+SELECT id, tenant_id, user_id, commission_rate, balance, created_at
+FROM reseller.reseller_accounts WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) GetResellerAccountByIDForUpdate(ctx context.Context, id pgtype.UUID) (ResellerResellerAccount, error) {
+	row := q.db.QueryRow(ctx, getResellerAccountByIDForUpdate, id)
 	var i ResellerResellerAccount
 	err := row.Scan(
 		&i.ID,
@@ -265,6 +305,28 @@ FROM reseller.tenants WHERE id = $1
 
 func (q *Queries) GetTenantByID(ctx context.Context, id pgtype.UUID) (ResellerTenant, error) {
 	row := q.db.QueryRow(ctx, getTenantByID, id)
+	var i ResellerTenant
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Domain,
+		&i.OwnerUserID,
+		&i.BrandingConfig,
+		&i.ApiKeyHash,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getTenantByIDForUpdate = `-- name: GetTenantByIDForUpdate :one
+SELECT id, name, domain, owner_user_id, branding_config, api_key_hash, is_active, created_at, updated_at
+FROM reseller.tenants WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) GetTenantByIDForUpdate(ctx context.Context, id pgtype.UUID) (ResellerTenant, error) {
+	row := q.db.QueryRow(ctx, getTenantByIDForUpdate, id)
 	var i ResellerTenant
 	err := row.Scan(
 		&i.ID,

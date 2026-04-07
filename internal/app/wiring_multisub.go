@@ -13,6 +13,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	multisubservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/service"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/sdk"
@@ -79,12 +80,13 @@ func newMultiSubOrchestrator(
 	lifecycle *multisubservice.BindingLifecycleService,
 	bindings multisub.BindingRepository,
 	publisher domainevent.Publisher,
+	clk clock.Clock,
 	logger *slog.Logger,
 	dispatcher hookdispatch.Dispatcher,
 	cfg *config.Config,
 ) *multisubservice.MultiSubOrchestrator {
 	return multisubservice.NewMultiSubOrchestrator(
-		provisioning, deprovisioning, syncService, lifecycle, bindings, publisher, logger,
+		provisioning, deprovisioning, syncService, lifecycle, bindings, publisher, clk, logger,
 		multisubservice.WithDispatcher(dispatcher),
 		multisubservice.WithHooksEnabled(cfg.FeatureFlags.HooksSubscriptionEnabled),
 	)

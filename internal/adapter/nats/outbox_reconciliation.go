@@ -19,52 +19,89 @@ import (
 //	  for: 15m
 const ReconciliationCheckInterval = 5 * time.Minute
 
-// ReconciliationCheck compares the last published outbox sequence with
-// JetStream stream state. Logs a warning if there is a significant gap,
-// indicating potential missed events from the partial-commit edge case
-// (see OutboxRelay type doc for details).
+// domainStreams lists the JetStream streams that carry domain events. DLQ is
+// excluded because it contains reprocessed/failed messages that would skew
+// the reconciliation delta.
+var domainStreams = []string{
+	StreamIdentity,
+	StreamBilling,
+	StreamRemnawave,
+	StreamPayment,
+	StreamInfra,
+	StreamReseller,
+	StreamPlugins,
+}
+
+// ReconciliationCheck compares outbox and JetStream deltas over the last
+// reconciliation interval. Unlike the previous all-time-total comparison,
+// this delta-based approach avoids comparing monotonic outbox sequences
+// (which never reset) against JetStream message counts (which can shrink
+// due to retention/limits). Only a sustained positive gap warrants
+// investigation.
+//
+// On the first invocation both stored values are zero, so the full current
+// state becomes the "previous baseline" and the gap is reported as zero.
+// This prevents false alarms at startup.
 //
 // This is observability only — it does not correct or republish events.
 // The gap metric (platform_outbox_reconciliation_sequence_gap) can be
 // used to trigger manual investigation when it remains non-zero for an
 // extended period.
-//
-// The comparison is approximate by design: the outbox sequence is a
-// monotonic bigint, while JetStream message count includes all streams.
-// A transient gap is normal during active relaying; only a sustained gap
-// after the relay has drained the backlog warrants investigation.
 func (r *OutboxRelay) ReconciliationCheck(ctx context.Context) error {
-	lastPublished, err := r.outbox.GetLastPublishedSequence(ctx)
+	currentSeq, err := r.outbox.GetLastPublishedSequence(ctx)
 	if err != nil {
 		return fmt.Errorf("get last published sequence: %w", err)
 	}
 
-	// Sum message counts across all domain event streams. The outbox
-	// publishes to all of them, so the aggregate count is the closest
-	// comparable metric to the outbox sequence.
-	totalMessages, err := r.jetStreamMessageCount(ctx)
+	jsTotal, err := r.jetStreamLastSeqSum(ctx)
 	if err != nil {
-		return fmt.Errorf("get jetstream message count: %w", err)
+		return fmt.Errorf("get jetstream last sequence sum: %w", err)
 	}
 
-	gap := lastPublished - totalMessages
-	r.logger.Info("outbox reconciliation check",
-		slog.Int64("last_published_sequence", lastPublished),
-		slog.Int64("jetstream_total_messages", totalMessages),
-		slog.Int64("gap", gap),
-	)
+	// Compare deltas since last check.
+	prevSeq := r.lastReconciledSeq.Load()
+	prevJS := r.lastJSSeq.Load()
+
+	outboxDelta := currentSeq - prevSeq
+	jsDelta := jsTotal - prevJS
+
+	// Update stored baselines for the next check.
+	r.lastReconciledSeq.Store(currentSeq)
+	r.lastJSSeq.Store(jsTotal)
+
+	// Negative gap means JetStream received more than the outbox published
+	// (possible during catch-up or redelivery). Clamp to zero.
+	gap := outboxDelta - jsDelta
+	if gap < 0 {
+		gap = 0
+	}
 
 	if r.metrics != nil {
 		r.metrics.OutboxReconciliationSeqGap.Set(float64(gap))
 	}
 
+	if gap > 0 {
+		r.logger.Warn("outbox reconciliation: delivery gap detected",
+			slog.Int64("outbox_delta", outboxDelta),
+			slog.Int64("jetstream_delta", jsDelta),
+			slog.Int64("gap", gap),
+		)
+	} else {
+		r.logger.Info("outbox reconciliation check",
+			slog.Int64("outbox_delta", outboxDelta),
+			slog.Int64("jetstream_delta", jsDelta),
+		)
+	}
+
 	return nil
 }
 
-// jetStreamMessageCount returns the total number of messages across all
-// domain event JetStream streams (excluding DLQ). Returns 0 if the
-// JetStream context cannot be initialised.
-func (r *OutboxRelay) jetStreamMessageCount(ctx context.Context) (int64, error) {
+// jetStreamLastSeqSum returns the sum of LastSeq across all domain event
+// JetStream streams (excluding DLQ). LastSeq is a monotonically increasing
+// sequence number per stream, making it suitable for delta-based comparison
+// with the outbox sequence. Returns 0 if the JetStream context cannot be
+// initialised.
+func (r *OutboxRelay) jetStreamLastSeqSum(ctx context.Context) (int64, error) {
 	if r.natsConn == nil {
 		return 0, fmt.Errorf("nats connection is nil")
 	}
@@ -72,18 +109,6 @@ func (r *OutboxRelay) jetStreamMessageCount(ctx context.Context) (int64, error) 
 	js, err := jetstream.New(r.natsConn)
 	if err != nil {
 		return 0, fmt.Errorf("initialising jetstream context: %w", err)
-	}
-
-	// Domain event streams — DLQ is excluded because it contains
-	// reprocessed/failed messages that would skew the count.
-	domainStreams := []string{
-		StreamIdentity,
-		StreamBilling,
-		StreamRemnawave,
-		StreamPayment,
-		StreamInfra,
-		StreamReseller,
-		StreamPlugins,
 	}
 
 	var total int64
@@ -104,7 +129,7 @@ func (r *OutboxRelay) jetStreamMessageCount(ctx context.Context) (int64, error) 
 			)
 			continue
 		}
-		total += int64(info.State.Msgs)
+		total += int64(info.State.LastSeq)
 	}
 
 	return total, nil

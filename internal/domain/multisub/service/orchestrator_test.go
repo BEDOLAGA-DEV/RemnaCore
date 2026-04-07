@@ -38,7 +38,8 @@ func newOrchestrator(
 	sagaRepo := newPermissiveSagaRepo()
 	logger := testLogger()
 	txRunner := txmanagertest.NoopTxRunner{}
-	provisioning := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, txRunner, clk, logger)
+	// Pass nil SubscriptionProvider — provisioning guard is skipped when nil.
+	provisioning := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, nil, txRunner, clk, logger)
 	deprovisioning := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, txRunner, clk, logger)
 	syncSaga := service.NewSyncSaga(repo, gw, pub, sagaRepo, clk, logger)
 	syncService := service.NewSyncService(repo, syncSaga, pub, logger)
@@ -51,6 +52,7 @@ func newOrchestrator(
 		lifecycle,
 		repo,
 		pub,
+		clk,
 		testLogger(),
 	)
 }
@@ -168,6 +170,9 @@ func TestOnSubscriptionCancelled_Idempotent(t *testing.T) {
 	orch := newOrchestrator(repo, gw, pub)
 
 	repo.On("GetActiveBySubscriptionID", mock.Anything, "sub-1").
+		Return([]*aggregate.RemnawaveBinding{}, nil)
+	// No active bindings: orchestrator checks for pending bindings too.
+	repo.On("GetBySubscriptionID", mock.Anything, "sub-1").
 		Return([]*aggregate.RemnawaveBinding{}, nil)
 
 	err := orch.OnSubscriptionCancelled(ctx, "sub-1")

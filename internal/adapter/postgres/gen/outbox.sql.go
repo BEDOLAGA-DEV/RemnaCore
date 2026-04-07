@@ -48,7 +48,7 @@ func (q *Queries) GetLastPublishedOutboxSequence(ctx context.Context) (int64, er
 }
 
 const getUnpublishedForWorker = `-- name: GetUnpublishedForWorker :many
-SELECT id, event_type, payload, created_at, sequence_number, relay_attempts
+SELECT id, event_type, payload, created_at, sequence_number, relay_attempts, trace_parent
 FROM public.outbox
 WHERE published = false AND relay_failed = false
   AND abs(hashtext(entity_id)) % $2::int = $3::int
@@ -70,6 +70,7 @@ type GetUnpublishedForWorkerRow struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	SequenceNumber *int64             `json:"sequence_number"`
 	RelayAttempts  int32              `json:"relay_attempts"`
+	TraceParent    string             `json:"trace_parent"`
 }
 
 // Fetches unpublished events assigned to a specific relay worker via
@@ -93,6 +94,7 @@ func (q *Queries) GetUnpublishedForWorker(ctx context.Context, arg GetUnpublishe
 			&i.CreatedAt,
 			&i.SequenceNumber,
 			&i.RelayAttempts,
+			&i.TraceParent,
 		); err != nil {
 			return nil, err
 		}
@@ -105,7 +107,7 @@ func (q *Queries) GetUnpublishedForWorker(ctx context.Context, arg GetUnpublishe
 }
 
 const getUnpublishedOutboxEvents = `-- name: GetUnpublishedOutboxEvents :many
-SELECT id, event_type, payload, created_at, sequence_number, relay_attempts
+SELECT id, event_type, payload, created_at, sequence_number, relay_attempts, trace_parent
 FROM public.outbox
 WHERE published = false AND relay_failed = false
 ORDER BY sequence_number
@@ -120,10 +122,13 @@ type GetUnpublishedOutboxEventsRow struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	SequenceNumber *int64             `json:"sequence_number"`
 	RelayAttempts  int32              `json:"relay_attempts"`
+	TraceParent    string             `json:"trace_parent"`
 }
 
 // Fetches unpublished events that have not been marked as permanently failed.
 // The relay_failed filter ensures dead-lettered events are excluded from polling.
+// trace_parent is included so the relay can propagate it to NATS without
+// byte-scanning the JSON payload.
 func (q *Queries) GetUnpublishedOutboxEvents(ctx context.Context, limit int32) ([]GetUnpublishedOutboxEventsRow, error) {
 	rows, err := q.db.Query(ctx, getUnpublishedOutboxEvents, limit)
 	if err != nil {
@@ -140,6 +145,7 @@ func (q *Queries) GetUnpublishedOutboxEvents(ctx context.Context, limit int32) (
 			&i.CreatedAt,
 			&i.SequenceNumber,
 			&i.RelayAttempts,
+			&i.TraceParent,
 		); err != nil {
 			return nil, err
 		}
@@ -175,31 +181,38 @@ func (q *Queries) IncrementRelayAttempts(ctx context.Context, arg IncrementRelay
 }
 
 const insertOutboxEvent = `-- name: InsertOutboxEvent :exec
-INSERT INTO public.outbox (event_type, payload, entity_id)
-VALUES ($1, $2, $3)
+INSERT INTO public.outbox (event_type, payload, entity_id, trace_parent)
+VALUES ($1, $2, $3, $4)
 `
 
 type InsertOutboxEventParams struct {
-	EventType string `json:"event_type"`
-	Payload   []byte `json:"payload"`
-	EntityID  string `json:"entity_id"`
+	EventType   string `json:"event_type"`
+	Payload     []byte `json:"payload"`
+	EntityID    string `json:"entity_id"`
+	TraceParent string `json:"trace_parent"`
 }
 
 func (q *Queries) InsertOutboxEvent(ctx context.Context, arg InsertOutboxEventParams) error {
-	_, err := q.db.Exec(ctx, insertOutboxEvent, arg.EventType, arg.Payload, arg.EntityID)
+	_, err := q.db.Exec(ctx, insertOutboxEvent,
+		arg.EventType,
+		arg.Payload,
+		arg.EntityID,
+		arg.TraceParent,
+	)
 	return err
 }
 
 const insertOutboxEventWithID = `-- name: InsertOutboxEventWithID :exec
-INSERT INTO public.outbox (id, event_type, payload, entity_id)
-VALUES ($1, $2, $3, $4)
+INSERT INTO public.outbox (id, event_type, payload, entity_id, trace_parent)
+VALUES ($1, $2, $3, $4, $5)
 `
 
 type InsertOutboxEventWithIDParams struct {
-	ID        pgtype.UUID `json:"id"`
-	EventType string      `json:"event_type"`
-	Payload   []byte      `json:"payload"`
-	EntityID  string      `json:"entity_id"`
+	ID          pgtype.UUID `json:"id"`
+	EventType   string      `json:"event_type"`
+	Payload     []byte      `json:"payload"`
+	EntityID    string      `json:"entity_id"`
+	TraceParent string      `json:"trace_parent"`
 }
 
 // Inserts an outbox event using the domain event's UUIDv7 as the row ID,
@@ -212,6 +225,7 @@ func (q *Queries) InsertOutboxEventWithID(ctx context.Context, arg InsertOutboxE
 		arg.EventType,
 		arg.Payload,
 		arg.EntityID,
+		arg.TraceParent,
 	)
 	return err
 }

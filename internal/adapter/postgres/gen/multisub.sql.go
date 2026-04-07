@@ -88,15 +88,33 @@ SELECT id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uu
 FROM multisub.remnawave_bindings WHERE subscription_id = $1 AND status = 'active' ORDER BY created_at
 `
 
-func (q *Queries) GetActiveBindingsBySubscriptionID(ctx context.Context, subscriptionID pgtype.UUID) ([]MultisubRemnawaveBinding, error) {
+type GetActiveBindingsBySubscriptionIDRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	SubscriptionID     pgtype.UUID        `json:"subscription_id"`
+	PlatformUserID     pgtype.UUID        `json:"platform_user_id"`
+	RemnawaveUuid      *string            `json:"remnawave_uuid"`
+	RemnawaveShortUuid *string            `json:"remnawave_short_uuid"`
+	RemnawaveUsername  string             `json:"remnawave_username"`
+	Purpose            string             `json:"purpose"`
+	Status             string             `json:"status"`
+	TrafficLimitBytes  int64              `json:"traffic_limit_bytes"`
+	AllowedNodes       []string           `json:"allowed_nodes"`
+	InboundTags        []string           `json:"inbound_tags"`
+	FailReason         string             `json:"fail_reason"`
+	SyncedAt           pgtype.Timestamptz `json:"synced_at"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetActiveBindingsBySubscriptionID(ctx context.Context, subscriptionID pgtype.UUID) ([]GetActiveBindingsBySubscriptionIDRow, error) {
 	rows, err := q.db.Query(ctx, getActiveBindingsBySubscriptionID, subscriptionID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []MultisubRemnawaveBinding{}
+	items := []GetActiveBindingsBySubscriptionIDRow{}
 	for rows.Next() {
-		var i MultisubRemnawaveBinding
+		var i GetActiveBindingsBySubscriptionIDRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.SubscriptionID,
@@ -131,15 +149,33 @@ SELECT id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uu
 FROM multisub.remnawave_bindings WHERE status = 'active' ORDER BY created_at
 `
 
-func (q *Queries) GetAllActiveBindings(ctx context.Context) ([]MultisubRemnawaveBinding, error) {
+type GetAllActiveBindingsRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	SubscriptionID     pgtype.UUID        `json:"subscription_id"`
+	PlatformUserID     pgtype.UUID        `json:"platform_user_id"`
+	RemnawaveUuid      *string            `json:"remnawave_uuid"`
+	RemnawaveShortUuid *string            `json:"remnawave_short_uuid"`
+	RemnawaveUsername  string             `json:"remnawave_username"`
+	Purpose            string             `json:"purpose"`
+	Status             string             `json:"status"`
+	TrafficLimitBytes  int64              `json:"traffic_limit_bytes"`
+	AllowedNodes       []string           `json:"allowed_nodes"`
+	InboundTags        []string           `json:"inbound_tags"`
+	FailReason         string             `json:"fail_reason"`
+	SyncedAt           pgtype.Timestamptz `json:"synced_at"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetAllActiveBindings(ctx context.Context) ([]GetAllActiveBindingsRow, error) {
 	rows, err := q.db.Query(ctx, getAllActiveBindings)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []MultisubRemnawaveBinding{}
+	items := []GetAllActiveBindingsRow{}
 	for rows.Next() {
-		var i MultisubRemnawaveBinding
+		var i GetAllActiveBindingsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.SubscriptionID,
@@ -174,9 +210,75 @@ SELECT id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uu
 FROM multisub.remnawave_bindings WHERE id = $1
 `
 
-func (q *Queries) GetBindingByID(ctx context.Context, id pgtype.UUID) (MultisubRemnawaveBinding, error) {
+type GetBindingByIDRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	SubscriptionID     pgtype.UUID        `json:"subscription_id"`
+	PlatformUserID     pgtype.UUID        `json:"platform_user_id"`
+	RemnawaveUuid      *string            `json:"remnawave_uuid"`
+	RemnawaveShortUuid *string            `json:"remnawave_short_uuid"`
+	RemnawaveUsername  string             `json:"remnawave_username"`
+	Purpose            string             `json:"purpose"`
+	Status             string             `json:"status"`
+	TrafficLimitBytes  int64              `json:"traffic_limit_bytes"`
+	AllowedNodes       []string           `json:"allowed_nodes"`
+	InboundTags        []string           `json:"inbound_tags"`
+	FailReason         string             `json:"fail_reason"`
+	SyncedAt           pgtype.Timestamptz `json:"synced_at"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetBindingByID(ctx context.Context, id pgtype.UUID) (GetBindingByIDRow, error) {
 	row := q.db.QueryRow(ctx, getBindingByID, id)
-	var i MultisubRemnawaveBinding
+	var i GetBindingByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.SubscriptionID,
+		&i.PlatformUserID,
+		&i.RemnawaveUuid,
+		&i.RemnawaveShortUuid,
+		&i.RemnawaveUsername,
+		&i.Purpose,
+		&i.Status,
+		&i.TrafficLimitBytes,
+		&i.AllowedNodes,
+		&i.InboundTags,
+		&i.FailReason,
+		&i.SyncedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getBindingByIDForUpdate = `-- name: GetBindingByIDForUpdate :one
+SELECT id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uuid,
+       remnawave_username, purpose, status, traffic_limit_bytes,
+       allowed_nodes, inbound_tags, fail_reason, synced_at, created_at, updated_at
+FROM multisub.remnawave_bindings WHERE id = $1 FOR UPDATE
+`
+
+type GetBindingByIDForUpdateRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	SubscriptionID     pgtype.UUID        `json:"subscription_id"`
+	PlatformUserID     pgtype.UUID        `json:"platform_user_id"`
+	RemnawaveUuid      *string            `json:"remnawave_uuid"`
+	RemnawaveShortUuid *string            `json:"remnawave_short_uuid"`
+	RemnawaveUsername  string             `json:"remnawave_username"`
+	Purpose            string             `json:"purpose"`
+	Status             string             `json:"status"`
+	TrafficLimitBytes  int64              `json:"traffic_limit_bytes"`
+	AllowedNodes       []string           `json:"allowed_nodes"`
+	InboundTags        []string           `json:"inbound_tags"`
+	FailReason         string             `json:"fail_reason"`
+	SyncedAt           pgtype.Timestamptz `json:"synced_at"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetBindingByIDForUpdate(ctx context.Context, id pgtype.UUID) (GetBindingByIDForUpdateRow, error) {
+	row := q.db.QueryRow(ctx, getBindingByIDForUpdate, id)
+	var i GetBindingByIDForUpdateRow
 	err := row.Scan(
 		&i.ID,
 		&i.SubscriptionID,
@@ -204,9 +306,27 @@ SELECT id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uu
 FROM multisub.remnawave_bindings WHERE remnawave_uuid = $1
 `
 
-func (q *Queries) GetBindingByRemnawaveUUID(ctx context.Context, remnawaveUuid *string) (MultisubRemnawaveBinding, error) {
+type GetBindingByRemnawaveUUIDRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	SubscriptionID     pgtype.UUID        `json:"subscription_id"`
+	PlatformUserID     pgtype.UUID        `json:"platform_user_id"`
+	RemnawaveUuid      *string            `json:"remnawave_uuid"`
+	RemnawaveShortUuid *string            `json:"remnawave_short_uuid"`
+	RemnawaveUsername  string             `json:"remnawave_username"`
+	Purpose            string             `json:"purpose"`
+	Status             string             `json:"status"`
+	TrafficLimitBytes  int64              `json:"traffic_limit_bytes"`
+	AllowedNodes       []string           `json:"allowed_nodes"`
+	InboundTags        []string           `json:"inbound_tags"`
+	FailReason         string             `json:"fail_reason"`
+	SyncedAt           pgtype.Timestamptz `json:"synced_at"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetBindingByRemnawaveUUID(ctx context.Context, remnawaveUuid *string) (GetBindingByRemnawaveUUIDRow, error) {
 	row := q.db.QueryRow(ctx, getBindingByRemnawaveUUID, remnawaveUuid)
-	var i MultisubRemnawaveBinding
+	var i GetBindingByRemnawaveUUIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.SubscriptionID,
@@ -234,15 +354,33 @@ SELECT id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uu
 FROM multisub.remnawave_bindings WHERE platform_user_id = $1 ORDER BY created_at
 `
 
-func (q *Queries) GetBindingsByPlatformUserID(ctx context.Context, platformUserID pgtype.UUID) ([]MultisubRemnawaveBinding, error) {
+type GetBindingsByPlatformUserIDRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	SubscriptionID     pgtype.UUID        `json:"subscription_id"`
+	PlatformUserID     pgtype.UUID        `json:"platform_user_id"`
+	RemnawaveUuid      *string            `json:"remnawave_uuid"`
+	RemnawaveShortUuid *string            `json:"remnawave_short_uuid"`
+	RemnawaveUsername  string             `json:"remnawave_username"`
+	Purpose            string             `json:"purpose"`
+	Status             string             `json:"status"`
+	TrafficLimitBytes  int64              `json:"traffic_limit_bytes"`
+	AllowedNodes       []string           `json:"allowed_nodes"`
+	InboundTags        []string           `json:"inbound_tags"`
+	FailReason         string             `json:"fail_reason"`
+	SyncedAt           pgtype.Timestamptz `json:"synced_at"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetBindingsByPlatformUserID(ctx context.Context, platformUserID pgtype.UUID) ([]GetBindingsByPlatformUserIDRow, error) {
 	rows, err := q.db.Query(ctx, getBindingsByPlatformUserID, platformUserID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []MultisubRemnawaveBinding{}
+	items := []GetBindingsByPlatformUserIDRow{}
 	for rows.Next() {
-		var i MultisubRemnawaveBinding
+		var i GetBindingsByPlatformUserIDRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.SubscriptionID,
@@ -277,15 +415,33 @@ SELECT id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uu
 FROM multisub.remnawave_bindings WHERE subscription_id = $1 ORDER BY created_at
 `
 
-func (q *Queries) GetBindingsBySubscriptionID(ctx context.Context, subscriptionID pgtype.UUID) ([]MultisubRemnawaveBinding, error) {
+type GetBindingsBySubscriptionIDRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	SubscriptionID     pgtype.UUID        `json:"subscription_id"`
+	PlatformUserID     pgtype.UUID        `json:"platform_user_id"`
+	RemnawaveUuid      *string            `json:"remnawave_uuid"`
+	RemnawaveShortUuid *string            `json:"remnawave_short_uuid"`
+	RemnawaveUsername  string             `json:"remnawave_username"`
+	Purpose            string             `json:"purpose"`
+	Status             string             `json:"status"`
+	TrafficLimitBytes  int64              `json:"traffic_limit_bytes"`
+	AllowedNodes       []string           `json:"allowed_nodes"`
+	InboundTags        []string           `json:"inbound_tags"`
+	FailReason         string             `json:"fail_reason"`
+	SyncedAt           pgtype.Timestamptz `json:"synced_at"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetBindingsBySubscriptionID(ctx context.Context, subscriptionID pgtype.UUID) ([]GetBindingsBySubscriptionIDRow, error) {
 	rows, err := q.db.Query(ctx, getBindingsBySubscriptionID, subscriptionID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []MultisubRemnawaveBinding{}
+	items := []GetBindingsBySubscriptionIDRow{}
 	for rows.Next() {
-		var i MultisubRemnawaveBinding
+		var i GetBindingsBySubscriptionIDRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.SubscriptionID,
@@ -322,15 +478,33 @@ WHERE status = 'failed' AND remnawave_uuid IS NOT NULL
 ORDER BY created_at
 `
 
-func (q *Queries) GetFailedBindingsWithRemnawaveUUID(ctx context.Context) ([]MultisubRemnawaveBinding, error) {
+type GetFailedBindingsWithRemnawaveUUIDRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	SubscriptionID     pgtype.UUID        `json:"subscription_id"`
+	PlatformUserID     pgtype.UUID        `json:"platform_user_id"`
+	RemnawaveUuid      *string            `json:"remnawave_uuid"`
+	RemnawaveShortUuid *string            `json:"remnawave_short_uuid"`
+	RemnawaveUsername  string             `json:"remnawave_username"`
+	Purpose            string             `json:"purpose"`
+	Status             string             `json:"status"`
+	TrafficLimitBytes  int64              `json:"traffic_limit_bytes"`
+	AllowedNodes       []string           `json:"allowed_nodes"`
+	InboundTags        []string           `json:"inbound_tags"`
+	FailReason         string             `json:"fail_reason"`
+	SyncedAt           pgtype.Timestamptz `json:"synced_at"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetFailedBindingsWithRemnawaveUUID(ctx context.Context) ([]GetFailedBindingsWithRemnawaveUUIDRow, error) {
 	rows, err := q.db.Query(ctx, getFailedBindingsWithRemnawaveUUID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []MultisubRemnawaveBinding{}
+	items := []GetFailedBindingsWithRemnawaveUUIDRow{}
 	for rows.Next() {
-		var i MultisubRemnawaveBinding
+		var i GetFailedBindingsWithRemnawaveUUIDRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.SubscriptionID,

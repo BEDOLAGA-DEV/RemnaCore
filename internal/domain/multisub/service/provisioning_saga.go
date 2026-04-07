@@ -56,24 +56,33 @@ type provisioningState struct {
 // binding is marked as failed. Progress is checkpointed to the SagaRepository
 // after each successful step so the saga can be identified and cleaned up
 // after a crash.
+//
+// Before provisioning, the saga checks the subscription's current status via
+// SubscriptionProvider. If the subscription has been cancelled or expired
+// (out-of-order event delivery), provisioning is skipped to avoid creating
+// Remnawave users for a dead subscription.
 type ProvisioningSaga struct {
 	bindings   multisubdomain.BindingRepository
 	gateway    multisubdomain.RemnawaveGateway
 	publisher  domainevent.Publisher
 	calculator *BindingCalculator
 	sagaRepo   multisubdomain.SagaRepository
+	subs       multisubdomain.SubscriptionProvider
 	txRunner   txmanager.Runner
 	clock      clock.Clock
 	logger     *slog.Logger
 }
 
-// NewProvisioningSaga creates a ProvisioningSaga with its dependencies.
+// NewProvisioningSaga creates a ProvisioningSaga with its dependencies. The
+// SubscriptionProvider is used to guard against provisioning for subscriptions
+// that have been cancelled or expired due to out-of-order event delivery.
 func NewProvisioningSaga(
 	bindings multisubdomain.BindingRepository,
 	gateway multisubdomain.RemnawaveGateway,
 	publisher domainevent.Publisher,
 	calculator *BindingCalculator,
 	sagaRepo multisubdomain.SagaRepository,
+	subs multisubdomain.SubscriptionProvider,
 	txRunner txmanager.Runner,
 	clk clock.Clock,
 	logger *slog.Logger,
@@ -84,6 +93,7 @@ func NewProvisioningSaga(
 		publisher:  publisher,
 		calculator: calculator,
 		sagaRepo:   sagaRepo,
+		subs:       subs,
 		txRunner:   txRunner,
 		clock:      clk,
 		logger:     logger,
@@ -97,6 +107,23 @@ func NewProvisioningSaga(
 func (s *ProvisioningSaga) Provision(ctx context.Context, req ProvisionRequest) ([]ProvisionResult, error) {
 	ctx, span := tracing.StartSpan(ctx, "multisub.provisioning_saga.provision")
 	defer span.End()
+
+	// Guard: verify subscription is still active before provisioning. This
+	// defends against out-of-order event delivery where subscription.cancelled
+	// was processed before the provisioning saga runs.
+	if s.subs != nil {
+		subInfo, err := s.subs.GetSubscriptionInfo(ctx, req.SubscriptionID)
+		if err != nil {
+			return nil, fmt.Errorf("check subscription status: %w", err)
+		}
+		if subInfo.Status.IsTerminal() {
+			s.logger.Info("skipping provisioning: subscription no longer active",
+				slog.String("subscription_id", req.SubscriptionID),
+				slog.String("status", string(subInfo.Status)),
+			)
+			return nil, nil
+		}
+	}
 
 	specs := s.calculator.Calculate(req.Plan, req.AddonIDs, req.FamilyMemberIDs)
 

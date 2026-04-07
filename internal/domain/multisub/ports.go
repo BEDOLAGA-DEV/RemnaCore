@@ -19,6 +19,26 @@ type SubscriptionProvider interface {
 	GetFamilyMemberIDs(ctx context.Context, ownerID string) ([]string, error)
 }
 
+// SubscriptionStatus is the multisub domain's Anti-Corruption Layer type for
+// subscription status. The adapter boundary translates billing-specific status
+// values into these constants so the multisub domain never imports billing types.
+type SubscriptionStatus string
+
+const (
+	SubStatusActive    SubscriptionStatus = "active"
+	SubStatusCancelled SubscriptionStatus = "cancelled"
+	SubStatusExpired   SubscriptionStatus = "expired"
+	SubStatusPaused    SubscriptionStatus = "paused"
+	SubStatusTrial     SubscriptionStatus = "trial"
+	SubStatusPastDue   SubscriptionStatus = "past_due"
+)
+
+// IsTerminal returns true if the subscription status is a terminal state
+// (cancelled or expired) where no further provisioning should occur.
+func (s SubscriptionStatus) IsTerminal() bool {
+	return s == SubStatusCancelled || s == SubStatusExpired
+}
+
 // SubscriptionInfo holds the minimal subscription data the multisub domain
 // needs to orchestrate Remnawave provisioning. This is an ACL type — upstream
 // subscription aggregates are projected into this struct at the adapter boundary.
@@ -26,5 +46,6 @@ type SubscriptionInfo struct {
 	ID       string
 	UserID   string
 	PlanID   string
+	Status   SubscriptionStatus
 	AddonIDs []string
 }

@@ -1,19 +1,21 @@
 -- name: InsertOutboxEvent :exec
-INSERT INTO public.outbox (event_type, payload, entity_id)
-VALUES ($1, $2, $3);
+INSERT INTO public.outbox (event_type, payload, entity_id, trace_parent)
+VALUES ($1, $2, $3, $4);
 
 -- name: InsertOutboxEventWithID :exec
 -- Inserts an outbox event using the domain event's UUIDv7 as the row ID,
 -- ensuring the outbox row ID and domain event ID are identical. This enables
 -- end-to-end deduplication: the relay uses this ID as the NATS Msg-Id header,
 -- and consumers use it as the idempotency key.
-INSERT INTO public.outbox (id, event_type, payload, entity_id)
-VALUES ($1, $2, $3, $4);
+INSERT INTO public.outbox (id, event_type, payload, entity_id, trace_parent)
+VALUES ($1, $2, $3, $4, $5);
 
 -- name: GetUnpublishedOutboxEvents :many
 -- Fetches unpublished events that have not been marked as permanently failed.
 -- The relay_failed filter ensures dead-lettered events are excluded from polling.
-SELECT id, event_type, payload, created_at, sequence_number, relay_attempts
+-- trace_parent is included so the relay can propagate it to NATS without
+-- byte-scanning the JSON payload.
+SELECT id, event_type, payload, created_at, sequence_number, relay_attempts, trace_parent
 FROM public.outbox
 WHERE published = false AND relay_failed = false
 ORDER BY sequence_number
@@ -26,7 +28,7 @@ FOR UPDATE SKIP LOCKED;
 -- abs(hashtext(entity_id)) % worker_count = worker_id, ensuring events
 -- for the same entity always go to the same worker and preserving
 -- per-entity sequence ordering. hashtext is a stable PG built-in.
-SELECT id, event_type, payload, created_at, sequence_number, relay_attempts
+SELECT id, event_type, payload, created_at, sequence_number, relay_attempts, trace_parent
 FROM public.outbox
 WHERE published = false AND relay_failed = false
   AND abs(hashtext(entity_id)) % sqlc.arg(worker_count)::int = sqlc.arg(worker_id)::int

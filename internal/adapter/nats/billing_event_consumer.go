@@ -201,10 +201,10 @@ type BillingEventConsumer struct {
 	clock          clock.Clock
 	metrics        *observability.Metrics
 	natsConn       *nc.Conn
-	messageTimeout  time.Duration
-	entityLocks     sync.Map // map[string]*entityLock — per-entity serialisation
-	inflightWg      sync.WaitGroup
-	seqTracker      *sequenceTracker
+	messageTimeout time.Duration
+	entityLocks    sync.Map // map[string]*entityLock — per-entity serialisation
+	inflightWg     sync.WaitGroup
+	seqTracker     *sequenceTracker
 }
 
 // NewBillingEventConsumer creates a BillingEventConsumer with the given
@@ -366,10 +366,11 @@ func (c *BillingEventConsumer) pollDLQDepth(ctx context.Context) {
 	}
 }
 
-// billingSubscriptionSubjects returns the NATS subjects this consumer listens to.
-// Includes billing lifecycle events, traffic lifecycle events, and payment
-// events that trigger billing-side effects (checkout completion).
-func billingSubscriptionSubjects() []string {
+// BillingSubscriptionSubjects returns the NATS subjects this consumer listens
+// to. Includes billing lifecycle events, traffic lifecycle events, and payment
+// events that trigger billing-side effects (checkout completion). Exported for
+// architecture tests that verify catalog-vs-consumer subscription completeness.
+func BillingSubscriptionSubjects() []string {
 	return []string{
 		string(billing.EventSubActivated),
 		string(billing.EventSubCancelled),
@@ -387,7 +388,7 @@ func billingSubscriptionSubjects() []string {
 // context is cancelled.
 func (c *BillingEventConsumer) Start(ctx context.Context) error {
 	subscribed := 0
-	for _, subject := range billingSubscriptionSubjects() {
+	for _, subject := range BillingSubscriptionSubjects() {
 		ch, err := c.subscriber.Subscribe(ctx, subject)
 		if err != nil {
 			c.logger.Warn("failed to subscribe to billing event, will retry on next restart",
@@ -404,12 +405,15 @@ func (c *BillingEventConsumer) Start(ctx context.Context) error {
 	// Start background goroutine to evict stale entity locks.
 	go c.evictStaleLocks(ctx)
 
+	// Start background goroutine to evict stale sequence tracker entries.
+	go c.seqTracker.runEviction(ctx)
+
 	// Start DLQ depth polling goroutine to keep the DLQDepth gauge current.
 	go c.pollDLQDepth(ctx)
 
 	c.logger.Info("billing event consumer started",
 		slog.Int("subscribed", subscribed),
-		slog.Int("total", len(billingSubscriptionSubjects())),
+		slog.Int("total", len(BillingSubscriptionSubjects())),
 	)
 	return nil
 }
@@ -444,5 +448,3 @@ func (c *BillingEventConsumer) consumeLoop(ctx context.Context, subject string, 
 		}
 	}
 }
-
-

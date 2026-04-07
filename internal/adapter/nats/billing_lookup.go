@@ -46,6 +46,7 @@ func (l *BillingSubscriptionLookup) GetSubscriptionInfo(ctx context.Context, id 
 		ID:       sub.ID,
 		UserID:   sub.UserID,
 		PlanID:   sub.PlanID,
+		Status:   subscriptionStatusToMultisub(sub.Status),
 		AddonIDs: sub.AddonIDs,
 	}, nil
 }
@@ -121,6 +122,28 @@ func addonTypeToSnapshot(t billingaggregate.AddonType) multisub.AddonSnapshotTyp
 		return mapped
 	}
 	return multisub.AddonSnapshotType(t)
+}
+
+// subscriptionStatusMap translates billing subscription statuses to multisub
+// ACL status values. This is the Anti-Corruption Layer translation point for
+// subscription state.
+var subscriptionStatusMap = map[billingaggregate.SubscriptionStatus]multisub.SubscriptionStatus{
+	billingaggregate.StatusActive:    multisub.SubStatusActive,
+	billingaggregate.StatusCancelled: multisub.SubStatusCancelled,
+	billingaggregate.StatusExpired:   multisub.SubStatusExpired,
+	billingaggregate.StatusPaused:    multisub.SubStatusPaused,
+	billingaggregate.StatusTrial:     multisub.SubStatusTrial,
+	billingaggregate.StatusPastDue:   multisub.SubStatusPastDue,
+}
+
+// subscriptionStatusToMultisub translates a billing SubscriptionStatus to the
+// multisub ACL type. Unknown statuses default to the string value of the
+// billing status to avoid data loss.
+func subscriptionStatusToMultisub(s billingaggregate.SubscriptionStatus) multisub.SubscriptionStatus {
+	if mapped, ok := subscriptionStatusMap[s]; ok {
+		return mapped
+	}
+	return multisub.SubscriptionStatus(s)
 }
 
 // compile-time interface checks — BillingSubscriptionLookup satisfies both

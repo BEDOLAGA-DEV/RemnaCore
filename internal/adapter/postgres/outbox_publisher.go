@@ -58,19 +58,21 @@ func (p *OutboxPublisher) Publish(ctx context.Context, event domainevent.Event) 
 
 	if event.ID != "" {
 		if err := queries.InsertOutboxEventWithID(ctx, gen.InsertOutboxEventWithIDParams{
-			ID:        pgutil.UUIDToPgtype(event.ID),
-			EventType: string(event.Type),
-			Payload:   payload,
-			EntityID:  event.EntityID,
+			ID:          pgutil.UUIDToPgtype(event.ID),
+			EventType:   string(event.Type),
+			Payload:     payload,
+			EntityID:    event.EntityID,
+			TraceParent: event.TraceParent,
 		}); err != nil {
 			return fmt.Errorf("outbox publish: %w", err)
 		}
 	} else {
 		// Backward compat: old events without ID use DB-generated default.
 		if err := queries.InsertOutboxEvent(ctx, gen.InsertOutboxEventParams{
-			EventType: string(event.Type),
-			Payload:   payload,
-			EntityID:  event.EntityID,
+			EventType:   string(event.Type),
+			Payload:     payload,
+			EntityID:    event.EntityID,
+			TraceParent: event.TraceParent,
 		}); err != nil {
 			return fmt.Errorf("outbox publish: %w", err)
 		}

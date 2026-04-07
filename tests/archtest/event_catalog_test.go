@@ -1,8 +1,10 @@
 package archtest
 
 import (
+	"slices"
 	"testing"
 
+	natsadapter "github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/nats"
 	billingaggregate "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
 	multisubaggregate "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
@@ -195,5 +197,53 @@ func collectAllEventTypes() []domainevent.EventType {
 		// Infra events (1)
 		// =====================================================================
 		health.EventNodeHealthChanged,
+	}
+}
+
+// multsubConsumerName is the consumer name used in the event catalog for the
+// multisub orchestrator, which is the target of the BillingEventConsumer.
+const multisubConsumerName = "multisub"
+
+// TestBillingConsumerSubscribesToAllDeclaredEvents verifies that every event in
+// the catalog that declares "multisub" as a consumer has a corresponding NATS
+// subject in BillingSubscriptionSubjects. This catches the case where a new
+// event is added to the catalog with multisub as consumer but the consumer's
+// subject list is not updated.
+func TestBillingConsumerSubscribesToAllDeclaredEvents(t *testing.T) {
+	catalog := app.BuildEventCatalog()
+	subscribed := natsadapter.BillingSubscriptionSubjects()
+
+	for eventType, entry := range catalog.All() {
+		if slices.Contains(entry.Consumers, multisubConsumerName) {
+			t.Run(string(eventType), func(t *testing.T) {
+				assert.True(t, slices.Contains(subscribed, string(entry.Type)),
+					"event %s declares %s as consumer but is not in BillingSubscriptionSubjects",
+					entry.Type, multisubConsumerName)
+			})
+		}
+	}
+}
+
+// TestBillingConsumerSubjectsInCatalog verifies the reverse: every subject the
+// BillingEventConsumer subscribes to that is a registered event type in the
+// catalog must declare a consumer. Webhook-originated subjects (e.g.,
+// subscription.traffic_cycle_reset) that are not formal domain events are
+// excluded — they come from the Remnawave ACL and have no catalog entry.
+func TestBillingConsumerSubjectsInCatalog(t *testing.T) {
+	catalog := app.BuildEventCatalog()
+	subscribed := natsadapter.BillingSubscriptionSubjects()
+
+	for _, subject := range subscribed {
+		entry, ok := catalog.Get(domainevent.EventType(subject))
+		if !ok {
+			// Subject is a webhook-originated NATS subject without a formal
+			// catalog entry (e.g., subscription.traffic_cycle_reset). Skip.
+			continue
+		}
+		t.Run(subject, func(t *testing.T) {
+			assert.NotEmpty(t, entry.Consumers,
+				"BillingSubscriptionSubjects contains %q which has no consumers in the catalog",
+				subject)
+		})
 	}
 }

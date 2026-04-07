@@ -38,6 +38,7 @@ type OutboxEvent struct {
 	CreatedAt      time.Time
 	SequenceNumber int64
 	RelayAttempts  int
+	TraceParent    string
 }
 
 // OutboxRepository provides access to the public.outbox table. It is used by
@@ -66,11 +67,15 @@ func (r *OutboxRepository) queries(ctx context.Context) *gen.Queries {
 
 // Store saves an event to the outbox table. This should be called within
 // the same database transaction as the business logic that produced the event.
-func (r *OutboxRepository) Store(ctx context.Context, eventType string, payload []byte, entityID string) error {
+// traceParent is the W3C traceparent header value extracted from the active
+// span at publish time; it is stored as a column so the relay can propagate
+// it without byte-scanning the JSON payload.
+func (r *OutboxRepository) Store(ctx context.Context, eventType string, payload []byte, entityID string, traceParent string) error {
 	err := r.queries(ctx).InsertOutboxEvent(ctx, gen.InsertOutboxEventParams{
-		EventType: eventType,
-		Payload:   payload,
-		EntityID:  entityID,
+		EventType:   eventType,
+		Payload:     payload,
+		EntityID:    entityID,
+		TraceParent: traceParent,
 	})
 	if err != nil {
 		return fmt.Errorf("store outbox event: %w", err)
@@ -410,6 +415,7 @@ func rowToOutboxEvent(row gen.GetUnpublishedOutboxEventsRow) OutboxEvent {
 		CreatedAt:      pgutil.PgtypeToTime(row.CreatedAt),
 		SequenceNumber: seqNum,
 		RelayAttempts:  int(row.RelayAttempts),
+		TraceParent:    row.TraceParent,
 	}
 }
 
@@ -428,5 +434,6 @@ func workerRowToOutboxEvent(row gen.GetUnpublishedForWorkerRow) OutboxEvent {
 		CreatedAt:      pgutil.PgtypeToTime(row.CreatedAt),
 		SequenceNumber: seqNum,
 		RelayAttempts:  int(row.RelayAttempts),
+		TraceParent:    row.TraceParent,
 	}
 }

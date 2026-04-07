@@ -92,7 +92,7 @@ func registerBillingEvents(c *domainevent.EventCatalog) {
 	c.Register(domainevent.CatalogEntry{
 		Type:        billingaggregate.EventSubExpired,
 		Producer:    producerBilling,
-		Consumers:   []string{producerMultisub},
+		Consumers:   []string{}, // TODO: multisub should deprovision on expiry
 		PayloadType: reflect.TypeOf(billingaggregate.SubExpiredPayload{}),
 		Version:     1,
 	})
@@ -106,14 +106,14 @@ func registerBillingEvents(c *domainevent.EventCatalog) {
 	c.Register(domainevent.CatalogEntry{
 		Type:        billingaggregate.EventSubUpgraded,
 		Producer:    producerBilling,
-		Consumers:   []string{producerMultisub},
+		Consumers:   []string{}, // TODO: multisub should reprovision on upgrade
 		PayloadType: reflect.TypeOf(billingaggregate.SubUpgradedPayload{}),
 		Version:     1,
 	})
 	c.Register(domainevent.CatalogEntry{
 		Type:        billingaggregate.EventSubDowngraded,
 		Producer:    producerBilling,
-		Consumers:   []string{producerMultisub},
+		Consumers:   []string{}, // TODO: multisub should handle at next renewal
 		PayloadType: reflect.TypeOf(billingaggregate.SubDowngradedPayload{}),
 		Version:     1,
 	})
@@ -194,14 +194,14 @@ func registerBillingEvents(c *domainevent.EventCatalog) {
 	c.Register(domainevent.CatalogEntry{
 		Type:        billingaggregate.EventFamilyMemberAdded,
 		Producer:    producerBilling,
-		Consumers:   []string{producerMultisub},
+		Consumers:   []string{}, // TODO: multisub should provision family binding
 		PayloadType: reflect.TypeOf(billingaggregate.FamilyMemberAddedPayload{}),
 		Version:     1,
 	})
 	c.Register(domainevent.CatalogEntry{
 		Type:        billingaggregate.EventFamilyMemberRemoved,
 		Producer:    producerBilling,
-		Consumers:   []string{producerMultisub},
+		Consumers:   []string{}, // TODO: multisub should deprovision family binding
 		PayloadType: reflect.TypeOf(billingaggregate.FamilyMemberRemovedPayload{}),
 		Version:     1,
 	})

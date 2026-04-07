@@ -26,11 +26,15 @@ const (
 )
 
 // DedupWindow is the JetStream message deduplication window for durable
-// streams. Set to 10 minutes to cover typical deploy/restart cycles where the
-// outbox relay may re-publish events with the same Nats-Msg-Id after recovery.
-// The default JetStream dedup window (2 minutes) is too short for the outbox
-// relay circuit breaker backoff (up to 60s) plus deploy time.
-const DedupWindow = 10 * time.Minute
+// streams. Set to 1 hour to cover relay lag scenarios where MarkPublishedBatch
+// rolls back after NATS publish success. The previous 10-minute window was too
+// short — if the relay falls behind by more than 10 minutes, the dedup window
+// expires and retransmissions are no longer deduplicated. One hour covers
+// realistic lag scenarios without significant NATS memory overhead: each dedup
+// entry is approximately 64 bytes (msg ID), so 10K events/hour costs ~640KB.
+// The default JetStream dedup window (2 minutes) is far too short for the
+// outbox relay circuit breaker backoff (up to 60s) plus deploy time.
+const DedupWindow = 60 * time.Minute
 
 // StreamConfigs returns every JetStream stream configuration the platform
 // requires. EnsureStreams iterates this slice on startup to create or update

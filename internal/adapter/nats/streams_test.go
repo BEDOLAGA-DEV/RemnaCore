@@ -47,8 +47,8 @@ func TestStreamConfigs_DedupWindow(t *testing.T) {
 			"INFRA stream (MemoryStorage) must not have an explicit dedup window")
 	})
 
-	t.Run("DedupWindow is 10 minutes", func(t *testing.T) {
-		assert.Equal(t, 10*60_000_000_000, int(natsadapter.DedupWindow),
-			"DedupWindow must be 10 minutes in nanoseconds")
+	t.Run("DedupWindow is 60 minutes", func(t *testing.T) {
+		assert.Equal(t, 60*60_000_000_000, int(natsadapter.DedupWindow),
+			"DedupWindow must be 60 minutes in nanoseconds")
 	})
 }

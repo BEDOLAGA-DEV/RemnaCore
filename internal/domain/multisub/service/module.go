@@ -6,6 +6,8 @@ import (
 	"log/slog"
 
 	multisubdomain "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
 )
@@ -24,6 +26,7 @@ type MultiSubOrchestrator struct {
 	lifecycle      *BindingLifecycleService
 	bindings       multisubdomain.BindingRepository
 	publisher      domainevent.Publisher
+	clock          clock.Clock
 	logger         *slog.Logger
 	dispatcher     hookdispatch.Dispatcher // nil-safe; all dispatches guarded
 	hooksEnabled   bool                    // subscription lifecycle hooks feature flag
@@ -53,6 +56,7 @@ func NewMultiSubOrchestrator(
 	lifecycle *BindingLifecycleService,
 	bindings multisubdomain.BindingRepository,
 	publisher domainevent.Publisher,
+	clk clock.Clock,
 	logger *slog.Logger,
 	opts ...OrchestratorOption,
 ) *MultiSubOrchestrator {
@@ -63,6 +67,7 @@ func NewMultiSubOrchestrator(
 		lifecycle:      lifecycle,
 		bindings:       bindings,
 		publisher:      publisher,
+		clock:          clk,
 		logger:         logger,
 	}
 	for _, opt := range opts {
@@ -109,25 +114,86 @@ func (o *MultiSubOrchestrator) OnSubscriptionActivated(
 	return nil
 }
 
+// cancelledPendingBindingReason is the fail reason recorded on pending bindings
+// that are cancelled due to out-of-order event delivery (cancelled arrives
+// before provisioning completes).
+const cancelledPendingBindingReason = "subscription cancelled before provisioning completed (out-of-order delivery)"
+
 // OnSubscriptionCancelled is called when billing publishes
 // subscription.cancelled. It deprovisions all Remnawave bindings for the
 // subscription (best-effort).
 //
 // Idempotency: if no active bindings remain, the event is treated as a
-// duplicate and deprovisioning is skipped.
+// duplicate and deprovisioning is skipped — UNLESS there are pending bindings,
+// which indicates out-of-order delivery (cancelled arrived before activated
+// finished provisioning). In that case, pending bindings are marked as failed
+// to prevent the provisioning saga from completing.
 func (o *MultiSubOrchestrator) OnSubscriptionCancelled(ctx context.Context, subscriptionID string) error {
 	existing, err := o.bindings.GetActiveBySubscriptionID(ctx, subscriptionID)
 	if err != nil {
 		return fmt.Errorf("check existing bindings: %w", err)
 	}
 	if len(existing) == 0 {
-		o.logger.Info("skipping duplicate subscription.cancelled event",
-			slog.String("subscription_id", subscriptionID),
-		)
+		// No active bindings — but this might be because provisioning hasn't
+		// completed yet (out-of-order delivery). Check for pending bindings
+		// and mark them as failed to prevent the provisioning saga from
+		// creating Remnawave users for a cancelled subscription.
+		if err := o.cancelPendingBindings(ctx, subscriptionID); err != nil {
+			return fmt.Errorf("cancel pending bindings: %w", err)
+		}
 		return nil
 	}
 
+	// Normal path: deprovision active bindings.
 	return o.deprovisioning.Deprovision(ctx, subscriptionID)
+}
+
+// cancelPendingBindings marks any pending bindings for the subscription as
+// failed. This handles the out-of-order delivery edge case where
+// subscription.cancelled arrives before provisioning completes. The
+// ProvisioningSaga will also check subscription status before provisioning,
+// but this provides a belt-and-suspenders defense.
+func (o *MultiSubOrchestrator) cancelPendingBindings(ctx context.Context, subscriptionID string) error {
+	allBindings, err := o.bindings.GetBySubscriptionID(ctx, subscriptionID)
+	if err != nil {
+		return fmt.Errorf("get bindings by subscription: %w", err)
+	}
+
+	now := o.clock.Now()
+	var cancelled int
+	for _, b := range allBindings {
+		if b.Status != aggregate.BindingPending {
+			continue
+		}
+		if markErr := b.MarkFailed(cancelledPendingBindingReason, now); markErr != nil {
+			o.logger.Warn("failed to mark pending binding as failed",
+				slog.String("binding_id", b.ID),
+				slog.String("subscription_id", subscriptionID),
+				slog.Any("error", markErr),
+			)
+			continue
+		}
+		if updateErr := o.bindings.Update(ctx, b); updateErr != nil {
+			o.logger.Warn("failed to persist cancelled pending binding",
+				slog.String("binding_id", b.ID),
+				slog.String("subscription_id", subscriptionID),
+				slog.Any("error", updateErr),
+			)
+			continue
+		}
+		cancelled++
+		o.logger.Info("cancelled pending binding due to out-of-order delivery",
+			slog.String("binding_id", b.ID),
+			slog.String("subscription_id", subscriptionID),
+		)
+	}
+
+	if cancelled == 0 {
+		o.logger.Info("skipping duplicate subscription.cancelled event",
+			slog.String("subscription_id", subscriptionID),
+		)
+	}
+	return nil
 }
 
 // OnSubscriptionPaused is called when billing publishes subscription.paused.

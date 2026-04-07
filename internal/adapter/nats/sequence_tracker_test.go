@@ -2,6 +2,7 @@ package nats
 
 import (
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	io_prometheus_client "github.com/prometheus/client_model/go"
@@ -142,4 +143,62 @@ func TestSequenceTracker_NilMetrics(t *testing.T) {
 		tracker.checkAndUpdate("sub-1", 1)
 		tracker.checkAndUpdate("sub-1", 5) // gap, but metrics is nil — should not panic
 	})
+}
+
+func TestSequenceTracker_EvictStale(t *testing.T) {
+	tests := []struct {
+		name          string
+		setup         func(t *sequenceTracker)
+		wantEvicted   int
+		wantRemaining int
+	}{
+		{
+			name: "fresh entries are not evicted",
+			setup: func(tracker *sequenceTracker) {
+				tracker.checkAndUpdate("sub-1", 1)
+				tracker.checkAndUpdate("sub-2", 1)
+			},
+			wantEvicted:   0,
+			wantRemaining: 2,
+		},
+		{
+			name: "stale entries are evicted",
+			setup: func(tracker *sequenceTracker) {
+				// Simulate entries that were updated long ago by directly
+				// setting lastUpdate to a time well before the TTL cutoff.
+				staleTime := time.Now().Add(-(sequenceTrackerTTL + time.Minute)).UnixNano()
+				tracker.mu.Lock()
+				tracker.lastSeen["sub-old-1"] = sequenceEntry{seq: 1, lastUpdate: staleTime}
+				tracker.lastSeen["sub-old-2"] = sequenceEntry{seq: 5, lastUpdate: staleTime}
+				tracker.mu.Unlock()
+				// Also add a fresh entry that should survive.
+				tracker.checkAndUpdate("sub-fresh", 1)
+			},
+			wantEvicted:   2,
+			wantRemaining: 1,
+		},
+		{
+			name:          "empty tracker evicts nothing",
+			setup:         func(_ *sequenceTracker) {},
+			wantEvicted:   0,
+			wantRemaining: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tracker := newSequenceTracker(discardLogger(), nil)
+			tt.setup(tracker)
+
+			evicted := tracker.evictStale()
+
+			assert.Equal(t, tt.wantEvicted, evicted, "unexpected evicted count")
+
+			tracker.mu.Lock()
+			remaining := len(tracker.lastSeen)
+			tracker.mu.Unlock()
+
+			assert.Equal(t, tt.wantRemaining, remaining, "unexpected remaining count")
+		})
+	}
 }

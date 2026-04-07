@@ -115,6 +115,26 @@ func (m *MockBindingRepo) Delete(ctx context.Context, id string) error {
 	return args.Error(0)
 }
 
+// --- MockSubscriptionProvider ---
+
+// MockSubscriptionProvider is a testify/mock implementation of multisub.SubscriptionProvider.
+type MockSubscriptionProvider struct {
+	mock.Mock
+}
+
+func (m *MockSubscriptionProvider) GetSubscriptionInfo(ctx context.Context, subscriptionID string) (multisub.SubscriptionInfo, error) {
+	args := m.Called(ctx, subscriptionID)
+	return args.Get(0).(multisub.SubscriptionInfo), args.Error(1)
+}
+
+func (m *MockSubscriptionProvider) GetFamilyMemberIDs(ctx context.Context, ownerID string) ([]string, error) {
+	args := m.Called(ctx, ownerID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]string), args.Error(1)
+}
+
 // --- MockRemnawaveGateway ---
 
 // MockRemnawaveGateway is a testify/mock implementation of multisub.RemnawaveGateway.

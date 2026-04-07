@@ -691,6 +691,24 @@ func (q *Queries) GetFamilyGroupByOwnerID(ctx context.Context, ownerID pgtype.UU
 	return i, err
 }
 
+const getFamilyGroupByOwnerIDForUpdate = `-- name: GetFamilyGroupByOwnerIDForUpdate :one
+SELECT id, owner_id, max_members, created_at, updated_at
+FROM billing.family_groups WHERE owner_id = $1 FOR UPDATE
+`
+
+func (q *Queries) GetFamilyGroupByOwnerIDForUpdate(ctx context.Context, ownerID pgtype.UUID) (BillingFamilyGroup, error) {
+	row := q.db.QueryRow(ctx, getFamilyGroupByOwnerIDForUpdate, ownerID)
+	var i BillingFamilyGroup
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.MaxMembers,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getFamilyMembersByGroupID = `-- name: GetFamilyMembersByGroupID :many
 SELECT id, family_group_id, user_id, role, nickname, joined_at
 FROM billing.family_members WHERE family_group_id = $1 ORDER BY joined_at
@@ -748,6 +766,49 @@ type GetInvoiceByIDRow struct {
 func (q *Queries) GetInvoiceByID(ctx context.Context, id pgtype.UUID) (GetInvoiceByIDRow, error) {
 	row := q.db.QueryRow(ctx, getInvoiceByID, id)
 	var i GetInvoiceByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.SubscriptionID,
+		&i.UserID,
+		&i.SubtotalAmount,
+		&i.TotalDiscountAmount,
+		&i.TotalAmount,
+		&i.Currency,
+		&i.PricingReason,
+		&i.Discounts,
+		&i.Status,
+		&i.PaidAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getInvoiceByIDForUpdate = `-- name: GetInvoiceByIDForUpdate :one
+SELECT id, subscription_id, user_id, subtotal_amount, total_discount_amount,
+       total_amount, currency, pricing_reason, discounts, status, paid_at, created_at, updated_at
+FROM billing.invoices WHERE id = $1 FOR UPDATE
+`
+
+type GetInvoiceByIDForUpdateRow struct {
+	ID                  pgtype.UUID        `json:"id"`
+	SubscriptionID      pgtype.UUID        `json:"subscription_id"`
+	UserID              pgtype.UUID        `json:"user_id"`
+	SubtotalAmount      int64              `json:"subtotal_amount"`
+	TotalDiscountAmount int64              `json:"total_discount_amount"`
+	TotalAmount         int64              `json:"total_amount"`
+	Currency            string             `json:"currency"`
+	PricingReason       string             `json:"pricing_reason"`
+	Discounts           []byte             `json:"discounts"`
+	Status              string             `json:"status"`
+	PaidAt              pgtype.Timestamptz `json:"paid_at"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetInvoiceByIDForUpdate(ctx context.Context, id pgtype.UUID) (GetInvoiceByIDForUpdateRow, error) {
+	row := q.db.QueryRow(ctx, getInvoiceByIDForUpdate, id)
+	var i GetInvoiceByIDForUpdateRow
 	err := row.Scan(
 		&i.ID,
 		&i.SubscriptionID,
@@ -1050,6 +1111,51 @@ type GetSubscriptionByIDRow struct {
 func (q *Queries) GetSubscriptionByID(ctx context.Context, id pgtype.UUID) (GetSubscriptionByIDRow, error) {
 	row := q.db.QueryRow(ctx, getSubscriptionByID, id)
 	var i GetSubscriptionByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.PlanID,
+		&i.Status,
+		&i.PeriodStart,
+		&i.PeriodEnd,
+		&i.PeriodInterval,
+		&i.AddonIds,
+		&i.AssignedTo,
+		&i.PendingPlanID,
+		&i.CancelledAt,
+		&i.PausedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getSubscriptionByIDForUpdate = `-- name: GetSubscriptionByIDForUpdate :one
+SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
+       addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
+FROM billing.subscriptions WHERE id = $1 FOR UPDATE
+`
+
+type GetSubscriptionByIDForUpdateRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	PlanID         pgtype.UUID        `json:"plan_id"`
+	Status         string             `json:"status"`
+	PeriodStart    pgtype.Timestamptz `json:"period_start"`
+	PeriodEnd      pgtype.Timestamptz `json:"period_end"`
+	PeriodInterval string             `json:"period_interval"`
+	AddonIds       []pgtype.UUID      `json:"addon_ids"`
+	AssignedTo     *string            `json:"assigned_to"`
+	PendingPlanID  pgtype.UUID        `json:"pending_plan_id"`
+	CancelledAt    pgtype.Timestamptz `json:"cancelled_at"`
+	PausedAt       pgtype.Timestamptz `json:"paused_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetSubscriptionByIDForUpdate(ctx context.Context, id pgtype.UUID) (GetSubscriptionByIDForUpdateRow, error) {
+	row := q.db.QueryRow(ctx, getSubscriptionByIDForUpdate, id)
+	var i GetSubscriptionByIDForUpdateRow
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,

@@ -325,7 +325,7 @@ func TestMarkPublishedBatchPartitioned(t *testing.T) {
 	const eventCount = 5
 	for i := range eventCount {
 		payload, _ := json.Marshal(map[string]int{"i": i})
-		require.NoError(t, repo.Store(ctx, "partition.test", payload))
+		require.NoError(t, repo.Store(ctx, "partition.test", payload, "", ""))
 	}
 
 	events, err := repo.GetUnpublished(ctx, eventCount)
@@ -356,7 +356,7 @@ func TestMarkPublishedBatchSingleEventPartitioned(t *testing.T) {
 	ctx := context.Background()
 
 	payload, _ := json.Marshal(map[string]string{"key": "single"})
-	require.NoError(t, repo.Store(ctx, "single.test", payload))
+	require.NoError(t, repo.Store(ctx, "single.test", payload, "", ""))
 
 	events, err := repo.GetUnpublished(ctx, 1)
 	require.NoError(t, err)

@@ -14,6 +14,8 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
+	billingaggregate "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/payment"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
@@ -40,6 +42,34 @@ const (
 	subjectTrafficCycleReset      = "subscription.traffic_cycle_reset"
 	subjectTrafficWarning         = "subscription.traffic_warning"
 )
+
+// subscriptionIDPayload is a minimal typed payload used to extract
+// subscription_id from events handled by handleSimple (cancelled, paused,
+// resumed). These domain events all share a subscription_id field in their
+// payload even though the concrete types differ.
+type subscriptionIDPayload struct {
+	SubscriptionID string `json:"subscription_id"`
+}
+
+// trafficWarningPayload extends BindingWebhookPayload with traffic metrics.
+// The ACL does not currently populate these fields (zeros are passed), but the
+// payload struct is forward-compatible for when the ACL enriches the payload.
+type trafficWarningPayload struct {
+	BindingID      string `json:"binding_id"`
+	SubscriptionID string `json:"subscription_id"`
+	UsedBytes      int64  `json:"used_bytes"`
+	LimitBytes     int64  `json:"limit_bytes"`
+	ThresholdPct   int    `json:"threshold_pct"`
+}
+
+// trafficPayload extends BindingWebhookPayload with traffic byte counters.
+// Forward-compatible for ACL enrichment.
+type trafficPayload struct {
+	BindingID      string `json:"binding_id"`
+	SubscriptionID string `json:"subscription_id"`
+	UsedBytes      int64  `json:"used_bytes"`
+	LimitBytes     int64  `json:"limit_bytes"`
+}
 
 // DLQPayload is the JSON envelope written to dead-letter queue topics.
 type DLQPayload struct {
@@ -173,10 +203,10 @@ func (c *BillingEventConsumer) handleMessage(ctx context.Context, subject string
 	// and for binding traffic events that use binding_id as the entity key.
 	entityID := event.EntityID
 	if entityID == "" {
-		entityID = extractString(event.Data, "subscription_id")
+		entityID = extractStringFromData(event.Data, "subscription_id")
 	}
 	if entityID == "" {
-		entityID = extractString(event.Data, "binding_id")
+		entityID = extractStringFromData(event.Data, "binding_id")
 	}
 
 	// Consumer-side sequence gap detection: extract the outbox sequence
@@ -344,14 +374,17 @@ func (c *BillingEventConsumer) processEvent(ctx context.Context, subject string,
 // handleActivated enriches the sparse activated event with subscription, plan,
 // and family data before dispatching to the orchestrator.
 func (c *BillingEventConsumer) handleActivated(ctx context.Context, event domainevent.Event) error {
-	subscriptionID := extractString(event.Data, "subscription_id")
-	if subscriptionID == "" {
+	payload, err := domainevent.UnmarshalPayload[billingaggregate.SubActivatedPayload](event)
+	if err != nil {
+		return fmt.Errorf("unmarshal activated payload: %w", err)
+	}
+	if payload.SubscriptionID == "" {
 		return errMissingSubscriptionID
 	}
 
-	subInfo, err := c.subs.GetSubscriptionInfo(ctx, subscriptionID)
+	subInfo, err := c.subs.GetSubscriptionInfo(ctx, payload.SubscriptionID)
 	if err != nil {
-		return fmt.Errorf("lookup subscription %s: %w", subscriptionID, err)
+		return fmt.Errorf("lookup subscription %s: %w", payload.SubscriptionID, err)
 	}
 
 	plan, err := c.plans.GetPlanSnapshot(ctx, subInfo.PlanID)
@@ -385,26 +418,34 @@ func (c *BillingEventConsumer) handleActivated(ctx context.Context, event domain
 // This is the asynchronous bridge between the payment and billing contexts,
 // replacing the previous synchronous cross-context call in the webhook handler.
 func (c *BillingEventConsumer) handleChargeCompleted(ctx context.Context, event domainevent.Event) error {
-	invoiceID := extractString(event.Data, "invoice_id")
-	if invoiceID == "" {
+	payload, err := domainevent.UnmarshalPayload[payment.ChargeCompletedPayload](event)
+	if err != nil {
+		return fmt.Errorf("unmarshal charge_completed payload: %w", err)
+	}
+	if payload.InvoiceID == "" {
 		return errMissingInvoiceID
 	}
 
-	return c.checkout.CompleteCheckout(ctx, invoiceID)
+	return c.checkout.CompleteCheckout(ctx, payload.InvoiceID)
 }
 
-// handleSimple handles events that only require a subscription_id.
+// handleSimple handles events that only require a subscription_id (cancelled,
+// paused, resumed). The payload is unmarshalled into subscriptionIDPayload
+// which captures the shared subscription_id field from any of these event types.
 func (c *BillingEventConsumer) handleSimple(
 	ctx context.Context,
 	event domainevent.Event,
 	fn func(ctx context.Context, subscriptionID string) error,
 ) error {
-	subscriptionID := extractString(event.Data, "subscription_id")
-	if subscriptionID == "" {
+	payload, err := domainevent.UnmarshalPayload[subscriptionIDPayload](event)
+	if err != nil {
+		return fmt.Errorf("unmarshal %s payload: %w", event.Type, err)
+	}
+	if payload.SubscriptionID == "" {
 		return errMissingSubscriptionID
 	}
 
-	return fn(ctx, subscriptionID)
+	return fn(ctx, payload.SubscriptionID)
 }
 
 // handleTrafficExceeded handles the binding.traffic_exceeded event. It extracts
@@ -415,35 +456,36 @@ func (c *BillingEventConsumer) handleSimple(
 // webhook payload; zeros are passed to the orchestrator. If the orchestrator
 // needs precise values in the future, the ACL should enrich the payload.
 func (c *BillingEventConsumer) handleTrafficExceeded(ctx context.Context, event domainevent.Event) error {
-	bindingID := extractString(event.Data, "binding_id")
-	if bindingID == "" {
+	payload, err := domainevent.UnmarshalPayload[trafficPayload](event)
+	if err != nil {
+		return fmt.Errorf("unmarshal traffic_exceeded payload: %w", err)
+	}
+	if payload.BindingID == "" {
 		return errMissingBindingID
 	}
-	subscriptionID := extractString(event.Data, "subscription_id")
-	if subscriptionID == "" {
+	if payload.SubscriptionID == "" {
 		return errMissingSubscriptionID
 	}
 
-	usedBytes := extractInt64(event.Data, "used_bytes")
-	limitBytes := extractInt64(event.Data, "limit_bytes")
-
-	return c.handler.OnBindingTrafficExceeded(ctx, bindingID, subscriptionID, usedBytes, limitBytes)
+	return c.handler.OnBindingTrafficExceeded(ctx, payload.BindingID, payload.SubscriptionID, payload.UsedBytes, payload.LimitBytes)
 }
 
 // handleTrafficReset handles the subscription.traffic_cycle_reset event. It
 // extracts binding and subscription identifiers and delegates to the
 // orchestrator to unlimit the binding.
 func (c *BillingEventConsumer) handleTrafficReset(ctx context.Context, event domainevent.Event) error {
-	bindingID := extractString(event.Data, "binding_id")
-	if bindingID == "" {
+	payload, err := domainevent.UnmarshalPayload[multisub.BindingWebhookPayload](event)
+	if err != nil {
+		return fmt.Errorf("unmarshal traffic_cycle_reset payload: %w", err)
+	}
+	if payload.BindingID == "" {
 		return errMissingBindingID
 	}
-	subscriptionID := extractString(event.Data, "subscription_id")
-	if subscriptionID == "" {
+	if payload.SubscriptionID == "" {
 		return errMissingSubscriptionID
 	}
 
-	return c.handler.OnBindingTrafficReset(ctx, bindingID, subscriptionID)
+	return c.handler.OnBindingTrafficReset(ctx, payload.BindingID, payload.SubscriptionID)
 }
 
 // handleTrafficWarning handles the subscription.traffic_warning event. It
@@ -452,20 +494,17 @@ func (c *BillingEventConsumer) handleTrafficReset(ctx context.Context, event dom
 // OnTrafficWarning is fire-and-forget (no error return), this handler always
 // returns nil on successful payload extraction.
 func (c *BillingEventConsumer) handleTrafficWarning(ctx context.Context, event domainevent.Event) error {
-	bindingID := extractString(event.Data, "binding_id")
-	if bindingID == "" {
+	payload, err := domainevent.UnmarshalPayload[trafficWarningPayload](event)
+	if err != nil {
+		return fmt.Errorf("unmarshal traffic_warning payload: %w", err)
+	}
+	if payload.BindingID == "" {
 		return errMissingBindingID
 	}
-	subscriptionID := extractString(event.Data, "subscription_id")
-	if subscriptionID == "" {
+	if payload.SubscriptionID == "" {
 		return errMissingSubscriptionID
 	}
 
-	usedBytes := extractInt64(event.Data, "used_bytes")
-	limitBytes := extractInt64(event.Data, "limit_bytes")
-	thresholdPct := extractInt(event.Data, "threshold_pct")
-
-	c.handler.OnTrafficWarning(ctx, bindingID, subscriptionID, usedBytes, limitBytes, thresholdPct)
+	c.handler.OnTrafficWarning(ctx, payload.BindingID, payload.SubscriptionID, payload.UsedBytes, payload.LimitBytes, payload.ThresholdPct)
 	return nil
 }
-

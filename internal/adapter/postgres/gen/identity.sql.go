@@ -286,6 +286,29 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (IdentityPlat
 	return i, err
 }
 
+const getUserByIDForUpdate = `-- name: GetUserByIDForUpdate :one
+SELECT id, email, password_hash, display_name, email_verified, telegram_id, role, tenant_id, created_at, updated_at
+FROM identity.platform_users WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) GetUserByIDForUpdate(ctx context.Context, id pgtype.UUID) (IdentityPlatformUser, error) {
+	row := q.db.QueryRow(ctx, getUserByIDForUpdate, id)
+	var i IdentityPlatformUser
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.DisplayName,
+		&i.EmailVerified,
+		&i.TelegramID,
+		&i.Role,
+		&i.TenantID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getUserByTelegramID = `-- name: GetUserByTelegramID :one
 SELECT id, email, password_hash, display_name, email_verified, telegram_id, role, tenant_id, created_at, updated_at
 FROM identity.platform_users WHERE telegram_id = $1

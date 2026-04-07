@@ -68,7 +68,7 @@ func TestOutboxStore(t *testing.T) {
 	payload, err := json.Marshal(map[string]string{"subscription_id": "sub-123"})
 	require.NoError(t, err)
 
-	err = repo.Store(ctx, "subscription.activated", payload)
+	err = repo.Store(ctx, "subscription.activated", payload, "", "")
 	require.NoError(t, err)
 
 	// Verify the event was stored as unpublished.
@@ -100,7 +100,7 @@ func TestOutboxGetUnpublished(t *testing.T) {
 				t.Helper()
 				for i := 0; i < 2; i++ {
 					payload, _ := json.Marshal(map[string]int{"i": i})
-					require.NoError(t, repo.Store(ctx, "test.event", payload))
+					require.NoError(t, repo.Store(ctx, "test.event", payload, "", ""))
 				}
 				events, err := repo.GetUnpublished(ctx, 10)
 				require.NoError(t, err)
@@ -116,7 +116,7 @@ func TestOutboxGetUnpublished(t *testing.T) {
 				t.Helper()
 				for i := 0; i < 5; i++ {
 					payload, _ := json.Marshal(map[string]int{"i": i})
-					require.NoError(t, repo.Store(ctx, "test.event", payload))
+					require.NoError(t, repo.Store(ctx, "test.event", payload, "", ""))
 				}
 			},
 			limit:     3,
@@ -149,7 +149,7 @@ func TestOutboxMarkPublished(t *testing.T) {
 	require.NoError(t, err)
 
 	// Store an event.
-	require.NoError(t, repo.Store(ctx, "invoice.created", payload))
+	require.NoError(t, repo.Store(ctx, "invoice.created", payload, "", ""))
 
 	// Get the unpublished event.
 	events, err := repo.GetUnpublished(ctx, 10)
@@ -200,7 +200,7 @@ func TestOutboxMarkPublishedBatch(t *testing.T) {
 				t.Helper()
 				for i := range batchTestEventCount {
 					payload, _ := json.Marshal(map[string]int{"i": i})
-					require.NoError(t, repo.Store(ctx, "idem.test", payload))
+					require.NoError(t, repo.Store(ctx, "idem.test", payload, "", ""))
 				}
 				events, err := repo.GetUnpublished(ctx, batchTestEventCount)
 				require.NoError(t, err)
@@ -228,7 +228,7 @@ func TestOutboxMarkPublishedBatch(t *testing.T) {
 				t.Helper()
 				for i := range batchTestEventCount {
 					payload, _ := json.Marshal(map[string]int{"i": i})
-					require.NoError(t, repo.Store(ctx, "batch.test", payload))
+					require.NoError(t, repo.Store(ctx, "batch.test", payload, "", ""))
 				}
 				events, err := repo.GetUnpublished(ctx, batchTestEventCount)
 				require.NoError(t, err)

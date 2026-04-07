@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres/gen"
@@ -29,7 +30,62 @@ func (r *BindingRepository) q(ctx context.Context) *gen.Queries {
 	return gen.New(DBFromContext(ctx, r.pool))
 }
 
-func bindingRowToDomain(row gen.MultisubRemnawaveBinding) *aggregate.RemnawaveBinding {
+// bindingRow is the common field set shared by all sqlc-generated binding row
+// types. It acts as a normalisation layer so that bindingRowToDomain is written
+// exactly once.
+type bindingRow struct {
+	ID                 pgtype.UUID
+	SubscriptionID     pgtype.UUID
+	PlatformUserID     pgtype.UUID
+	RemnawaveUuid      *string
+	RemnawaveShortUuid *string
+	RemnawaveUsername  string
+	Purpose            string
+	Status             string
+	TrafficLimitBytes  int64
+	AllowedNodes       []string
+	InboundTags        []string
+	FailReason         string
+	SyncedAt           pgtype.Timestamptz
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+}
+
+// bindingRowFrom* converters — one per sqlc-generated row type.
+
+func bindingRowFromGetByID(r gen.GetBindingByIDRow) bindingRow {
+	return bindingRow{r.ID, r.SubscriptionID, r.PlatformUserID, r.RemnawaveUuid, r.RemnawaveShortUuid, r.RemnawaveUsername, r.Purpose, r.Status, r.TrafficLimitBytes, r.AllowedNodes, r.InboundTags, r.FailReason, r.SyncedAt, r.CreatedAt, r.UpdatedAt}
+}
+
+func bindingRowFromGetByIDForUpdate(r gen.GetBindingByIDForUpdateRow) bindingRow {
+	return bindingRow{r.ID, r.SubscriptionID, r.PlatformUserID, r.RemnawaveUuid, r.RemnawaveShortUuid, r.RemnawaveUsername, r.Purpose, r.Status, r.TrafficLimitBytes, r.AllowedNodes, r.InboundTags, r.FailReason, r.SyncedAt, r.CreatedAt, r.UpdatedAt}
+}
+
+func bindingRowFromGetByRemnawaveUUID(r gen.GetBindingByRemnawaveUUIDRow) bindingRow {
+	return bindingRow{r.ID, r.SubscriptionID, r.PlatformUserID, r.RemnawaveUuid, r.RemnawaveShortUuid, r.RemnawaveUsername, r.Purpose, r.Status, r.TrafficLimitBytes, r.AllowedNodes, r.InboundTags, r.FailReason, r.SyncedAt, r.CreatedAt, r.UpdatedAt}
+}
+
+func bindingRowFromGetBySubscriptionID(r gen.GetBindingsBySubscriptionIDRow) bindingRow {
+	return bindingRow{r.ID, r.SubscriptionID, r.PlatformUserID, r.RemnawaveUuid, r.RemnawaveShortUuid, r.RemnawaveUsername, r.Purpose, r.Status, r.TrafficLimitBytes, r.AllowedNodes, r.InboundTags, r.FailReason, r.SyncedAt, r.CreatedAt, r.UpdatedAt}
+}
+
+func bindingRowFromGetByPlatformUserID(r gen.GetBindingsByPlatformUserIDRow) bindingRow {
+	return bindingRow{r.ID, r.SubscriptionID, r.PlatformUserID, r.RemnawaveUuid, r.RemnawaveShortUuid, r.RemnawaveUsername, r.Purpose, r.Status, r.TrafficLimitBytes, r.AllowedNodes, r.InboundTags, r.FailReason, r.SyncedAt, r.CreatedAt, r.UpdatedAt}
+}
+
+func bindingRowFromGetActiveBySubscriptionID(r gen.GetActiveBindingsBySubscriptionIDRow) bindingRow {
+	return bindingRow{r.ID, r.SubscriptionID, r.PlatformUserID, r.RemnawaveUuid, r.RemnawaveShortUuid, r.RemnawaveUsername, r.Purpose, r.Status, r.TrafficLimitBytes, r.AllowedNodes, r.InboundTags, r.FailReason, r.SyncedAt, r.CreatedAt, r.UpdatedAt}
+}
+
+func bindingRowFromGetAllActive(r gen.GetAllActiveBindingsRow) bindingRow {
+	return bindingRow{r.ID, r.SubscriptionID, r.PlatformUserID, r.RemnawaveUuid, r.RemnawaveShortUuid, r.RemnawaveUsername, r.Purpose, r.Status, r.TrafficLimitBytes, r.AllowedNodes, r.InboundTags, r.FailReason, r.SyncedAt, r.CreatedAt, r.UpdatedAt}
+}
+
+func bindingRowFromGetFailedWithRemnawaveUUID(r gen.GetFailedBindingsWithRemnawaveUUIDRow) bindingRow {
+	return bindingRow{r.ID, r.SubscriptionID, r.PlatformUserID, r.RemnawaveUuid, r.RemnawaveShortUuid, r.RemnawaveUsername, r.Purpose, r.Status, r.TrafficLimitBytes, r.AllowedNodes, r.InboundTags, r.FailReason, r.SyncedAt, r.CreatedAt, r.UpdatedAt}
+}
+
+func bindingRowToDomain(row bindingRow) *aggregate.RemnawaveBinding {
 	return &aggregate.RemnawaveBinding{
 		ID:                 pgutil.PgtypeToUUID(row.ID),
 		SubscriptionID:     pgutil.PgtypeToUUID(row.SubscriptionID),
@@ -54,34 +110,15 @@ func (r *BindingRepository) GetByID(ctx context.Context, id string) (*aggregate.
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get binding by id", multisub.ErrBindingNotFound)
 	}
-	return bindingRowToDomain(row), nil
+	return bindingRowToDomain(bindingRowFromGetByID(row)), nil
 }
 
-// getBindingByIDForUpdateSQL is identical to GetBindingByID but acquires a
-// FOR UPDATE row lock. Must be called within a transaction.
-const getBindingByIDForUpdateSQL = `
-SELECT id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uuid,
-       remnawave_username, purpose, status, traffic_limit_bytes,
-       allowed_nodes, inbound_tags, fail_reason, synced_at, created_at, updated_at
-FROM multisub.remnawave_bindings WHERE id = $1 FOR UPDATE
-`
-
 func (r *BindingRepository) GetByIDForUpdate(ctx context.Context, id string) (*aggregate.RemnawaveBinding, error) {
-	db := DBFromContext(ctx, r.pool)
-	row := db.QueryRow(ctx, getBindingByIDForUpdateSQL, pgutil.UUIDToPgtype(id))
-
-	var rawRow gen.MultisubRemnawaveBinding
-	err := row.Scan(
-		&rawRow.ID, &rawRow.SubscriptionID, &rawRow.PlatformUserID,
-		&rawRow.RemnawaveUuid, &rawRow.RemnawaveShortUuid,
-		&rawRow.RemnawaveUsername, &rawRow.Purpose, &rawRow.Status,
-		&rawRow.TrafficLimitBytes, &rawRow.AllowedNodes, &rawRow.InboundTags,
-		&rawRow.FailReason, &rawRow.SyncedAt, &rawRow.CreatedAt, &rawRow.UpdatedAt,
-	)
+	row, err := r.q(ctx).GetBindingByIDForUpdate(ctx, pgutil.UUIDToPgtype(id))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get binding by id for update", multisub.ErrBindingNotFound)
 	}
-	return bindingRowToDomain(rawRow), nil
+	return bindingRowToDomain(bindingRowFromGetByIDForUpdate(row)), nil
 }
 
 func (r *BindingRepository) GetBySubscriptionID(ctx context.Context, subID string) ([]*aggregate.RemnawaveBinding, error) {
@@ -91,7 +128,7 @@ func (r *BindingRepository) GetBySubscriptionID(ctx context.Context, subID strin
 	}
 	bindings := make([]*aggregate.RemnawaveBinding, len(rows))
 	for i, row := range rows {
-		bindings[i] = bindingRowToDomain(row)
+		bindings[i] = bindingRowToDomain(bindingRowFromGetBySubscriptionID(row))
 	}
 	return bindings, nil
 }
@@ -103,7 +140,7 @@ func (r *BindingRepository) GetByPlatformUserID(ctx context.Context, userID stri
 	}
 	bindings := make([]*aggregate.RemnawaveBinding, len(rows))
 	for i, row := range rows {
-		bindings[i] = bindingRowToDomain(row)
+		bindings[i] = bindingRowToDomain(bindingRowFromGetByPlatformUserID(row))
 	}
 	return bindings, nil
 }
@@ -113,7 +150,7 @@ func (r *BindingRepository) GetByRemnawaveUUID(ctx context.Context, rwUUID strin
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get binding by remnawave uuid", multisub.ErrBindingNotFound)
 	}
-	return bindingRowToDomain(row), nil
+	return bindingRowToDomain(bindingRowFromGetByRemnawaveUUID(row)), nil
 }
 
 func (r *BindingRepository) GetActiveBySubscriptionID(ctx context.Context, subID string) ([]*aggregate.RemnawaveBinding, error) {
@@ -123,7 +160,7 @@ func (r *BindingRepository) GetActiveBySubscriptionID(ctx context.Context, subID
 	}
 	bindings := make([]*aggregate.RemnawaveBinding, len(rows))
 	for i, row := range rows {
-		bindings[i] = bindingRowToDomain(row)
+		bindings[i] = bindingRowToDomain(bindingRowFromGetActiveBySubscriptionID(row))
 	}
 	return bindings, nil
 }
@@ -135,7 +172,7 @@ func (r *BindingRepository) GetAllActive(ctx context.Context) ([]*aggregate.Remn
 	}
 	bindings := make([]*aggregate.RemnawaveBinding, len(rows))
 	for i, row := range rows {
-		bindings[i] = bindingRowToDomain(row)
+		bindings[i] = bindingRowToDomain(bindingRowFromGetAllActive(row))
 	}
 	return bindings, nil
 }
@@ -147,7 +184,7 @@ func (r *BindingRepository) GetFailedWithRemnawaveUUID(ctx context.Context) ([]*
 	}
 	bindings := make([]*aggregate.RemnawaveBinding, len(rows))
 	for i, row := range rows {
-		bindings[i] = bindingRowToDomain(row)
+		bindings[i] = bindingRowToDomain(bindingRowFromGetFailedWithRemnawaveUUID(row))
 	}
 	return bindings, nil
 }
@@ -176,7 +213,7 @@ func (r *BindingRepository) GetFailedForReconciliation(ctx context.Context, limi
 
 	var bindings []*aggregate.RemnawaveBinding
 	for rows.Next() {
-		var row gen.MultisubRemnawaveBinding
+		var row bindingRow
 		if err := rows.Scan(
 			&row.ID,
 			&row.SubscriptionID,

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ThreeDotsLabs/watermill/message"
@@ -90,7 +91,7 @@ const (
 // Delivery guarantee: at-least-once with documented edge cases.
 //
 // Normal flow: GetUnpublished -> NATS Publish -> MarkPublishedBatch -> Commit.
-// JetStream deduplication (10-minute window) prevents duplicate processing.
+// JetStream deduplication (1-hour window) prevents duplicate processing.
 //
 // Edge case 1 (most common): Commit fails after NATS publish succeeded.
 // Events are re-published on next tick. JetStream Msg-Id deduplication
@@ -126,6 +127,13 @@ type OutboxRelay struct {
 	workerCount int
 	natsBreaker *gobreaker.CircuitBreaker[struct{}]
 	natsConn    *nc.Conn
+
+	// Delta-based reconciliation state. These track the previous check's
+	// values so the reconciliation can compare deltas instead of all-time
+	// totals, avoiding the apples-to-oranges comparison between monotonic
+	// outbox sequences and JetStream message counts.
+	lastReconciledSeq atomic.Int64
+	lastJSSeq         atomic.Int64
 }
 
 // NATS message metadata header keys for outbox relay.
@@ -413,10 +421,14 @@ func (r *OutboxRelay) relay(ctx context.Context, logger *slog.Logger, workerID i
 			msg.Metadata.Set(HeaderOutboxSequence, strconv.FormatInt(event.SequenceNumber, 10))
 			msg.Metadata.Set(HeaderEventType, event.EventType)
 
-			// Propagate W3C traceparent from the event payload to NATS
-			// message metadata so consumers can reconstruct the trace
-			// context without parsing the full payload first.
-			if tp := extractTraceParent(event.Payload); tp != "" {
+			// Propagate W3C traceparent to NATS message metadata so
+			// consumers can reconstruct the trace context without parsing
+			// the full payload. Prefer the explicit column; fall back to
+			// byte-scanning the payload for events written before the
+			// trace_parent column was added (migration 026).
+			if tp := event.TraceParent; tp != "" {
+				msg.Metadata.Set(HeaderTraceParent, tp)
+			} else if tp = extractTraceParent(event.Payload); tp != "" {
 				msg.Metadata.Set(HeaderTraceParent, tp)
 			}
 
