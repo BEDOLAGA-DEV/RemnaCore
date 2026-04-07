@@ -13,6 +13,14 @@ import (
 // aggregate.MapToAPIError and should be checked separately.
 func MapToAPIError(err error) *apierror.Error {
 	switch {
+	case errors.Is(err, ErrPlanAlreadyExists):
+		return apierror.BillingPlanAlreadyExists
+	case errors.Is(err, ErrSubscriptionAlreadyExists):
+		return apierror.BillingSubscriptionAlreadyExists
+	case errors.Is(err, ErrInvoiceAlreadyExists):
+		return apierror.BillingInvoiceAlreadyExists
+	case errors.Is(err, ErrFamilyGroupAlreadyExists):
+		return apierror.BillingFamilyGroupAlreadyExists
 	case errors.Is(err, ErrPlanNotFound):
 		return apierror.BillingPlanNotFound
 	case errors.Is(err, ErrSubscriptionNotFound):

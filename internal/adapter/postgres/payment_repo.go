@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -65,7 +66,13 @@ func (r *PaymentRepository) CreatePayment(ctx context.Context, record *payment.P
 		CreatedAt:  pgutil.TimeToPgtype(record.CreatedAt),
 		UpdatedAt:  pgutil.TimeToPgtype(record.UpdatedAt),
 	})
-	return pgutil.MapErr(err, "create payment record", payment.ErrPaymentNotFound)
+	if err != nil {
+		if pgutil.IsUniqueViolation(err) {
+			return fmt.Errorf("create payment record: %w", payment.ErrPaymentAlreadyExists)
+		}
+		return fmt.Errorf("create payment record: %w", err)
+	}
+	return nil
 }
 
 func (r *PaymentRepository) GetPaymentByID(ctx context.Context, id string) (*payment.PaymentRecord, error) {

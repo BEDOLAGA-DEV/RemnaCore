@@ -5,6 +5,7 @@ import "errors"
 // Service-level sentinel errors for identity operations.
 var (
 	ErrNotFound              = errors.New("not found")
+	ErrAlreadyExists         = errors.New("identity record already exists")
 	ErrEmailTaken            = errors.New("email already taken")
 	ErrInvalidCredentials    = errors.New("invalid credentials")
 	ErrEmailNotVerified      = errors.New("email not verified")

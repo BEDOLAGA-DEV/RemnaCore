@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -276,7 +277,13 @@ func (r *BindingRepository) Create(ctx context.Context, b *aggregate.RemnawaveBi
 		CreatedAt:          pgutil.TimeToPgtype(b.CreatedAt),
 		UpdatedAt:          pgutil.TimeToPgtype(b.UpdatedAt),
 	})
-	return pgutil.MapErr(err, "create binding", multisub.ErrBindingNotFound)
+	if err != nil {
+		if pgutil.IsUniqueViolation(err) {
+			return fmt.Errorf("create binding: %w", multisub.ErrBindingAlreadyExists)
+		}
+		return fmt.Errorf("create binding: %w", err)
+	}
+	return nil
 }
 
 func (r *BindingRepository) Update(ctx context.Context, b *aggregate.RemnawaveBinding) error {

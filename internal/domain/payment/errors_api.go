@@ -10,6 +10,8 @@ import (
 // Returns nil if the error is not a payment domain error.
 func MapToAPIError(err error) *apierror.Error {
 	switch {
+	case errors.Is(err, ErrPaymentAlreadyExists):
+		return apierror.PaymentAlreadyExists
 	case errors.Is(err, ErrPaymentNotFound):
 		return apierror.PaymentNotFound
 	case errors.Is(err, ErrWebhookNotFound):

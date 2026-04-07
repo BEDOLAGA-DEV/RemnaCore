@@ -107,7 +107,13 @@ func (r *ResellerRepository) CreateTenant(ctx context.Context, tenant *reseller.
 		CreatedAt:      pgutil.TimeToPgtype(tenant.CreatedAt),
 		UpdatedAt:      pgutil.TimeToPgtype(tenant.UpdatedAt),
 	})
-	return pgutil.MapErr(err, "create tenant", reseller.ErrTenantNotFound)
+	if err != nil {
+		if pgutil.IsUniqueViolation(err) {
+			return fmt.Errorf("create tenant: %w", reseller.ErrTenantAlreadyExists)
+		}
+		return fmt.Errorf("create tenant: %w", err)
+	}
+	return nil
 }
 
 func (r *ResellerRepository) GetTenantByID(ctx context.Context, id string) (*reseller.Tenant, error) {
@@ -202,7 +208,13 @@ func (r *ResellerRepository) CreateResellerAccount(ctx context.Context, account 
 		Balance:        account.Balance,
 		CreatedAt:      pgutil.TimeToPgtype(account.CreatedAt),
 	})
-	return pgutil.MapErr(err, "create reseller account", reseller.ErrResellerNotFound)
+	if err != nil {
+		if pgutil.IsUniqueViolation(err) {
+			return fmt.Errorf("create reseller account: %w", reseller.ErrResellerAlreadyExists)
+		}
+		return fmt.Errorf("create reseller account: %w", err)
+	}
+	return nil
 }
 
 func (r *ResellerRepository) GetResellerAccountByID(ctx context.Context, id string) (*reseller.ResellerAccount, error) {
@@ -265,7 +277,13 @@ func (r *ResellerRepository) CreateCommission(ctx context.Context, commission *r
 		CreatedAt:  pgutil.TimeToPgtype(commission.CreatedAt),
 		PaidAt:     pgutil.OptTimeToPgtype(commission.PaidAt),
 	})
-	return pgutil.MapErr(err, "create commission", reseller.ErrCommissionNotFound)
+	if err != nil {
+		if pgutil.IsUniqueViolation(err) {
+			return fmt.Errorf("create commission: %w", reseller.ErrCommissionAlreadyExists)
+		}
+		return fmt.Errorf("create commission: %w", err)
+	}
+	return nil
 }
 
 func (r *ResellerRepository) GetPendingCommissions(ctx context.Context, resellerID string) ([]*reseller.Commission, error) {

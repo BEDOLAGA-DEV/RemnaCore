@@ -4,6 +4,7 @@ import "errors"
 
 var (
 	ErrBindingNotFound       = errors.New("remnawave binding not found")
+	ErrBindingAlreadyExists  = errors.New("remnawave binding already exists")
 	ErrProvisioningFailed    = errors.New("provisioning failed")
 	ErrDeprovisioningFailed  = errors.New("deprovisioning failed")
 	ErrSyncFailed            = errors.New("sync failed")

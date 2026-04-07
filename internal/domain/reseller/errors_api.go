@@ -10,6 +10,12 @@ import (
 // Returns nil if the error is not a reseller domain error.
 func MapToAPIError(err error) *apierror.Error {
 	switch {
+	case errors.Is(err, ErrTenantAlreadyExists):
+		return apierror.ResellerTenantAlreadyExists
+	case errors.Is(err, ErrResellerAlreadyExists):
+		return apierror.ResellerAccountAlreadyExists
+	case errors.Is(err, ErrCommissionAlreadyExists):
+		return apierror.ResellerCommissionAlreadyExists
 	case errors.Is(err, ErrTenantNotFound):
 		return apierror.ResellerTenantNotFound
 	case errors.Is(err, ErrResellerNotFound):

@@ -4,6 +4,7 @@ import "net/http"
 
 // Identity error codes.
 var (
+	IdentityAlreadyExists    = New("IDENTITY.ALREADY_EXISTS", "identity record already exists", http.StatusConflict)
 	IdentityEmailTaken       = New("IDENTITY.EMAIL_TAKEN", "email already registered", http.StatusConflict)
 	IdentityInvalidCreds     = New("IDENTITY.INVALID_CREDENTIALS", "invalid email or password", http.StatusUnauthorized)
 	IdentityTokenExpired     = New("IDENTITY.TOKEN_EXPIRED", "token has expired", http.StatusGone)
@@ -21,6 +22,10 @@ var (
 
 // Billing error codes.
 var (
+	BillingPlanAlreadyExists       = New("BILLING.PLAN_ALREADY_EXISTS", "plan already exists", http.StatusConflict)
+	BillingSubscriptionAlreadyExists = New("BILLING.SUBSCRIPTION_ALREADY_EXISTS", "subscription already exists", http.StatusConflict)
+	BillingInvoiceAlreadyExists    = New("BILLING.INVOICE_ALREADY_EXISTS", "invoice already exists", http.StatusConflict)
+	BillingFamilyGroupAlreadyExists = New("BILLING.FAMILY_GROUP_ALREADY_EXISTS", "family group already exists", http.StatusConflict)
 	BillingPlanNotFound            = New("BILLING.PLAN_NOT_FOUND", "plan not found", http.StatusNotFound)
 	BillingSubscriptionNotFound    = New("BILLING.SUBSCRIPTION_NOT_FOUND", "subscription not found", http.StatusNotFound)
 	BillingInvoiceNotFound         = New("BILLING.INVOICE_NOT_FOUND", "invoice not found", http.StatusNotFound)
@@ -75,6 +80,7 @@ var (
 
 // MultiSub error codes.
 var (
+	MultiSubBindingAlreadyExists = New("MULTISUB.BINDING_ALREADY_EXISTS", "binding already exists", http.StatusConflict)
 	MultiSubBindingNotFound      = New("MULTISUB.BINDING_NOT_FOUND", "binding not found", http.StatusNotFound)
 	MultiSubProvisioningFailed   = New("MULTISUB.PROVISIONING_FAILED", "provisioning failed", http.StatusInternalServerError)
 	MultiSubDeprovisioningFailed = New("MULTISUB.DEPROVISIONING_FAILED", "deprovisioning failed", http.StatusInternalServerError)
@@ -91,6 +97,7 @@ var (
 
 // Payment error codes.
 var (
+	PaymentAlreadyExists  = New("PAYMENT.ALREADY_EXISTS", "payment record already exists", http.StatusConflict)
 	PaymentNotFound       = New("PAYMENT.NOT_FOUND", "payment not found", http.StatusNotFound)
 	PaymentWebhookNotFound = New("PAYMENT.WEBHOOK_NOT_FOUND", "webhook log not found", http.StatusNotFound)
 	PaymentWebhookDup     = New("PAYMENT.WEBHOOK_DUPLICATE", "duplicate webhook already processed", http.StatusConflict)
@@ -108,10 +115,13 @@ var (
 
 // Reseller error codes.
 var (
-	ResellerNotFound          = New("RESELLER.NOT_FOUND", "reseller resource not found", http.StatusNotFound)
-	ResellerTenantNotFound    = New("RESELLER.TENANT_NOT_FOUND", "tenant not found", http.StatusNotFound)
-	ResellerAccountNotFound   = New("RESELLER.ACCOUNT_NOT_FOUND", "reseller account not found", http.StatusNotFound)
-	ResellerCommissionNotFound = New("RESELLER.COMMISSION_NOT_FOUND", "commission not found", http.StatusNotFound)
+	ResellerNotFound             = New("RESELLER.NOT_FOUND", "reseller resource not found", http.StatusNotFound)
+	ResellerTenantNotFound       = New("RESELLER.TENANT_NOT_FOUND", "tenant not found", http.StatusNotFound)
+	ResellerTenantAlreadyExists  = New("RESELLER.TENANT_ALREADY_EXISTS", "tenant already exists", http.StatusConflict)
+	ResellerAccountNotFound      = New("RESELLER.ACCOUNT_NOT_FOUND", "reseller account not found", http.StatusNotFound)
+	ResellerAccountAlreadyExists = New("RESELLER.ACCOUNT_ALREADY_EXISTS", "reseller account already exists", http.StatusConflict)
+	ResellerCommissionNotFound   = New("RESELLER.COMMISSION_NOT_FOUND", "commission not found", http.StatusNotFound)
+	ResellerCommissionAlreadyExists = New("RESELLER.COMMISSION_ALREADY_EXISTS", "commission already exists", http.StatusConflict)
 	ResellerInvalidCommission = New("RESELLER.INVALID_COMMISSION_RATE", "commission rate must be between 0 and 100", http.StatusBadRequest)
 	ResellerInvalidAPIKey     = New("RESELLER.INVALID_API_KEY", "invalid API key", http.StatusUnauthorized)
 	ResellerTenantInactive    = New("RESELLER.TENANT_INACTIVE", "tenant is inactive", http.StatusForbidden)

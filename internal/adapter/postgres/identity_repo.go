@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -92,7 +93,13 @@ func (r *IdentityRepository) CreateUser(ctx context.Context, user *identity.Plat
 		CreatedAt:     pgutil.TimeToPgtype(user.CreatedAt),
 		UpdatedAt:     pgutil.TimeToPgtype(user.UpdatedAt),
 	})
-	return pgutil.MapErr(err, "create user", identity.ErrNotFound)
+	if err != nil {
+		if pgutil.IsUniqueViolation(err) {
+			return fmt.Errorf("create user: %w", identity.ErrAlreadyExists)
+		}
+		return fmt.Errorf("create user: %w", err)
+	}
+	return nil
 }
 
 func (r *IdentityRepository) GetUserByID(ctx context.Context, id string) (*identity.PlatformUser, error) {
@@ -179,7 +186,13 @@ func (r *IdentityRepository) CreateSession(ctx context.Context, session *identit
 		ExpiresAt:    pgutil.TimeToPgtype(session.ExpiresAt),
 		CreatedAt:    pgutil.TimeToPgtype(session.CreatedAt),
 	})
-	return pgutil.MapErr(err, "create session", identity.ErrNotFound)
+	if err != nil {
+		if pgutil.IsUniqueViolation(err) {
+			return fmt.Errorf("create session: %w", identity.ErrAlreadyExists)
+		}
+		return fmt.Errorf("create session: %w", err)
+	}
+	return nil
 }
 
 func (r *IdentityRepository) GetSessionByRefreshToken(ctx context.Context, token string) (*identity.Session, error) {
@@ -209,7 +222,13 @@ func (r *IdentityRepository) CreateEmailVerification(ctx context.Context, v *ide
 		ExpiresAt: pgutil.TimeToPgtype(v.ExpiresAt),
 		CreatedAt: pgutil.TimeToPgtype(v.CreatedAt),
 	})
-	return pgutil.MapErr(err, "create email verification", identity.ErrNotFound)
+	if err != nil {
+		if pgutil.IsUniqueViolation(err) {
+			return fmt.Errorf("create email verification: %w", identity.ErrAlreadyExists)
+		}
+		return fmt.Errorf("create email verification: %w", err)
+	}
+	return nil
 }
 
 func (r *IdentityRepository) GetEmailVerification(ctx context.Context, token string) (*identity.EmailVerification, error) {
@@ -251,7 +270,13 @@ func (r *IdentityRepository) CreatePasswordReset(ctx context.Context, pr *identi
 		ExpiresAt: pgutil.TimeToPgtype(pr.ExpiresAt),
 		CreatedAt: pgutil.TimeToPgtype(pr.CreatedAt),
 	})
-	return pgutil.MapErr(err, "create password reset", identity.ErrNotFound)
+	if err != nil {
+		if pgutil.IsUniqueViolation(err) {
+			return fmt.Errorf("create password reset: %w", identity.ErrAlreadyExists)
+		}
+		return fmt.Errorf("create password reset: %w", err)
+	}
+	return nil
 }
 
 func (r *IdentityRepository) GetPasswordResetByToken(ctx context.Context, token string) (*identity.PasswordReset, error) {

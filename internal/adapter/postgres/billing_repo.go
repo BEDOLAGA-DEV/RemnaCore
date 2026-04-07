@@ -222,7 +222,10 @@ func (r *PlanRepository) Create(ctx context.Context, plan *aggregate.Plan) error
 		UpdatedAt:            pgutil.TimeToPgtype(plan.UpdatedAt),
 	})
 	if err != nil {
-		return pgutil.MapErr(err, "create plan", billing.ErrPlanNotFound)
+		if pgutil.IsUniqueViolation(err) {
+			return fmt.Errorf("create plan: %w", billing.ErrPlanAlreadyExists)
+		}
+		return fmt.Errorf("create plan: %w", err)
 	}
 
 	for _, addon := range plan.AvailableAddons {
@@ -246,7 +249,13 @@ func (r *PlanRepository) createAddon(ctx context.Context, planID string, addon a
 		ExtraFeatureFlags: addon.ExtraFeatureFlags,
 		CreatedAt:         pgutil.TimeToPgtype(r.clock.Now()),
 	})
-	return pgutil.MapErr(err, "create plan addon", billing.ErrPlanNotFound)
+	if err != nil {
+		if pgutil.IsUniqueViolation(err) {
+			return fmt.Errorf("create plan addon: %w", billing.ErrPlanAlreadyExists)
+		}
+		return fmt.Errorf("create plan addon: %w", err)
+	}
+	return nil
 }
 
 func (r *PlanRepository) upsertAddon(ctx context.Context, planID string, addon aggregate.Addon) error {
@@ -457,7 +466,13 @@ func (r *SubscriptionRepository) Create(ctx context.Context, sub *aggregate.Subs
 		CreatedAt:             pgutil.TimeToPgtype(sub.CreatedAt),
 		UpdatedAt:             pgutil.TimeToPgtype(sub.UpdatedAt),
 	})
-	return pgutil.MapErr(err, "create subscription", billing.ErrSubscriptionNotFound)
+	if err != nil {
+		if pgutil.IsUniqueViolation(err) {
+			return fmt.Errorf("create subscription: %w", billing.ErrSubscriptionAlreadyExists)
+		}
+		return fmt.Errorf("create subscription: %w", err)
+	}
+	return nil
 }
 
 func (r *SubscriptionRepository) Update(ctx context.Context, sub *aggregate.Subscription) error {
@@ -883,6 +898,32 @@ func (r *InvoiceRepository) loadLineItems(ctx context.Context, inv *aggregate.In
 	return nil
 }
 
+// batchLoadLineItems loads line items for multiple invoices in a single query,
+// eliminating the N+1 problem from per-invoice loadLineItems calls.
+func (r *InvoiceRepository) batchLoadLineItems(ctx context.Context, invoices []*aggregate.Invoice) error {
+	if len(invoices) == 0 {
+		return nil
+	}
+	ids := make([]pgtype.UUID, len(invoices))
+	for i, inv := range invoices {
+		ids[i] = pgutil.UUIDToPgtype(inv.ID)
+	}
+	rows, err := r.q(ctx).GetLineItemsByInvoiceIDs(ctx, ids)
+	if err != nil {
+		return fmt.Errorf("batch load line items: %w", err)
+	}
+	// Group by invoice_id.
+	byInvoice := make(map[string][]vo.LineItem, len(invoices))
+	for _, row := range rows {
+		iid := pgutil.PgtypeToUUID(row.InvoiceID)
+		byInvoice[iid] = append(byInvoice[iid], lineItemRowToDomain(row))
+	}
+	for _, inv := range invoices {
+		inv.LineItems = byInvoice[inv.ID]
+	}
+	return nil
+}
+
 func (r *InvoiceRepository) GetByID(ctx context.Context, id string) (*aggregate.Invoice, error) {
 	row, err := r.q(ctx).GetInvoiceByID(ctx, pgutil.UUIDToPgtype(id))
 	if err != nil {
@@ -967,6 +1008,9 @@ func (r *InvoiceRepository) GetAll(ctx context.Context, limit, offset int) ([]*a
 		}
 		invoices[i] = inv
 	}
+	if err := r.batchLoadLineItems(ctx, invoices); err != nil {
+		return nil, err
+	}
 	return invoices, nil
 }
 
@@ -991,7 +1035,10 @@ func (r *InvoiceRepository) Create(ctx context.Context, inv *aggregate.Invoice) 
 		UpdatedAt:           pgutil.TimeToPgtype(inv.UpdatedAt),
 	})
 	if err != nil {
-		return pgutil.MapErr(err, "create invoice", billing.ErrInvoiceNotFound)
+		if pgutil.IsUniqueViolation(err) {
+			return fmt.Errorf("create invoice: %w", billing.ErrInvoiceAlreadyExists)
+		}
+		return fmt.Errorf("create invoice: %w", err)
 	}
 
 	for _, item := range inv.LineItems {
@@ -1011,7 +1058,13 @@ func (r *InvoiceRepository) createLineItem(ctx context.Context, invoiceID string
 		Currency:    string(item.Amount.Currency),
 		Quantity:    int32(item.Quantity),
 	})
-	return pgutil.MapErr(err, "create invoice line item", billing.ErrInvoiceNotFound)
+	if err != nil {
+		if pgutil.IsUniqueViolation(err) {
+			return fmt.Errorf("create invoice line item: %w", billing.ErrInvoiceAlreadyExists)
+		}
+		return fmt.Errorf("create invoice line item: %w", err)
+	}
+	return nil
 }
 
 func (r *InvoiceRepository) Update(ctx context.Context, inv *aggregate.Invoice) error {
@@ -1057,25 +1110,36 @@ LIMIT $1`
 func (r *InvoiceRepository) GetAllCursor(ctx context.Context, params billing.CursorParams) ([]*aggregate.Invoice, error) {
 	db := DBFromContext(ctx, r.pool)
 
+	var invoices []*aggregate.Invoice
 	if params.CreatedAt == nil || params.ID == nil {
 		rows, err := db.Query(ctx, getAllInvoicesCursorFirstPageSQL, int32(params.Limit))
 		if err != nil {
 			return nil, pgutil.MapErr(err, "get all invoices cursor first page", billing.ErrInvoiceNotFound)
 		}
 		defer rows.Close()
-		return scanInvoiceRows(rows)
+		invoices, err = scanInvoiceRows(rows)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		rows, err := db.Query(ctx, getAllInvoicesCursorNextPageSQL,
+			int32(params.Limit),
+			pgutil.TimeToPgtype(*params.CreatedAt),
+			pgutil.UUIDToPgtype(*params.ID),
+		)
+		if err != nil {
+			return nil, pgutil.MapErr(err, "get all invoices cursor next page", billing.ErrInvoiceNotFound)
+		}
+		defer rows.Close()
+		invoices, err = scanInvoiceRows(rows)
+		if err != nil {
+			return nil, err
+		}
 	}
-
-	rows, err := db.Query(ctx, getAllInvoicesCursorNextPageSQL,
-		int32(params.Limit),
-		pgutil.TimeToPgtype(*params.CreatedAt),
-		pgutil.UUIDToPgtype(*params.ID),
-	)
-	if err != nil {
-		return nil, pgutil.MapErr(err, "get all invoices cursor next page", billing.ErrInvoiceNotFound)
+	if err := r.batchLoadLineItems(ctx, invoices); err != nil {
+		return nil, err
 	}
-	defer rows.Close()
-	return scanInvoiceRows(rows)
+	return invoices, nil
 }
 
 // scanInvoiceRows scans pgx rows into a slice of domain invoices.
@@ -1208,7 +1272,10 @@ func (r *FamilyRepository) Create(ctx context.Context, fg *aggregate.FamilyGroup
 		UpdatedAt:  pgutil.TimeToPgtype(fg.UpdatedAt),
 	})
 	if err != nil {
-		return pgutil.MapErr(err, "create family group", billing.ErrFamilyGroupNotFound)
+		if pgutil.IsUniqueViolation(err) {
+			return fmt.Errorf("create family group: %w", billing.ErrFamilyGroupAlreadyExists)
+		}
+		return fmt.Errorf("create family group: %w", err)
 	}
 
 	for _, member := range fg.Members {
@@ -1227,7 +1294,13 @@ func (r *FamilyRepository) createMember(ctx context.Context, groupID string, mem
 		Nickname:      pgutil.StrPtrOrNil(member.Nickname),
 		JoinedAt:      pgutil.TimeToPgtype(member.JoinedAt),
 	})
-	return pgutil.MapErr(err, "create family member", billing.ErrFamilyGroupNotFound)
+	if err != nil {
+		if pgutil.IsUniqueViolation(err) {
+			return fmt.Errorf("create family member: %w", billing.ErrFamilyGroupAlreadyExists)
+		}
+		return fmt.Errorf("create family member: %w", err)
+	}
+	return nil
 }
 
 func (r *FamilyRepository) upsertMember(ctx context.Context, groupID string, member aggregate.FamilyMember) error {

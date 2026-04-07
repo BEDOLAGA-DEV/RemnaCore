@@ -8,6 +8,7 @@ import (
 // Service-level error aliases re-exported for backward compatibility.
 var (
 	ErrNotFound              = service.ErrNotFound
+	ErrAlreadyExists         = service.ErrAlreadyExists
 	ErrEmailTaken            = service.ErrEmailTaken
 	ErrInvalidCredentials    = service.ErrInvalidCredentials
 	ErrEmailNotVerified      = service.ErrEmailNotVerified

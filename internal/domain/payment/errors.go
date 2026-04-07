@@ -4,6 +4,7 @@ import "errors"
 
 var (
 	ErrPaymentNotFound     = errors.New("payment record not found")
+	ErrPaymentAlreadyExists = errors.New("payment record already exists")
 	ErrWebhookNotFound     = errors.New("webhook log not found")
 	ErrWebhookDuplicate    = errors.New("duplicate webhook already processed")
 	ErrNoPaymentPlugin     = errors.New("no payment plugin registered")

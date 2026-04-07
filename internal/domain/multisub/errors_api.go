@@ -10,6 +10,8 @@ import (
 // Returns nil if the error is not a multisub domain error.
 func MapToAPIError(err error) *apierror.Error {
 	switch {
+	case errors.Is(err, ErrBindingAlreadyExists):
+		return apierror.MultiSubBindingAlreadyExists
 	case errors.Is(err, ErrBindingNotFound):
 		return apierror.MultiSubBindingNotFound
 	case errors.Is(err, ErrProvisioningFailed):

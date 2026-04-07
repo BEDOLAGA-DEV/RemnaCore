@@ -118,7 +118,13 @@ func (r *PluginRepository) Create(ctx context.Context, p *plugin.Plugin) error {
 		EnabledAt:   pgutil.OptTimeToPgtype(p.EnabledAt),
 		UpdatedAt:   pgutil.TimeToPgtype(p.UpdatedAt),
 	})
-	return pgutil.MapErr(err, "create plugin", plugin.ErrPluginNotFound)
+	if err != nil {
+		if pgutil.IsUniqueViolation(err) {
+			return fmt.Errorf("create plugin: %w", plugin.ErrPluginAlreadyExists)
+		}
+		return fmt.Errorf("create plugin: %w", err)
+	}
+	return nil
 }
 
 func (r *PluginRepository) GetByID(ctx context.Context, id string) (*plugin.Plugin, error) {
