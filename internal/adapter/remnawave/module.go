@@ -1,6 +1,8 @@
 package remnawave
 
 import (
+	"log/slog"
+
 	"go.uber.org/fx"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
@@ -12,5 +14,7 @@ var Module = fx.Module("remnawave",
 	fx.Provide(func(cfg *config.Config) *Client {
 		return NewClient(cfg.Remnawave.URL, cfg.Remnawave.APIToken.Expose())
 	}),
-	fx.Provide(NewResilientClient),
+	fx.Provide(func(client *Client, cfg *config.Config, logger *slog.Logger) *ResilientClient {
+		return NewResilientClient(client, cfg.CircuitBreaker.Remnawave, logger)
+	}),
 )

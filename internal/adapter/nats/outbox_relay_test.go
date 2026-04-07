@@ -6,6 +6,7 @@ import (
 	"time"
 
 	natsadapter "github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/nats"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/circuitbreaker"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -49,7 +50,7 @@ func TestNewOutboxRelay(t *testing.T) {
 	t.Run("nil dependencies do not panic", func(t *testing.T) {
 		// NewOutboxRelay should not panic with nil dependencies (constructor only
 		// assigns fields).
-		relay := natsadapter.NewOutboxRelay(nil, nil, nil, nil, nil, natsadapter.MinOutboxRelayWorkers, nil, nil)
+		relay := natsadapter.NewOutboxRelay(nil, nil, nil, nil, nil, natsadapter.MinOutboxRelayWorkers, circuitbreaker.DefaultConfigNoInterval(), nil, nil)
 		assert.NotNil(t, relay)
 	})
 
@@ -63,14 +64,14 @@ func TestNewOutboxRelay(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				relay := natsadapter.NewOutboxRelay(nil, nil, nil, nil, nil, tt.input, nil, nil)
+				relay := natsadapter.NewOutboxRelay(nil, nil, nil, nil, nil, tt.input, circuitbreaker.DefaultConfigNoInterval(), nil, nil)
 				assert.NotNil(t, relay)
 			})
 		}
 	})
 
 	t.Run("explicit worker count is accepted", func(t *testing.T) {
-		relay := natsadapter.NewOutboxRelay(nil, nil, nil, nil, nil, 4, nil, nil)
+		relay := natsadapter.NewOutboxRelay(nil, nil, nil, nil, nil, 4, circuitbreaker.DefaultConfigNoInterval(), nil, nil)
 		assert.NotNil(t, relay)
 	})
 }

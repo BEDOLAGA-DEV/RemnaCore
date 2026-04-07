@@ -3,66 +3,44 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/health"
 )
 
 // --- Test doubles ---
 
-// stubDBPinger implements dbPinger for tests.
-type stubDBPinger struct {
-	err error
+// stubChecker implements health.Checker for tests.
+type stubChecker struct {
+	check health.ComponentCheck
 }
 
-func (s *stubDBPinger) Ping(_ context.Context) error { return s.err }
+func (s *stubChecker) HealthCheck(_ context.Context) health.ComponentCheck { return s.check }
 
-// stubValkeyPinger implements valkeyPinger for tests.
-type stubValkeyPinger struct {
-	err error
-}
-
-func (s *stubValkeyPinger) Ping(_ context.Context) *redis.StatusCmd {
-	cmd := redis.NewStatusCmd(context.Background())
-	if s.err != nil {
-		cmd.SetErr(s.err)
-	} else {
-		cmd.SetVal("PONG")
+// newTestHealthHandler creates a HealthHandler with the given stub checkers.
+func newTestHealthHandler(checks ...health.ComponentCheck) *HealthHandler {
+	checkers := make([]health.Checker, 0, len(checks))
+	for _, c := range checks {
+		checkers = append(checkers, &stubChecker{check: c})
 	}
-	return cmd
-}
-
-// stubNATSChecker implements natsChecker for tests.
-type stubNATSChecker struct {
-	connected bool
-}
-
-func (s *stubNATSChecker) IsConnected() bool { return s.connected }
-
-// newTestHealthHandler creates a HealthHandler with stub dependencies.
-func newTestHealthHandler(dbErr, valkeyErr error, natsConnected bool) *HealthHandler {
-	return &HealthHandler{
-		db:     &stubDBPinger{err: dbErr},
-		valkey: &stubValkeyPinger{err: valkeyErr},
-		nats:   &stubNATSChecker{connected: natsConnected},
-	}
+	return NewHealthHandler(checkers)
 }
 
 // readyzResponse is the expected JSON shape returned by Readyz.
 type readyzResponse struct {
-	Status string            `json:"status"`
-	Checks map[string]string `json:"checks"`
+	Status string                 `json:"status"`
+	Checks []health.ComponentCheck `json:"checks"`
 }
 
 // --- Healthz tests ---
 
 func TestHealthz_AlwaysReturns200(t *testing.T) {
-	h := newTestHealthHandler(nil, nil, true)
+	h := newTestHealthHandler()
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
@@ -80,101 +58,87 @@ func TestHealthz_AlwaysReturns200(t *testing.T) {
 // --- Readyz tests ---
 
 func TestReadyz(t *testing.T) {
-	errDown := errors.New("connection refused")
-
 	tests := []struct {
-		name           string
-		dbErr          error
-		valkeyErr      error
-		natsConnected  bool
-		natsNil        bool
-		wantCode       int
-		wantStatus     string
-		wantPostgres   string
-		wantValkey     string
-		wantNATS       string
+		name       string
+		checks     []health.ComponentCheck
+		wantCode   int
+		wantStatus string
 	}{
 		{
-			name:          "all healthy",
-			dbErr:         nil,
-			valkeyErr:     nil,
-			natsConnected: true,
-			wantCode:      http.StatusOK,
-			wantStatus:    statusReady,
-			wantPostgres:  checkHealthy,
-			wantValkey:    checkHealthy,
-			wantNATS:      checkHealthy,
+			name: "all healthy",
+			checks: []health.ComponentCheck{
+				{Name: "postgres", Status: health.StatusHealthy},
+				{Name: "valkey", Status: health.StatusHealthy},
+				{Name: "nats", Status: health.StatusHealthy},
+				{Name: "outbox", Status: health.StatusHealthy},
+			},
+			wantCode:   http.StatusOK,
+			wantStatus: statusReady,
 		},
 		{
-			name:          "postgres down",
-			dbErr:         errDown,
-			valkeyErr:     nil,
-			natsConnected: true,
-			wantCode:      http.StatusServiceUnavailable,
-			wantStatus:    statusNotReady,
-			wantPostgres:  checkUnhealthy,
-			wantValkey:    checkHealthy,
-			wantNATS:      checkHealthy,
+			name: "one component degraded",
+			checks: []health.ComponentCheck{
+				{Name: "postgres", Status: health.StatusHealthy},
+				{Name: "valkey", Status: health.StatusHealthy},
+				{Name: "nats", Status: health.StatusDegraded, Message: "reconnecting"},
+				{Name: "outbox", Status: health.StatusHealthy},
+			},
+			wantCode:   http.StatusOK,
+			wantStatus: statusDegraded,
 		},
 		{
-			name:          "valkey down",
-			dbErr:         nil,
-			valkeyErr:     errDown,
-			natsConnected: true,
-			wantCode:      http.StatusServiceUnavailable,
-			wantStatus:    statusNotReady,
-			wantPostgres:  checkHealthy,
-			wantValkey:    checkUnhealthy,
-			wantNATS:      checkHealthy,
+			name: "one component unhealthy",
+			checks: []health.ComponentCheck{
+				{Name: "postgres", Status: health.StatusUnhealthy},
+				{Name: "valkey", Status: health.StatusHealthy},
+				{Name: "nats", Status: health.StatusHealthy},
+				{Name: "outbox", Status: health.StatusHealthy},
+			},
+			wantCode:   http.StatusServiceUnavailable,
+			wantStatus: statusNotReady,
 		},
 		{
-			name:          "nats disconnected",
-			dbErr:         nil,
-			valkeyErr:     nil,
-			natsConnected: false,
-			wantCode:      http.StatusServiceUnavailable,
-			wantStatus:    statusNotReady,
-			wantPostgres:  checkHealthy,
-			wantValkey:    checkHealthy,
-			wantNATS:      checkUnhealthy,
+			name: "unhealthy overrides degraded",
+			checks: []health.ComponentCheck{
+				{Name: "postgres", Status: health.StatusDegraded, Message: "pool utilisation 92%"},
+				{Name: "valkey", Status: health.StatusUnhealthy},
+				{Name: "nats", Status: health.StatusHealthy},
+			},
+			wantCode:   http.StatusServiceUnavailable,
+			wantStatus: statusNotReady,
 		},
 		{
-			name:          "nats nil conn",
-			dbErr:         nil,
-			valkeyErr:     nil,
-			natsConnected: false,
-			natsNil:       true,
-			wantCode:      http.StatusServiceUnavailable,
-			wantStatus:    statusNotReady,
-			wantPostgres:  checkHealthy,
-			wantValkey:    checkHealthy,
-			wantNATS:      checkUnhealthy,
+			name: "outbox backlog degraded",
+			checks: []health.ComponentCheck{
+				{Name: "postgres", Status: health.StatusHealthy},
+				{Name: "valkey", Status: health.StatusHealthy},
+				{Name: "nats", Status: health.StatusHealthy},
+				{Name: "outbox", Status: health.StatusDegraded, Message: "backlog: 12000 events"},
+			},
+			wantCode:   http.StatusOK,
+			wantStatus: statusDegraded,
 		},
 		{
-			name:          "all down",
-			dbErr:         errDown,
-			valkeyErr:     errDown,
-			natsConnected: false,
-			wantCode:      http.StatusServiceUnavailable,
-			wantStatus:    statusNotReady,
-			wantPostgres:  checkUnhealthy,
-			wantValkey:    checkUnhealthy,
-			wantNATS:      checkUnhealthy,
+			name: "all unhealthy",
+			checks: []health.ComponentCheck{
+				{Name: "postgres", Status: health.StatusUnhealthy},
+				{Name: "valkey", Status: health.StatusUnhealthy},
+				{Name: "nats", Status: health.StatusUnhealthy},
+			},
+			wantCode:   http.StatusServiceUnavailable,
+			wantStatus: statusNotReady,
+		},
+		{
+			name:       "no checkers",
+			checks:     nil,
+			wantCode:   http.StatusOK,
+			wantStatus: statusReady,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var h *HealthHandler
-			if tt.natsNil {
-				h = &HealthHandler{
-					db:     &stubDBPinger{err: tt.dbErr},
-					valkey: &stubValkeyPinger{err: tt.valkeyErr},
-					nats:   nil,
-				}
-			} else {
-				h = newTestHealthHandler(tt.dbErr, tt.valkeyErr, tt.natsConnected)
-			}
+			h := newTestHealthHandler(tt.checks...)
 
 			req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 			rec := httptest.NewRecorder()
@@ -188,16 +152,18 @@ func TestReadyz(t *testing.T) {
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.wantStatus, resp.Status)
-			assert.Equal(t, tt.wantPostgres, resp.Checks["postgres"])
-			assert.Equal(t, tt.wantValkey, resp.Checks["valkey"])
-			assert.Equal(t, tt.wantNATS, resp.Checks["nats"])
+			assert.Len(t, resp.Checks, len(tt.checks))
 		})
 	}
 }
 
 func TestReadyz_DoesNotLeakErrorDetails(t *testing.T) {
-	secretErr := errors.New("FATAL: password authentication failed for user \"remna\"")
-	h := newTestHealthHandler(secretErr, nil, true)
+	// Unhealthy components should never expose internal error messages.
+	h := newTestHealthHandler(
+		health.ComponentCheck{Name: "postgres", Status: health.StatusUnhealthy},
+		health.ComponentCheck{Name: "valkey", Status: health.StatusHealthy},
+		health.ComponentCheck{Name: "nats", Status: health.StatusHealthy},
+	)
 
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rec := httptest.NewRecorder()
@@ -207,6 +173,25 @@ func TestReadyz_DoesNotLeakErrorDetails(t *testing.T) {
 	body := rec.Body.String()
 	assert.NotContains(t, body, "FATAL")
 	assert.NotContains(t, body, "password")
-	assert.NotContains(t, body, "remna")
-	assert.Contains(t, body, checkUnhealthy)
+	assert.Contains(t, body, string(health.StatusUnhealthy))
+}
+
+func TestReadyz_DegradedReturns200(t *testing.T) {
+	// Degraded state should return 200, not 503. Kubernetes keeps the pod
+	// running but operators can monitor the degraded signal.
+	h := newTestHealthHandler(
+		health.ComponentCheck{Name: "nats", Status: health.StatusDegraded, Message: "reconnecting"},
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	rec := httptest.NewRecorder()
+
+	h.Readyz(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp readyzResponse
+	err := json.NewDecoder(rec.Body).Decode(&resp)
+	require.NoError(t, err)
+	assert.Equal(t, statusDegraded, resp.Status)
 }

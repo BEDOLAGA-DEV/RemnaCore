@@ -14,7 +14,7 @@ import (
 
 func newTestSpeedTestServer(t *testing.T) *SpeedTestServer {
 	t.Helper()
-	srv, err := NewSpeedTestServer(slog.Default())
+	srv, err := NewSpeedTestServer(slog.Default(), nil, nil)
 	require.NoError(t, err)
 	return srv
 }
@@ -155,7 +155,7 @@ func TestInProcessLimiter_DifferentIPsIndependent(t *testing.T) {
 
 func TestWithRateLimit_Returns429(t *testing.T) {
 	limiter := newInProcessLimiter(SpeedTestRateLimit, SpeedTestRateLimitWindow)
-	handler := withRateLimit(limiter, func(w http.ResponseWriter, r *http.Request) {
+	handler := withRateLimit(limiter, nil, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 

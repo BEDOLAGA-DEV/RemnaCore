@@ -8,26 +8,24 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sony/gobreaker/v2"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/circuitbreaker"
 )
 
+// CBName is the circuit breaker instance name.
+const CBName = "remnawave"
+
+// Per-operation timeout constants control how long each Remnawave API call
+// is allowed to take before the context is cancelled. These are applied on
+// top of the global http.Client timeout as a tighter per-call constraint.
 const (
-	// CBName is the circuit breaker instance name.
-	CBName = "remnawave"
-
-	// CBMaxRequests is the number of requests allowed in the half-open state.
-	CBMaxRequests = 3
-
-	// CBInterval is the cyclic period of the closed state for clearing internal
-	// counts. If zero, the internal counts are never cleared.
-	CBInterval = 30 * time.Second
-
-	// CBTimeout is the duration the circuit stays open before transitioning to
-	// half-open.
-	CBTimeout = 10 * time.Second
-
-	// CBConsecutiveFailures is the number of consecutive failures required to
-	// trip the breaker from closed to open.
-	CBConsecutiveFailures = 5
+	TimeoutCreateUser = 5 * time.Second
+	TimeoutDeleteUser = 5 * time.Second
+	TimeoutEnableUser = 3 * time.Second
+	TimeoutDisableUser = 3 * time.Second
+	TimeoutGetUser    = 5 * time.Second
+	TimeoutUpdateUser = 5 * time.Second
+	TimeoutGetNodes   = 10 * time.Second
 )
 
 // Prometheus metric constants for the circuit breaker.
@@ -92,43 +90,43 @@ func cbExecNoResult(cb *gobreaker.CircuitBreaker[any], fn func() error) error {
 
 // ResilientClient wraps a Client with a circuit breaker that opens after
 // consecutive failures and prevents cascading failures. State transitions
-// are recorded as Prometheus metrics.
+// are recorded as Prometheus metrics. Each operation applies a per-operation
+// context timeout to prevent slow calls from blocking indefinitely.
 type ResilientClient struct {
 	client *Client
 	cb     *gobreaker.CircuitBreaker[any]
 }
 
-// NewResilientClient wraps the provided Client with a circuit breaker.
-func NewResilientClient(client *Client, logger *slog.Logger) *ResilientClient {
+// NewResilientClient wraps the provided Client with a circuit breaker using
+// the given configuration.
+func NewResilientClient(client *Client, cfg circuitbreaker.Config, logger *slog.Logger) *ResilientClient {
 	registerCBMetrics()
 
-	settings := gobreaker.Settings{
-		Name:        CBName,
-		MaxRequests: CBMaxRequests,
-		Interval:    CBInterval,
-		Timeout:     CBTimeout,
-		ReadyToTrip: func(counts gobreaker.Counts) bool {
-			return counts.ConsecutiveFailures >= CBConsecutiveFailures
-		},
-		OnStateChange: func(name string, from, to gobreaker.State) {
-			logger.Warn("circuit breaker state changed",
-				slog.String("name", name),
-				slog.String("from", from.String()),
-				slog.String("to", to.String()),
-			)
-			cbStateGauge.Set(float64(to))
-			cbTransitionsTotal.WithLabelValues(to.String()).Inc()
-		},
+	onStateChange := func(name string, from, to gobreaker.State) {
+		logger.Warn("circuit breaker state changed",
+			slog.String("name", name),
+			slog.String("from", from.String()),
+			slog.String("to", to.String()),
+		)
+		cbStateGauge.Set(float64(to))
+		cbTransitionsTotal.WithLabelValues(to.String()).Inc()
 	}
 
 	return &ResilientClient{
 		client: client,
-		cb:     gobreaker.NewCircuitBreaker[any](settings),
+		cb:     circuitbreaker.NewBreaker[any](CBName, cfg, onStateChange),
 	}
+}
+
+// withTimeout derives a context with the given per-operation timeout.
+func withTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, timeout)
 }
 
 // CreateUser provisions a new VPN user through the circuit breaker.
 func (rc *ResilientClient) CreateUser(ctx context.Context, req CreateUserRequest) (*RemnawaveUser, error) {
+	ctx, cancel := withTimeout(ctx, TimeoutCreateUser)
+	defer cancel()
 	return cbExec(rc.cb, func() (*RemnawaveUser, error) {
 		return rc.client.CreateUser(ctx, req)
 	})
@@ -136,6 +134,8 @@ func (rc *ResilientClient) CreateUser(ctx context.Context, req CreateUserRequest
 
 // GetNodes returns all proxy nodes through the circuit breaker.
 func (rc *ResilientClient) GetNodes(ctx context.Context) ([]RemnawaveNode, error) {
+	ctx, cancel := withTimeout(ctx, TimeoutGetNodes)
+	defer cancel()
 	return cbExec(rc.cb, func() ([]RemnawaveNode, error) {
 		return rc.client.GetNodes(ctx)
 	})
@@ -144,6 +144,8 @@ func (rc *ResilientClient) GetNodes(ctx context.Context) ([]RemnawaveNode, error
 // GetUserByUUID retrieves a single VPN user with traffic stats through the
 // circuit breaker.
 func (rc *ResilientClient) GetUserByUUID(ctx context.Context, uuid string) (*RemnawaveUserWithTraffic, error) {
+	ctx, cancel := withTimeout(ctx, TimeoutGetUser)
+	defer cancel()
 	return cbExec(rc.cb, func() (*RemnawaveUserWithTraffic, error) {
 		return rc.client.GetUserByUUID(ctx, uuid)
 	})
@@ -151,6 +153,8 @@ func (rc *ResilientClient) GetUserByUUID(ctx context.Context, uuid string) (*Rem
 
 // UpdateUser modifies an existing VPN user through the circuit breaker.
 func (rc *ResilientClient) UpdateUser(ctx context.Context, req UpdateUserRequest) (*RemnawaveUser, error) {
+	ctx, cancel := withTimeout(ctx, TimeoutUpdateUser)
+	defer cancel()
 	return cbExec(rc.cb, func() (*RemnawaveUser, error) {
 		return rc.client.UpdateUser(ctx, req)
 	})
@@ -158,6 +162,8 @@ func (rc *ResilientClient) UpdateUser(ctx context.Context, req UpdateUserRequest
 
 // DeleteUser removes a VPN user through the circuit breaker.
 func (rc *ResilientClient) DeleteUser(ctx context.Context, uuid string) error {
+	ctx, cancel := withTimeout(ctx, TimeoutDeleteUser)
+	defer cancel()
 	return cbExecNoResult(rc.cb, func() error {
 		return rc.client.DeleteUser(ctx, uuid)
 	})
@@ -165,6 +171,8 @@ func (rc *ResilientClient) DeleteUser(ctx context.Context, uuid string) error {
 
 // EnableUser activates a VPN user through the circuit breaker.
 func (rc *ResilientClient) EnableUser(ctx context.Context, uuid string) error {
+	ctx, cancel := withTimeout(ctx, TimeoutEnableUser)
+	defer cancel()
 	return cbExecNoResult(rc.cb, func() error {
 		return rc.client.EnableUser(ctx, uuid)
 	})
@@ -172,6 +180,8 @@ func (rc *ResilientClient) EnableUser(ctx context.Context, uuid string) error {
 
 // DisableUser deactivates a VPN user through the circuit breaker.
 func (rc *ResilientClient) DisableUser(ctx context.Context, uuid string) error {
+	ctx, cancel := withTimeout(ctx, TimeoutDisableUser)
+	defer cancel()
 	return cbExecNoResult(rc.cb, func() error {
 		return rc.client.DisableUser(ctx, uuid)
 	})

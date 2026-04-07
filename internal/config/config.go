@@ -7,6 +7,8 @@ import (
 
 	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/v2"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/circuitbreaker"
 )
 
 const (
@@ -40,6 +42,26 @@ const (
 	DefaultOutboxRetentionDays      = 90
 	DefaultHooksSubscriptionEnabled = false
 	DefaultHooksVPNProviderEnabled  = false
+
+	// Smart router default weights — browsing.
+	DefaultWeightGeo     = 0.33
+	DefaultWeightLatency = 0.34
+	DefaultWeightLoad    = 0.33
+
+	// Smart router default weights — gaming.
+	DefaultWeightGamingGeo     = 0.2
+	DefaultWeightGamingLatency = 0.6
+	DefaultWeightGamingLoad    = 0.2
+
+	// Smart router default weights — streaming.
+	DefaultWeightStreamingGeo     = 0.5
+	DefaultWeightStreamingLatency = 0.2
+	DefaultWeightStreamingLoad    = 0.3
+
+	// Speed test rate limiting defaults.
+	DefaultSpeedTestMaxConcurrent  = 10
+	DefaultSpeedTestPerIPRateLimit = 3
+	DefaultSpeedTestMaxUploadBytes = 10 * 1024 * 1024 // 10 MB
 )
 
 // DefaultAppVersion is used when no APP_VERSION environment variable is set.
@@ -107,6 +129,30 @@ type InfraConfig struct {
 	SubscriptionProxyPort int           `koanf:"subscription_proxy_port"`
 }
 
+// SmartRouterConfig holds configurable weights for the smart routing algorithm.
+// Each weight triple controls the relative importance of geo proximity, latency,
+// and load for a given connection purpose.
+type SmartRouterConfig struct {
+	WeightGeo     float64 `koanf:"weight_geo"`
+	WeightLatency float64 `koanf:"weight_latency"`
+	WeightLoad    float64 `koanf:"weight_load"`
+
+	WeightGamingGeo     float64 `koanf:"weight_gaming_geo"`
+	WeightGamingLatency float64 `koanf:"weight_gaming_latency"`
+	WeightGamingLoad    float64 `koanf:"weight_gaming_load"`
+
+	WeightStreamingGeo     float64 `koanf:"weight_streaming_geo"`
+	WeightStreamingLatency float64 `koanf:"weight_streaming_latency"`
+	WeightStreamingLoad    float64 `koanf:"weight_streaming_load"`
+}
+
+// SpeedTestConfig holds settings for the speed test server rate limiting.
+type SpeedTestConfig struct {
+	MaxConcurrent  int `koanf:"max_concurrent"`
+	PerIPRateLimit int `koanf:"per_ip_rate_limit"`
+	MaxUploadBytes int `koanf:"max_upload_bytes"`
+}
+
 // TracingConfig holds OpenTelemetry tracing configuration.
 type TracingConfig struct {
 	Endpoint string `koanf:"endpoint"` // OTLP HTTP endpoint (e.g., "localhost:4318"); empty disables tracing
@@ -146,22 +192,35 @@ type CORSConfig struct {
 	AllowedOrigins []string `koanf:"allowed_origins"`
 }
 
+// CircuitBreakerConfig holds per-component circuit breaker settings.
+// All fields default to circuitbreaker.DefaultConfig() values when
+// unset, preserving backward compatibility with existing deployments.
+type CircuitBreakerConfig struct {
+	Remnawave   circuitbreaker.Config `koanf:"remnawave"`
+	OutboxNATS  circuitbreaker.Config `koanf:"outbox_nats"`
+	Valkey      circuitbreaker.Config `koanf:"valkey"`
+	VPNProvider circuitbreaker.Config `koanf:"vpn_provider"`
+}
+
 type Config struct {
-	App       AppConfig       `koanf:"app"`
-	Database  DatabaseConfig  `koanf:"database"`
-	Valkey    ValkeyConfig    `koanf:"valkey"`
-	NATS      NATSConfig      `koanf:"nats"`
-	JWT       JWTConfig       `koanf:"jwt"`
-	Remnawave RemnawaveConfig `koanf:"remnawave"`
-	Billing   BillingConfig   `koanf:"billing"`
-	Plugin    PluginConfig    `koanf:"plugin"`
-	Telegram  TelegramConfig  `koanf:"telegram"`
-	Infra     InfraConfig     `koanf:"infra"`
-	Outbox    OutboxConfig    `koanf:"outbox"`
-	CORS      CORSConfig      `koanf:"cors"`
-	Tracing      TracingConfig   `koanf:"tracing"`
-	RateLimit    RateLimitConfig `koanf:"ratelimit"`
-	FeatureFlags FeatureFlags    `koanf:"featureflags"`
+	App            AppConfig            `koanf:"app"`
+	Database       DatabaseConfig       `koanf:"database"`
+	Valkey         ValkeyConfig         `koanf:"valkey"`
+	NATS           NATSConfig           `koanf:"nats"`
+	JWT            JWTConfig            `koanf:"jwt"`
+	Remnawave      RemnawaveConfig      `koanf:"remnawave"`
+	Billing        BillingConfig        `koanf:"billing"`
+	Plugin         PluginConfig         `koanf:"plugin"`
+	Telegram       TelegramConfig       `koanf:"telegram"`
+	Infra          InfraConfig          `koanf:"infra"`
+	Outbox         OutboxConfig         `koanf:"outbox"`
+	CORS           CORSConfig           `koanf:"cors"`
+	Tracing        TracingConfig        `koanf:"tracing"`
+	RateLimit      RateLimitConfig      `koanf:"ratelimit"`
+	FeatureFlags   FeatureFlags         `koanf:"featureflags"`
+	CircuitBreaker CircuitBreakerConfig `koanf:"circuitbreaker"`
+	SmartRouter    SmartRouterConfig    `koanf:"smartrouter"`
+	SpeedTest      SpeedTestConfig      `koanf:"speedtest"`
 }
 
 // requiredField maps an environment variable name to the koanf key path used
@@ -219,13 +278,45 @@ func Load() (*Config, error) {
 		"outbox.retention_days":              DefaultOutboxRetentionDays,
 		"featureflags.hooks_subscription_enabled": DefaultHooksSubscriptionEnabled,
 		"featureflags.hooks_vpn_provider_enabled": DefaultHooksVPNProviderEnabled,
+		// Smart router weight defaults.
+		"smartrouter.weight_geo":               DefaultWeightGeo,
+		"smartrouter.weight_latency":           DefaultWeightLatency,
+		"smartrouter.weight_load":              DefaultWeightLoad,
+		"smartrouter.weight_gaming_geo":        DefaultWeightGamingGeo,
+		"smartrouter.weight_gaming_latency":    DefaultWeightGamingLatency,
+		"smartrouter.weight_gaming_load":       DefaultWeightGamingLoad,
+		"smartrouter.weight_streaming_geo":     DefaultWeightStreamingGeo,
+		"smartrouter.weight_streaming_latency": DefaultWeightStreamingLatency,
+		"smartrouter.weight_streaming_load":    DefaultWeightStreamingLoad,
+		// Speed test defaults.
+		"speedtest.max_concurrent":   DefaultSpeedTestMaxConcurrent,
+		"speedtest.per_ip_rate_limit": DefaultSpeedTestPerIPRateLimit,
+		"speedtest.max_upload_bytes": DefaultSpeedTestMaxUploadBytes,
+		// Circuit breaker defaults — Remnawave and VPN provider use DefaultConfig
+		// (with interval), outbox relay and Valkey use DefaultConfigNoInterval.
+		"circuitbreaker.remnawave.max_failures":    circuitbreaker.DefaultMaxFailures,
+		"circuitbreaker.remnawave.timeout":          circuitbreaker.DefaultTimeout,
+		"circuitbreaker.remnawave.max_requests":     circuitbreaker.DefaultMaxRequests,
+		"circuitbreaker.remnawave.interval":          circuitbreaker.DefaultInterval,
+		"circuitbreaker.outbox_nats.max_failures":   circuitbreaker.DefaultMaxFailures,
+		"circuitbreaker.outbox_nats.timeout":         circuitbreaker.DefaultTimeout,
+		"circuitbreaker.outbox_nats.max_requests":    uint32(1),
+		"circuitbreaker.outbox_nats.interval":        time.Duration(0),
+		"circuitbreaker.valkey.max_failures":         circuitbreaker.DefaultMaxFailures,
+		"circuitbreaker.valkey.timeout":              circuitbreaker.DefaultTimeout,
+		"circuitbreaker.valkey.max_requests":         circuitbreaker.DefaultMaxRequests,
+		"circuitbreaker.valkey.interval":             time.Duration(0),
+		"circuitbreaker.vpn_provider.max_failures":  circuitbreaker.DefaultMaxFailures,
+		"circuitbreaker.vpn_provider.timeout":        circuitbreaker.DefaultTimeout,
+		"circuitbreaker.vpn_provider.max_requests":   circuitbreaker.DefaultMaxRequests,
+		"circuitbreaker.vpn_provider.interval":       circuitbreaker.DefaultInterval,
 	}
 	for key, val := range defaults {
 		k.Set(key, val) //nolint:errcheck // Set on a fresh koanf instance cannot fail
 	}
 
 	// Load each prefix group from environment variables.
-	prefixes := []string{"APP_", "DATABASE_", "VALKEY_", "NATS_", "JWT_", "REMNAWAVE_", "BILLING_", "PLUGIN_", "TELEGRAM_", "INFRA_", "OUTBOX_", "CORS_", "TRACING_", "RATELIMIT_", "FEATUREFLAGS_"}
+	prefixes := []string{"APP_", "DATABASE_", "VALKEY_", "NATS_", "JWT_", "REMNAWAVE_", "BILLING_", "PLUGIN_", "TELEGRAM_", "INFRA_", "OUTBOX_", "CORS_", "TRACING_", "RATELIMIT_", "FEATUREFLAGS_", "CIRCUITBREAKER_", "SMARTROUTER_", "SPEEDTEST_"}
 	for _, prefix := range prefixes {
 		provider := env.Provider(prefix, ".", func(s string) string {
 			// Strip prefix then lowercase and replace _ with . for nesting

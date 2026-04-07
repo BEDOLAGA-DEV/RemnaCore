@@ -14,6 +14,7 @@ import (
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/health"
 )
 
 // ioMethodIOURing is the recommended io_method value for best I/O performance
@@ -24,6 +25,14 @@ const ioMethodIOURing = "io_uring"
 // the pool is closed gracefully on application shutdown.
 var Module = fx.Module("postgres",
 	fx.Provide(NewPool),
+	fx.Provide(
+		fx.Annotate(
+			func(pool *pgxpool.Pool) health.Checker {
+				return NewHealthChecker(pool)
+			},
+			fx.ResultTags(`group:"health.checkers"`),
+		),
+	),
 	fx.Invoke(registerPoolMetrics),
 	fx.Invoke(registerPgStatMetrics),
 )

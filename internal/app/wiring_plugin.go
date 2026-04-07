@@ -67,7 +67,7 @@ func provideVPNExecutor(cfg *config.Config, logger *slog.Logger) sdk.VPNHTTPExec
 	if !cfg.FeatureFlags.HooksVPNProviderEnabled {
 		return nil
 	}
-	return pluginadapter.NewResilientVPNExecutor(cfg.Remnawave.URL, cfg.Remnawave.APIToken.Expose(), logger)
+	return pluginadapter.NewResilientVPNExecutor(cfg.Remnawave.URL, cfg.Remnawave.APIToken.Expose(), cfg.CircuitBreaker.VPNProvider, logger)
 }
 
 // wireVPNExecutor injects the shared VPN HTTP executor into the plugin

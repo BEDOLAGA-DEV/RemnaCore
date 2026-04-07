@@ -21,6 +21,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/health"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
@@ -50,8 +51,18 @@ var natsWiring = fx.Options(
 		metrics *observability.Metrics,
 		conn *nc.Conn,
 	) *natsadapter.OutboxRelay {
-		return natsadapter.NewOutboxRelay(outbox, publisher, txRunner, clk, logger, cfg.Outbox.RelayWorkers, metrics, conn)
+		return natsadapter.NewOutboxRelay(outbox, publisher, txRunner, clk, logger, cfg.Outbox.RelayWorkers, cfg.CircuitBreaker.OutboxNATS, metrics, conn)
 	}),
+
+	// Outbox health checker: reports degraded when backlog exceeds threshold.
+	fx.Provide(
+		fx.Annotate(
+			func(outbox *postgres.OutboxRepository) health.Checker {
+				return natsadapter.NewOutboxHealthChecker(outbox)
+			},
+			fx.ResultTags(`group:"health.checkers"`),
+		),
+	),
 
 	// NATS subscriber (shared by all consumers)
 	fx.Provide(func(conn *nc.Conn) (*natsadapter.EventSubscriber, error) {
@@ -132,18 +143,30 @@ func provideWebhookHandler(cfg *config.Config, pub *natsadapter.EventPublisher, 
 // startPartitionManager spawns the PartitionManager as a background goroutine
 // managed by the Fx lifecycle. It pre-creates future quarterly partitions and
 // cleans up expired ones on a daily schedule.
+//
+// On shutdown, the context is cancelled and the hook waits for Run to return
+// before proceeding. See shutdown.go Phase 5.
 func startPartitionManager(lc fx.Lifecycle, pm *postgres.PartitionManager, logger *slog.Logger) {
 	lc.Append(fx.Hook{
 		OnStart: func(_ context.Context) error {
 			pmCtx, cancel := context.WithCancel(context.Background())
+			done := make(chan struct{})
 			go func() {
 				logger.Info("partition manager started")
 				pm.Run(pmCtx)
+				close(done)
 			}()
 			lc.Append(fx.Hook{
-				OnStop: func(_ context.Context) error {
+				OnStop: func(ctx context.Context) error {
 					logger.Info("partition manager stopping")
 					cancel()
+
+					select {
+					case <-done:
+						logger.Info("partition manager stopped")
+					case <-ctx.Done():
+						logger.Warn("partition manager shutdown timeout")
+					}
 					return nil
 				},
 			})
@@ -155,18 +178,37 @@ func startPartitionManager(lc fx.Lifecycle, pm *postgres.PartitionManager, logge
 // startOutboxRelay spawns the transactional outbox relay as a background
 // goroutine managed by the Fx lifecycle. The relay polls the outbox table for
 // unpublished domain events and forwards them to NATS.
+//
+// On shutdown, the context is cancelled and the hook WAITS for Run to return
+// (all workers + cleanup goroutines finished) before proceeding. This ensures
+// no in-flight batches are interrupted when Fx closes the NATS connection in
+// the next phase. See shutdown.go Phase 4.
 func startOutboxRelay(lc fx.Lifecycle, relay *natsadapter.OutboxRelay, logger *slog.Logger) {
 	lc.Append(fx.Hook{
 		OnStart: func(_ context.Context) error {
 			relayCtx, cancel := context.WithCancel(context.Background())
+			done := make(chan struct{})
 			go func() {
 				logger.Info("outbox relay started")
 				relay.Run(relayCtx)
+				close(done)
 			}()
 			lc.Append(fx.Hook{
-				OnStop: func(_ context.Context) error {
+				OnStop: func(ctx context.Context) error {
 					logger.Info("outbox relay stopping")
 					cancel()
+
+					// Wait for all relay workers to finish, bounded by
+					// ShutdownPhaseRelay timeout.
+					shutdownCtx, shutdownCancel := context.WithTimeout(ctx, ShutdownPhaseRelay)
+					defer shutdownCancel()
+
+					select {
+					case <-done:
+						logger.Info("outbox relay stopped")
+					case <-shutdownCtx.Done():
+						logger.Warn("outbox relay shutdown timeout, some workers may still be running")
+					}
 					return nil
 				},
 			})

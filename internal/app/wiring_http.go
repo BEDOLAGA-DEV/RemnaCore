@@ -20,8 +20,10 @@ import (
 )
 
 // httpShutdownTimeout is the maximum time allowed for the HTTP server to
-// complete in-flight requests during graceful shutdown.
-const httpShutdownTimeout = 10 * time.Second
+// complete in-flight requests during graceful shutdown. Defined separately
+// from ShutdownPhaseHTTP to allow per-environment overrides; both default
+// to the same value. See shutdown.go for the full shutdown phase reference.
+const httpShutdownTimeout = ShutdownPhaseHTTP
 
 // httpWiring provides the HTTP server lifecycle: starts the chi router on
 // OnStart and shuts down gracefully on OnStop.

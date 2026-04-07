@@ -13,6 +13,7 @@ import (
 	"go.uber.org/fx"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/health"
 )
 
 // MaxReconnects is set to -1 so the client retries indefinitely.
@@ -23,6 +24,14 @@ const MaxReconnects = -1
 var Module = fx.Module("nats",
 	fx.Provide(NewConnection),
 	fx.Provide(NewEventPublisher),
+	fx.Provide(
+		fx.Annotate(
+			func(conn *nc.Conn) health.Checker {
+				return NewHealthChecker(conn)
+			},
+			fx.ResultTags(`group:"health.checkers"`),
+		),
+	),
 	fx.Invoke(EnsureStreams),
 	fx.Invoke(registerMetrics),
 )

@@ -10,6 +10,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/infra/health"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
 )
@@ -93,6 +94,13 @@ var (
 	ErrNoHealthyNodes = errors.New("no healthy nodes available")
 )
 
+// purposeWeights holds the geo/latency/load weight triple for a single purpose.
+type purposeWeights struct {
+	geo     float64
+	latency float64
+	load    float64
+}
+
 // SmartRouter selects the best VPN node for a user based on a weighted scoring
 // algorithm. It reads exclusively from the in-memory NodeHealthCache (no Redis
 // hop, no network call).
@@ -100,15 +108,39 @@ type SmartRouter struct {
 	cache      *health.NodeHealthCache
 	dispatcher hookdispatch.Dispatcher
 	logger     *slog.Logger
+
+	browsing  purposeWeights
+	gaming    purposeWeights
+	streaming purposeWeights
 }
 
 // NewSmartRouter creates a SmartRouter backed by the shared health cache.
-func NewSmartRouter(cache *health.NodeHealthCache, dispatcher hookdispatch.Dispatcher, logger *slog.Logger) *SmartRouter {
-	return &SmartRouter{
+// Weights are read from cfg; when cfg is nil (e.g. in tests) the compiled-in
+// constants are used.
+func NewSmartRouter(cache *health.NodeHealthCache, dispatcher hookdispatch.Dispatcher, logger *slog.Logger, cfg *config.Config) *SmartRouter {
+	r := &SmartRouter{
 		cache:      cache,
 		dispatcher: dispatcher,
 		logger:     logger,
+		browsing:   purposeWeights{geo: WeightGeo, latency: WeightLatency, load: WeightLoad},
+		gaming:     purposeWeights{geo: WeightGamingGeo, latency: WeightGamingLatency, load: WeightGamingLoad},
+		streaming:  purposeWeights{geo: WeightStreamingGeo, latency: WeightStreamingLatency, load: WeightStreamingLoad},
 	}
+
+	if cfg != nil {
+		sc := cfg.SmartRouter
+		if sc.WeightGeo != 0 || sc.WeightLatency != 0 || sc.WeightLoad != 0 {
+			r.browsing = purposeWeights{geo: sc.WeightGeo, latency: sc.WeightLatency, load: sc.WeightLoad}
+		}
+		if sc.WeightGamingGeo != 0 || sc.WeightGamingLatency != 0 || sc.WeightGamingLoad != 0 {
+			r.gaming = purposeWeights{geo: sc.WeightGamingGeo, latency: sc.WeightGamingLatency, load: sc.WeightGamingLoad}
+		}
+		if sc.WeightStreamingGeo != 0 || sc.WeightStreamingLatency != 0 || sc.WeightStreamingLoad != 0 {
+			r.streaming = purposeWeights{geo: sc.WeightStreamingGeo, latency: sc.WeightStreamingLatency, load: sc.WeightStreamingLoad}
+		}
+	}
+
+	return r
 }
 
 // RouteRequest describes the parameters used for node selection.
@@ -158,7 +190,7 @@ func (r *SmartRouter) SelectNode(ctx context.Context, req RouteRequest) (*RouteR
 		allowedSet[id] = struct{}{}
 	}
 
-	wGeo, wLatency, wLoad := weightsForPurpose(req.Purpose)
+	wGeo, wLatency, wLoad := r.weightsForPurpose(req.Purpose)
 
 	scored := make([]NodeScore, 0, len(healthy))
 	for _, node := range healthy {
@@ -219,14 +251,14 @@ func (r *SmartRouter) SelectNode(ctx context.Context, req RouteRequest) (*RouteR
 }
 
 // weightsForPurpose returns the geo/latency/load weight triple for the given purpose.
-func weightsForPurpose(purpose string) (geo, latency, load float64) {
+func (r *SmartRouter) weightsForPurpose(purpose string) (geo, latency, load float64) {
 	switch purpose {
 	case PurposeGaming:
-		return WeightGamingGeo, WeightGamingLatency, WeightGamingLoad
+		return r.gaming.geo, r.gaming.latency, r.gaming.load
 	case PurposeStreaming:
-		return WeightStreamingGeo, WeightStreamingLatency, WeightStreamingLoad
+		return r.streaming.geo, r.streaming.latency, r.streaming.load
 	default:
-		return WeightGeo, WeightLatency, WeightLoad
+		return r.browsing.geo, r.browsing.latency, r.browsing.load
 	}
 }
 

@@ -26,7 +26,7 @@ func TestSelectNode_Browsing(t *testing.T) {
 	cache := health.NewNodeHealthCache()
 	seedCache(cache, defaultNodes())
 
-	router := NewSmartRouter(cache, nil, nil)
+	router := NewSmartRouter(cache, nil, nil, nil)
 
 	resp, err := router.SelectNode(context.Background(), RouteRequest{
 		UserCountry: "US",
@@ -45,7 +45,7 @@ func TestSelectNode_Gaming(t *testing.T) {
 	cache := health.NewNodeHealthCache()
 	seedCache(cache, defaultNodes())
 
-	router := NewSmartRouter(cache, nil, nil)
+	router := NewSmartRouter(cache, nil, nil, nil)
 
 	resp, err := router.SelectNode(context.Background(), RouteRequest{
 		UserCountry: "US",
@@ -62,7 +62,7 @@ func TestSelectNode_Streaming(t *testing.T) {
 	cache := health.NewNodeHealthCache()
 	seedCache(cache, defaultNodes())
 
-	router := NewSmartRouter(cache, nil, nil)
+	router := NewSmartRouter(cache, nil, nil, nil)
 
 	resp, err := router.SelectNode(context.Background(), RouteRequest{
 		UserCountry: "DE",
@@ -78,7 +78,7 @@ func TestSelectNode_Streaming(t *testing.T) {
 func TestSelectNode_NoNodes(t *testing.T) {
 	cache := health.NewNodeHealthCache()
 
-	router := NewSmartRouter(cache, nil, nil)
+	router := NewSmartRouter(cache, nil, nil, nil)
 
 	resp, err := router.SelectNode(context.Background(), RouteRequest{
 		UserCountry: "US",
@@ -94,7 +94,7 @@ func TestSelectNode_PremiumBonus(t *testing.T) {
 		{NodeID: "us1", Name: "US-East-01", IsOnline: true, CountryCode: "US", TrafficUsed: 0},
 	})
 
-	router := NewSmartRouter(cache, nil, nil)
+	router := NewSmartRouter(cache, nil, nil, nil)
 
 	// Without premium
 	basicResp, err := router.SelectNode(context.Background(), RouteRequest{
@@ -120,7 +120,7 @@ func TestSelectNode_AllowedNodesFilter(t *testing.T) {
 	cache := health.NewNodeHealthCache()
 	seedCache(cache, defaultNodes())
 
-	router := NewSmartRouter(cache, nil, nil)
+	router := NewSmartRouter(cache, nil, nil, nil)
 
 	resp, err := router.SelectNode(context.Background(), RouteRequest{
 		UserCountry:  "US",
@@ -138,7 +138,7 @@ func TestSelectNode_AllowedNodesFilter_NoneMatch(t *testing.T) {
 	cache := health.NewNodeHealthCache()
 	seedCache(cache, defaultNodes())
 
-	router := NewSmartRouter(cache, nil, nil)
+	router := NewSmartRouter(cache, nil, nil, nil)
 
 	resp, err := router.SelectNode(context.Background(), RouteRequest{
 		UserCountry:  "US",
@@ -153,7 +153,7 @@ func TestSelectNode_FallbackNodes(t *testing.T) {
 	cache := health.NewNodeHealthCache()
 	seedCache(cache, defaultNodes())
 
-	router := NewSmartRouter(cache, nil, nil)
+	router := NewSmartRouter(cache, nil, nil, nil)
 
 	resp, err := router.SelectNode(context.Background(), RouteRequest{
 		UserCountry: "US",
@@ -164,6 +164,9 @@ func TestSelectNode_FallbackNodes(t *testing.T) {
 }
 
 func TestWeightsForPurpose(t *testing.T) {
+	cache := health.NewNodeHealthCache()
+	router := NewSmartRouter(cache, nil, nil, nil)
+
 	tests := []struct {
 		purpose              string
 		wantGeo, wantLat, wantLoad float64
@@ -176,7 +179,7 @@ func TestWeightsForPurpose(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.purpose, func(t *testing.T) {
-			g, l, ld := weightsForPurpose(tt.purpose)
+			g, l, ld := router.weightsForPurpose(tt.purpose)
 			assert.InDelta(t, tt.wantGeo, g, 0.001)
 			assert.InDelta(t, tt.wantLat, l, 0.001)
 			assert.InDelta(t, tt.wantLoad, ld, 0.001)

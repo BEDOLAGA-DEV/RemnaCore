@@ -11,29 +11,15 @@ import (
 
 	"github.com/sony/gobreaker/v2"
 
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/circuitbreaker"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/sdk"
 )
 
-// Circuit breaker configuration constants for VPN provider HTTP calls.
+// VPN provider HTTP constants.
 const (
 	// VPNCBName is the circuit breaker instance name for VPN provider requests.
 	VPNCBName = "vpn-provider"
-
-	// VPNCBMaxRequests is the number of requests allowed in the half-open state.
-	VPNCBMaxRequests = 3
-
-	// VPNCBInterval is the cyclic period of the closed state for clearing
-	// internal counts.
-	VPNCBInterval = 30 * time.Second
-
-	// VPNCBTimeout is the duration the circuit stays open before transitioning
-	// to half-open.
-	VPNCBTimeout = 10 * time.Second
-
-	// VPNCBConsecutiveFailures is the number of consecutive failures required
-	// to trip the breaker from closed to open.
-	VPNCBConsecutiveFailures = 5
 
 	// DefaultVPNHTTPTimeout is the default timeout for VPN provider HTTP
 	// requests when the plugin does not specify an override.
@@ -64,23 +50,16 @@ type resilientVPNExecutor struct {
 // NewResilientVPNExecutor creates a circuit-breaker-wrapped HTTP executor for
 // VPN provider requests. The baseURL is the VPN panel root URL; plugin-built
 // VPNRequest.Path values are appended to it. The authToken is injected as a
-// Bearer Authorization header on every outbound request.
-func NewResilientVPNExecutor(baseURL string, authToken string, logger *slog.Logger) sdk.VPNHTTPExecutor {
-	cb := gobreaker.NewCircuitBreaker[*sdk.VPNResponse](gobreaker.Settings{
-		Name:        VPNCBName,
-		MaxRequests: VPNCBMaxRequests,
-		Interval:    VPNCBInterval,
-		Timeout:     VPNCBTimeout,
-		ReadyToTrip: func(counts gobreaker.Counts) bool {
-			return counts.ConsecutiveFailures >= VPNCBConsecutiveFailures
-		},
-		OnStateChange: func(name string, from, to gobreaker.State) {
-			logger.Warn("vpn provider circuit breaker state changed",
-				slog.String("name", name),
-				slog.String("from", from.String()),
-				slog.String("to", to.String()),
-			)
-		},
+// Bearer Authorization header on every outbound request. The cbCfg configures
+// the circuit breaker; pass circuitbreaker.DefaultConfig() for defaults
+// matching the previously hardcoded values.
+func NewResilientVPNExecutor(baseURL string, authToken string, cbCfg circuitbreaker.Config, logger *slog.Logger) sdk.VPNHTTPExecutor {
+	cb := circuitbreaker.NewBreaker[*sdk.VPNResponse](VPNCBName, cbCfg, func(name string, from, to gobreaker.State) {
+		logger.Warn("vpn provider circuit breaker state changed",
+			slog.String("name", name),
+			slog.String("from", from.String()),
+			slog.String("to", to.String()),
+		)
 	})
 
 	return &resilientVPNExecutor{

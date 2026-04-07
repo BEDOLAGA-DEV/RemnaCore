@@ -22,7 +22,7 @@ import (
 )
 
 func TestSubscriptionProxy_L1CacheHit(t *testing.T) {
-	cache := NewLRUCache(L1CacheSize)
+	cache := NewLRUCache(L1CacheSize, L1CacheName, nil)
 	proxy := &SubscriptionProxy{
 		l1Cache: cache,
 		logger:  slog.Default(),
@@ -57,7 +57,7 @@ func TestSubscriptionProxy_L1CacheExpired(t *testing.T) {
 	// Use a Valkey client that will fail (no real Redis), forcing L3 fetch.
 	valkeyClient := redis.NewClient(&redis.Options{Addr: "localhost:1", DialTimeout: 1 * time.Millisecond, ReadTimeout: 1 * time.Millisecond})
 
-	proxy := NewSubscriptionProxy(client, valkeyClient, slog.Default(), clock.NewReal())
+	proxy := NewSubscriptionProxy(client, valkeyClient, slog.Default(), clock.NewReal(), nil)
 
 	// Pre-populate L1 with an expired entry.
 	proxy.l1Cache.Set("expired123", []byte("stale-data"), time.Now().Add(-1*time.Minute))
@@ -76,7 +76,7 @@ func TestSubscriptionProxy_L1CacheExpired(t *testing.T) {
 
 func TestSubscriptionProxy_MissingShortUUID(t *testing.T) {
 	proxy := &SubscriptionProxy{
-		l1Cache: NewLRUCache(L1CacheSize),
+		l1Cache: NewLRUCache(L1CacheSize, L1CacheName, nil),
 		logger:  slog.Default(),
 		clock:   clock.NewReal(),
 	}
@@ -99,7 +99,7 @@ func TestSubscriptionProxy_UpstreamError(t *testing.T) {
 	client := remnawave.NewClient(mockServer.URL, "test-token")
 	valkeyClient := redis.NewClient(&redis.Options{Addr: "localhost:1", DialTimeout: 1 * time.Millisecond, ReadTimeout: 1 * time.Millisecond})
 
-	proxy := NewSubscriptionProxy(client, valkeyClient, slog.Default(), clock.NewReal())
+	proxy := NewSubscriptionProxy(client, valkeyClient, slog.Default(), clock.NewReal(), nil)
 
 	r := chi.NewRouter()
 	r.Get("/{shortUuid}", proxy.ServeSubscription)
@@ -122,7 +122,7 @@ func TestSubscriptionProxy_L3PopulatesL1(t *testing.T) {
 	client := remnawave.NewClient(mockServer.URL, "test-token")
 	valkeyClient := redis.NewClient(&redis.Options{Addr: "localhost:1", DialTimeout: 1 * time.Millisecond, ReadTimeout: 1 * time.Millisecond})
 
-	proxy := NewSubscriptionProxy(client, valkeyClient, slog.Default(), clock.NewReal())
+	proxy := NewSubscriptionProxy(client, valkeyClient, slog.Default(), clock.NewReal(), nil)
 
 	r := chi.NewRouter()
 	r.Get("/{shortUuid}", proxy.ServeSubscription)
@@ -144,7 +144,7 @@ func TestNewSubscriptionProxy(t *testing.T) {
 	client := remnawave.NewClient("http://localhost:3000", "token")
 	valkeyClient := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
 
-	proxy := NewSubscriptionProxy(client, valkeyClient, slog.Default(), clock.NewReal())
+	proxy := NewSubscriptionProxy(client, valkeyClient, slog.Default(), clock.NewReal(), nil)
 
 	assert.NotNil(t, proxy)
 	assert.NotNil(t, proxy.l1Cache)
@@ -171,7 +171,7 @@ func TestSubscriptionProxy_Singleflight_DeduplicatesL3(t *testing.T) {
 
 	client := remnawave.NewClient(mockServer.URL, "test-token")
 	valkeyClient := redis.NewClient(&redis.Options{Addr: "localhost:1", DialTimeout: 1 * time.Millisecond, ReadTimeout: 1 * time.Millisecond})
-	proxy := NewSubscriptionProxy(client, valkeyClient, slog.Default(), clock.NewReal())
+	proxy := NewSubscriptionProxy(client, valkeyClient, slog.Default(), clock.NewReal(), nil)
 
 	router := chi.NewRouter()
 	router.Get("/{shortUuid}", proxy.ServeSubscription)
@@ -224,7 +224,7 @@ func TestSubscriptionProxy_CircuitBreaker_OpensAfterFailures(t *testing.T) {
 
 	client := remnawave.NewClient(mockServer.URL, "test-token")
 	valkeyClient := redis.NewClient(&redis.Options{Addr: "localhost:1", DialTimeout: 1 * time.Millisecond, ReadTimeout: 1 * time.Millisecond})
-	proxy := NewSubscriptionProxy(client, valkeyClient, slog.Default(), clock.NewReal())
+	proxy := NewSubscriptionProxy(client, valkeyClient, slog.Default(), clock.NewReal(), nil)
 
 	router := chi.NewRouter()
 	router.Get("/{shortUuid}", proxy.ServeSubscription)
@@ -322,7 +322,7 @@ func TestSubscriptionProxy_CircuitBreaker_DirectTrip(t *testing.T) {
 
 func TestLRUCache_EvictsOldest(t *testing.T) {
 	const maxSize = 5
-	cache := NewLRUCache(maxSize)
+	cache := NewLRUCache(maxSize, "test", nil)
 	now := time.Now()
 	expiry := now.Add(L1CacheTTL)
 
@@ -337,7 +337,7 @@ func TestLRUCache_EvictsOldest(t *testing.T) {
 
 func TestLRUCache_RecentlyAccessedSurvivesEviction(t *testing.T) {
 	const maxSize = 3
-	cache := NewLRUCache(maxSize)
+	cache := NewLRUCache(maxSize, "test", nil)
 	now := time.Now()
 	expiry := now.Add(L1CacheTTL)
 
@@ -364,7 +364,7 @@ func TestLRUCache_RecentlyAccessedSurvivesEviction(t *testing.T) {
 }
 
 func TestLRUCache_ExpiredEntryReturnsNil(t *testing.T) {
-	cache := NewLRUCache(L1CacheSize)
+	cache := NewLRUCache(L1CacheSize, L1CacheName, nil)
 	past := time.Now().Add(-1 * time.Minute)
 	cache.Set("expired", []byte("data"), past)
 

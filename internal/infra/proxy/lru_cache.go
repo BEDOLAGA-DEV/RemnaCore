@@ -6,6 +6,8 @@ package proxy
 import (
 	"sync"
 	"time"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
 )
 
 // lruEntry holds a cached value with its expiration time.
@@ -15,12 +17,16 @@ type lruEntry struct {
 }
 
 // LRUCache is a thread-safe bounded cache with LRU eviction and TTL.
+// It records hit, miss, eviction, and size metrics via the provided Metrics
+// instance, using the cache name as the label value.
 type LRUCache struct {
 	mu      sync.Mutex
 	entries map[string]*lruNode
 	head    *lruNode // most recently used
 	tail    *lruNode // least recently used
 	maxSize int
+	name    string
+	metrics *observability.Metrics
 }
 
 type lruNode struct {
@@ -31,10 +37,14 @@ type lruNode struct {
 }
 
 // NewLRUCache creates a bounded LRU cache that holds at most maxSize entries.
-func NewLRUCache(maxSize int) *LRUCache {
+// The name parameter is used as the "cache_name" label value for Prometheus
+// metrics. If metrics is nil, instrumentation is silently skipped.
+func NewLRUCache(maxSize int, name string, metrics *observability.Metrics) *LRUCache {
 	return &LRUCache{
 		entries: make(map[string]*lruNode, maxSize),
 		maxSize: maxSize,
+		name:    name,
+		metrics: metrics,
 	}
 }
 
@@ -47,14 +57,18 @@ func (c *LRUCache) Get(key string, now time.Time) ([]byte, bool) {
 
 	node, ok := c.entries[key]
 	if !ok {
+		c.incMisses()
 		return nil, false
 	}
 	if now.After(node.entry.expiresAt) {
 		c.removeNode(node)
 		delete(c.entries, key)
+		c.updateSizeGauge()
+		c.incMisses()
 		return nil, false
 	}
 	c.moveToFront(node)
+	c.incHits()
 	return node.entry.body, true
 }
 
@@ -77,6 +91,7 @@ func (c *LRUCache) Set(key string, body []byte, expiresAt time.Time) {
 	node := &lruNode{key: key, entry: lruEntry{body: body, expiresAt: expiresAt}}
 	c.entries[key] = node
 	c.addToFront(node)
+	c.updateSizeGauge()
 }
 
 // Len returns the number of entries currently in the cache.
@@ -131,4 +146,33 @@ func (c *LRUCache) evictLRU() {
 	}
 	delete(c.entries, c.tail.key)
 	c.removeNode(c.tail)
+	c.incEvictions()
+}
+
+// incHits increments the cache hit counter.
+func (c *LRUCache) incHits() {
+	if c.metrics != nil {
+		c.metrics.CacheHitsTotal.WithLabelValues(c.name).Inc()
+	}
+}
+
+// incMisses increments the cache miss counter.
+func (c *LRUCache) incMisses() {
+	if c.metrics != nil {
+		c.metrics.CacheMissesTotal.WithLabelValues(c.name).Inc()
+	}
+}
+
+// incEvictions increments the cache eviction counter.
+func (c *LRUCache) incEvictions() {
+	if c.metrics != nil {
+		c.metrics.CacheEvictionsTotal.WithLabelValues(c.name).Inc()
+	}
+}
+
+// updateSizeGauge sets the cache size gauge to the current entry count.
+func (c *LRUCache) updateSizeGauge() {
+	if c.metrics != nil {
+		c.metrics.CacheSize.WithLabelValues(c.name).Set(float64(len(c.entries)))
+	}
 }

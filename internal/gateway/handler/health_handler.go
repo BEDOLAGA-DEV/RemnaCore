@@ -5,50 +5,31 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-	nc "github.com/nats-io/nats.go"
-	"github.com/redis/go-redis/v9"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/health"
 )
 
 // ReadyzTimeout is the maximum time allowed for readiness checks against
-// external dependencies (Postgres, Valkey, NATS).
+// external dependencies (Postgres, Valkey, NATS, Outbox).
 const ReadyzTimeout = 2 * time.Second
 
-// Readiness check result constants. Internal error details are never exposed
+// Readiness response status strings. Internal error details are never exposed
 // to avoid leaking infrastructure information.
 const (
-	checkHealthy   = "healthy"
-	checkUnhealthy = "unhealthy"
 	statusReady    = "ready"
+	statusDegraded = "degraded"
 	statusNotReady = "not ready"
 )
 
-// dbPinger is the subset of *pgxpool.Pool used by HealthHandler.
-type dbPinger interface {
-	Ping(ctx context.Context) error
-}
-
-// valkeyPinger is the subset of *redis.Client used by HealthHandler.
-type valkeyPinger interface {
-	Ping(ctx context.Context) *redis.StatusCmd
-}
-
-// natsChecker is the subset of *nc.Conn used by HealthHandler.
-type natsChecker interface {
-	IsConnected() bool
-}
-
 // HealthHandler serves liveness and readiness probes.
 type HealthHandler struct {
-	db     dbPinger
-	valkey valkeyPinger
-	nats   natsChecker
+	checkers []health.Checker
 }
 
-// NewHealthHandler returns a new HealthHandler that pings each dependency
-// during readiness checks.
-func NewHealthHandler(db *pgxpool.Pool, valkey *redis.Client, nats *nc.Conn) *HealthHandler {
-	return &HealthHandler{db: db, valkey: valkey, nats: nats}
+// NewHealthHandler returns a new HealthHandler that aggregates component
+// health checks during readiness probes. Checkers are injected via Fx group
+// "health.checkers".
+func NewHealthHandler(checkers []health.Checker) *HealthHandler {
+	return &HealthHandler{checkers: checkers}
 }
 
 // Healthz responds with a 200 JSON body indicating the service is alive.
@@ -58,49 +39,42 @@ func (h *HealthHandler) Healthz(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// Readyz pings Postgres, Valkey, and NATS and reports per-dependency health.
-// Returns 200 when all dependencies are reachable, 503 otherwise. Error
-// details are intentionally omitted to prevent leaking infrastructure info.
+// Readyz runs all registered health checkers and reports per-component status.
+// Returns 200 when all components are healthy or degraded, 503 when any
+// component is unhealthy. Degraded is indicated in the response body but does
+// NOT trigger 503 -- Kubernetes keeps the pod but operators can monitor the
+// degraded signal.
+//
+// Response body:
+//
+//	{
+//	  "status": "ready" | "degraded" | "not ready",
+//	  "checks": [ { "name": "postgres", "status": "healthy" }, ... ]
+//	}
 func (h *HealthHandler) Readyz(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), ReadyzTimeout)
 	defer cancel()
 
-	status := make(map[string]string, 3)
-	allOK := true
-
-	// Postgres
-	if err := h.db.Ping(ctx); err != nil {
-		status["postgres"] = checkUnhealthy
-		allOK = false
-	} else {
-		status["postgres"] = checkHealthy
+	checks := make([]health.ComponentCheck, 0, len(h.checkers))
+	for _, c := range h.checkers {
+		checks = append(checks, c.HealthCheck(ctx))
 	}
 
-	// Valkey
-	if err := h.valkey.Ping(ctx).Err(); err != nil {
-		status["valkey"] = checkUnhealthy
-		allOK = false
-	} else {
-		status["valkey"] = checkHealthy
-	}
-
-	// NATS
-	if h.nats == nil || !h.nats.IsConnected() {
-		status["nats"] = checkUnhealthy
-		allOK = false
-	} else {
-		status["nats"] = checkHealthy
-	}
+	overall := health.Aggregate(checks)
 
 	code := http.StatusOK
 	readyStatus := statusReady
-	if !allOK {
+
+	switch overall {
+	case health.StatusUnhealthy:
 		code = http.StatusServiceUnavailable
 		readyStatus = statusNotReady
+	case health.StatusDegraded:
+		readyStatus = statusDegraded
 	}
 
 	writeJSON(w, code, map[string]any{
 		"status": readyStatus,
-		"checks": status,
+		"checks": checks,
 	})
 }

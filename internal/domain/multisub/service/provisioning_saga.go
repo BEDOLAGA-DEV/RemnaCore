@@ -9,6 +9,7 @@ import (
 
 	multisubdomain "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	multisubagg "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/backoff"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tracing"
@@ -238,7 +239,7 @@ func (s *ProvisioningSaga) compensateDeleteUser(ctx context.Context, remnawaveUU
 		)
 
 		if attempt < CompensationMaxRetries-1 {
-			delay := CompensationBaseDelay * time.Duration(1<<attempt) // 1s, 2s, 4s
+			delay := backoff.WithJitter(CompensationBaseDelay * time.Duration(1<<attempt)) // ~1s, ~2s, ~4s with jitter
 			select {
 			case <-ctx.Done():
 				return

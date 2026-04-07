@@ -25,7 +25,7 @@ func seedTestCache() *health.NodeHealthCache {
 
 func TestRoutingHandler_SelectNode_OK(t *testing.T) {
 	cache := seedTestCache()
-	router := routing.NewSmartRouter(cache, nil, nil)
+	router := routing.NewSmartRouter(cache, nil, nil, nil)
 	h := NewRoutingHandler(router)
 
 	body, _ := json.Marshal(routing.RouteRequest{
@@ -48,7 +48,7 @@ func TestRoutingHandler_SelectNode_OK(t *testing.T) {
 
 func TestRoutingHandler_SelectNode_BadRequest(t *testing.T) {
 	cache := seedTestCache()
-	router := routing.NewSmartRouter(cache, nil, nil)
+	router := routing.NewSmartRouter(cache, nil, nil, nil)
 	h := NewRoutingHandler(router)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/routing/select", bytes.NewReader([]byte("invalid json")))
@@ -67,7 +67,7 @@ func TestRoutingHandler_SelectNode_BadRequest(t *testing.T) {
 
 func TestRoutingHandler_SelectNode_NoNodes(t *testing.T) {
 	cache := health.NewNodeHealthCache()
-	router := routing.NewSmartRouter(cache, nil, nil)
+	router := routing.NewSmartRouter(cache, nil, nil, nil)
 	h := NewRoutingHandler(router)
 
 	body, _ := json.Marshal(routing.RouteRequest{

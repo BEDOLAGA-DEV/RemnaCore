@@ -4,30 +4,17 @@ import (
 	"context"
 	"log/slog"
 	"sync"
-	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/sony/gobreaker/v2"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/circuitbreaker"
 )
 
-const (
-	// rlCBName is the circuit breaker instance name for the rate limiter.
-	rlCBName = "valkey-rate-limiter"
-
-	// rlCBMaxRequests is the number of probe requests allowed in half-open state.
-	rlCBMaxRequests = 3
-
-	// rlCBTimeout is the duration the circuit stays open before transitioning to
-	// half-open.
-	rlCBTimeout = 10 * time.Second
-
-	// rlCBConsecutiveFailures is the number of consecutive failures required to
-	// trip the breaker from closed to open.
-	rlCBConsecutiveFailures = 5
-)
+// rlCBName is the circuit breaker instance name for the rate limiter.
+const rlCBName = "valkey-rate-limiter"
 
 // rlFallbackCounter is the singleton Prometheus counter for rate limiter
 // fallback events. Registered once to avoid duplicate registration panics.
@@ -63,25 +50,17 @@ type ResilientRateLimiter struct {
 }
 
 // NewResilientRateLimiter wraps the provided SlidingWindowRateLimiter with a
-// circuit breaker. When the breaker opens, Allow returns (true, nil) to
-// fail-open gracefully.
-func NewResilientRateLimiter(inner *SlidingWindowRateLimiter, logger *slog.Logger) *ResilientRateLimiter {
-	return newResilientRateLimiterFromInterface(inner, logger)
+// circuit breaker configured by cbCfg. When the breaker opens, Allow returns
+// (true, nil) to fail-open gracefully.
+func NewResilientRateLimiter(inner *SlidingWindowRateLimiter, cbCfg circuitbreaker.Config, logger *slog.Logger) *ResilientRateLimiter {
+	return newResilientRateLimiterFromInterface(inner, cbCfg, logger)
 }
 
 // newResilientRateLimiterFromInterface creates a ResilientRateLimiter wrapping
 // any RateLimiter implementation. This allows tests to inject stubs without
 // requiring a real SlidingWindowRateLimiter.
-func newResilientRateLimiterFromInterface(inner RateLimiter, logger *slog.Logger) *ResilientRateLimiter {
-	cb := gobreaker.NewCircuitBreaker[bool](gobreaker.Settings{
-		Name:        rlCBName,
-		MaxRequests: rlCBMaxRequests,
-		Interval:    0, // never reset counts in closed state
-		Timeout:     rlCBTimeout,
-		ReadyToTrip: func(counts gobreaker.Counts) bool {
-			return counts.ConsecutiveFailures >= rlCBConsecutiveFailures
-		},
-	})
+func newResilientRateLimiterFromInterface(inner RateLimiter, cbCfg circuitbreaker.Config, logger *slog.Logger) *ResilientRateLimiter {
+	cb := circuitbreaker.NewBreaker[bool](rlCBName, cbCfg, nil)
 
 	return &ResilientRateLimiter{
 		inner:    inner,

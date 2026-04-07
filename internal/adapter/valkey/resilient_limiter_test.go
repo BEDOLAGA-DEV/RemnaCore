@@ -8,11 +8,18 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/circuitbreaker"
 )
 
 // testLogger returns a discard logger suitable for unit tests.
 func testLogger() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
+}
+
+// testCBConfig returns the default no-interval CB config matching production defaults.
+func testCBConfig() circuitbreaker.Config {
+	return circuitbreaker.DefaultConfigNoInterval()
 }
 
 // errValkeyUnavailable is the sentinel used to simulate Valkey failures.
@@ -41,8 +48,8 @@ func TestResilientRateLimiter_PassesThrough(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name    string
-		want    bool
+		name string
+		want bool
 	}{
 		{name: "first request allowed", want: true},
 		{name: "second request allowed", want: true},
@@ -61,18 +68,19 @@ func TestResilientRateLimiter_PassesThrough(t *testing.T) {
 
 func TestResilientRateLimiter_BreakerOpensAfterConsecutiveFailures(t *testing.T) {
 	fl := &failingLimiter{}
+	cfg := testCBConfig()
 	rl := newTestResilientLimiterFromRateLimiter(fl)
 	ctx := context.Background()
 
-	// Trip the breaker: rlCBConsecutiveFailures consecutive errors.
-	for i := range rlCBConsecutiveFailures {
+	// Trip the breaker: MaxFailures consecutive errors.
+	for i := range cfg.MaxFailures {
 		allowed, err := rl.Allow(ctx, "user:1")
 		require.NoError(t, err, "call %d should not return an error (fail-open)", i+1)
 		assert.True(t, allowed, "call %d should fail-open", i+1)
 	}
 
 	callsBefore := fl.calls
-	assert.Equal(t, int(rlCBConsecutiveFailures), callsBefore, "inner should have been called for each failure")
+	assert.Equal(t, int(cfg.MaxFailures), callsBefore, "inner should have been called for each failure")
 
 	// Now the breaker is open -- further calls should NOT reach inner.
 	for range 5 {
@@ -87,11 +95,12 @@ func TestResilientRateLimiter_BreakerOpensAfterConsecutiveFailures(t *testing.T)
 func TestResilientRateLimiter_BreakerRecovery(t *testing.T) {
 	// Start with a failing limiter to trip the breaker.
 	fl := &failingLimiter{}
+	cfg := testCBConfig()
 	rl := newTestResilientLimiterFromRateLimiter(fl)
 	ctx := context.Background()
 
 	// Trip the breaker.
-	for range rlCBConsecutiveFailures {
+	for range cfg.MaxFailures {
 		_, _ = rl.Allow(ctx, "user:1")
 	}
 
@@ -116,5 +125,5 @@ func newTestResilientLimiter(inner *InMemoryRateLimiter) *ResilientRateLimiter {
 // by any RateLimiter implementation. It uses the same circuit breaker settings
 // as production but wraps a generic RateLimiter for test flexibility.
 func newTestResilientLimiterFromRateLimiter(inner RateLimiter) *ResilientRateLimiter {
-	return newResilientRateLimiterFromInterface(inner, testLogger())
+	return newResilientRateLimiterFromInterface(inner, testCBConfig(), testLogger())
 }

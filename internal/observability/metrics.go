@@ -48,6 +48,19 @@ const (
 	MetricOutboxReconciliationSeqGap     = "platform_outbox_reconciliation_sequence_gap"
 	MetricOutboxSequenceGaps             = "platform_outbox_sequence_gaps_total"
 	MetricHookCircuitBreakerTrips        = "platform_hook_circuit_breaker_trips_total"
+
+	MetricCacheHitsTotal      = "platform_cache_hits_total"
+	MetricCacheMissesTotal    = "platform_cache_misses_total"
+	MetricCacheEvictionsTotal = "platform_cache_evictions_total"
+	MetricCacheSize           = "platform_cache_size"
+
+	MetricProxyActiveConnections = "platform_proxy_active_connections"
+	MetricProxyRequestDuration   = "platform_proxy_request_duration_seconds"
+	MetricProxyUpstreamErrors    = "platform_proxy_upstream_errors_total"
+
+	MetricSpeedTestActiveConnections = "platform_speedtest_active_connections"
+	MetricSpeedTestRequestsTotal     = "platform_speedtest_requests_total"
+	MetricSpeedTestRateLimited       = "platform_speedtest_rate_limited_total"
 )
 
 // Metric help string constants.
@@ -93,6 +106,19 @@ const (
 	helpOutboxReconciliationSeqGap     = "Gap between the last published outbox sequence and total JetStream messages. A sustained positive value may indicate missed events from the partial-commit edge case."
 	helpOutboxSequenceGaps             = "Detected sequence gaps in outbox event delivery on the consumer side."
 	helpHookCircuitBreakerTrips        = "Times a per-hook circuit breaker opened due to sustained plugin failures."
+
+	helpCacheHitsTotal      = "Total number of cache hits."
+	helpCacheMissesTotal    = "Total number of cache misses."
+	helpCacheEvictionsTotal = "Total number of cache evictions."
+	helpCacheSize           = "Current number of entries in the cache."
+
+	helpProxyActiveConnections = "Number of active subscription proxy connections."
+	helpProxyRequestDuration   = "Duration of subscription proxy requests in seconds."
+	helpProxyUpstreamErrors    = "Total number of upstream errors in the subscription proxy."
+
+	helpSpeedTestActiveConnections = "Number of active speed test connections."
+	helpSpeedTestRequestsTotal     = "Total number of speed test requests by endpoint."
+	helpSpeedTestRateLimited       = "Total number of rate-limited speed test requests."
 )
 
 // Label name constants.
@@ -109,6 +135,7 @@ const (
 	LabelHookName  = "hook_name"
 	LabelResult    = "result"
 	LabelReason    = "reason"
+	LabelCacheName = "cache_name"
 )
 
 // DefaultHTTPBuckets defines histogram buckets for HTTP request durations.
@@ -137,6 +164,9 @@ var OutboxRelayBatchBuckets = []float64{1, 5, 10, 25, 50, 100}
 // OutboxRelayLatencyBuckets defines histogram buckets for outbox relay batch
 // processing durations. Range covers fast DB-only batches through slow NATS publishes.
 var OutboxRelayLatencyBuckets = []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5}
+
+// ProxyDurationBuckets defines histogram buckets for subscription proxy request durations.
+var ProxyDurationBuckets = []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}
 
 // Consumer metric status label values.
 const (
@@ -214,6 +244,22 @@ type Metrics struct {
 
 	// Hook circuit breaker trip counter
 	HookCircuitBreakerTrips *prometheus.CounterVec
+
+	// Cache metrics (parameterized by cache name)
+	CacheHitsTotal      *prometheus.CounterVec
+	CacheMissesTotal    *prometheus.CounterVec
+	CacheEvictionsTotal *prometheus.CounterVec
+	CacheSize           *prometheus.GaugeVec
+
+	// Subscription proxy metrics
+	ProxyActiveConnections prometheus.Gauge
+	ProxyRequestDuration   *prometheus.HistogramVec
+	ProxyUpstreamErrors    prometheus.Counter
+
+	// Speed test metrics
+	SpeedTestActiveConnections prometheus.Gauge
+	SpeedTestRequestsTotal     *prometheus.CounterVec
+	SpeedTestRateLimited       prometheus.Counter
 }
 
 // registerRuntimeCollectors replaces the default Go and process collectors with
@@ -419,5 +465,56 @@ func NewMetrics() *Metrics {
 			Name: MetricHookCircuitBreakerTrips,
 			Help: helpHookCircuitBreakerTrips,
 		}, []string{LabelPlugin, LabelHook}),
+
+		CacheHitsTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: MetricCacheHitsTotal,
+			Help: helpCacheHitsTotal,
+		}, []string{LabelCacheName}),
+
+		CacheMissesTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: MetricCacheMissesTotal,
+			Help: helpCacheMissesTotal,
+		}, []string{LabelCacheName}),
+
+		CacheEvictionsTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: MetricCacheEvictionsTotal,
+			Help: helpCacheEvictionsTotal,
+		}, []string{LabelCacheName}),
+
+		CacheSize: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: MetricCacheSize,
+			Help: helpCacheSize,
+		}, []string{LabelCacheName}),
+
+		ProxyActiveConnections: promauto.NewGauge(prometheus.GaugeOpts{
+			Name: MetricProxyActiveConnections,
+			Help: helpProxyActiveConnections,
+		}),
+
+		ProxyRequestDuration: promauto.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    MetricProxyRequestDuration,
+			Help:    helpProxyRequestDuration,
+			Buckets: ProxyDurationBuckets,
+		}, []string{LabelStatus}),
+
+		ProxyUpstreamErrors: promauto.NewCounter(prometheus.CounterOpts{
+			Name: MetricProxyUpstreamErrors,
+			Help: helpProxyUpstreamErrors,
+		}),
+
+		SpeedTestActiveConnections: promauto.NewGauge(prometheus.GaugeOpts{
+			Name: MetricSpeedTestActiveConnections,
+			Help: helpSpeedTestActiveConnections,
+		}),
+
+		SpeedTestRequestsTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: MetricSpeedTestRequestsTotal,
+			Help: helpSpeedTestRequestsTotal,
+		}, []string{LabelEndpoint}),
+
+		SpeedTestRateLimited: promauto.NewCounter(prometheus.CounterOpts{
+			Name: MetricSpeedTestRateLimited,
+			Help: helpSpeedTestRateLimited,
+		}),
 	}
 }

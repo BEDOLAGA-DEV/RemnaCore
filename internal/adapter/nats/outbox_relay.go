@@ -15,6 +15,8 @@ import (
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/backoff"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/circuitbreaker"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
@@ -154,23 +156,13 @@ const (
 
 	// relayCBName is the circuit breaker instance name for the outbox relay.
 	relayCBName = "outbox-relay-nats"
-
-	// relayCBMaxRequests is the number of probe requests allowed in the
-	// half-open state to test whether NATS has recovered.
-	relayCBMaxRequests = 1
-
-	// relayCBTimeout is the duration the circuit stays open before
-	// transitioning to half-open.
-	relayCBTimeout = 10 * time.Second
-
-	// relayCBConsecutiveFailures is the number of consecutive NATS publish
-	// failures required to trip the breaker from closed to open.
-	relayCBConsecutiveFailures = 5
 )
 
 // NewOutboxRelay creates an OutboxRelay with the given dependencies.
 // workerCount controls the number of parallel relay goroutines; values
 // below MinOutboxRelayWorkers are clamped to MinOutboxRelayWorkers.
+// cbCfg configures the NATS circuit breaker; pass circuitbreaker.DefaultConfigNoInterval()
+// for defaults matching the previously hardcoded values.
 // metrics may be nil; metric recording is skipped when nil (safe for tests).
 // conn is the NATS connection used by ReconciliationCheck to query JetStream
 // stream state; it may be nil if reconciliation is not needed.
@@ -181,6 +173,7 @@ func NewOutboxRelay(
 	clk clock.Clock,
 	logger *slog.Logger,
 	workerCount int,
+	cbCfg circuitbreaker.Config,
 	metrics *observability.Metrics,
 	conn *nc.Conn,
 ) *OutboxRelay {
@@ -191,15 +184,7 @@ func NewOutboxRelay(
 		workerCount = MaxOutboxRelayWorkers
 	}
 
-	cb := gobreaker.NewCircuitBreaker[struct{}](gobreaker.Settings{
-		Name:        relayCBName,
-		MaxRequests: relayCBMaxRequests,
-		Interval:    0, // Never reset counts in closed state; only consecutive failures matter.
-		Timeout:     relayCBTimeout,
-		ReadyToTrip: func(counts gobreaker.Counts) bool {
-			return counts.ConsecutiveFailures >= relayCBConsecutiveFailures
-		},
-	})
+	cb := circuitbreaker.NewBreaker[struct{}](relayCBName, cbCfg, nil)
 
 	return &OutboxRelay{
 		outbox:      outbox,
@@ -294,9 +279,9 @@ func (r *OutboxRelay) runWorker(ctx context.Context, workerID int) {
 				currentBatchSize = min(currentBatchSize*OutboxRelayBackoffMultiplier, OutboxRelayMaxBatchSize)
 				currentInterval = OutboxRelayBaseInterval
 			case published == 0:
-				// Empty — backoff interval, reset batch size.
+				// Empty — backoff interval with jitter, reset batch size.
 				currentBatchSize = OutboxRelayBatchSize
-				currentInterval *= OutboxRelayBackoffMultiplier
+				currentInterval = backoff.WithJitter(currentInterval * OutboxRelayBackoffMultiplier)
 				if currentInterval > OutboxRelayMaxInterval {
 					currentInterval = OutboxRelayMaxInterval
 				}

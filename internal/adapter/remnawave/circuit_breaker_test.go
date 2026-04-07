@@ -13,6 +13,8 @@ import (
 	"github.com/sony/gobreaker/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/circuitbreaker"
 )
 
 // testLogger returns a slog.Logger that suppresses all output below fatal.
@@ -25,19 +27,17 @@ func testLogger() *slog.Logger {
 // errRemnawave is a sentinel error simulating a Remnawave failure.
 var errRemnawave = errors.New("remnawave: connection refused")
 
+// testCBConfig returns the default CB config used in production.
+func testCBConfig() circuitbreaker.Config {
+	return circuitbreaker.DefaultConfig()
+}
+
 func TestCircuitBreaker_TripsAfterConsecutiveFailures(t *testing.T) {
-	cb := gobreaker.NewCircuitBreaker[any](gobreaker.Settings{
-		Name:        CBName,
-		MaxRequests: CBMaxRequests,
-		Interval:    CBInterval,
-		Timeout:     CBTimeout,
-		ReadyToTrip: func(counts gobreaker.Counts) bool {
-			return counts.ConsecutiveFailures >= CBConsecutiveFailures
-		},
-	})
+	cfg := testCBConfig()
+	cb := circuitbreaker.NewBreaker[any](CBName, cfg, nil)
 
 	// Record consecutive failures up to the threshold.
-	for i := range CBConsecutiveFailures {
+	for i := range cfg.MaxFailures {
 		t.Run(fmt.Sprintf("failure_%d", i+1), func(t *testing.T) {
 			_, err := cb.Execute(func() (any, error) {
 				return nil, errRemnawave
@@ -47,7 +47,7 @@ func TestCircuitBreaker_TripsAfterConsecutiveFailures(t *testing.T) {
 	}
 
 	assert.Equal(t, gobreaker.StateOpen, cb.State(),
-		"breaker should be open after %d consecutive failures", CBConsecutiveFailures)
+		"breaker should be open after %d consecutive failures", cfg.MaxFailures)
 
 	// Next call must be rejected without executing the function.
 	functionCalled := false
@@ -60,6 +60,8 @@ func TestCircuitBreaker_TripsAfterConsecutiveFailures(t *testing.T) {
 }
 
 func TestCircuitBreaker_Constants(t *testing.T) {
+	cfg := testCBConfig()
+
 	tests := []struct {
 		name  string
 		check func(t *testing.T)
@@ -73,25 +75,25 @@ func TestCircuitBreaker_Constants(t *testing.T) {
 		{
 			name: "max requests is positive",
 			check: func(t *testing.T) {
-				assert.Greater(t, int(CBMaxRequests), 0)
+				assert.Greater(t, int(cfg.MaxRequests), 0)
 			},
 		},
 		{
 			name: "interval is positive",
 			check: func(t *testing.T) {
-				assert.Greater(t, CBInterval, time.Duration(0))
+				assert.Greater(t, cfg.Interval, time.Duration(0))
 			},
 		},
 		{
 			name: "timeout is positive",
 			check: func(t *testing.T) {
-				assert.Greater(t, CBTimeout, time.Duration(0))
+				assert.Greater(t, cfg.Timeout, time.Duration(0))
 			},
 		},
 		{
 			name: "consecutive failures threshold is positive",
 			check: func(t *testing.T) {
-				assert.Greater(t, int(CBConsecutiveFailures), 0)
+				assert.Greater(t, int(cfg.MaxFailures), 0)
 			},
 		},
 	}
@@ -101,6 +103,8 @@ func TestCircuitBreaker_Constants(t *testing.T) {
 }
 
 func TestCircuitBreaker_StateTransitionUpdatesMetrics(t *testing.T) {
+	cfg := testCBConfig()
+
 	// Use a fresh Prometheus registry to avoid conflicts with other tests
 	// that may have registered the same metrics via sync.Once.
 	registry := prometheus.NewRegistry()
@@ -122,27 +126,18 @@ func TestCircuitBreaker_StateTransitionUpdatesMetrics(t *testing.T) {
 
 	logger := testLogger()
 
-	cb := gobreaker.NewCircuitBreaker[any](gobreaker.Settings{
-		Name:        CBName,
-		MaxRequests: CBMaxRequests,
-		Interval:    CBInterval,
-		Timeout:     CBTimeout,
-		ReadyToTrip: func(counts gobreaker.Counts) bool {
-			return counts.ConsecutiveFailures >= CBConsecutiveFailures
-		},
-		OnStateChange: func(name string, from, to gobreaker.State) {
-			logger.Warn("circuit breaker state changed",
-				slog.String("name", name),
-				slog.String("from", from.String()),
-				slog.String("to", to.String()),
-			)
-			stateGauge.Set(float64(to))
-			transitionsTotal.WithLabelValues(to.String()).Inc()
-		},
+	cb := circuitbreaker.NewBreaker[any](CBName, cfg, func(name string, from, to gobreaker.State) {
+		logger.Warn("circuit breaker state changed",
+			slog.String("name", name),
+			slog.String("from", from.String()),
+			slog.String("to", to.String()),
+		)
+		stateGauge.Set(float64(to))
+		transitionsTotal.WithLabelValues(to.String()).Inc()
 	})
 
 	// Trip the breaker: closed -> open.
-	for range CBConsecutiveFailures {
+	for range cfg.MaxFailures {
 		_, _ = cb.Execute(func() (any, error) {
 			return nil, errRemnawave
 		})
@@ -174,4 +169,25 @@ func TestRegisterCBMetrics_Idempotent(t *testing.T) {
 		registerCBMetrics()
 		registerCBMetrics()
 	})
+}
+
+func TestPerOperationTimeouts_Positive(t *testing.T) {
+	tests := []struct {
+		name    string
+		timeout time.Duration
+	}{
+		{name: "create_user", timeout: TimeoutCreateUser},
+		{name: "delete_user", timeout: TimeoutDeleteUser},
+		{name: "enable_user", timeout: TimeoutEnableUser},
+		{name: "disable_user", timeout: TimeoutDisableUser},
+		{name: "get_user", timeout: TimeoutGetUser},
+		{name: "update_user", timeout: TimeoutUpdateUser},
+		{name: "get_nodes", timeout: TimeoutGetNodes},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Greater(t, tt.timeout, time.Duration(0),
+				"per-operation timeout must be positive")
+		})
+	}
 }

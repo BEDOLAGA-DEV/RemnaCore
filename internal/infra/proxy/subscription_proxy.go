@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -16,6 +17,7 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/remnawave"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
 )
@@ -49,6 +51,9 @@ const (
 	// required to trip the breaker from closed to open.
 	ProxyCBConsecutiveFailures = 5
 
+	// L1CacheName is the Prometheus label value for the L1 in-memory LRU cache.
+	L1CacheName = "subscription_proxy_l1"
+
 	// L2CacheKeyPrefix is the Valkey key prefix for L2-cached subscription configs.
 	L2CacheKeyPrefix = "sub:"
 	// RemnawaveSubPath is the URL path segment for Remnawave subscription endpoints.
@@ -74,6 +79,7 @@ type SubscriptionProxy struct {
 	valkeyClient    *redis.Client
 	logger          *slog.Logger
 	clock           clock.Clock
+	metrics         *observability.Metrics
 	sfGroup         singleflight.Group
 	cbRemnawave     *gobreaker.CircuitBreaker[[]byte]
 }
@@ -84,6 +90,7 @@ func NewSubscriptionProxy(
 	valkeyClient *redis.Client,
 	logger *slog.Logger,
 	clk clock.Clock,
+	metrics *observability.Metrics,
 ) *SubscriptionProxy {
 	cb := gobreaker.NewCircuitBreaker[[]byte](gobreaker.Settings{
 		Name:        ProxyCBName,
@@ -99,10 +106,11 @@ func NewSubscriptionProxy(
 		httpClient: &http.Client{
 			Timeout: ProxyHTTPTimeout,
 		},
-		l1Cache:      NewLRUCache(L1CacheSize),
+		l1Cache:      NewLRUCache(L1CacheSize, L1CacheName, metrics),
 		valkeyClient: valkeyClient,
 		logger:       logger,
 		clock:        clk,
+		metrics:      metrics,
 		cbRemnawave:  cb,
 	}
 }
@@ -110,8 +118,13 @@ func NewSubscriptionProxy(
 // ServeSubscription handles GET /{shortUuid}. It looks up the subscription
 // config through the L1 -> L2 -> L3 cache chain and returns it to the VPN client.
 func (sp *SubscriptionProxy) ServeSubscription(w http.ResponseWriter, r *http.Request) {
+	start := sp.clock.Now()
+	sp.incActiveConnections()
+	defer sp.decActiveConnections()
+
 	shortUUID := chi.URLParam(r, "shortUuid")
 	if shortUUID == "" {
+		sp.observeRequest(start, http.StatusBadRequest)
 		http.Error(w, "missing shortUuid", http.StatusBadRequest)
 		return
 	}
@@ -119,6 +132,7 @@ func (sp *SubscriptionProxy) ServeSubscription(w http.ResponseWriter, r *http.Re
 	// L1: in-memory LRU cache.
 	if body, ok := sp.l1Cache.Get(shortUUID, sp.clock.Now()); ok {
 		sp.writeSubscriptionResponse(w, body)
+		sp.observeRequest(start, http.StatusOK)
 		return
 	}
 
@@ -129,6 +143,7 @@ func (sp *SubscriptionProxy) ServeSubscription(w http.ResponseWriter, r *http.Re
 		// Populate L1 from L2.
 		sp.l1Cache.Set(shortUUID, l2Data, sp.clock.Now().Add(L1CacheTTL))
 		sp.writeSubscriptionResponse(w, l2Data)
+		sp.observeRequest(start, http.StatusOK)
 		return
 	}
 
@@ -143,6 +158,8 @@ func (sp *SubscriptionProxy) ServeSubscription(w http.ResponseWriter, r *http.Re
 			slog.String("short_uuid", shortUUID),
 			slog.Any("error", err),
 		)
+		sp.incUpstreamErrors()
+		sp.observeRequest(start, http.StatusBadGateway)
 		http.Error(w, "upstream unavailable", http.StatusBadGateway)
 		return
 	}
@@ -156,6 +173,7 @@ func (sp *SubscriptionProxy) ServeSubscription(w http.ResponseWriter, r *http.Re
 	sp.l1Cache.Set(shortUUID, body, sp.clock.Now().Add(L1CacheTTL))
 
 	sp.writeSubscriptionResponse(w, body)
+	sp.observeRequest(start, http.StatusOK)
 }
 
 // fetchFromRemnawave retrieves the subscription config from Remnawave by
@@ -195,6 +213,35 @@ func (sp *SubscriptionProxy) writeSubscriptionResponse(w http.ResponseWriter, bo
 	w.Header().Set(httpconst.HeaderCacheControl, httpconst.CacheControlNoStore)
 	w.WriteHeader(http.StatusOK)
 	w.Write(body)
+}
+
+// incActiveConnections increments the active connections gauge.
+func (sp *SubscriptionProxy) incActiveConnections() {
+	if sp.metrics != nil {
+		sp.metrics.ProxyActiveConnections.Inc()
+	}
+}
+
+// decActiveConnections decrements the active connections gauge.
+func (sp *SubscriptionProxy) decActiveConnections() {
+	if sp.metrics != nil {
+		sp.metrics.ProxyActiveConnections.Dec()
+	}
+}
+
+// observeRequest records the request duration with the response status code.
+func (sp *SubscriptionProxy) observeRequest(start time.Time, statusCode int) {
+	if sp.metrics != nil {
+		duration := sp.clock.Now().Sub(start).Seconds()
+		sp.metrics.ProxyRequestDuration.WithLabelValues(strconv.Itoa(statusCode)).Observe(duration)
+	}
+}
+
+// incUpstreamErrors increments the upstream error counter.
+func (sp *SubscriptionProxy) incUpstreamErrors() {
+	if sp.metrics != nil {
+		sp.metrics.ProxyUpstreamErrors.Inc()
+	}
 }
 
 // Start begins listening on the given port in a separate HTTP server. It blocks

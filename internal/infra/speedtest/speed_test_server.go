@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -14,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
 )
 
@@ -35,25 +38,52 @@ const (
 
 	// ShutdownTimeout is the maximum time allowed for graceful HTTP server shutdown.
 	ShutdownTimeout = 5 * time.Second
+
+	// EndpointDownload is the speed test download endpoint name for metrics.
+	EndpointDownload = "download"
+	// EndpointUpload is the speed test upload endpoint name for metrics.
+	EndpointUpload = "upload"
+	// EndpointPing is the speed test ping endpoint name for metrics.
+	EndpointPing = "ping"
 )
 
 // SpeedTestServer provides download, upload, and ping endpoints for client-side
 // speed testing. It pre-allocates a random buffer at startup so that per-request
 // crypto/rand overhead is avoided.
 type SpeedTestServer struct {
-	randomBuf []byte
-	logger    *slog.Logger
+	randomBuf      []byte
+	logger         *slog.Logger
+	metrics        *observability.Metrics
+	semaphore      chan struct{}
+	maxUploadBytes int64
 }
 
 // NewSpeedTestServer creates a SpeedTestServer with a pre-allocated random buffer.
-func NewSpeedTestServer(logger *slog.Logger) (*SpeedTestServer, error) {
+// Configuration for max concurrent connections, per-IP rate limits, and upload
+// size limits are read from cfg.SpeedTest when cfg is non-nil.
+func NewSpeedTestServer(logger *slog.Logger, cfg *config.Config, metrics *observability.Metrics) (*SpeedTestServer, error) {
 	buf := make([]byte, SpeedTestRandomBufSize)
 	if _, err := rand.Read(buf); err != nil {
 		return nil, fmt.Errorf("filling random buffer: %w", err)
 	}
+
+	maxConcurrent := config.DefaultSpeedTestMaxConcurrent
+	maxUpload := config.DefaultSpeedTestMaxUploadBytes
+	if cfg != nil {
+		if cfg.SpeedTest.MaxConcurrent > 0 {
+			maxConcurrent = cfg.SpeedTest.MaxConcurrent
+		}
+		if cfg.SpeedTest.MaxUploadBytes > 0 {
+			maxUpload = cfg.SpeedTest.MaxUploadBytes
+		}
+	}
+
 	return &SpeedTestServer{
-		randomBuf: buf,
-		logger:    logger,
+		randomBuf:      buf,
+		logger:         logger,
+		metrics:        metrics,
+		semaphore:      make(chan struct{}, maxConcurrent),
+		maxUploadBytes: int64(maxUpload),
 	}, nil
 }
 
@@ -61,6 +91,12 @@ func NewSpeedTestServer(logger *slog.Logger) (*SpeedTestServer, error) {
 // request a specific size via the "size" query parameter (bytes). The maximum
 // is MaxDownloadSize.
 func (s *SpeedTestServer) Download(w http.ResponseWriter, r *http.Request) {
+	if !s.acquireSemaphore(w) {
+		return
+	}
+	defer s.releaseSemaphore()
+	s.incRequestsTotal(EndpointDownload)
+
 	sizeStr := r.URL.Query().Get("size")
 	size := SpeedTestRandomBufSize // default 1 MB
 	if sizeStr != "" {
@@ -103,21 +139,36 @@ func (s *SpeedTestServer) Download(w http.ResponseWriter, r *http.Request) {
 }
 
 // Upload consumes and discards incoming data for upload speed testing. The
-// response reports the number of bytes received.
+// response reports the number of bytes received. The request body is capped
+// at the configured maximum upload size.
 func (s *SpeedTestServer) Upload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
+	if !s.acquireSemaphore(w) {
+		return
+	}
+	defer s.releaseSemaphore()
+	s.incRequestsTotal(EndpointUpload)
+
+	// Cap the upload to the configured maximum to prevent resource exhaustion.
+	limited := io.LimitReader(r.Body, s.maxUploadBytes+1)
+
 	buf := make([]byte, DefaultChunkSize)
 	var total int64
 	for {
-		n, err := r.Body.Read(buf)
+		n, err := limited.Read(buf)
 		total += int64(n)
 		if err != nil {
 			break
 		}
+	}
+
+	// If we read more than the limit, the body was too large.
+	if total > s.maxUploadBytes {
+		total = s.maxUploadBytes
 	}
 
 	w.Header().Set(httpconst.HeaderContentType, httpconst.ContentTypeJSON)
@@ -127,6 +178,12 @@ func (s *SpeedTestServer) Upload(w http.ResponseWriter, r *http.Request) {
 
 // Ping returns a minimal response for latency measurement.
 func (s *SpeedTestServer) Ping(w http.ResponseWriter, _ *http.Request) {
+	if !s.acquireSemaphore(w) {
+		return
+	}
+	defer s.releaseSemaphore()
+	s.incRequestsTotal(EndpointPing)
+
 	w.Header().Set(httpconst.HeaderContentType, httpconst.ContentTypeJSON)
 	w.Header().Set(httpconst.HeaderCacheControl, httpconst.CacheControlNoStore)
 	w.WriteHeader(http.StatusOK)
@@ -180,13 +237,16 @@ func (l *inProcessLimiter) Allow(key string) bool {
 
 // withRateLimit wraps an http.HandlerFunc with per-IP rate limiting. Requests
 // that exceed the limit receive a 429 Too Many Requests response.
-func withRateLimit(limiter *inProcessLimiter, next http.HandlerFunc) http.HandlerFunc {
+func withRateLimit(limiter *inProcessLimiter, metrics *observability.Metrics, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 		if ip == "" {
 			ip = r.RemoteAddr
 		}
 		if !limiter.Allow(ip) {
+			if metrics != nil {
+				metrics.SpeedTestRateLimited.Inc()
+			}
 			w.Header().Set(httpconst.HeaderRetryAfter, "60")
 			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 			return
@@ -201,9 +261,9 @@ func (s *SpeedTestServer) Start(ctx context.Context, port int) error {
 	limiter := newInProcessLimiter(SpeedTestRateLimit, SpeedTestRateLimitWindow)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/download", withRateLimit(limiter, s.Download))
-	mux.HandleFunc("/upload", withRateLimit(limiter, s.Upload))
-	mux.HandleFunc("/ping", withRateLimit(limiter, s.Ping))
+	mux.HandleFunc("/download", withRateLimit(limiter, s.metrics, s.Download))
+	mux.HandleFunc("/upload", withRateLimit(limiter, s.metrics, s.Upload))
+	mux.HandleFunc("/ping", withRateLimit(limiter, s.metrics, s.Ping))
 
 	addr := fmt.Sprintf(":%d", port)
 	srv := &http.Server{
@@ -233,4 +293,34 @@ func (s *SpeedTestServer) Start(ctx context.Context, port int) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), ShutdownTimeout)
 	defer cancel()
 	return srv.Shutdown(shutdownCtx)
+}
+
+// acquireSemaphore tries to acquire a concurrency slot. If the server is at
+// max capacity, it writes a 429 response and returns false.
+func (s *SpeedTestServer) acquireSemaphore(w http.ResponseWriter) bool {
+	select {
+	case s.semaphore <- struct{}{}:
+		if s.metrics != nil {
+			s.metrics.SpeedTestActiveConnections.Inc()
+		}
+		return true
+	default:
+		http.Error(w, "too many concurrent requests", http.StatusTooManyRequests)
+		return false
+	}
+}
+
+// releaseSemaphore releases a concurrency slot.
+func (s *SpeedTestServer) releaseSemaphore() {
+	<-s.semaphore
+	if s.metrics != nil {
+		s.metrics.SpeedTestActiveConnections.Dec()
+	}
+}
+
+// incRequestsTotal increments the per-endpoint request counter.
+func (s *SpeedTestServer) incRequestsTotal(endpoint string) {
+	if s.metrics != nil {
+		s.metrics.SpeedTestRequestsTotal.WithLabelValues(endpoint).Inc()
+	}
 }

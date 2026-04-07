@@ -5,12 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/sony/gobreaker/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/circuitbreaker"
 )
 
 // --- test doubles ---
@@ -29,24 +30,27 @@ func (s *stubTxRunner) RunInTx(_ context.Context, fn func(ctx context.Context) e
 // errNATSDown is a sentinel error simulating a NATS connection failure.
 var errNATSDown = errors.New("nats: connection refused")
 
+// testCBConfig returns the default no-interval CB config used by the outbox
+// relay in production (max_requests=1, interval=0).
+func testCBConfig() circuitbreaker.Config {
+	return circuitbreaker.Config{
+		MaxFailures: circuitbreaker.DefaultMaxFailures,
+		Timeout:     circuitbreaker.DefaultTimeout,
+		MaxRequests: 1,
+		Interval:    0,
+	}
+}
+
 // --- circuit breaker tests ---
 
 func TestCircuitBreaker_TripsAfterConsecutiveFailures(t *testing.T) {
 	// Verify that the circuit breaker transitions to open after
-	// relayCBConsecutiveFailures consecutive failures, matching the
-	// production configuration.
-	cb := gobreaker.NewCircuitBreaker[struct{}](gobreaker.Settings{
-		Name:        relayCBName,
-		MaxRequests: relayCBMaxRequests,
-		Interval:    0,
-		Timeout:     relayCBTimeout,
-		ReadyToTrip: func(counts gobreaker.Counts) bool {
-			return counts.ConsecutiveFailures >= relayCBConsecutiveFailures
-		},
-	})
+	// MaxFailures consecutive failures, matching the production configuration.
+	cfg := testCBConfig()
+	cb := circuitbreaker.NewBreaker[struct{}](relayCBName, cfg, nil)
 
 	// Record consecutive failures up to the threshold.
-	for i := range relayCBConsecutiveFailures {
+	for i := range cfg.MaxFailures {
 		t.Run(fmt.Sprintf("failure_%d", i+1), func(t *testing.T) {
 			_, err := cb.Execute(func() (struct{}, error) {
 				return struct{}{}, errNATSDown
@@ -55,9 +59,9 @@ func TestCircuitBreaker_TripsAfterConsecutiveFailures(t *testing.T) {
 		})
 	}
 
-	// After exactly relayCBConsecutiveFailures failures, the breaker must be open.
+	// After exactly MaxFailures failures, the breaker must be open.
 	assert.Equal(t, gobreaker.StateOpen, cb.State(),
-		"breaker should be open after %d consecutive failures", relayCBConsecutiveFailures)
+		"breaker should be open after %d consecutive failures", cfg.MaxFailures)
 
 	// Subsequent Execute calls must fail immediately without calling the function.
 	functionCalled := false
@@ -70,18 +74,11 @@ func TestCircuitBreaker_TripsAfterConsecutiveFailures(t *testing.T) {
 }
 
 func TestCircuitBreaker_SuccessResetsConsecutiveFailures(t *testing.T) {
-	cb := gobreaker.NewCircuitBreaker[struct{}](gobreaker.Settings{
-		Name:        relayCBName,
-		MaxRequests: relayCBMaxRequests,
-		Interval:    0,
-		Timeout:     relayCBTimeout,
-		ReadyToTrip: func(counts gobreaker.Counts) bool {
-			return counts.ConsecutiveFailures >= relayCBConsecutiveFailures
-		},
-	})
+	cfg := testCBConfig()
+	cb := circuitbreaker.NewBreaker[struct{}](relayCBName, cfg, nil)
 
 	// Record failures just below the threshold.
-	for range relayCBConsecutiveFailures - 1 {
+	for range cfg.MaxFailures - 1 {
 		_, _ = cb.Execute(func() (struct{}, error) {
 			return struct{}{}, errNATSDown
 		})
@@ -96,7 +93,7 @@ func TestCircuitBreaker_SuccessResetsConsecutiveFailures(t *testing.T) {
 		"breaker should remain closed after a success resets consecutive failures")
 
 	// Now the same number of failures should be needed again to trip.
-	for range relayCBConsecutiveFailures - 1 {
+	for range cfg.MaxFailures - 1 {
 		_, _ = cb.Execute(func() (struct{}, error) {
 			return struct{}{}, errNATSDown
 		})
@@ -109,6 +106,7 @@ func TestRelay_SkipsDBPollWhenCircuitOpen(t *testing.T) {
 	// Verify that relay() returns 0 immediately without calling txRunner
 	// when the NATS circuit breaker is open.
 	txRunner := &stubTxRunner{}
+	cfg := testCBConfig()
 
 	relay := &OutboxRelay{
 		outbox:      nil, // Not called because breaker skips DB poll.
@@ -116,19 +114,11 @@ func TestRelay_SkipsDBPollWhenCircuitOpen(t *testing.T) {
 		txRunner:    txRunner,
 		logger:      discardLogger(),
 		workerCount: MinOutboxRelayWorkers,
-		natsBreaker: gobreaker.NewCircuitBreaker[struct{}](gobreaker.Settings{
-			Name:        relayCBName,
-			MaxRequests: relayCBMaxRequests,
-			Interval:    0,
-			Timeout:     relayCBTimeout,
-			ReadyToTrip: func(counts gobreaker.Counts) bool {
-				return counts.ConsecutiveFailures >= relayCBConsecutiveFailures
-			},
-		}),
+		natsBreaker: circuitbreaker.NewBreaker[struct{}](relayCBName, cfg, nil),
 	}
 
 	// Trip the breaker by recording enough failures.
-	for range relayCBConsecutiveFailures {
+	for range cfg.MaxFailures {
 		_, _ = relay.natsBreaker.Execute(func() (struct{}, error) {
 			return struct{}{}, errNATSDown
 		})
@@ -143,7 +133,8 @@ func TestRelay_SkipsDBPollWhenCircuitOpen(t *testing.T) {
 }
 
 func TestNewOutboxRelay_InitializesCircuitBreaker(t *testing.T) {
-	relay := NewOutboxRelay(nil, nil, nil, nil, discardLogger(), MinOutboxRelayWorkers, nil, nil)
+	cfg := testCBConfig()
+	relay := NewOutboxRelay(nil, nil, nil, nil, discardLogger(), MinOutboxRelayWorkers, cfg, nil, nil)
 	require.NotNil(t, relay.natsBreaker, "circuit breaker must be initialized")
 	assert.Equal(t, gobreaker.StateClosed, relay.natsBreaker.State(),
 		"circuit breaker should start in closed state")
@@ -152,6 +143,8 @@ func TestNewOutboxRelay_InitializesCircuitBreaker(t *testing.T) {
 // --- circuit breaker constants tests ---
 
 func TestCircuitBreakerConstants(t *testing.T) {
+	cfg := testCBConfig()
+
 	tests := []struct {
 		name  string
 		check func(t *testing.T)
@@ -165,19 +158,19 @@ func TestCircuitBreakerConstants(t *testing.T) {
 		{
 			name: "max requests is positive",
 			check: func(t *testing.T) {
-				assert.Greater(t, int(relayCBMaxRequests), 0)
+				assert.Greater(t, int(cfg.MaxRequests), 0)
 			},
 		},
 		{
 			name: "timeout is positive",
 			check: func(t *testing.T) {
-				assert.Greater(t, relayCBTimeout, time.Duration(0))
+				assert.Greater(t, cfg.Timeout, circuitbreaker.DefaultTimeout-1)
 			},
 		},
 		{
 			name: "consecutive failures threshold is positive",
 			check: func(t *testing.T) {
-				assert.Greater(t, int(relayCBConsecutiveFailures), 0)
+				assert.Greater(t, int(cfg.MaxFailures), 0)
 			},
 		},
 	}
