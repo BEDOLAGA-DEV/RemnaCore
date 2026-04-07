@@ -28,6 +28,12 @@ var (
 	ErrCannotRemoveOwner = errors.New("cannot remove the owner from the family group")
 	// ErrMemberNotFound indicates the user is not a member of this family group.
 	ErrMemberNotFound = errors.New("member not found in family group")
+	// ErrEmptyOwnerID indicates the owner ID was not provided when creating a family group.
+	ErrEmptyOwnerID = errors.New("owner ID must not be empty")
+	// ErrMaxMembersTooLow indicates the max members value is below the minimum threshold.
+	ErrMaxMembersTooLow = errors.New("max members below minimum")
+	// ErrMaxMembersTooHigh indicates the max members value exceeds the maximum threshold.
+	ErrMaxMembersTooHigh = errors.New("max members exceeds maximum")
 )
 
 // MemberRole distinguishes between the owner and regular members.
@@ -64,13 +70,13 @@ type FamilyGroup struct {
 // or maxMembers exceeds MaxFamilyMembers.
 func NewFamilyGroup(ownerID string, maxMembers int, now time.Time) (*FamilyGroup, error) {
 	if ownerID == "" {
-		return nil, errors.New("owner ID must not be empty")
+		return nil, ErrEmptyOwnerID
 	}
 	if maxMembers < MinFamilyMembers {
-		return nil, fmt.Errorf("max members must be at least %d (owner + 1 member)", MinFamilyMembers)
+		return nil, fmt.Errorf("%w: must be at least %d", ErrMaxMembersTooLow, MinFamilyMembers)
 	}
 	if maxMembers > MaxFamilyMembers {
-		return nil, fmt.Errorf("max members must not exceed %d", MaxFamilyMembers)
+		return nil, fmt.Errorf("%w: must not exceed %d", ErrMaxMembersTooHigh, MaxFamilyMembers)
 	}
 
 	fg := &FamilyGroup{

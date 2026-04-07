@@ -120,9 +120,10 @@ func NewBillingService(
 }
 
 // dispatchHook dispatches a sync hook if dispatcher is available and hooks are
-// enabled. Returns nil response on error or nil dispatcher (fallback to default
-// behavior). Uses DispatchSyncSafe so that plugin failures never block the
-// business operation.
+// enabled. payload must be a struct with json tags (marshaled via json.Marshal
+// before dispatch). Returns nil response on error or nil dispatcher (fallback
+// to default behavior). Uses DispatchSyncSafe so that plugin failures never
+// block the business operation.
 func (s *BillingService) dispatchHook(ctx context.Context, hookName string, payload any) (json.RawMessage, error) {
 	if s.dispatcher == nil || !s.hooksEnabled {
 		return nil, nil
@@ -189,7 +190,7 @@ func (s *BillingService) CreateSubscription(
 	}
 
 	// Build line items for the invoice.
-	lineItems := buildLineItems(plan, cmd.AddonIDs)
+	lineItems := buildLineItems(plan, cmd.AddonIDs, s.logger)
 
 	inv, err := aggregate.NewInvoice(sub.ID, cmd.UserID, lineItems, nil, plan.BasePrice.Currency, now)
 	if err != nil {

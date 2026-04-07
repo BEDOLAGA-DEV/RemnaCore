@@ -48,28 +48,28 @@ func TestNewFamilyGroup_Validation(t *testing.T) {
 		_, err := NewFamilyGroup("", 5, time.Now())
 
 		require.Error(t, err)
-		assert.ErrorContains(t, err, "owner ID must not be empty")
+		assert.ErrorIs(t, err, ErrEmptyOwnerID)
 	})
 
 	t.Run("maxMembers below minimum returns error", func(t *testing.T) {
 		_, err := NewFamilyGroup("owner-1", 1, time.Now())
 
 		require.Error(t, err)
-		assert.ErrorContains(t, err, "max members must be at least")
+		assert.ErrorIs(t, err, ErrMaxMembersTooLow)
 	})
 
 	t.Run("maxMembers zero returns error", func(t *testing.T) {
 		_, err := NewFamilyGroup("owner-1", 0, time.Now())
 
 		require.Error(t, err)
-		assert.ErrorContains(t, err, "max members must be at least")
+		assert.ErrorIs(t, err, ErrMaxMembersTooLow)
 	})
 
 	t.Run("maxMembers exceeds maximum returns error", func(t *testing.T) {
 		_, err := NewFamilyGroup("owner-1", MaxFamilyMembers+1, time.Now())
 
 		require.Error(t, err)
-		assert.ErrorContains(t, err, "max members must not exceed")
+		assert.ErrorIs(t, err, ErrMaxMembersTooHigh)
 	})
 
 	t.Run("maxMembers at boundary succeeds", func(t *testing.T) {

@@ -151,10 +151,10 @@ func (f *PaymentFacade) VerifyWebhook(ctx context.Context, provider string, head
 		return nil, ErrInvalidProvider
 	}
 
-	payload, err := json.Marshal(map[string]any{
-		"provider": provider,
-		"headers":  headers,
-		"body":     body,
+	payload, err := json.Marshal(VerifyWebhookHookRequest{
+		Provider: provider,
+		Headers:  headers,
+		Body:     body,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("marshal verify webhook request: %w", err)
@@ -200,11 +200,11 @@ func (f *PaymentFacade) Refund(ctx context.Context, paymentID string, amount int
 		return fmt.Errorf("get payment for refund: %w", err)
 	}
 
-	payload, err := json.Marshal(map[string]any{
-		"provider":    record.Provider,
-		"external_id": record.ExternalID,
-		"amount":      amount,
-		"reason":      reason,
+	payload, err := json.Marshal(RefundHookRequest{
+		Provider:   record.Provider,
+		ExternalID: record.ExternalID,
+		Amount:     amount,
+		Reason:     reason,
 	})
 	if err != nil {
 		return fmt.Errorf("marshal refund request: %w", err)

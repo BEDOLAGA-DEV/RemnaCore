@@ -143,7 +143,7 @@ func TestStartCheckout_MissingUserID(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "user ID is required")
+	assert.ErrorIs(t, err, aggregate.ErrEmptyUserID)
 }
 
 func TestStartCheckout_MissingPlanID(t *testing.T) {
@@ -154,7 +154,7 @@ func TestStartCheckout_MissingPlanID(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "plan ID is required")
+	assert.ErrorIs(t, err, aggregate.ErrEmptyPlanID)
 }
 
 func TestCompleteCheckout_MissingInvoiceID(t *testing.T) {
@@ -163,7 +163,7 @@ func TestCompleteCheckout_MissingInvoiceID(t *testing.T) {
 	err := checkoutSvc.CompleteCheckout(context.Background(), "")
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invoice ID is required")
+	assert.ErrorIs(t, err, billing.ErrEmptyInvoiceID)
 }
 
 func TestStartCheckout_RateLimited(t *testing.T) {

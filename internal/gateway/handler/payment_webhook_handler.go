@@ -2,6 +2,7 @@ package handler
 
 import (
 	"io"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -29,11 +30,12 @@ const (
 // and BillingEventConsumer subscribes to it to call CompleteCheckout.
 type PaymentWebhookHandler struct {
 	facade *payment.PaymentFacade
+	logger *slog.Logger
 }
 
 // NewPaymentWebhookHandler creates a PaymentWebhookHandler.
-func NewPaymentWebhookHandler(facade *payment.PaymentFacade) *PaymentWebhookHandler {
-	return &PaymentWebhookHandler{facade: facade}
+func NewPaymentWebhookHandler(facade *payment.PaymentFacade, logger *slog.Logger) *PaymentWebhookHandler {
+	return &PaymentWebhookHandler{facade: facade, logger: logger}
 }
 
 // HandlePaymentWebhook receives webhooks from payment providers.
@@ -85,14 +87,26 @@ func (h *PaymentWebhookHandler) HandlePaymentWebhook(w http.ResponseWriter, r *h
 	// asynchronously via BillingEventConsumer to call CompleteCheckout.
 	if verified.Status == payment.VerifiedStatusSucceeded {
 		if _, err := h.facade.CompletePayment(r.Context(), provider, verified.ExternalID); err != nil {
-			_ = h.facade.MarkWebhookFailed(r.Context(), provider, verified.ExternalID)
+			if markErr := h.facade.MarkWebhookFailed(r.Context(), provider, verified.ExternalID); markErr != nil {
+				h.logger.Warn("failed to mark webhook as failed",
+					slog.String("provider", provider),
+					slog.String("external_id", verified.ExternalID),
+					slog.Any("error", markErr),
+				)
+			}
 			writeJSON(w, http.StatusOK, map[string]string{"status": WebhookStatusError})
 			return
 		}
 	}
 
 	// 4. Mark webhook as processed.
-	_ = h.facade.MarkWebhookProcessed(r.Context(), provider, verified.ExternalID)
+	if err := h.facade.MarkWebhookProcessed(r.Context(), provider, verified.ExternalID); err != nil {
+		h.logger.Warn("failed to mark webhook as processed",
+			slog.String("provider", provider),
+			slog.String("external_id", verified.ExternalID),
+			slog.Any("error", err),
+		)
+	}
 
 	// Always return 200 OK immediately.
 	writeJSON(w, http.StatusOK, map[string]string{"status": WebhookStatusOK})

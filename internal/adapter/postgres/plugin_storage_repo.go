@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -25,12 +26,13 @@ type PluginStorageRepository struct {
 	queries      *gen.Queries
 	txRunner     txmanager.Runner
 	clock        clock.Clock
+	logger       *slog.Logger
 	maxStorageMB int // default quota per plugin in MB
 }
 
 // NewPluginStorageRepository returns a new PluginStorageRepository.
 // maxStorageMB sets the default storage quota per plugin in megabytes.
-func NewPluginStorageRepository(pool *pgxpool.Pool, txRunner txmanager.Runner, clk clock.Clock, maxStorageMB int) *PluginStorageRepository {
+func NewPluginStorageRepository(pool *pgxpool.Pool, txRunner txmanager.Runner, clk clock.Clock, logger *slog.Logger, maxStorageMB int) *PluginStorageRepository {
 	if maxStorageMB <= 0 {
 		maxStorageMB = plugin.DefaultMaxStorageMB
 	}
@@ -39,6 +41,7 @@ func NewPluginStorageRepository(pool *pgxpool.Pool, txRunner txmanager.Runner, c
 		queries:      gen.New(pool),
 		txRunner:     txRunner,
 		clock:        clk,
+		logger:       logger,
 		maxStorageMB: maxStorageMB,
 	}
 }
@@ -55,10 +58,16 @@ func (r *PluginStorageRepository) Get(ctx context.Context, pluginSlug, key strin
 	// Check expiry: if the row has an expiration in the past, treat it as
 	// not found and clean it up asynchronously.
 	if row.ExpiresAt.Valid && row.ExpiresAt.Time.Before(r.clock.Now()) {
-		_ = r.queries.StorageDelete(ctx, gen.StorageDeleteParams{
+		if err := r.queries.StorageDelete(ctx, gen.StorageDeleteParams{
 			PluginSlug: pluginSlug,
 			Key:        key,
-		})
+		}); err != nil {
+			r.logger.Warn("failed to delete expired storage key",
+				slog.String("plugin_slug", pluginSlug),
+				slog.String("key", key),
+				slog.Any("error", err),
+			)
+		}
 		return nil, plugin.ErrPluginNotFound
 	}
 

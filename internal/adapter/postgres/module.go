@@ -83,6 +83,7 @@ func logIOMethod(pool *pgxpool.Pool, logger *slog.Logger) {
 // the default Prometheus registry. Duplicate registrations (e.g. during tests
 // that construct the Fx graph multiple times) are silently ignored.
 func registerPoolMetrics(pool *pgxpool.Pool) {
+	// Register may fail if metric already registered (safe to ignore).
 	_ = prometheus.Register(NewMetricsCollector(pool))
 }
 
@@ -90,5 +91,6 @@ func registerPoolMetrics(pool *pgxpool.Pool) {
 // with the default Prometheus registry. Duplicate registrations are silently
 // ignored to support tests that construct the Fx graph multiple times.
 func registerPgStatMetrics(pool *pgxpool.Pool, logger *slog.Logger) {
+	// Register may fail if metric already registered (safe to ignore).
 	_ = prometheus.Register(observability.NewPgStatCollector(pool, logger))
 }

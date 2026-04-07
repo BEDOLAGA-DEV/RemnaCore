@@ -154,15 +154,17 @@ func (w *WebhookLog) MarkFailed(now time.Time) {
 }
 
 // CreateChargeRequest holds the parameters for creating a payment charge.
+// JSON tags are required because the struct is marshaled before dispatch to
+// the payment.create_charge WASM hook.
 type CreateChargeRequest struct {
-	InvoiceID string
-	Amount    int64
-	Currency  string
-	UserID    string
-	UserEmail string
-	PlanName  string
-	ReturnURL string
-	CancelURL string
+	InvoiceID string `json:"invoice_id"`
+	Amount    int64  `json:"amount"`
+	Currency  string `json:"currency"`
+	UserID    string `json:"user_id"`
+	UserEmail string `json:"user_email,omitempty"`
+	PlanName  string `json:"plan_name,omitempty"`
+	ReturnURL string `json:"return_url,omitempty"`
+	CancelURL string `json:"cancel_url,omitempty"`
 }
 
 // CreateChargeResult holds the response from the payment plugin.

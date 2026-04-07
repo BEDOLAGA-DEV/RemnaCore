@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
@@ -155,7 +156,7 @@ func (s *BillingService) RenewSubscription(ctx context.Context, subID string) er
 			return fmt.Errorf("get plan for renewal invoice: %w", err)
 		}
 
-		lineItems := buildLineItems(plan, sub.AddonIDs)
+		lineItems := buildLineItems(plan, sub.AddonIDs, s.logger)
 		inv, err := aggregate.NewInvoice(sub.ID, sub.UserID, lineItems, nil, plan.BasePrice.Currency, now)
 		if err != nil {
 			return fmt.Errorf("create renewal invoice: %w", err)
@@ -411,6 +412,11 @@ func applyRenewalHookOverrides(inv *aggregate.Invoice, hookResp json.RawMessage,
 
 	if subtotal != nil || discount != nil {
 		reason := "renewal hook override"
-		_ = inv.ApplyPricingModification(subtotal, discount, reason, now)
+		if err := inv.ApplyPricingModification(subtotal, discount, reason, now); err != nil {
+			slog.Warn("failed to apply pricing modification",
+				slog.String("invoice_id", inv.ID),
+				slog.Any("error", err),
+			)
+		}
 	}
 }

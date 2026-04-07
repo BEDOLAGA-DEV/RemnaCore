@@ -44,12 +44,29 @@ const (
 // bindingTransitions defines the state machine for binding status.
 // Terminal state (deprovisioned) has no valid outbound transitions.
 var bindingTransitions = map[BindingStatus][]BindingStatus{
-	BindingPending:     {BindingActive, BindingFailed},
-	BindingActive:      {BindingLimited, BindingDisabled, BindingDeprovisioned, BindingFailed},
-	BindingLimited:     {BindingActive, BindingDisabled, BindingDeprovisioned, BindingFailed},
-	BindingDisabled:    {BindingActive, BindingDeprovisioned},
-	BindingFailed:      {BindingPending, BindingReconciling, BindingDeprovisioned},
-	BindingReconciling: {BindingFailed, BindingDeprovisioned},
+	BindingPending:       {BindingActive, BindingFailed},
+	BindingActive:        {BindingLimited, BindingDisabled, BindingDeprovisioned, BindingFailed},
+	BindingLimited:       {BindingActive, BindingDisabled, BindingDeprovisioned, BindingFailed},
+	BindingDisabled:      {BindingActive, BindingDeprovisioned},
+	BindingFailed:        {BindingPending, BindingReconciling, BindingDeprovisioned},
+	BindingReconciling:   {BindingFailed, BindingDeprovisioned},
+	BindingDeprovisioned: {},
+}
+
+// allBindingStatuses enumerates every BindingStatus constant.
+// Keep in sync with the const block above.
+var allBindingStatuses = []BindingStatus{
+	BindingPending, BindingActive, BindingLimited,
+	BindingFailed, BindingReconciling, BindingDisabled,
+	BindingDeprovisioned,
+}
+
+func init() {
+	for _, s := range allBindingStatuses {
+		if _, ok := bindingTransitions[s]; !ok {
+			panic("multisub: missing transition entry for binding status: " + string(s))
+		}
+	}
 }
 
 // BindingPurpose describes why a Remnawave user was created.

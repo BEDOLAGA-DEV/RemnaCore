@@ -139,10 +139,10 @@ type CheckoutResult struct {
 //  3. pricing.calculate (sync, via PricingModifier) -- can modify price
 func (cs *CheckoutService) StartCheckout(ctx context.Context, req CheckoutRequest) (*CheckoutResult, error) {
 	if req.UserID == "" {
-		return nil, fmt.Errorf("user ID is required")
+		return nil, aggregate.ErrEmptyUserID
 	}
 	if req.PlanID == "" {
-		return nil, fmt.Errorf("plan ID is required")
+		return nil, aggregate.ErrEmptyPlanID
 	}
 
 	// Rate limit check BEFORE any business logic. Fail open on errors so that
@@ -250,7 +250,7 @@ func (cs *CheckoutService) applyPricingModification(ctx context.Context, inv *ag
 // then fires the checkout.completed async hook for analytics/notifications.
 func (cs *CheckoutService) CompleteCheckout(ctx context.Context, invoiceID string) error {
 	if invoiceID == "" {
-		return fmt.Errorf("invoice ID is required")
+		return billing.ErrEmptyInvoiceID
 	}
 
 	if err := cs.billing.PayInvoice(ctx, invoiceID); err != nil {

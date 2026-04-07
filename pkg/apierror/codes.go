@@ -58,6 +58,12 @@ var (
 	BillingPlanAlreadyActive       = New("BILLING.PLAN_ALREADY_ACTIVE", "plan is already active", http.StatusConflict)
 	BillingPlanAlreadyInactive     = New("BILLING.PLAN_ALREADY_INACTIVE", "plan is already inactive", http.StatusConflict)
 	BillingAddonNotOnPlan          = New("BILLING.ADDON_NOT_ON_PLAN", "addon not found on plan", http.StatusNotFound)
+	BillingEmptyOwnerID            = New("BILLING.EMPTY_OWNER_ID", "owner ID must not be empty", http.StatusBadRequest)
+	BillingMaxMembersTooLow        = New("BILLING.MAX_MEMBERS_TOO_LOW", "max members below minimum", http.StatusBadRequest)
+	BillingMaxMembersTooHigh       = New("BILLING.MAX_MEMBERS_TOO_HIGH", "max members exceeds maximum", http.StatusBadRequest)
+	BillingEmptyUserID             = New("BILLING.EMPTY_USER_ID", "user ID is required", http.StatusBadRequest)
+	BillingEmptyPlanID             = New("BILLING.EMPTY_PLAN_ID", "plan ID is required", http.StatusBadRequest)
+	BillingEmptyInvoiceID          = New("BILLING.EMPTY_INVOICE_ID", "invoice ID is required", http.StatusBadRequest)
 )
 
 // MultiSub error codes.

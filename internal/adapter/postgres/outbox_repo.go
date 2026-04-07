@@ -85,15 +85,12 @@ func (r *OutboxRepository) GetUnpublished(ctx context.Context, limit int) ([]Out
 	return events, nil
 }
 
-// Deprecated: Use MarkPublishedBatch for production code — it uses a single
-// PG18 MERGE statement instead of N individual UPDATEs.
+// Deprecated: Use MarkPublishedBatch instead — it uses a single PG18 MERGE
+// statement instead of N individual UPDATEs.
 //
 // MarkPublished sets the published flag and timestamp for a single event.
 // Both id and createdAt are required for partition pruning on the
 // range-partitioned outbox table.
-//
-// For batch operations, prefer MarkPublishedBatch which uses PG18 MERGE for a
-// single round-trip.
 func (r *OutboxRepository) MarkPublished(ctx context.Context, id string, createdAt time.Time) error {
 	err := r.queries(ctx).MarkOutboxEventPublished(ctx, gen.MarkOutboxEventPublishedParams{
 		ID:        pgutil.UUIDToPgtype(id),

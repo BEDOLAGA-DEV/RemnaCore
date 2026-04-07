@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	multisubdomain "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
@@ -18,6 +19,7 @@ type SyncService struct {
 	bindings     multisubdomain.BindingRepository
 	syncSaga     *SyncSaga
 	publisher    domainevent.Publisher
+	logger       *slog.Logger
 	syncInterval time.Duration
 }
 
@@ -26,11 +28,13 @@ func NewSyncService(
 	bindings multisubdomain.BindingRepository,
 	syncSaga *SyncSaga,
 	publisher domainevent.Publisher,
+	logger *slog.Logger,
 ) *SyncService {
 	return &SyncService{
 		bindings:     bindings,
 		syncSaga:     syncSaga,
 		publisher:    publisher,
+		logger:       logger,
 		syncInterval: DefaultSyncInterval,
 	}
 }
@@ -61,7 +65,12 @@ func (s *SyncService) syncAll(ctx context.Context) {
 	}
 
 	for _, binding := range bindings {
-		_ = s.syncSaga.SyncBinding(ctx, binding.ID)
+		if err := s.syncSaga.SyncBinding(ctx, binding.ID); err != nil {
+			s.logger.Warn("failed to sync binding",
+				slog.String("binding_id", binding.ID),
+				slog.Any("error", err),
+			)
+		}
 	}
 }
 

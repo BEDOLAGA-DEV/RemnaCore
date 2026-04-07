@@ -31,6 +31,7 @@ var Module = fx.Module("nats",
 // with the default Prometheus registry. Duplicate registrations (e.g. during
 // tests that construct the Fx graph multiple times) are silently ignored.
 func registerMetrics(conn *nc.Conn) {
+	// Register may fail if metric already registered (safe to ignore).
 	_ = prometheus.Register(NewMetricsCollector(conn))
 }
 

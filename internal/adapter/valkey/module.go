@@ -28,5 +28,6 @@ var Module = fx.Module("valkey",
 // the default Prometheus registry. Duplicate registrations (e.g. during tests
 // that construct the Fx graph multiple times) are silently ignored.
 func registerMetrics(client *redis.Client) {
+	// Register may fail if metric already registered (safe to ignore).
 	_ = prometheus.Register(NewMetricsCollector(client))
 }

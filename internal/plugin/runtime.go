@@ -154,6 +154,7 @@ func (p *PluginInstancePool) Acquire(ctx context.Context) (WASMRunner, error) {
 	case pr := <-p.pool:
 		if pr.useCount.Load() >= MaxRunnerUses {
 			// Runner exhausted — close and create a fresh replacement.
+			// Close is best-effort during cleanup; error would not change control flow.
 			_ = pr.runner.Close()
 			slog.Info("replacing exhausted WASM runner",
 				slog.String("slug", p.slug),
@@ -186,6 +187,7 @@ func (p *PluginInstancePool) Release(runner WASMRunner) {
 
 	if isDraining {
 		// Don't return to pool — close the runner.
+		// Close is best-effort during cleanup; error would not change control flow.
 		_ = runner.Close()
 		p.signalDrainIfNeeded(remaining)
 		return
@@ -199,6 +201,7 @@ func (p *PluginInstancePool) Release(runner WASMRunner) {
 
 	// If exhausted, replace instead of returning to pool.
 	if pr.useCount.Load() >= MaxRunnerUses {
+		// Close is best-effort during cleanup; error would not change control flow.
 		_ = pr.runner.Close()
 		go p.replaceInstance()
 		return
@@ -208,6 +211,7 @@ func (p *PluginInstancePool) Release(runner WASMRunner) {
 	case p.pool <- pr:
 	default:
 		// Pool full (shouldn't happen), close the extra instance.
+		// Close is best-effort during cleanup; error would not change control flow.
 		_ = pr.runner.Close()
 	}
 }
@@ -263,6 +267,7 @@ func (p *PluginInstancePool) Drain(ctx context.Context) error {
 	}
 
 	// Close all remaining idle instances in the pool channel.
+	// Close is best-effort during cleanup; error would not change control flow.
 	close(p.pool)
 	for pr := range p.pool {
 		_ = pr.runner.Close()
@@ -278,6 +283,7 @@ func (p *PluginInstancePool) Close() {
 	p.draining = true
 	p.mu.Unlock()
 
+	// Close is best-effort during cleanup; error would not change control flow.
 	close(p.pool)
 	for pr := range p.pool {
 		_ = pr.runner.Close()
@@ -321,6 +327,7 @@ func (p *PluginInstancePool) replaceInstance() {
 	// hot path.
 	pr := &pooledRunner{runner: newRunner}
 	if !p.trySendToPool(pr) {
+		// Close is best-effort during cleanup; error would not change control flow.
 		_ = newRunner.Close()
 	}
 }
@@ -572,6 +579,7 @@ func (rp *RuntimePool) callOnPool(ctx context.Context, pool *PluginInstancePool,
 	if callErr != nil {
 		// Check if the runner is corrupted — if so, discard it and replace.
 		if isRunnerCorrupted(callErr) {
+			// Close is best-effort during cleanup; error would not change control flow.
 			_ = runner.Close()
 			// Decrement active count manually since we are NOT calling Release.
 			remaining := atomic.AddInt32(&pool.active, -1)

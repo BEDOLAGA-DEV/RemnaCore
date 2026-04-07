@@ -74,6 +74,12 @@ func TestMapDomainError(t *testing.T) {
 		{"aggregate plan already active", aggregate.ErrPlanAlreadyActive, "BILLING.PLAN_ALREADY_ACTIVE", http.StatusConflict},
 		{"aggregate plan already inactive", aggregate.ErrPlanAlreadyInactive, "BILLING.PLAN_ALREADY_INACTIVE", http.StatusConflict},
 		{"aggregate addon not on plan", aggregate.ErrAddonNotOnPlan, "BILLING.ADDON_NOT_ON_PLAN", http.StatusNotFound},
+		{"aggregate empty owner id", aggregate.ErrEmptyOwnerID, "BILLING.EMPTY_OWNER_ID", http.StatusBadRequest},
+		{"aggregate max members too low", aggregate.ErrMaxMembersTooLow, "BILLING.MAX_MEMBERS_TOO_LOW", http.StatusBadRequest},
+		{"aggregate max members too high", aggregate.ErrMaxMembersTooHigh, "BILLING.MAX_MEMBERS_TOO_HIGH", http.StatusBadRequest},
+		{"aggregate empty user id", aggregate.ErrEmptyUserID, "BILLING.EMPTY_USER_ID", http.StatusBadRequest},
+		{"aggregate empty plan id", aggregate.ErrEmptyPlanID, "BILLING.EMPTY_PLAN_ID", http.StatusBadRequest},
+		{"billing empty invoice id", billing.ErrEmptyInvoiceID, "BILLING.EMPTY_INVOICE_ID", http.StatusBadRequest},
 
 		// ── MultiSub ────────────────────────────────────────────────────
 		{"multisub binding not found", multisub.ErrBindingNotFound, "MULTISUB.BINDING_NOT_FOUND", http.StatusNotFound},

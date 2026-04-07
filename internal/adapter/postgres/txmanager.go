@@ -56,6 +56,7 @@ func (tm *TxManager) RunInTx(ctx context.Context, fn func(ctx context.Context) e
 	// Propagate tenant ID to PostgreSQL for RLS enforcement.
 	if tenantID := tenantctx.TenantIDFromContext(ctx); tenantID != "" {
 		if _, err := tx.Exec(ctx, "SELECT set_config($1, $2, true)", rlsTenantVariable, tenantID); err != nil {
+			// Rollback is best-effort after set_config failure; the original error is more important.
 			_ = tx.Rollback(ctx)
 			return fmt.Errorf("set tenant for rls: %w", err)
 		}
@@ -64,7 +65,7 @@ func (tm *TxManager) RunInTx(ctx context.Context, fn func(ctx context.Context) e
 	txCtx := context.WithValue(ctx, txKey, tx)
 
 	if err := fn(txCtx); err != nil {
-		// Best-effort rollback; the original error is more important.
+		// Rollback is best-effort after fn failure; the original error is more important.
 		_ = tx.Rollback(ctx)
 		return err
 	}

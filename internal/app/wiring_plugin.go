@@ -29,8 +29,8 @@ var pluginWiring = fx.Options(
 	// Plugin repos -> interface bindings
 	fx.Provide(postgres.NewPluginRepository),
 	fx.Provide(func(repo *postgres.PluginRepository) plugin.PluginRepository { return repo }),
-	fx.Provide(func(pool *pgxpool.Pool, txRunner *postgres.TxManager, clk clock.Clock) plugin.StorageService {
-		return postgres.NewPluginStorageRepository(pool, txRunner, clk, plugin.DefaultMaxStorageMB)
+	fx.Provide(func(pool *pgxpool.Pool, txRunner *postgres.TxManager, clk clock.Clock, logger *slog.Logger) plugin.StorageService {
+		return postgres.NewPluginStorageRepository(pool, txRunner, clk, logger, plugin.DefaultMaxStorageMB)
 	}),
 
 	// WASM runner factory — real Extism/wazero runtime.

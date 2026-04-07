@@ -28,6 +28,7 @@ func initPartitionGauge() {
 			Name:      "partition_count",
 			Help:      "Current number of outbox partitions.",
 		})
+		// Register may fail if metric already registered (safe to ignore).
 		_ = prometheus.Register(partitionCountGauge)
 	})
 }

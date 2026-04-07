@@ -16,10 +16,24 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
 )
 
+// domainErrorMappers is the ordered list of per-context error mappers. Each
+// mapper returns a non-nil *apierror.Error when the error belongs to its
+// bounded context, or nil to pass through to the next mapper.
+var domainErrorMappers = []func(error) *apierror.Error{
+	identity.MapToAPIError,
+	billing.MapToAPIError,
+	aggregate.MapToAPIError,
+	multisub.MapToAPIError,
+	payment.MapToAPIError,
+	reseller.MapToAPIError,
+	plugin.MapToAPIError,
+}
+
 // writeJSON marshals data as JSON and writes it with the given HTTP status code.
 func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set(httpconst.HeaderContentType, httpconst.ContentTypeJSON)
 	w.WriteHeader(status)
+	// Encode error cannot be handled after headers are sent.
 	_ = json.NewEncoder(w).Encode(data)
 }
 
@@ -33,6 +47,7 @@ func writeError(w http.ResponseWriter, status int, message string) {
 func writeAPIError(w http.ResponseWriter, apiErr *apierror.Error) {
 	w.Header().Set(httpconst.HeaderContentType, httpconst.ContentTypeJSON)
 	w.WriteHeader(apiErr.HTTPStatus)
+	// Encode error cannot be handled after headers are sent.
 	_ = json.NewEncoder(w).Encode(apiErr)
 }
 
@@ -54,235 +69,17 @@ func writeValidationError(w http.ResponseWriter, err error) {
 	writeAPIError(w, apierror.ValidationFailed)
 }
 
-// mapDomainError converts a domain sentinel error to a structured API error.
-// Unknown errors are mapped to COMMON.INTERNAL without leaking details.
+// mapDomainError converts a domain sentinel error to a structured API error by
+// delegating to per-context mappers. Each bounded context owns its own
+// error-to-API-code mapping. Unknown errors are mapped to COMMON.INTERNAL
+// without leaking details.
 func mapDomainError(err error) *apierror.Error {
-	switch {
-	// ── Identity ─────────────────────────────────────────────────────────
-	case errors.Is(err, identity.ErrEmailTaken):
-		return apierror.IdentityEmailTaken
-	case errors.Is(err, identity.ErrInvalidCredentials):
-		return apierror.IdentityInvalidCreds
-	case errors.Is(err, identity.ErrTokenExpired):
-		return apierror.IdentityTokenExpired
-	case errors.Is(err, identity.ErrSessionExpired):
-		return apierror.IdentitySessionExpired
-	case errors.Is(err, identity.ErrNotFound):
-		return apierror.IdentityNotFound
-	case errors.Is(err, identity.ErrEmailNotVerified):
-		return apierror.IdentityEmailNotVerified
-	case errors.Is(err, identity.ErrPasswordTooShort):
-		return apierror.IdentityPasswordTooShort
-	case errors.Is(err, identity.ErrPasswordTooWeak):
-		return apierror.IdentityPasswordTooWeak
-	case errors.Is(err, identity.ErrPasswordResetExpired):
-		return apierror.IdentityResetExpired
-	case errors.Is(err, identity.ErrPasswordResetNotFound):
-		return apierror.IdentityResetNotFound
-	case errors.Is(err, identity.ErrDisplayNameTooLong):
-		return apierror.IdentityDisplayNameTooLong
-	case errors.Is(err, identity.ErrTelegramAlreadyLinked):
-		return apierror.IdentityTelegramAlreadyLinked
-	case errors.Is(err, identity.ErrTelegramNotLinked):
-		return apierror.IdentityTelegramNotLinked
-
-	// ── Billing ──────────────────────────────────────────────────────────
-	case errors.Is(err, billing.ErrPlanNotFound):
-		return apierror.BillingPlanNotFound
-	case errors.Is(err, billing.ErrSubscriptionNotFound):
-		return apierror.BillingSubscriptionNotFound
-	case errors.Is(err, billing.ErrInvoiceNotFound):
-		return apierror.BillingInvoiceNotFound
-	case errors.Is(err, billing.ErrFamilyGroupNotFound):
-		return apierror.BillingFamilyGroupNotFound
-	case errors.Is(err, billing.ErrInvoiceAlreadyPaid):
-		return apierror.BillingInvoiceAlreadyPaid
-	case errors.Is(err, billing.ErrInsufficientFunds):
-		return apierror.BillingInsufficientFunds
-	case errors.Is(err, billing.ErrCurrencyMismatch):
-		return apierror.BillingCurrencyMismatch
-	case errors.Is(err, billing.ErrAddonNotAvailable):
-		return apierror.BillingAddonNotAvailable
-	case errors.Is(err, billing.ErrSubscriptionNotActive):
-		return apierror.BillingSubscriptionNotActive
-	case errors.Is(err, billing.ErrNotTrialStatus):
-		return apierror.BillingNotTrialStatus
-	case errors.Is(err, billing.ErrCheckoutRateLimited):
-		return apierror.BillingCheckoutRateLimited
-	case errors.Is(err, billing.ErrAddonAlreadyOnSubscription):
-		return apierror.BillingAddonAlreadyOn
-	case errors.Is(err, billing.ErrAddonNotOnSubscription):
-		return apierror.BillingAddonNotOn
-	case errors.Is(err, billing.ErrPlanNotActive):
-		return apierror.BillingPlanNotActive
-	case errors.Is(err, billing.ErrNoPriceConfigured):
-		return apierror.BillingNoPriceConfigured
-	case errors.Is(err, billing.ErrFamilyNotEnabled):
-		return apierror.BillingFamilyNotEnabled
-	case errors.Is(err, billing.ErrPendingPlanInactive):
-		return apierror.BillingPendingPlanInactive
-	case errors.Is(err, billing.ErrCancellationBlocked):
-		return apierror.BillingCancellationBlocked
-	case errors.Is(err, billing.ErrCheckoutBlocked):
-		return apierror.BillingCheckoutBlocked
-
-	// Billing aggregate errors (not aliased at the billing package level).
-	case errors.Is(err, aggregate.ErrInvalidTransition):
-		return apierror.BillingInvalidTransition
-	case errors.Is(err, aggregate.ErrMaxFamilyExceeded):
-		return apierror.BillingMaxFamilyExceeded
-	case errors.Is(err, aggregate.ErrAlreadyMember):
-		return apierror.BillingAlreadyMember
-	case errors.Is(err, aggregate.ErrCannotRemoveOwner):
-		return apierror.BillingCannotRemoveOwner
-	case errors.Is(err, aggregate.ErrMemberNotFound):
-		return apierror.BillingMemberNotFound
-	case errors.Is(err, aggregate.ErrEmptyPlanName):
-		return apierror.BillingEmptyPlanName
-	case errors.Is(err, aggregate.ErrBasePriceNotPositive):
-		return apierror.BillingBasePriceNotPositive
-	case errors.Is(err, aggregate.ErrNoCountriesAllowed):
-		return apierror.BillingNoCountriesAllowed
-	case errors.Is(err, aggregate.ErrAddonAlreadyExists):
-		return apierror.BillingAddonAlreadyExists
-	case errors.Is(err, aggregate.ErrAddonNotFound):
-		return apierror.BillingAddonNotFound
-	case errors.Is(err, aggregate.ErrInvoiceRequiresLineItems):
-		return apierror.BillingInvoiceRequiresItems
-	case errors.Is(err, aggregate.ErrInvoiceMustBeDraftForPending):
-		return apierror.BillingInvoiceMustBeDraft
-	case errors.Is(err, aggregate.ErrInvoiceMustBePendingForPaid):
-		return apierror.BillingInvoiceMustBePending
-	case errors.Is(err, aggregate.ErrInvoiceMustBePendingForFailed):
-		return apierror.BillingInvoicePendingForFailed
-	case errors.Is(err, aggregate.ErrInvoiceMustBePaidForRefund):
-		return apierror.BillingInvoiceMustBePaid
-	case errors.Is(err, aggregate.ErrSubscriptionNotActiveForRenewal):
-		return apierror.BillingSubscriptionNotActive
-	case errors.Is(err, aggregate.ErrPlanAlreadyActive):
-		return apierror.BillingPlanAlreadyActive
-	case errors.Is(err, aggregate.ErrPlanAlreadyInactive):
-		return apierror.BillingPlanAlreadyInactive
-	case errors.Is(err, aggregate.ErrAddonNotOnPlan):
-		return apierror.BillingAddonNotOnPlan
-
-	// ── MultiSub ─────────────────────────────────────────────────────────
-	case errors.Is(err, multisub.ErrBindingNotFound):
-		return apierror.MultiSubBindingNotFound
-	case errors.Is(err, multisub.ErrProvisioningFailed):
-		return apierror.MultiSubProvisioningFailed
-	case errors.Is(err, multisub.ErrDeprovisioningFailed):
-		return apierror.MultiSubDeprovisioningFailed
-	case errors.Is(err, multisub.ErrSyncFailed):
-		return apierror.MultiSubSyncFailed
-	case errors.Is(err, multisub.ErrBindingAlreadyActive):
-		return apierror.MultiSubBindingAlreadyActive
-	case errors.Is(err, multisub.ErrRemnawaveUnavailable):
-		return apierror.MultiSubRemnawaveUnavailable
-	case errors.Is(err, multisub.ErrMaxBindingsExceeded):
-		return apierror.MultiSubMaxBindingsExceeded
-	case errors.Is(err, multisub.ErrSagaNotFound):
-		return apierror.MultiSubSagaNotFound
-	case errors.Is(err, multisub.ErrSagaAlreadyExists):
-		return apierror.MultiSubSagaAlreadyExists
-	case errors.Is(err, multisub.ErrBindingAlreadyLimited):
-		return apierror.MultiSubBindingAlreadyLimited
-	case errors.Is(err, multisub.ErrBindingNotLimited):
-		return apierror.MultiSubBindingNotLimited
-	case errors.Is(err, multisub.ErrNoVPNPlugin):
-		return apierror.MultiSubNoVPNPlugin
-
-	// ── Payment ──────────────────────────────────────────────────────────
-	case errors.Is(err, payment.ErrPaymentNotFound):
-		return apierror.PaymentNotFound
-	case errors.Is(err, payment.ErrWebhookNotFound):
-		return apierror.PaymentWebhookNotFound
-	case errors.Is(err, payment.ErrWebhookDuplicate):
-		return apierror.PaymentWebhookDup
-	case errors.Is(err, payment.ErrNoPaymentPlugin):
-		return apierror.PaymentNoPlugin
-	case errors.Is(err, payment.ErrPaymentFailed):
-		return apierror.PaymentFailed
-	case errors.Is(err, payment.ErrVerificationFailed):
-		return apierror.PaymentVerifyFailed
-	case errors.Is(err, payment.ErrRefundFailed):
-		return apierror.PaymentRefundFailed
-	case errors.Is(err, payment.ErrInvalidProvider):
-		return apierror.PaymentInvalidProvider
-	case errors.Is(err, payment.ErrMissingInvoiceID):
-		return apierror.PaymentMissingInvoice
-	case errors.Is(err, payment.ErrMissingAmount):
-		return apierror.PaymentMissingAmount
-	case errors.Is(err, payment.ErrMissingCurrency):
-		return apierror.PaymentMissingCurrency
-	case errors.Is(err, payment.ErrMissingExternalID):
-		return apierror.PaymentMissingExtID
-	case errors.Is(err, payment.ErrInvalidPaymentState):
-		return apierror.PaymentInvalidState
-
-	// ── Reseller ─────────────────────────────────────────────────────────
-	case errors.Is(err, reseller.ErrTenantNotFound):
-		return apierror.ResellerTenantNotFound
-	case errors.Is(err, reseller.ErrResellerNotFound):
-		return apierror.ResellerAccountNotFound
-	case errors.Is(err, reseller.ErrCommissionNotFound):
-		return apierror.ResellerCommissionNotFound
-	case errors.Is(err, reseller.ErrInvalidCommissionRate):
-		return apierror.ResellerInvalidCommission
-	case errors.Is(err, reseller.ErrInvalidAPIKey):
-		return apierror.ResellerInvalidAPIKey
-	case errors.Is(err, reseller.ErrTenantInactive):
-		return apierror.ResellerTenantInactive
-	case errors.Is(err, reseller.ErrDuplicateDomain):
-		return apierror.ResellerDuplicateDomain
-	case errors.Is(err, reseller.ErrNotFound):
-		return apierror.ResellerNotFound
-
-	// ── Plugin ───────────────────────────────────────────────────────────
-	case errors.Is(err, plugin.ErrPluginNotFound):
-		return apierror.PluginNotFound
-	case errors.Is(err, plugin.ErrPluginAlreadyExists):
-		return apierror.PluginAlreadyExists
-	case errors.Is(err, plugin.ErrInvalidManifest):
-		return apierror.PluginInvalidManifest
-	case errors.Is(err, plugin.ErrInvalidPluginSlug):
-		return apierror.PluginInvalidSlug
-	case errors.Is(err, plugin.ErrPluginNotEnabled):
-		return apierror.PluginNotEnabled
-	case errors.Is(err, plugin.ErrPluginAlreadyEnabled):
-		return apierror.PluginAlreadyEnabled
-	case errors.Is(err, plugin.ErrHookTimeout):
-		return apierror.PluginHookTimeout
-	case errors.Is(err, plugin.ErrHookHalted):
-		return apierror.PluginHookHalted
-	case errors.Is(err, plugin.ErrPermissionDenied):
-		return apierror.PluginPermissionDenied
-	case errors.Is(err, plugin.ErrStorageQuotaExceeded):
-		return apierror.PluginStorageQuota
-	case errors.Is(err, plugin.ErrHTTPRateLimitExceeded):
-		return apierror.PluginHTTPRateLimit
-	case errors.Is(err, plugin.ErrInternalNetworkAccess):
-		return apierror.PluginInternalNetwork
-	case errors.Is(err, plugin.ErrWASMCompilationFailed):
-		return apierror.PluginWASMCompileFail
-	case errors.Is(err, plugin.ErrNoHandlerForHook):
-		return apierror.PluginNoHandler
-	case errors.Is(err, plugin.ErrSlugMismatch):
-		return apierror.PluginSlugMismatch
-	case errors.Is(err, plugin.ErrPluginNotRunning):
-		return apierror.PluginNotRunning
-	case errors.Is(err, plugin.ErrIncompatibleSDK):
-		return apierror.PluginIncompatibleSDK
-	case errors.Is(err, plugin.ErrPluginDraining):
-		return apierror.PluginDraining
-	case errors.Is(err, plugin.ErrWASMNotFound):
-		return apierror.PluginWASMNotFound
-	case errors.Is(err, plugin.ErrMissingConfig):
-		return apierror.PluginMissingConfig
-
-	default:
-		return apierror.Internal
+	for _, m := range domainErrorMappers {
+		if apiErr := m(err); apiErr != nil {
+			return apiErr
+		}
 	}
+	return apierror.Internal
 }
 
 // mapServiceError translates a domain-level error into an HTTP status code and

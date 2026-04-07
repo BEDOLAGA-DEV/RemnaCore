@@ -151,8 +151,18 @@ func (s *ProvisioningSaga) Provision(ctx context.Context, req ProvisionRequest) 
 		})
 		if err != nil {
 			// COMPENSATION: mark binding as failed
-			_ = binding.MarkFailed(err.Error(), now)
-			_ = s.bindings.Update(ctx, binding)
+			if markErr := binding.MarkFailed(err.Error(), now); markErr != nil {
+				s.logger.Error("failed to mark binding as failed during compensation",
+					slog.String("binding_id", binding.ID),
+					slog.Any("error", markErr),
+				)
+			}
+			if updateErr := s.bindings.Update(ctx, binding); updateErr != nil {
+				s.logger.Error("failed to persist binding failure during compensation",
+					slog.String("binding_id", binding.ID),
+					slog.Any("error", updateErr),
+				)
+			}
 			failSaga(ctx, s.sagaRepo, sagaInstance, fmt.Sprintf("remnawave create user: %s", err.Error()), s.logger)
 			return results, fmt.Errorf("remnawave create user: %w", err)
 		}

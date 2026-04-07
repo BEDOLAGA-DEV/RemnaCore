@@ -40,10 +40,27 @@ const (
 // validTransitions defines the state machine for subscription status.
 // Terminal states (cancelled, expired) have no valid outbound transitions.
 var validTransitions = map[SubscriptionStatus][]SubscriptionStatus{
-	StatusTrial:   {StatusActive, StatusCancelled, StatusExpired},
-	StatusActive:  {StatusPastDue, StatusCancelled, StatusPaused, StatusExpired},
-	StatusPastDue: {StatusActive, StatusCancelled, StatusExpired},
-	StatusPaused:  {StatusActive, StatusCancelled, StatusExpired},
+	StatusTrial:     {StatusActive, StatusCancelled, StatusExpired},
+	StatusActive:    {StatusPastDue, StatusCancelled, StatusPaused, StatusExpired},
+	StatusPastDue:   {StatusActive, StatusCancelled, StatusExpired},
+	StatusPaused:    {StatusActive, StatusCancelled, StatusExpired},
+	StatusCancelled: {},
+	StatusExpired:   {},
+}
+
+// allSubscriptionStatuses enumerates every SubscriptionStatus constant.
+// Keep in sync with the const block above.
+var allSubscriptionStatuses = []SubscriptionStatus{
+	StatusTrial, StatusActive, StatusPastDue,
+	StatusCancelled, StatusExpired, StatusPaused,
+}
+
+func init() {
+	for _, s := range allSubscriptionStatuses {
+		if _, ok := validTransitions[s]; !ok {
+			panic("billing: missing transition entry for subscription status: " + string(s))
+		}
+	}
 }
 
 // Subscription is the aggregate root for a user's subscription.

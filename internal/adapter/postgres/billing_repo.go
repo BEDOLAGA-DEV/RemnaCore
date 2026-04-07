@@ -599,16 +599,18 @@ func extractInvFields[T invRow](row T) invFields {
 	}
 }
 
-func invoiceRowToDomain[T invRow](row T) *aggregate.Invoice {
+func invoiceRowToDomain[T invRow](row T) (*aggregate.Invoice, error) {
 	return invFieldsToDomain(extractInvFields(row))
 }
 
 // invFieldsToDomain converts a raw invFields struct to a domain Invoice. Used
 // by both the generic invoiceRowToDomain and raw pgx FOR UPDATE queries.
-func invFieldsToDomain(f invFields) *aggregate.Invoice {
+func invFieldsToDomain(f invFields) (*aggregate.Invoice, error) {
 	var discounts []vo.Discount
 	if len(f.Discounts) > 0 {
-		_ = json.Unmarshal(f.Discounts, &discounts)
+		if err := json.Unmarshal(f.Discounts, &discounts); err != nil {
+			return nil, fmt.Errorf("unmarshal discounts: %w", err)
+		}
 	}
 	return &aggregate.Invoice{
 		ID:             pgutil.PgtypeToUUID(f.ID),
@@ -623,7 +625,7 @@ func invFieldsToDomain(f invFields) *aggregate.Invoice {
 		PaidAt:         pgutil.PgtypeToOptTime(f.PaidAt),
 		CreatedAt:      pgutil.PgtypeToTime(f.CreatedAt),
 		UpdatedAt:      pgutil.PgtypeToTime(f.UpdatedAt),
-	}
+	}, nil
 }
 
 func lineItemRowToDomain(row gen.BillingInvoiceLineItem) vo.LineItem {
@@ -653,7 +655,10 @@ func (r *InvoiceRepository) GetByID(ctx context.Context, id string) (*aggregate.
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get invoice by id", billing.ErrInvoiceNotFound)
 	}
-	inv := invoiceRowToDomain(row)
+	inv, err := invoiceRowToDomain(row)
+	if err != nil {
+		return nil, fmt.Errorf("get invoice by id: %w", err)
+	}
 	if err := r.loadLineItems(ctx, inv); err != nil {
 		return nil, err
 	}
@@ -681,7 +686,10 @@ func (r *InvoiceRepository) GetByIDForUpdate(ctx context.Context, id string) (*a
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get invoice by id for update", billing.ErrInvoiceNotFound)
 	}
-	inv := invFieldsToDomain(f)
+	inv, err := invFieldsToDomain(f)
+	if err != nil {
+		return nil, fmt.Errorf("get invoice by id for update: %w", err)
+	}
 	if err := r.loadLineItems(ctx, inv); err != nil {
 		return nil, err
 	}
@@ -695,7 +703,11 @@ func (r *InvoiceRepository) GetBySubscriptionID(ctx context.Context, subID strin
 	}
 	invoices := make([]*aggregate.Invoice, len(rows))
 	for i, row := range rows {
-		invoices[i] = invoiceRowToDomain(row)
+		inv, err := invoiceRowToDomain(row)
+		if err != nil {
+			return nil, fmt.Errorf("get invoices by subscription id: %w", err)
+		}
+		invoices[i] = inv
 		if err := r.loadLineItems(ctx, invoices[i]); err != nil {
 			return nil, err
 		}
@@ -710,7 +722,11 @@ func (r *InvoiceRepository) GetPendingByUserID(ctx context.Context, userID strin
 	}
 	invoices := make([]*aggregate.Invoice, len(rows))
 	for i, row := range rows {
-		invoices[i] = invoiceRowToDomain(row)
+		inv, err := invoiceRowToDomain(row)
+		if err != nil {
+			return nil, fmt.Errorf("get pending invoices by user id: %w", err)
+		}
+		invoices[i] = inv
 		if err := r.loadLineItems(ctx, invoices[i]); err != nil {
 			return nil, err
 		}
@@ -728,7 +744,11 @@ func (r *InvoiceRepository) GetAll(ctx context.Context, limit, offset int) ([]*a
 	}
 	invoices := make([]*aggregate.Invoice, len(rows))
 	for i, row := range rows {
-		invoices[i] = invoiceRowToDomain(row)
+		inv, err := invoiceRowToDomain(row)
+		if err != nil {
+			return nil, fmt.Errorf("get all invoices: %w", err)
+		}
+		invoices[i] = inv
 	}
 	return invoices, nil
 }

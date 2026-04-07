@@ -54,6 +54,21 @@ var validInvoiceTransitions = map[InvoiceStatus][]InvoiceStatus{
 	InvoiceRefunded: {},
 }
 
+// allInvoiceStatuses enumerates every InvoiceStatus constant.
+// Keep in sync with the const block above.
+var allInvoiceStatuses = []InvoiceStatus{
+	InvoiceDraft, InvoicePending, InvoicePaid,
+	InvoiceFailed, InvoiceRefunded,
+}
+
+func init() {
+	for _, s := range allInvoiceStatuses {
+		if _, ok := validInvoiceTransitions[s]; !ok {
+			panic("billing: missing transition entry for invoice status: " + string(s))
+		}
+	}
+}
+
 // Invoice is the aggregate root for a billing invoice.
 // It embeds EventRecorder to accumulate domain events during mutations.
 //

@@ -41,7 +41,7 @@ func newOrchestrator(
 	provisioning := service.NewProvisioningSaga(repo, gw, pub, calc, sagaRepo, txRunner, clk, logger)
 	deprovisioning := service.NewDeprovisioningSaga(repo, gw, pub, sagaRepo, txRunner, clk, logger)
 	syncSaga := service.NewSyncSaga(repo, gw, pub, sagaRepo, clk, logger)
-	syncService := service.NewSyncService(repo, syncSaga, pub)
+	syncService := service.NewSyncService(repo, syncSaga, pub, logger)
 	lifecycle := service.NewBindingLifecycleService(repo, gw, pub, clk, logger)
 
 	return service.NewMultiSubOrchestrator(

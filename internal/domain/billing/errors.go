@@ -55,6 +55,29 @@ var (
 	// that callers using billing.ErrAddonNotOnPlan continue to work.
 	ErrAddonNotOnPlan = aggregate.ErrAddonNotOnPlan
 
+	// ErrEmptyOwnerID is an alias to the aggregate-level sentinel so
+	// that callers using billing.ErrEmptyOwnerID continue to work.
+	ErrEmptyOwnerID = aggregate.ErrEmptyOwnerID
+
+	// ErrMaxMembersTooLow is an alias to the aggregate-level sentinel so
+	// that callers using billing.ErrMaxMembersTooLow continue to work.
+	ErrMaxMembersTooLow = aggregate.ErrMaxMembersTooLow
+
+	// ErrMaxMembersTooHigh is an alias to the aggregate-level sentinel so
+	// that callers using billing.ErrMaxMembersTooHigh continue to work.
+	ErrMaxMembersTooHigh = aggregate.ErrMaxMembersTooHigh
+
+	// ErrEmptyUserID is an alias to the aggregate-level sentinel so
+	// that callers using billing.ErrEmptyUserID continue to work.
+	ErrEmptyUserID = aggregate.ErrEmptyUserID
+
+	// ErrEmptyPlanID is an alias to the aggregate-level sentinel so
+	// that callers using billing.ErrEmptyPlanID continue to work.
+	ErrEmptyPlanID = aggregate.ErrEmptyPlanID
+
+	// ErrEmptyInvoiceID indicates that a required invoice ID was not provided.
+	ErrEmptyInvoiceID = errors.New("invoice ID is required")
+
 	// ErrCancellationBlocked is returned when a plugin blocks subscription cancellation.
 	ErrCancellationBlocked = errors.New("cancellation blocked by plugin")
 
