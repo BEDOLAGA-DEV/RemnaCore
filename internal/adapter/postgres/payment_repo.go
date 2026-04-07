@@ -2,9 +2,7 @@ package postgres
 
 import (
 	"context"
-	"errors"
 
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres/gen"
@@ -154,7 +152,7 @@ func (r *PaymentRepository) CreateWebhookLog(ctx context.Context, log *payment.W
 	})
 	if err != nil {
 		// Detect unique constraint violation for idempotency.
-		if isUniqueViolation(err) {
+		if pgutil.IsUniqueViolation(err) {
 			return payment.ErrWebhookDuplicate
 		}
 		return pgutil.MapErr(err, "create webhook log", payment.ErrWebhookNotFound)
@@ -180,19 +178,6 @@ func (r *PaymentRepository) UpdateWebhookLog(ctx context.Context, log *payment.W
 		ProcessedAt: pgutil.OptTimeToPgtype(log.ProcessedAt),
 	})
 	return pgutil.MapErr(err, "update webhook log", payment.ErrWebhookNotFound)
-}
-
-// pgUniqueViolationCode is the PostgreSQL error code for unique constraint violations.
-const pgUniqueViolationCode = "23505"
-
-// isUniqueViolation checks if a PostgreSQL error is a unique constraint violation
-// using proper pgconn.PgError type assertion.
-func isUniqueViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		return pgErr.Code == pgUniqueViolationCode
-	}
-	return false
 }
 
 var _ payment.PaymentRepository = (*PaymentRepository)(nil)

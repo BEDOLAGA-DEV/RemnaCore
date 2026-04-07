@@ -56,6 +56,12 @@ var allSubscriptionStatuses = []SubscriptionStatus{
 	StatusCancelled, StatusExpired, StatusPaused,
 }
 
+// AllSubscriptionStatuses returns every recognised SubscriptionStatus constant.
+// Used by schema drift tests to verify Go constants match DB CHECK constraints.
+func AllSubscriptionStatuses() []SubscriptionStatus {
+	return append([]SubscriptionStatus(nil), allSubscriptionStatuses...)
+}
+
 // ValidateSubscriptionTransitions checks that every subscription status
 // has an entry in the transition map. Called from tests, not at runtime.
 func ValidateSubscriptionTransitions() error {

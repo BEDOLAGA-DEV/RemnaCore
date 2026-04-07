@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -115,6 +116,20 @@ func PgtypeUUIDsToStrings(us []pgtype.UUID) []string {
 		}
 	}
 	return out
+}
+
+// pgUniqueViolationCode is the PostgreSQL error code for unique constraint
+// violations (SQLSTATE 23505).
+const pgUniqueViolationCode = "23505"
+
+// IsUniqueViolation checks if a PostgreSQL error is a unique constraint
+// violation using proper pgconn.PgError type assertion.
+func IsUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == pgUniqueViolationCode
+	}
+	return false
 }
 
 // MapErr maps pgx.ErrNoRows to notFoundErr and wraps other errors with the

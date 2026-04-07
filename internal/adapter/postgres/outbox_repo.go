@@ -176,10 +176,11 @@ THEN
     UPDATE SET published = true, published_at = now()
 RETURNING o.id`
 
-// partitionPruningPadding is added to the max created_at timestamp to form an
-// exclusive upper bound. This ensures the max value itself is included in the
-// half-open range [min, max + padding) used for partition pruning.
-const partitionPruningPadding = time.Second
+// partitionPruningPadding adds a small offset to the created_at upper bound
+// in MarkPublishedBatch to ensure the range includes the latest event.
+// Using millisecond precision avoids overlapping with the next batch while
+// staying within PostgreSQL's timestamptz resolution.
+const partitionPruningPadding = time.Millisecond
 
 // MarkPublishedBatch atomically marks multiple events as published using a
 // single PG18 MERGE statement. Returns the number of rows actually updated.

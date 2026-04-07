@@ -45,10 +45,10 @@ func NewPool(lc fx.Lifecycle, cfg *config.Config, logger *slog.Logger) (*pgxpool
 		return nil, fmt.Errorf("parse database url: %w", err)
 	}
 
-	poolCfg.MaxConns = int32(cfg.Database.MaxOpenConns)
-	poolCfg.MinConns = int32(cfg.Database.MinConns)
-	poolCfg.MaxConnLifetime = cfg.Database.ConnMaxLifetime
-	poolCfg.MaxConnIdleTime = cfg.Database.ConnMaxIdleTime
+	poolCfg.MaxConns = cfg.Database.MaxConns
+	poolCfg.MinConns = cfg.Database.MinConns
+	poolCfg.MaxConnLifetime = cfg.Database.MaxConnLifetime
+	poolCfg.MaxConnIdleTime = cfg.Database.MaxConnIdleTime
 	poolCfg.HealthCheckPeriod = cfg.Database.HealthCheckPeriod
 
 	pool, err := pgxpool.NewWithConfig(context.Background(), poolCfg)

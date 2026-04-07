@@ -61,6 +61,12 @@ var allInvoiceStatuses = []InvoiceStatus{
 	InvoiceFailed, InvoiceRefunded,
 }
 
+// AllInvoiceStatuses returns every recognised InvoiceStatus constant.
+// Used by schema drift tests to verify Go constants match DB CHECK constraints.
+func AllInvoiceStatuses() []InvoiceStatus {
+	return append([]InvoiceStatus(nil), allInvoiceStatuses...)
+}
+
 // ValidateInvoiceTransitions checks that every invoice status has an entry
 // in the transition map. Called from tests, not at runtime.
 func ValidateInvoiceTransitions() error {

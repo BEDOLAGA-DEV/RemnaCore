@@ -61,6 +61,12 @@ var allBindingStatuses = []BindingStatus{
 	BindingDeprovisioned,
 }
 
+// AllBindingStatuses returns every recognised BindingStatus constant.
+// Used by schema drift tests to verify Go constants match DB CHECK constraints.
+func AllBindingStatuses() []BindingStatus {
+	return append([]BindingStatus(nil), allBindingStatuses...)
+}
+
 // ValidateBindingTransitions checks that every binding status has an entry
 // in the transition map. Called from tests, not at runtime.
 func ValidateBindingTransitions() error {

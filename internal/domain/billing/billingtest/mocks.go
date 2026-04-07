@@ -106,6 +106,14 @@ func (m *MockSubscriptionRepo) GetAll(ctx context.Context, limit, offset int) ([
 	return args.Get(0).([]*aggregate.Subscription), args.Error(1)
 }
 
+func (m *MockSubscriptionRepo) GetAllCursor(ctx context.Context, params billing.CursorParams) ([]*aggregate.Subscription, error) {
+	args := m.Called(ctx, params)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*aggregate.Subscription), args.Error(1)
+}
+
 func (m *MockSubscriptionRepo) Create(ctx context.Context, sub *aggregate.Subscription) error {
 	args := m.Called(ctx, sub)
 	return args.Error(0)
@@ -189,6 +197,14 @@ func (m *MockInvoiceRepo) GetPendingByUserID(ctx context.Context, userID string)
 
 func (m *MockInvoiceRepo) GetAll(ctx context.Context, limit, offset int) ([]*aggregate.Invoice, error) {
 	args := m.Called(ctx, limit, offset)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*aggregate.Invoice), args.Error(1)
+}
+
+func (m *MockInvoiceRepo) GetAllCursor(ctx context.Context, params billing.CursorParams) ([]*aggregate.Invoice, error) {
+	args := m.Called(ctx, params)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

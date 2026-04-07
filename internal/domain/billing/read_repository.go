@@ -57,8 +57,13 @@ type SubscriptionReader interface {
 	// GetActiveByUserID retrieves only active subscriptions for a given user.
 	GetActiveByUserID(ctx context.Context, userID string) ([]*aggregate.Subscription, error)
 
-	// GetAll retrieves a paginated list of all subscriptions (admin use).
+	// Deprecated: Use GetAllCursor for new code. GetAll uses LIMIT/OFFSET which
+	// degrades at high page numbers. Retained for backward compatibility.
 	GetAll(ctx context.Context, limit, offset int) ([]*aggregate.Subscription, error)
+
+	// GetAllCursor retrieves a paginated list of all subscriptions using cursor-based
+	// pagination keyed on (created_at DESC, id DESC). Nil cursor returns the first page.
+	GetAllCursor(ctx context.Context, params CursorParams) ([]*aggregate.Subscription, error)
 }
 
 // InvoiceReader provides read-only access to invoices.
@@ -74,8 +79,13 @@ type InvoiceReader interface {
 	// GetPendingByUserID retrieves unpaid invoices for a given user.
 	GetPendingByUserID(ctx context.Context, userID string) ([]*aggregate.Invoice, error)
 
-	// GetAll retrieves a paginated list of all invoices (admin use).
+	// Deprecated: Use GetAllCursor for new code. GetAll uses LIMIT/OFFSET which
+	// degrades at high page numbers. Retained for backward compatibility.
 	GetAll(ctx context.Context, limit, offset int) ([]*aggregate.Invoice, error)
+
+	// GetAllCursor retrieves a paginated list of all invoices using cursor-based
+	// pagination keyed on (created_at DESC, id DESC). Nil cursor returns the first page.
+	GetAllCursor(ctx context.Context, params CursorParams) ([]*aggregate.Invoice, error)
 }
 
 // FamilyReader provides read-only access to family groups.

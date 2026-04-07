@@ -8,9 +8,13 @@ import (
 
 var (
 	ErrPlanNotFound          = errors.New("plan not found")
+	ErrPlanAlreadyExists     = errors.New("plan already exists")
 	ErrSubscriptionNotFound  = errors.New("subscription not found")
+	ErrSubscriptionAlreadyExists = errors.New("subscription already exists")
 	ErrInvoiceNotFound       = errors.New("invoice not found")
+	ErrInvoiceAlreadyExists  = errors.New("invoice already exists")
 	ErrFamilyGroupNotFound   = errors.New("family group not found")
+	ErrFamilyGroupAlreadyExists = errors.New("family group already exists")
 	ErrInvoiceAlreadyPaid    = errors.New("invoice already paid")
 	ErrInsufficientFunds     = errors.New("insufficient payment amount")
 	ErrCurrencyMismatch      = errors.New("currency mismatch")

@@ -115,6 +115,7 @@ func (q *Queries) CreateInvoice(ctx context.Context, arg CreateInvoiceParams) er
 
 const createInvoiceLineItem = `-- name: CreateInvoiceLineItem :exec
 
+
 INSERT INTO billing.invoice_line_items (invoice_id, description, item_type, amount, currency, quantity)
 VALUES ($1, $2, $3, $4, $5, $6)
 `
@@ -128,6 +129,9 @@ type CreateInvoiceLineItemParams struct {
 	Quantity    int32       `json:"quantity"`
 }
 
+// NOTE: GetAllInvoicesCursor uses raw pgx in billing_repo.go because sqlc
+// does not support conditional WHERE clauses for optional cursor parameters.
+// See InvoiceRepository.GetAllCursor.
 // ============================================================================
 // Invoice Line Items
 // ============================================================================
@@ -347,6 +351,21 @@ func (q *Queries) DeleteRemovedAddons(ctx context.Context, arg DeleteRemovedAddo
 	return err
 }
 
+const deleteRemovedFamilyMembers = `-- name: DeleteRemovedFamilyMembers :exec
+DELETE FROM billing.family_members
+WHERE family_group_id = $1 AND user_id != ALL($2::uuid[])
+`
+
+type DeleteRemovedFamilyMembersParams struct {
+	FamilyGroupID pgtype.UUID   `json:"family_group_id"`
+	UserIds       []pgtype.UUID `json:"user_ids"`
+}
+
+func (q *Queries) DeleteRemovedFamilyMembers(ctx context.Context, arg DeleteRemovedFamilyMembersParams) error {
+	_, err := q.db.Exec(ctx, deleteRemovedFamilyMembers, arg.FamilyGroupID, arg.UserIds)
+	return err
+}
+
 const getActivePlans = `-- name: GetActivePlans :many
 SELECT id, name, description, base_price_amount, base_price_currency,
        billing_interval, traffic_limit_bytes, device_limit,
@@ -487,6 +506,43 @@ FROM billing.plan_addons WHERE plan_id = $1 ORDER BY created_at
 
 func (q *Queries) GetAddonsByPlanID(ctx context.Context, planID pgtype.UUID) ([]BillingPlanAddon, error) {
 	rows, err := q.db.Query(ctx, getAddonsByPlanID, planID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BillingPlanAddon{}
+	for rows.Next() {
+		var i BillingPlanAddon
+		if err := rows.Scan(
+			&i.ID,
+			&i.PlanID,
+			&i.Name,
+			&i.PriceAmount,
+			&i.PriceCurrency,
+			&i.AddonType,
+			&i.ExtraTrafficBytes,
+			&i.ExtraNodes,
+			&i.ExtraFeatureFlags,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAddonsByPlanIDs = `-- name: GetAddonsByPlanIDs :many
+SELECT id, plan_id, name, price_amount, price_currency,
+       addon_type, extra_traffic_bytes, extra_nodes, extra_feature_flags, created_at
+FROM billing.plan_addons WHERE plan_id = ANY($1::uuid[]) ORDER BY created_at
+`
+
+func (q *Queries) GetAddonsByPlanIDs(ctx context.Context, dollar_1 []pgtype.UUID) ([]BillingPlanAddon, error) {
+	rows, err := q.db.Query(ctx, getAddonsByPlanIDs, dollar_1)
 	if err != nil {
 		return nil, err
 	}
@@ -977,6 +1033,39 @@ func (q *Queries) GetLineItemsByInvoiceID(ctx context.Context, invoiceID pgtype.
 	return items, nil
 }
 
+const getLineItemsByInvoiceIDs = `-- name: GetLineItemsByInvoiceIDs :many
+SELECT id, invoice_id, description, item_type, amount, currency, quantity
+FROM billing.invoice_line_items WHERE invoice_id = ANY($1::uuid[]) ORDER BY id
+`
+
+func (q *Queries) GetLineItemsByInvoiceIDs(ctx context.Context, dollar_1 []pgtype.UUID) ([]BillingInvoiceLineItem, error) {
+	rows, err := q.db.Query(ctx, getLineItemsByInvoiceIDs, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BillingInvoiceLineItem{}
+	for rows.Next() {
+		var i BillingInvoiceLineItem
+		if err := rows.Scan(
+			&i.ID,
+			&i.InvoiceID,
+			&i.Description,
+			&i.ItemType,
+			&i.Amount,
+			&i.Currency,
+			&i.Quantity,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getPendingInvoicesByUserID = `-- name: GetPendingInvoicesByUserID :many
 SELECT id, subscription_id, user_id, subtotal_amount, total_discount_amount,
        total_amount, currency, pricing_reason, discounts, status, paid_at, created_at, updated_at
@@ -1093,6 +1182,7 @@ const getRecentlyUpdatedSubscriptions = `-- name: GetRecentlyUpdatedSubscription
 
 
 
+
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
        addon_ids, assigned_to, pending_plan_id, pending_original_plan_id, pending_requested_at,
        cancelled_at, paused_at, created_at, updated_at
@@ -1136,6 +1226,9 @@ type GetRecentlyUpdatedSubscriptionsRow struct {
 // the && overlap operator. sqlc does not support the && operator on tstzrange,
 // so this query is implemented as raw pgx in billing_repo.go. See
 // SubscriptionRepository.GetOverlapping.
+// NOTE: GetAllSubscriptionsCursor uses raw pgx in billing_repo.go because sqlc
+// does not support conditional WHERE clauses for optional cursor parameters.
+// See SubscriptionRepository.GetAllCursor.
 func (q *Queries) GetRecentlyUpdatedSubscriptions(ctx context.Context, arg GetRecentlyUpdatedSubscriptionsParams) ([]GetRecentlyUpdatedSubscriptionsRow, error) {
 	rows, err := q.db.Query(ctx, getRecentlyUpdatedSubscriptions, arg.Limit, arg.Offset)
 	if err != nil {
@@ -1470,6 +1563,33 @@ func (q *Queries) UpdateSubscription(ctx context.Context, arg UpdateSubscription
 		arg.PendingRequestedAt,
 		arg.CancelledAt,
 		arg.PausedAt,
+	)
+	return err
+}
+
+const upsertFamilyMember = `-- name: UpsertFamilyMember :exec
+INSERT INTO billing.family_members (family_group_id, user_id, role, nickname, joined_at)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (family_group_id, user_id) DO UPDATE SET
+    role     = EXCLUDED.role,
+    nickname = EXCLUDED.nickname
+`
+
+type UpsertFamilyMemberParams struct {
+	FamilyGroupID pgtype.UUID        `json:"family_group_id"`
+	UserID        pgtype.UUID        `json:"user_id"`
+	Role          string             `json:"role"`
+	Nickname      *string            `json:"nickname"`
+	JoinedAt      pgtype.Timestamptz `json:"joined_at"`
+}
+
+func (q *Queries) UpsertFamilyMember(ctx context.Context, arg UpsertFamilyMemberParams) error {
+	_, err := q.db.Exec(ctx, upsertFamilyMember,
+		arg.FamilyGroupID,
+		arg.UserID,
+		arg.Role,
+		arg.Nickname,
+		arg.JoinedAt,
 	)
 	return err
 }

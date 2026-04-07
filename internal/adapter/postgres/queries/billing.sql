@@ -75,6 +75,11 @@ SELECT id, plan_id, name, price_amount, price_currency,
        addon_type, extra_traffic_bytes, extra_nodes, extra_feature_flags, created_at
 FROM billing.plan_addons WHERE plan_id = $1 ORDER BY created_at;
 
+-- name: GetAddonsByPlanIDs :many
+SELECT id, plan_id, name, price_amount, price_currency,
+       addon_type, extra_traffic_bytes, extra_nodes, extra_feature_flags, created_at
+FROM billing.plan_addons WHERE plan_id = ANY($1::uuid[]) ORDER BY created_at;
+
 -- name: DeleteAddonsByPlanID :exec
 DELETE FROM billing.plan_addons WHERE plan_id = $1;
 
@@ -144,6 +149,10 @@ WHERE id = $1;
 -- so this query is implemented as raw pgx in billing_repo.go. See
 -- SubscriptionRepository.GetOverlapping.
 
+-- NOTE: GetAllSubscriptionsCursor uses raw pgx in billing_repo.go because sqlc
+-- does not support conditional WHERE clauses for optional cursor parameters.
+-- See SubscriptionRepository.GetAllCursor.
+
 -- name: GetRecentlyUpdatedSubscriptions :many
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
        addon_ids, assigned_to, pending_plan_id, pending_original_plan_id, pending_requested_at,
@@ -194,6 +203,10 @@ SET status = $2, paid_at = $3, subtotal_amount = $4, total_discount_amount = $5,
     total_amount = $6, pricing_reason = $7, discounts = $8
 WHERE id = $1;
 
+-- NOTE: GetAllInvoicesCursor uses raw pgx in billing_repo.go because sqlc
+-- does not support conditional WHERE clauses for optional cursor parameters.
+-- See InvoiceRepository.GetAllCursor.
+
 -- ============================================================================
 -- Invoice Line Items
 -- ============================================================================
@@ -205,6 +218,10 @@ VALUES ($1, $2, $3, $4, $5, $6);
 -- name: GetLineItemsByInvoiceID :many
 SELECT id, invoice_id, description, item_type, amount, currency, quantity
 FROM billing.invoice_line_items WHERE invoice_id = $1 ORDER BY id;
+
+-- name: GetLineItemsByInvoiceIDs :many
+SELECT id, invoice_id, description, item_type, amount, currency, quantity
+FROM billing.invoice_line_items WHERE invoice_id = ANY($1::uuid[]) ORDER BY id;
 
 -- name: DeleteLineItemsByInvoiceID :exec
 DELETE FROM billing.invoice_line_items WHERE invoice_id = $1;
@@ -242,6 +259,17 @@ DELETE FROM billing.family_groups WHERE id = $1;
 -- name: CreateFamilyMember :exec
 INSERT INTO billing.family_members (family_group_id, user_id, role, nickname, joined_at)
 VALUES ($1, $2, $3, $4, $5);
+
+-- name: UpsertFamilyMember :exec
+INSERT INTO billing.family_members (family_group_id, user_id, role, nickname, joined_at)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (family_group_id, user_id) DO UPDATE SET
+    role     = EXCLUDED.role,
+    nickname = EXCLUDED.nickname;
+
+-- name: DeleteRemovedFamilyMembers :exec
+DELETE FROM billing.family_members
+WHERE family_group_id = $1 AND user_id != ALL(sqlc.arg(user_ids)::uuid[]);
 
 -- name: GetFamilyMembersByGroupID :many
 SELECT id, family_group_id, user_id, role, nickname, joined_at

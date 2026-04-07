@@ -7,6 +7,16 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 )
 
+// CursorParams defines cursor-based pagination parameters.
+// When CreatedAt and ID are both nil, the first page is returned.
+// Subsequent pages pass the created_at and id of the last item from the
+// previous page to fetch the next window.
+type CursorParams struct {
+	Limit     int
+	CreatedAt *time.Time // nil = first page
+	ID        *string    // nil = first page
+}
+
 // PlanRepository defines persistence operations for the Plan aggregate.
 type PlanRepository interface {
 	GetByID(ctx context.Context, id string) (*aggregate.Plan, error)
@@ -33,7 +43,13 @@ type SubscriptionRepository interface {
 	GetByIDForUpdate(ctx context.Context, id string) (*aggregate.Subscription, error)
 	GetByUserID(ctx context.Context, userID string) ([]*aggregate.Subscription, error)
 	GetActiveByUserID(ctx context.Context, userID string) ([]*aggregate.Subscription, error)
+	// Deprecated: Use GetAllCursor for new code. GetAll uses LIMIT/OFFSET which
+	// degrades at high page numbers. Retained for backward compatibility.
 	GetAll(ctx context.Context, limit, offset int) ([]*aggregate.Subscription, error)
+	// GetAllCursor returns subscriptions using cursor-based pagination keyed on
+	// (created_at DESC, id DESC). Pass the last item's created_at and id from
+	// the previous page to fetch the next window. Nil cursor returns the first page.
+	GetAllCursor(ctx context.Context, params CursorParams) ([]*aggregate.Subscription, error)
 	Create(ctx context.Context, sub *aggregate.Subscription) error
 	Update(ctx context.Context, sub *aggregate.Subscription) error
 	// UpdateStatus atomically transitions a subscription's status and returns
@@ -62,7 +78,13 @@ type InvoiceRepository interface {
 	GetByIDForUpdate(ctx context.Context, id string) (*aggregate.Invoice, error)
 	GetBySubscriptionID(ctx context.Context, subID string) ([]*aggregate.Invoice, error)
 	GetPendingByUserID(ctx context.Context, userID string) ([]*aggregate.Invoice, error)
+	// Deprecated: Use GetAllCursor for new code. GetAll uses LIMIT/OFFSET which
+	// degrades at high page numbers. Retained for backward compatibility.
 	GetAll(ctx context.Context, limit, offset int) ([]*aggregate.Invoice, error)
+	// GetAllCursor returns invoices using cursor-based pagination keyed on
+	// (created_at DESC, id DESC). Pass the last item's created_at and id from
+	// the previous page to fetch the next window. Nil cursor returns the first page.
+	GetAllCursor(ctx context.Context, params CursorParams) ([]*aggregate.Invoice, error)
 	Create(ctx context.Context, inv *aggregate.Invoice) error
 	Update(ctx context.Context, inv *aggregate.Invoice) error
 }

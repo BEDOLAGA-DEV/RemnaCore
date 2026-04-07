@@ -40,9 +40,11 @@ func TestLoadConfig_Defaults(t *testing.T) {
 
 	// Database defaults
 	assert.Equal(t, "postgres://localhost:5432/test", cfg.Database.URL)
-	assert.Equal(t, config.DefaultDBMaxOpenConns, cfg.Database.MaxOpenConns)
-	assert.Equal(t, config.DefaultDBMaxIdleConns, cfg.Database.MaxIdleConns)
-	assert.Equal(t, config.DefaultDBConnMaxLifetime, cfg.Database.ConnMaxLifetime)
+	assert.Equal(t, config.DefaultPoolMaxConns, cfg.Database.MaxConns)
+	assert.Equal(t, config.DefaultPoolMinConns, cfg.Database.MinConns)
+	assert.Equal(t, config.DefaultPoolMaxConnLifetime, cfg.Database.MaxConnLifetime)
+	assert.Equal(t, config.DefaultPoolMaxConnIdleTime, cfg.Database.MaxConnIdleTime)
+	assert.Equal(t, config.DefaultPoolHealthCheck, cfg.Database.HealthCheckPeriod)
 
 	// JWT defaults
 	assert.Equal(t, config.DefaultJWTAccessTTL, cfg.JWT.AccessTokenTTL)
@@ -81,9 +83,11 @@ func TestLoadConfig_CustomValues(t *testing.T) {
 	t.Setenv("APP_PORT", "8080")
 	t.Setenv("APP_LOG_LEVEL", "info")
 	t.Setenv("APP_LOG_FORMAT", "text")
-	t.Setenv("DATABASE_MAX_OPEN_CONNS", "50")
-	t.Setenv("DATABASE_MAX_IDLE_CONNS", "10")
-	t.Setenv("DATABASE_CONN_MAX_LIFETIME", "10m")
+	t.Setenv("DATABASE_MAX_CONNS", "50")
+	t.Setenv("DATABASE_MIN_CONNS", "10")
+	t.Setenv("DATABASE_MAX_CONN_LIFETIME", "10m")
+	t.Setenv("DATABASE_MAX_CONN_IDLE_TIME", "5m")
+	t.Setenv("DATABASE_HEALTH_CHECK_PERIOD", "2m")
 	t.Setenv("JWT_ACCESS_TOKEN_TTL", "30m")
 	t.Setenv("JWT_REFRESH_TOKEN_TTL", "72h")
 	t.Setenv("REMNAWAVE_WEBHOOK_SECRET", "webhook-secret-xyz")
@@ -96,10 +100,12 @@ func TestLoadConfig_CustomValues(t *testing.T) {
 	assert.Equal(t, "info", cfg.App.LogLevel)
 	assert.Equal(t, "text", cfg.App.LogFormat)
 
-	// Database
-	assert.Equal(t, 50, cfg.Database.MaxOpenConns)
-	assert.Equal(t, 10, cfg.Database.MaxIdleConns)
-	assert.Equal(t, 10*time.Minute, cfg.Database.ConnMaxLifetime)
+	// Database pool
+	assert.Equal(t, int32(50), cfg.Database.MaxConns)
+	assert.Equal(t, int32(10), cfg.Database.MinConns)
+	assert.Equal(t, 10*time.Minute, cfg.Database.MaxConnLifetime)
+	assert.Equal(t, 5*time.Minute, cfg.Database.MaxConnIdleTime)
+	assert.Equal(t, 2*time.Minute, cfg.Database.HealthCheckPeriod)
 
 	// JWT
 	assert.Equal(t, 30*time.Minute, cfg.JWT.AccessTokenTTL)

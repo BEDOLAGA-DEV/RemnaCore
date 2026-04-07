@@ -331,13 +331,15 @@ type subFields struct {
 // Each query returns a separate struct because the explicit column list differs
 // from the model (which now includes the billing_period generated column).
 type subRow interface {
-	gen.GetSubscriptionByIDRow | gen.GetSubscriptionsByUserIDRow | gen.GetActiveSubscriptionsByUserIDRow | gen.GetAllSubscriptionsRow
+	gen.GetSubscriptionByIDRow | gen.GetSubscriptionByIDForUpdateRow | gen.GetSubscriptionsByUserIDRow | gen.GetActiveSubscriptionsByUserIDRow | gen.GetAllSubscriptionsRow
 }
 
 // extractSubFields extracts the common fields from any subscription row type.
 func extractSubFields[T subRow](row T) subFields {
 	switch r := any(row).(type) {
 	case gen.GetSubscriptionByIDRow:
+		return subFields{r.ID, r.UserID, r.PlanID, r.Status, r.PeriodStart, r.PeriodEnd, r.PeriodInterval, r.AddonIds, r.AssignedTo, r.PendingPlanID, r.PendingOriginalPlanID, r.PendingRequestedAt, r.CancelledAt, r.PausedAt, r.CreatedAt, r.UpdatedAt}
+	case gen.GetSubscriptionByIDForUpdateRow:
 		return subFields{r.ID, r.UserID, r.PlanID, r.Status, r.PeriodStart, r.PeriodEnd, r.PeriodInterval, r.AddonIds, r.AssignedTo, r.PendingPlanID, r.PendingOriginalPlanID, r.PendingRequestedAt, r.CancelledAt, r.PausedAt, r.CreatedAt, r.UpdatedAt}
 	case gen.GetSubscriptionsByUserIDRow:
 		return subFields{r.ID, r.UserID, r.PlanID, r.Status, r.PeriodStart, r.PeriodEnd, r.PeriodInterval, r.AddonIds, r.AssignedTo, r.PendingPlanID, r.PendingOriginalPlanID, r.PendingRequestedAt, r.CancelledAt, r.PausedAt, r.CreatedAt, r.UpdatedAt}
@@ -363,31 +365,12 @@ func (r *SubscriptionRepository) GetByID(ctx context.Context, id string) (*aggre
 	return subRowToDomain(row), nil
 }
 
-// getSubscriptionByIDForUpdateSQL is identical to GetSubscriptionByID but
-// acquires a FOR UPDATE row lock. Must be called within a transaction.
-const getSubscriptionByIDForUpdateSQL = `
-SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
-       addon_ids, assigned_to, pending_plan_id, pending_original_plan_id, pending_requested_at,
-       cancelled_at, paused_at, created_at, updated_at
-FROM billing.subscriptions WHERE id = $1 FOR UPDATE
-`
-
 func (r *SubscriptionRepository) GetByIDForUpdate(ctx context.Context, id string) (*aggregate.Subscription, error) {
-	db := DBFromContext(ctx, r.pool)
-	row := db.QueryRow(ctx, getSubscriptionByIDForUpdateSQL, pgutil.UUIDToPgtype(id))
-
-	var f subFields
-	err := row.Scan(
-		&f.ID, &f.UserID, &f.PlanID, &f.Status,
-		&f.PeriodStart, &f.PeriodEnd, &f.PeriodInterval,
-		&f.AddonIds, &f.AssignedTo, &f.PendingPlanID, &f.PendingOriginalPlanID, &f.PendingRequestedAt,
-		&f.CancelledAt, &f.PausedAt,
-		&f.CreatedAt, &f.UpdatedAt,
-	)
+	row, err := r.q(ctx).GetSubscriptionByIDForUpdate(ctx, pgutil.UUIDToPgtype(id))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get subscription by id for update", billing.ErrSubscriptionNotFound)
 	}
-	return subFieldsToDomain(f), nil
+	return subRowToDomain(row), nil
 }
 
 func (r *SubscriptionRepository) GetByUserID(ctx context.Context, userID string) ([]*aggregate.Subscription, error) {
@@ -685,6 +668,82 @@ func (r *SubscriptionRepository) GetExpiredActive(ctx context.Context, before ti
 	return subs, nil
 }
 
+// getAllSubscriptionsCursorFirstPageSQL returns the first page of subscriptions
+// ordered by (created_at DESC, id DESC). Used when no cursor is provided.
+const getAllSubscriptionsCursorFirstPageSQL = `
+SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
+       addon_ids, assigned_to, pending_plan_id, pending_original_plan_id, pending_requested_at,
+       cancelled_at, paused_at, created_at, updated_at
+FROM billing.subscriptions
+ORDER BY created_at DESC, id DESC
+LIMIT $1`
+
+// getAllSubscriptionsCursorNextPageSQL returns subsequent pages using cursor-based
+// pagination keyed on (created_at DESC, id DESC). Bypasses sqlc because the
+// conditional WHERE clause for optional cursor parameters is not supported.
+const getAllSubscriptionsCursorNextPageSQL = `
+SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
+       addon_ids, assigned_to, pending_plan_id, pending_original_plan_id, pending_requested_at,
+       cancelled_at, paused_at, created_at, updated_at
+FROM billing.subscriptions
+WHERE (created_at, id) < ($2, $3)
+ORDER BY created_at DESC, id DESC
+LIMIT $1`
+
+// GetAllCursor returns subscriptions using cursor-based pagination keyed on
+// (created_at DESC, id DESC). Nil cursor returns the first page.
+func (r *SubscriptionRepository) GetAllCursor(ctx context.Context, params billing.CursorParams) ([]*aggregate.Subscription, error) {
+	db := DBFromContext(ctx, r.pool)
+
+	if params.CreatedAt == nil || params.ID == nil {
+		rows, err := db.Query(ctx, getAllSubscriptionsCursorFirstPageSQL, int32(params.Limit))
+		if err != nil {
+			return nil, pgutil.MapErr(err, "get all subscriptions cursor first page", billing.ErrSubscriptionNotFound)
+		}
+		defer rows.Close()
+		return scanSubscriptionRows(rows)
+	}
+
+	rows, err := db.Query(ctx, getAllSubscriptionsCursorNextPageSQL,
+		int32(params.Limit),
+		pgutil.TimeToPgtype(*params.CreatedAt),
+		pgutil.UUIDToPgtype(*params.ID),
+	)
+	if err != nil {
+		return nil, pgutil.MapErr(err, "get all subscriptions cursor next page", billing.ErrSubscriptionNotFound)
+	}
+	defer rows.Close()
+	return scanSubscriptionRows(rows)
+}
+
+// scanSubscriptionRows scans pgx rows into a slice of domain subscriptions.
+// Shared by GetAllCursor to avoid duplicating the scan loop.
+func scanSubscriptionRows(rows interface {
+	Next() bool
+	Scan(dest ...any) error
+	Err() error
+},
+) ([]*aggregate.Subscription, error) {
+	var subs []*aggregate.Subscription
+	for rows.Next() {
+		var f subFields
+		if err := rows.Scan(
+			&f.ID, &f.UserID, &f.PlanID, &f.Status,
+			&f.PeriodStart, &f.PeriodEnd, &f.PeriodInterval,
+			&f.AddonIds, &f.AssignedTo, &f.PendingPlanID, &f.PendingOriginalPlanID, &f.PendingRequestedAt,
+			&f.CancelledAt, &f.PausedAt,
+			&f.CreatedAt, &f.UpdatedAt,
+		); err != nil {
+			return nil, pgutil.MapErr(err, "scan subscription cursor row", billing.ErrSubscriptionNotFound)
+		}
+		subs = append(subs, subFieldsToDomain(f))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, pgutil.MapErr(err, "iterate subscription cursor rows", billing.ErrSubscriptionNotFound)
+	}
+	return subs, nil
+}
+
 var _ billing.SubscriptionRepository = (*SubscriptionRepository)(nil)
 
 // ---------------------------------------------------------------------------
@@ -727,12 +786,14 @@ type invFields struct {
 
 // invRow is a constraint matching all sqlc-generated invoice row types.
 type invRow interface {
-	gen.GetInvoiceByIDRow | gen.GetInvoicesBySubscriptionIDRow | gen.GetPendingInvoicesByUserIDRow | gen.GetAllInvoicesRow
+	gen.GetInvoiceByIDRow | gen.GetInvoiceByIDForUpdateRow | gen.GetInvoicesBySubscriptionIDRow | gen.GetPendingInvoicesByUserIDRow | gen.GetAllInvoicesRow
 }
 
 func extractInvFields[T invRow](row T) invFields {
 	switch r := any(row).(type) {
 	case gen.GetInvoiceByIDRow:
+		return invFields{r.ID, r.SubscriptionID, r.UserID, r.SubtotalAmount, r.TotalDiscountAmount, r.TotalAmount, r.Currency, r.PricingReason, r.Discounts, r.Status, r.PaidAt, r.CreatedAt, r.UpdatedAt}
+	case gen.GetInvoiceByIDForUpdateRow:
 		return invFields{r.ID, r.SubscriptionID, r.UserID, r.SubtotalAmount, r.TotalDiscountAmount, r.TotalAmount, r.Currency, r.PricingReason, r.Discounts, r.Status, r.PaidAt, r.CreatedAt, r.UpdatedAt}
 	case gen.GetInvoicesBySubscriptionIDRow:
 		return invFields{r.ID, r.SubscriptionID, r.UserID, r.SubtotalAmount, r.TotalDiscountAmount, r.TotalAmount, r.Currency, r.PricingReason, r.Discounts, r.Status, r.PaidAt, r.CreatedAt, r.UpdatedAt}
@@ -811,28 +872,12 @@ func (r *InvoiceRepository) GetByID(ctx context.Context, id string) (*aggregate.
 	return inv, nil
 }
 
-// getInvoiceByIDForUpdateSQL is identical to GetInvoiceByID but acquires a
-// FOR UPDATE row lock. Must be called within a transaction.
-const getInvoiceByIDForUpdateSQL = `
-SELECT id, subscription_id, user_id, subtotal_amount, total_discount_amount,
-       total_amount, currency, pricing_reason, discounts, status, paid_at, created_at, updated_at
-FROM billing.invoices WHERE id = $1 FOR UPDATE
-`
-
 func (r *InvoiceRepository) GetByIDForUpdate(ctx context.Context, id string) (*aggregate.Invoice, error) {
-	db := DBFromContext(ctx, r.pool)
-	row := db.QueryRow(ctx, getInvoiceByIDForUpdateSQL, pgutil.UUIDToPgtype(id))
-
-	var f invFields
-	err := row.Scan(
-		&f.ID, &f.SubscriptionID, &f.UserID, &f.SubtotalAmount, &f.TotalDiscountAmount,
-		&f.TotalAmount, &f.Currency, &f.PricingReason, &f.Discounts, &f.Status,
-		&f.PaidAt, &f.CreatedAt, &f.UpdatedAt,
-	)
+	row, err := r.q(ctx).GetInvoiceByIDForUpdate(ctx, pgutil.UUIDToPgtype(id))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get invoice by id for update", billing.ErrInvoiceNotFound)
 	}
-	inv, err := invFieldsToDomain(f)
+	inv, err := invoiceRowToDomain(row)
 	if err != nil {
 		return nil, fmt.Errorf("get invoice by id for update: %w", err)
 	}
@@ -961,6 +1006,82 @@ func (r *InvoiceRepository) Update(ctx context.Context, inv *aggregate.Invoice) 
 	return pgutil.MapErr(err, "update invoice", billing.ErrInvoiceNotFound)
 }
 
+// getAllInvoicesCursorFirstPageSQL returns the first page of invoices
+// ordered by (created_at DESC, id DESC). Used when no cursor is provided.
+const getAllInvoicesCursorFirstPageSQL = `
+SELECT id, subscription_id, user_id, subtotal_amount, total_discount_amount,
+       total_amount, currency, pricing_reason, discounts, status, paid_at, created_at, updated_at
+FROM billing.invoices
+ORDER BY created_at DESC, id DESC
+LIMIT $1`
+
+// getAllInvoicesCursorNextPageSQL returns subsequent pages using cursor-based
+// pagination keyed on (created_at DESC, id DESC). Bypasses sqlc because the
+// conditional WHERE clause for optional cursor parameters is not supported.
+const getAllInvoicesCursorNextPageSQL = `
+SELECT id, subscription_id, user_id, subtotal_amount, total_discount_amount,
+       total_amount, currency, pricing_reason, discounts, status, paid_at, created_at, updated_at
+FROM billing.invoices
+WHERE (created_at, id) < ($2, $3)
+ORDER BY created_at DESC, id DESC
+LIMIT $1`
+
+// GetAllCursor returns invoices using cursor-based pagination keyed on
+// (created_at DESC, id DESC). Nil cursor returns the first page.
+func (r *InvoiceRepository) GetAllCursor(ctx context.Context, params billing.CursorParams) ([]*aggregate.Invoice, error) {
+	db := DBFromContext(ctx, r.pool)
+
+	if params.CreatedAt == nil || params.ID == nil {
+		rows, err := db.Query(ctx, getAllInvoicesCursorFirstPageSQL, int32(params.Limit))
+		if err != nil {
+			return nil, pgutil.MapErr(err, "get all invoices cursor first page", billing.ErrInvoiceNotFound)
+		}
+		defer rows.Close()
+		return scanInvoiceRows(rows)
+	}
+
+	rows, err := db.Query(ctx, getAllInvoicesCursorNextPageSQL,
+		int32(params.Limit),
+		pgutil.TimeToPgtype(*params.CreatedAt),
+		pgutil.UUIDToPgtype(*params.ID),
+	)
+	if err != nil {
+		return nil, pgutil.MapErr(err, "get all invoices cursor next page", billing.ErrInvoiceNotFound)
+	}
+	defer rows.Close()
+	return scanInvoiceRows(rows)
+}
+
+// scanInvoiceRows scans pgx rows into a slice of domain invoices.
+// Shared by GetAllCursor to avoid duplicating the scan loop.
+func scanInvoiceRows(rows interface {
+	Next() bool
+	Scan(dest ...any) error
+	Err() error
+},
+) ([]*aggregate.Invoice, error) {
+	var invoices []*aggregate.Invoice
+	for rows.Next() {
+		var f invFields
+		if err := rows.Scan(
+			&f.ID, &f.SubscriptionID, &f.UserID, &f.SubtotalAmount, &f.TotalDiscountAmount,
+			&f.TotalAmount, &f.Currency, &f.PricingReason, &f.Discounts, &f.Status,
+			&f.PaidAt, &f.CreatedAt, &f.UpdatedAt,
+		); err != nil {
+			return nil, pgutil.MapErr(err, "scan invoice cursor row", billing.ErrInvoiceNotFound)
+		}
+		inv, err := invFieldsToDomain(f)
+		if err != nil {
+			return nil, fmt.Errorf("scan invoice cursor row: %w", err)
+		}
+		invoices = append(invoices, inv)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, pgutil.MapErr(err, "iterate invoice cursor rows", billing.ErrInvoiceNotFound)
+	}
+	return invoices, nil
+}
+
 var _ billing.InvoiceRepository = (*InvoiceRepository)(nil)
 
 // ---------------------------------------------------------------------------
@@ -1040,23 +1161,12 @@ func (r *FamilyRepository) GetByOwnerID(ctx context.Context, ownerID string) (*a
 	return fg, nil
 }
 
-// getFamilyGroupByOwnerIDForUpdateSQL is identical to GetFamilyGroupByOwnerID
-// but acquires a FOR UPDATE row lock. Must be called within a transaction.
-const getFamilyGroupByOwnerIDForUpdateSQL = `
-SELECT id, owner_id, max_members, created_at, updated_at
-FROM billing.family_groups WHERE owner_id = $1 FOR UPDATE
-`
-
 func (r *FamilyRepository) GetByOwnerIDForUpdate(ctx context.Context, ownerID string) (*aggregate.FamilyGroup, error) {
-	db := DBFromContext(ctx, r.pool)
-	row := db.QueryRow(ctx, getFamilyGroupByOwnerIDForUpdateSQL, pgutil.UUIDToPgtype(ownerID))
-
-	var rawRow gen.BillingFamilyGroup
-	err := row.Scan(&rawRow.ID, &rawRow.OwnerID, &rawRow.MaxMembers, &rawRow.CreatedAt, &rawRow.UpdatedAt)
+	row, err := r.q(ctx).GetFamilyGroupByOwnerIDForUpdate(ctx, pgutil.UUIDToPgtype(ownerID))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get family group by owner id for update", billing.ErrFamilyGroupNotFound)
 	}
-	fg := familyGroupRowToDomain(rawRow)
+	fg := familyGroupRowToDomain(row)
 	if err := r.loadMembers(ctx, fg); err != nil {
 		return nil, err
 	}
@@ -1094,6 +1204,17 @@ func (r *FamilyRepository) createMember(ctx context.Context, groupID string, mem
 	return pgutil.MapErr(err, "create family member", billing.ErrFamilyGroupNotFound)
 }
 
+func (r *FamilyRepository) upsertMember(ctx context.Context, groupID string, member aggregate.FamilyMember) error {
+	err := r.q(ctx).UpsertFamilyMember(ctx, gen.UpsertFamilyMemberParams{
+		FamilyGroupID: pgutil.UUIDToPgtype(groupID),
+		UserID:        pgutil.UUIDToPgtype(member.UserID),
+		Role:          string(member.Role),
+		Nickname:      pgutil.StrPtrOrNil(member.Nickname),
+		JoinedAt:      pgutil.TimeToPgtype(member.JoinedAt),
+	})
+	return pgutil.MapErr(err, "upsert family member", billing.ErrFamilyGroupNotFound)
+}
+
 func (r *FamilyRepository) Update(ctx context.Context, fg *aggregate.FamilyGroup) error {
 	err := r.q(ctx).UpdateFamilyGroup(ctx, gen.UpdateFamilyGroupParams{
 		ID:         pgutil.UUIDToPgtype(fg.ID),
@@ -1103,14 +1224,22 @@ func (r *FamilyRepository) Update(ctx context.Context, fg *aggregate.FamilyGroup
 		return pgutil.MapErr(err, "update family group", billing.ErrFamilyGroupNotFound)
 	}
 
-	// Replace members: delete all, re-insert.
-	if err := r.q(ctx).DeleteFamilyMembersByGroupID(ctx, pgutil.UUIDToPgtype(fg.ID)); err != nil {
-		return pgutil.MapErr(err, "delete family members", billing.ErrFamilyGroupNotFound)
-	}
+	// Upsert each member, then prune members removed from the list.
+	// This avoids DELETE ALL + RE-INSERT which breaks FK references
+	// and loses joined_at timestamps for unchanged members.
+	retainUserIDs := make([]pgtype.UUID, 0, len(fg.Members))
 	for _, member := range fg.Members {
-		if err := r.createMember(ctx, fg.ID, member); err != nil {
-			return fmt.Errorf("recreate member %s for family group: %w", member.UserID, err)
+		if err := r.upsertMember(ctx, fg.ID, member); err != nil {
+			return fmt.Errorf("upsert member %s for family group: %w", member.UserID, err)
 		}
+		retainUserIDs = append(retainUserIDs, pgutil.UUIDToPgtype(member.UserID))
+	}
+
+	if err := r.q(ctx).DeleteRemovedFamilyMembers(ctx, gen.DeleteRemovedFamilyMembersParams{
+		FamilyGroupID: pgutil.UUIDToPgtype(fg.ID),
+		UserIds:       retainUserIDs,
+	}); err != nil {
+		return pgutil.MapErr(err, "delete removed family members", billing.ErrFamilyGroupNotFound)
 	}
 	return nil
 }
