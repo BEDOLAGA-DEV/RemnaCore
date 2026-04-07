@@ -446,6 +446,128 @@ required = true
 	assert.ErrorIs(t, err, ErrMissingConfig)
 }
 
+func TestUpdateConfig_EnabledPlugin_AtomicReload(t *testing.T) {
+	lm, repo, _, pub := newTestLifecycleManager()
+	ctx := context.Background()
+
+	manifestWithConfig := []byte(`
+[plugin]
+id = "atomic-config-plugin"
+name = "Atomic Config"
+version = "1.0.0"
+sdk_version = "1.0.0"
+
+[hooks]
+sync = ["invoice.created"]
+
+[config.api_key]
+type = "secret"
+label = "API Key"
+required = true
+`)
+
+	p, err := lm.Install(ctx, manifestWithConfig, []byte("wasm"))
+	require.NoError(t, err)
+
+	err = lm.UpdateConfig(ctx, p.ID, map[string]string{"api_key": "sk-old"})
+	require.NoError(t, err)
+
+	err = lm.Enable(ctx, p.ID)
+	require.NoError(t, err)
+
+	pub.events = nil
+
+	// Update config while plugin is enabled — should use atomic reload, not Disable->Enable.
+	err = lm.UpdateConfig(ctx, p.ID, map[string]string{"api_key": "sk-new"})
+	require.NoError(t, err)
+
+	// Plugin should still be enabled (no disable/enable events).
+	stored, err := repo.GetByID(ctx, p.ID)
+	require.NoError(t, err)
+	assert.Equal(t, StatusEnabled, stored.Status)
+	assert.Equal(t, "sk-new", stored.Config["api_key"])
+
+	// Verify NO disable/enable events were published — atomic reload does not
+	// go through the Disable→Enable path.
+	for _, e := range pub.events {
+		assert.NotEqual(t, EventPluginDisabled, e.Type, "atomic reload should not publish disable event")
+		assert.NotEqual(t, EventPluginEnabled, e.Type, "atomic reload should not publish enable event")
+	}
+
+	// Plugin should still be loaded in runtime.
+	slugs := lm.runtime.LoadedSlugs()
+	assert.Contains(t, slugs, "atomic-config-plugin")
+
+	// Hooks should still be registered.
+	regs := lm.dispatcher.Registrations("invoice.created")
+	assert.NotEmpty(t, regs)
+}
+
+func TestUpdateConfig_ReloadFailure_RollsBackConfig(t *testing.T) {
+	repo := newMockRepo()
+	storage := newMockStorage()
+	pub := &testPublisher{}
+	logger := testErrorLogger()
+
+	// Factory that fails on the second LoadPlugin call (the reload).
+	var loadCount int
+	factory := func(_ string, _ []byte, _ map[string]string, _ ManifestLimits) (WASMRunner, error) {
+		loadCount++
+		// Fail on pool creation attempts after the initial enable.
+		// The initial enable creates DefaultPoolSize runners; the reload will
+		// also try to create DefaultPoolSize runners. We fail once we've
+		// passed the first full pool creation.
+		if loadCount > DefaultPoolSize {
+			return nil, errors.New("simulated compilation failure")
+		}
+		return &mockRunner{callFn: func(_ context.Context, _ string, _ []byte) ([]byte, error) {
+			return []byte(`{"action":"continue"}`), nil
+		}}, nil
+	}
+
+	runtime := NewRuntimePool(logger, factory)
+	dispatcher := NewHookDispatcher(runtime, pub, nil, logger, clock.NewReal())
+	hostFuncs := NewHostFunctions(logger, clock.NewReal())
+	lm := NewLifecycleManager(repo, storage, runtime, dispatcher, hostFuncs, pub, logger, clock.NewReal())
+
+	manifestWithConfig := []byte(`
+[plugin]
+id = "rollback-config-plugin"
+name = "Rollback Config"
+version = "1.0.0"
+sdk_version = "1.0.0"
+
+[hooks]
+sync = ["invoice.created"]
+
+[config.api_key]
+type = "secret"
+label = "API Key"
+required = true
+`)
+
+	ctx := context.Background()
+	p, err := lm.Install(ctx, manifestWithConfig, []byte("wasm"))
+	require.NoError(t, err)
+
+	err = lm.UpdateConfig(ctx, p.ID, map[string]string{"api_key": "sk-old"})
+	require.NoError(t, err)
+
+	err = lm.Enable(ctx, p.ID)
+	require.NoError(t, err)
+
+	// Now try to update config — the reload will fail because factory
+	// returns errors after the initial pool.
+	err = lm.UpdateConfig(ctx, p.ID, map[string]string{"api_key": "sk-new-broken"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "rolled back")
+
+	// Config should be rolled back to old value.
+	stored, err := repo.GetByID(ctx, p.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "sk-old", stored.Config["api_key"])
+}
+
 func TestInstall_ManifestMissingHooks(t *testing.T) {
 	lm, _, _, _ := newTestLifecycleManager()
 	ctx := context.Background()

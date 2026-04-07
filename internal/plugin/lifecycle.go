@@ -265,7 +265,9 @@ func (lm *LifecycleManager) Uninstall(ctx context.Context, pluginID string) erro
 }
 
 // UpdateConfig validates the new configuration against the manifest schema,
-// persists it, and performs a hot-reload if the plugin is currently enabled.
+// persists it, and performs an atomic reload if the plugin is currently enabled.
+// If the reload fails, the old config is restored to avoid leaving the plugin
+// disabled with invalid configuration.
 func (lm *LifecycleManager) UpdateConfig(ctx context.Context, pluginID string, config map[string]string) error {
 	p, err := lm.repo.GetByID(ctx, pluginID)
 	if err != nil {
@@ -279,21 +281,66 @@ func (lm *LifecycleManager) UpdateConfig(ctx context.Context, pluginID string, c
 		}
 	}
 
+	oldConfig := p.Config
+
 	if err := lm.repo.UpdateConfig(ctx, p.ID, config); err != nil {
 		return fmt.Errorf("persisting plugin config: %w", err)
 	}
 
-	// Hot-reload if the plugin is currently enabled.
+	// If plugin is enabled, atomically reload with new config.
+	// Uses RuntimePool.LoadPlugin which handles atomic swap + old pool drain,
+	// avoiding the Disable→Enable window that could leave the plugin down.
 	if p.Status == StatusEnabled {
-		if err := lm.Disable(ctx, pluginID); err != nil {
-			return fmt.Errorf("hot-reload disable: %w", err)
-		}
-		if err := lm.Enable(ctx, pluginID); err != nil {
-			return fmt.Errorf("hot-reload enable: %w", err)
+		if err := lm.reloadWithConfig(ctx, p, config); err != nil {
+			// Rollback: restore old config in the database.
+			if rollbackErr := lm.repo.UpdateConfig(ctx, p.ID, oldConfig); rollbackErr != nil {
+				lm.logger.Error("failed to rollback config after reload failure",
+					slog.String("slug", p.Slug),
+					slog.String("error", rollbackErr.Error()),
+				)
+			}
+			return fmt.Errorf("reload with new config failed, rolled back: %w", err)
 		}
 	}
 
 	lm.logger.Info("plugin config updated", "slug", p.Slug, "id", p.ID)
+	return nil
+}
+
+// reloadWithConfig atomically reloads a running plugin with a new configuration.
+// It resolves WASM bytes if needed, loads a new pool (which replaces the old one
+// atomically via RuntimePool.LoadPlugin), re-registers hooks, and clears stale
+// rate limiters. The caller must handle rollback on error.
+func (lm *LifecycleManager) reloadWithConfig(ctx context.Context, p *Plugin, config map[string]string) error {
+	// Update plugin's in-memory config for the new pool.
+	p.Config = config
+
+	// Resolve WASM bytes from content-addressable store if not inline.
+	if p.WASMBytes == nil && p.WASMHash != "" {
+		wasm, err := lm.repo.GetWASMByHash(ctx, p.WASMHash)
+		if err != nil {
+			return fmt.Errorf("loading WASM from content store: %w", err)
+		}
+		p.WASMBytes = wasm
+	}
+
+	// Load new pool (replaces old atomically via RuntimePool.LoadPlugin
+	// which handles old pool retirement + drain).
+	if err := lm.runtime.LoadPlugin(p); err != nil {
+		return fmt.Errorf("loading plugin into runtime: %w", err)
+	}
+
+	// Re-register hooks (same hooks, new pool).
+	if p.Manifest != nil {
+		regs := p.Manifest.HookRegistrations(p.ID)
+		lm.dispatcher.SwapHooks(p.Slug, regs)
+	}
+
+	// Clear stale rate limiter so the reloaded plugin picks up fresh limits.
+	if lm.hostFunctions != nil {
+		lm.hostFunctions.ClearPluginHTTPLimiter(p.Slug)
+	}
+
 	return nil
 }
 

@@ -48,6 +48,9 @@ var pluginWiring = fx.Options(
 
 	// Load enabled plugins on startup
 	fx.Invoke(loadEnabledPlugins),
+
+	// Periodic health probe for loaded WASM plugins
+	fx.Invoke(startPluginHealthProbe),
 )
 
 // provideExtismWASMFactory returns a WASMRunnerFactory backed by the Extism Go
@@ -90,6 +93,28 @@ func loadEnabledPlugins(lc fx.Lifecycle, lm *plugin.LifecycleManager, logger *sl
 				logger.Error("failed to load enabled plugins on startup", slog.Any("error", err))
 				// Non-fatal — the platform can still operate without plugins.
 			}
+			return nil
+		},
+	})
+}
+
+// startPluginHealthProbe runs the periodic health probe as a background
+// goroutine. It checks all loaded WASM plugins for silent degradation.
+func startPluginHealthProbe(lc fx.Lifecycle, probe *plugin.PluginHealthProbe, logger *slog.Logger) {
+	lc.Append(fx.Hook{
+		OnStart: func(_ context.Context) error {
+			probeCtx, cancel := context.WithCancel(context.Background())
+			go func() {
+				logger.Info("plugin health probe started")
+				probe.Run(probeCtx)
+			}()
+			lc.Append(fx.Hook{
+				OnStop: func(_ context.Context) error {
+					logger.Info("plugin health probe stopping")
+					cancel()
+					return nil
+				},
+			})
 			return nil
 		},
 	})

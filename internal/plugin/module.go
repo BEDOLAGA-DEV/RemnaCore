@@ -9,6 +9,7 @@ var Module = fx.Module("plugin",
 	fx.Provide(NewPermissionChecker),
 	fx.Provide(NewLifecycleManager),
 	fx.Provide(NewHostFunctions),
+	fx.Provide(NewPluginHealthProbe),
 )
 
 // NewPermissionChecker creates a stateless PermissionChecker.
