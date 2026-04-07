@@ -1,4 +1,7 @@
-package infra
+// Package routing provides the SmartRouter which selects optimal VPN nodes
+// based on a weighted scoring algorithm considering geographic proximity,
+// latency, and load.
+package routing
 
 import "math"
 

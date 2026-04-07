@@ -5,6 +5,7 @@ import (
 
 	"go.uber.org/fx"
 
+	billingadapter "github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/valkey"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
@@ -30,12 +31,12 @@ var billingWiring = fx.Options(
 	// PricingModifier: billing.PricingModifier wraps hookdispatch.Dispatcher
 	// to handle WASM plugin wire protocol for pricing calculations.
 	fx.Provide(func(d hookdispatch.Dispatcher) billing.PricingModifier {
-		return newPluginPricingModifier(d)
+		return billingadapter.NewPluginPricingModifier(d)
 	}),
 
 	// Billing -> Payment ACL: billing.PaymentGateway wraps *payment.PaymentFacade
 	// so that the billing domain never imports the payment domain directly.
-	fx.Provide(newPaymentGatewayAdapter),
+	fx.Provide(billingadapter.NewPaymentGatewayAdapter),
 
 	// Billing repos -> interface bindings
 	fx.Provide(postgres.NewPlanRepository),

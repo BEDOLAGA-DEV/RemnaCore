@@ -9,7 +9,7 @@ import (
 	multisubaggregate "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/payment"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller"
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/infra"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/infra/health"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
@@ -510,7 +510,7 @@ func registerPluginEvents(c *domainevent.EventCatalog) {
 func registerInfraEvents(c *domainevent.EventCatalog) {
 	// Infra events use map[string]any payloads (no typed structs).
 	c.Register(domainevent.CatalogEntry{
-		Type:      infra.EventNodeHealthChanged,
+		Type:      health.EventNodeHealthChanged,
 		Producer:  producerInfra,
 		Consumers: []string{},
 		Version:   1,

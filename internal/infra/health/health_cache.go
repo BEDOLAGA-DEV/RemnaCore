@@ -1,6 +1,7 @@
-// Package infra provides in-process infrastructure services: node health
-// monitoring, smart routing, speed testing, and subscription proxying.
-package infra
+// Package health provides in-process node health monitoring and caching.
+// The HealthMonitor periodically polls Remnawave for node status and updates
+// the shared in-memory NodeHealthCache, which is read by the routing package.
+package health
 
 import (
 	"sync"

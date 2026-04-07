@@ -1,4 +1,4 @@
-package infra
+package health
 
 import (
 	"testing"
@@ -23,7 +23,7 @@ func TestExtractCountryCode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := extractCountryCode(tt.nodeName)
+			got := ExtractCountryCode(tt.nodeName)
 			assert.Equal(t, tt.want, got)
 		})
 	}

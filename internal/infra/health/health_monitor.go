@@ -1,4 +1,4 @@
-package infra
+package health
 
 import (
 	"context"
@@ -121,7 +121,7 @@ func (hm *HealthMonitor) checkAll(ctx context.Context) {
 				NodeID:      n.UUID,
 				Name:        n.Name,
 				IsOnline:    n.IsConnected,
-				CountryCode: extractCountryCode(n.Name),
+				CountryCode: ExtractCountryCode(n.Name),
 				TrafficUsed: n.TrafficUsed,
 				UpdatedAt:   hm.clock.Now(),
 			}
@@ -166,10 +166,10 @@ func (hm *HealthMonitor) publishTransition(ctx context.Context, node NodeHealth)
 	}
 }
 
-// extractCountryCode derives a two-letter country code from a node name. The
+// ExtractCountryCode derives a two-letter country code from a node name. The
 // convention is that the node name starts with "CC-" (e.g., "US-NewYork-01").
 // If the prefix is absent the function returns "XX".
-func extractCountryCode(name string) string {
+func ExtractCountryCode(name string) string {
 	if len(name) >= CountryCodeLength+1 && name[CountryCodeLength] == byte(CountryCodeSeparator) {
 		return name[:CountryCodeLength]
 	}

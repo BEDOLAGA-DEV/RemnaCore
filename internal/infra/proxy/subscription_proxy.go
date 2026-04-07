@@ -1,4 +1,4 @@
-package infra
+package proxy
 
 import (
 	"context"
@@ -57,6 +57,9 @@ const (
 	// MaxSubscriptionConfigBytes is the maximum allowed size for a subscription
 	// configuration response from Remnawave.
 	MaxSubscriptionConfigBytes = 1 << 20 // 1 MB
+
+	// ShutdownTimeout is the maximum time allowed for graceful HTTP server shutdown.
+	ShutdownTimeout = 5 * time.Second
 )
 
 // SubscriptionProxy serves VPN subscription configs to clients. It implements a

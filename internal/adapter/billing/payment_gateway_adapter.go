@@ -1,40 +1,43 @@
-package app
+// Package billing implements adapter-layer components that bridge the billing
+// domain's ACL ports to other bounded contexts. These adapters live in the
+// adapter layer (not the domain) because they import types from multiple
+// bounded contexts that must not depend on each other directly.
+package billing
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
+	billingdomain "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/payment"
 )
 
-// paymentGatewayAdapter translates between billing's ACL types and the payment
-// domain's concrete types. This adapter lives in the wiring layer (internal/app/)
-// because it bridges two bounded contexts that must not import each other.
+// PaymentGatewayAdapter translates between billing's ACL types and the payment
+// domain's concrete types. It bridges two bounded contexts that must not import
+// each other.
 //
 // This adapter currently translates only CreateCharge, which is the sole
 // synchronous operation that billing initiates against payment. Other payment
 // operations (webhook verification, refund, payment completion) are either
 // handled directly by the gateway layer (PaymentWebhookHandler) or flow through
-// domain events — they do not cross the billing→payment ACL boundary.
+// domain events -- they do not cross the billing->payment ACL boundary.
 //
 // See billing.PaymentGateway for the full architectural rationale and
 // communication flow documentation.
-type paymentGatewayAdapter struct {
+type PaymentGatewayAdapter struct {
 	facade *payment.PaymentFacade
 }
 
-// newPaymentGatewayAdapter creates a paymentGatewayAdapter that implements
-// billing.PaymentGateway by delegating to payment.PaymentFacade. Wired via Fx
-// in wiring_billing.go.
-func newPaymentGatewayAdapter(facade *payment.PaymentFacade) billing.PaymentGateway {
-	return &paymentGatewayAdapter{facade: facade}
+// NewPaymentGatewayAdapter creates a PaymentGatewayAdapter that implements
+// billing.PaymentGateway by delegating to payment.PaymentFacade.
+func NewPaymentGatewayAdapter(facade *payment.PaymentFacade) billingdomain.PaymentGateway {
+	return &PaymentGatewayAdapter{facade: facade}
 }
 
 // CreateCharge translates billing's CreateChargeRequest to payment's
 // CreateChargeRequest, delegates to the PaymentFacade, and translates
 // the result back to billing's CreateChargeResult.
-func (a *paymentGatewayAdapter) CreateCharge(ctx context.Context, req billing.CreateChargeRequest) (*billing.CreateChargeResult, error) {
+func (a *PaymentGatewayAdapter) CreateCharge(ctx context.Context, req billingdomain.CreateChargeRequest) (*billingdomain.CreateChargeResult, error) {
 	result, err := a.facade.CreateCharge(ctx, payment.CreateChargeRequest{
 		InvoiceID: req.InvoiceID,
 		Amount:    req.Amount,
@@ -49,10 +52,13 @@ func (a *paymentGatewayAdapter) CreateCharge(ctx context.Context, req billing.Cr
 		return nil, fmt.Errorf("payment gateway: %w", err)
 	}
 
-	return &billing.CreateChargeResult{
+	return &billingdomain.CreateChargeResult{
 		Provider:    result.Provider,
 		ExternalID:  result.ExternalID,
 		CheckoutURL: result.CheckoutURL,
 		Status:      result.Status,
 	}, nil
 }
+
+// compile-time interface check
+var _ billingdomain.PaymentGateway = (*PaymentGatewayAdapter)(nil)

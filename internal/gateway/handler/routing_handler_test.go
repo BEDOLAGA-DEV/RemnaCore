@@ -10,12 +10,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/infra"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/infra/health"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/infra/routing"
 )
 
-func seedTestCache() *infra.NodeHealthCache {
-	cache := infra.NewNodeHealthCache()
-	cache.Update([]infra.NodeHealth{
+func seedTestCache() *health.NodeHealthCache {
+	cache := health.NewNodeHealthCache()
+	cache.Update([]health.NodeHealth{
 		{NodeID: "us1", Name: "US-East-01", IsOnline: true, CountryCode: "US", TrafficUsed: 0},
 		{NodeID: "de1", Name: "DE-Frankfurt-01", IsOnline: true, CountryCode: "DE", TrafficUsed: 10 << 30},
 	})
@@ -24,12 +25,12 @@ func seedTestCache() *infra.NodeHealthCache {
 
 func TestRoutingHandler_SelectNode_OK(t *testing.T) {
 	cache := seedTestCache()
-	router := infra.NewSmartRouter(cache, nil, nil)
+	router := routing.NewSmartRouter(cache, nil, nil)
 	h := NewRoutingHandler(router)
 
-	body, _ := json.Marshal(infra.RouteRequest{
+	body, _ := json.Marshal(routing.RouteRequest{
 		UserCountry: "US",
-		Purpose:     infra.PurposeBrowsing,
+		Purpose:     routing.PurposeBrowsing,
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/routing/select", bytes.NewReader(body))
@@ -39,7 +40,7 @@ func TestRoutingHandler_SelectNode_OK(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var resp infra.RouteResponse
+	var resp routing.RouteResponse
 	err := json.Unmarshal(w.Body.Bytes(), &resp)
 	require.NoError(t, err)
 	assert.Equal(t, "us1", resp.PrimaryNode.NodeID)
@@ -47,7 +48,7 @@ func TestRoutingHandler_SelectNode_OK(t *testing.T) {
 
 func TestRoutingHandler_SelectNode_BadRequest(t *testing.T) {
 	cache := seedTestCache()
-	router := infra.NewSmartRouter(cache, nil, nil)
+	router := routing.NewSmartRouter(cache, nil, nil)
 	h := NewRoutingHandler(router)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/routing/select", bytes.NewReader([]byte("invalid json")))
@@ -65,13 +66,13 @@ func TestRoutingHandler_SelectNode_BadRequest(t *testing.T) {
 }
 
 func TestRoutingHandler_SelectNode_NoNodes(t *testing.T) {
-	cache := infra.NewNodeHealthCache()
-	router := infra.NewSmartRouter(cache, nil, nil)
+	cache := health.NewNodeHealthCache()
+	router := routing.NewSmartRouter(cache, nil, nil)
 	h := NewRoutingHandler(router)
 
-	body, _ := json.Marshal(infra.RouteRequest{
+	body, _ := json.Marshal(routing.RouteRequest{
 		UserCountry: "US",
-		Purpose:     infra.PurposeBrowsing,
+		Purpose:     routing.PurposeBrowsing,
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/routing/select", bytes.NewReader(body))

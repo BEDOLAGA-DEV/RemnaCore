@@ -1,4 +1,4 @@
-package infra
+package proxy
 
 import (
 	"context"
@@ -206,7 +206,7 @@ func TestSubscriptionProxy_Singleflight_DeduplicatesL3(t *testing.T) {
 	// Singleflight should collapse most concurrent calls. The exact dedup ratio
 	// depends on goroutine scheduling — with L2 Valkey unavailable, each request
 	// must fail the L2 check before hitting singleflight, creating small timing
-	// windows. Allow ≤ concurrentRequests/2 as a meaningful reduction.
+	// windows. Allow <= concurrentRequests/2 as a meaningful reduction.
 	calls := httpCalls.Load()
 	assert.LessOrEqual(t, calls, int64(concurrentRequests/2),
 		"singleflight should reduce upstream calls significantly, got %d/%d", calls, concurrentRequests)

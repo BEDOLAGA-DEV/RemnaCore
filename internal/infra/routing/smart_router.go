@@ -1,4 +1,4 @@
-package infra
+package routing
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/infra/health"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
 )
 
@@ -96,13 +97,13 @@ var (
 // algorithm. It reads exclusively from the in-memory NodeHealthCache (no Redis
 // hop, no network call).
 type SmartRouter struct {
-	cache      *NodeHealthCache
+	cache      *health.NodeHealthCache
 	dispatcher hookdispatch.Dispatcher
 	logger     *slog.Logger
 }
 
 // NewSmartRouter creates a SmartRouter backed by the shared health cache.
-func NewSmartRouter(cache *NodeHealthCache, dispatcher hookdispatch.Dispatcher, logger *slog.Logger) *SmartRouter {
+func NewSmartRouter(cache *health.NodeHealthCache, dispatcher hookdispatch.Dispatcher, logger *slog.Logger) *SmartRouter {
 	return &SmartRouter{
 		cache:      cache,
 		dispatcher: dispatcher,
@@ -170,9 +171,9 @@ func (r *SmartRouter) SelectNode(ctx context.Context, req RouteRequest) (*RouteR
 
 		geoScore := geoProximityScore(req, node)
 		latScore := latencyScore(node)
-		loadScore := loadScore(node.TrafficUsed)
+		loadScr := loadScore(node.TrafficUsed)
 
-		composite := wGeo*geoScore + wLatency*latScore + wLoad*loadScore
+		composite := wGeo*geoScore + wLatency*latScore + wLoad*loadScr
 
 		// Premium tier bonus.
 		if req.SubscriptionTier == TierPremium || req.SubscriptionTier == TierUltra {
@@ -189,7 +190,7 @@ func (r *SmartRouter) SelectNode(ctx context.Context, req RouteRequest) (*RouteR
 			Name:    node.Name,
 			Country: node.CountryCode,
 			Score:   math.Round(composite*ScoreRoundingFactor) / ScoreRoundingFactor,
-			Reason:  fmt.Sprintf("geo=%.1f lat=%.1f load=%.1f", geoScore, latScore, loadScore),
+			Reason:  fmt.Sprintf("geo=%.1f lat=%.1f load=%.1f", geoScore, latScore, loadScr),
 		})
 	}
 
@@ -232,7 +233,7 @@ func weightsForPurpose(purpose string) (geo, latency, load float64) {
 // geoProximityScore returns a 0-100 score. When both user and node have
 // coordinates it uses Haversine great-circle distance for a continuous score.
 // Otherwise it falls back to binary country-code matching.
-func geoProximityScore(req RouteRequest, node NodeHealth) float64 {
+func geoProximityScore(req RouteRequest, node health.NodeHealth) float64 {
 	if req.UserLatitude != 0 && node.Latitude != 0 {
 		dist := Haversine(req.UserLatitude, req.UserLongitude, node.Latitude, node.Longitude)
 		return GeoScore(dist)
@@ -245,7 +246,7 @@ func geoProximityScore(req RouteRequest, node NodeHealth) float64 {
 
 // latencyScore returns a 0-100 score based on real latency measurements.
 // When no measurement is available it returns LatencyScoreUnknown.
-func latencyScore(node NodeHealth) float64 {
+func latencyScore(node health.NodeHealth) float64 {
 	if node.LastLatencyMs <= 0 {
 		return LatencyScoreUnknown
 	}
@@ -255,8 +256,8 @@ func latencyScore(node NodeHealth) float64 {
 	return 100 * (1 - node.LastLatencyMs/MaxLatencyMs)
 }
 
-// loadScore returns a 0–100 score inversely proportional to traffic load.
-// Lower traffic → higher score.
+// loadScore returns a 0-100 score inversely proportional to traffic load.
+// Lower traffic -> higher score.
 func loadScore(trafficUsedBytes int64) float64 {
 	const highLoadThreshold int64 = 100 * 1 << 30 // 100 GB
 	if trafficUsedBytes <= 0 {

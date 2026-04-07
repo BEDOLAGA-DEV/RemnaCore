@@ -8,6 +8,9 @@ import (
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/infra"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/infra/health"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/infra/proxy"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/infra/speedtest"
 )
 
 // infraWiring provides infrastructure service lifecycle hooks: health monitor,
@@ -23,7 +26,7 @@ var infraWiring = fx.Options(
 )
 
 // startHealthMonitor runs the node health monitor as a background goroutine.
-func startHealthMonitor(lc fx.Lifecycle, hm *infra.HealthMonitor, logger *slog.Logger) {
+func startHealthMonitor(lc fx.Lifecycle, hm *health.HealthMonitor, logger *slog.Logger) {
 	lc.Append(fx.Hook{
 		OnStart: func(_ context.Context) error {
 			hmCtx, cancel := context.WithCancel(context.Background())
@@ -44,14 +47,14 @@ func startHealthMonitor(lc fx.Lifecycle, hm *infra.HealthMonitor, logger *slog.L
 }
 
 // startSpeedTest runs the speed test server on its dedicated port.
-func startSpeedTest(lc fx.Lifecycle, st *infra.SpeedTestServer, cfg *config.Config, logger *slog.Logger) {
+func startSpeedTest(lc fx.Lifecycle, st *speedtest.SpeedTestServer, cfg *config.Config, logger *slog.Logger) {
 	lc.Append(fx.Hook{
 		OnStart: func(_ context.Context) error {
 			stCtx, cancel := context.WithCancel(context.Background())
 			go func() {
 				port := cfg.Infra.SpeedTestPort
 				if port == 0 {
-					port = infra.SpeedTestPort
+					port = speedtest.SpeedTestPort
 				}
 				if err := st.Start(stCtx, port); err != nil {
 					logger.Error("speed test server error", slog.Any("error", err))
@@ -70,14 +73,14 @@ func startSpeedTest(lc fx.Lifecycle, st *infra.SpeedTestServer, cfg *config.Conf
 }
 
 // startSubscriptionProxy runs the subscription proxy on its dedicated port.
-func startSubscriptionProxy(lc fx.Lifecycle, sp *infra.SubscriptionProxy, cfg *config.Config, logger *slog.Logger) {
+func startSubscriptionProxy(lc fx.Lifecycle, sp *proxy.SubscriptionProxy, cfg *config.Config, logger *slog.Logger) {
 	lc.Append(fx.Hook{
 		OnStart: func(_ context.Context) error {
 			spCtx, cancel := context.WithCancel(context.Background())
 			go func() {
 				port := cfg.Infra.SubscriptionProxyPort
 				if port == 0 {
-					port = infra.SubscriptionProxyPort
+					port = proxy.SubscriptionProxyPort
 				}
 				if err := sp.Start(spCtx, port); err != nil {
 					logger.Error("subscription proxy error", slog.Any("error", err))

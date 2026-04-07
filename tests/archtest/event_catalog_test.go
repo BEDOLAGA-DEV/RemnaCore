@@ -8,7 +8,7 @@ import (
 	multisubaggregate "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/payment"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller"
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/infra"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/infra/health"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/app"
@@ -194,6 +194,6 @@ func collectAllEventTypes() []domainevent.EventType {
 		// =====================================================================
 		// Infra events (1)
 		// =====================================================================
-		infra.EventNodeHealthChanged,
+		health.EventNodeHealthChanged,
 	}
 }

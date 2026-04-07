@@ -1,11 +1,11 @@
-package app
+package billing
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
+	billingdomain "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
 )
 
@@ -20,23 +20,23 @@ type pricingHookResult struct {
 	Reason   string `json:"reason,omitempty"`
 }
 
-// pluginPricingModifier implements billing.PricingModifier by dispatching to
+// PluginPricingModifier implements billing.PricingModifier by dispatching to
 // the WASM plugin system via hookdispatch.Dispatcher. It handles JSON
 // marshalling/unmarshalling of the plugin wire protocol, keeping the billing
 // domain free of encoding concerns.
-type pluginPricingModifier struct {
+type PluginPricingModifier struct {
 	dispatcher hookdispatch.Dispatcher
 }
 
-// newPluginPricingModifier creates a pluginPricingModifier. If dispatcher is
+// NewPluginPricingModifier creates a PluginPricingModifier. If dispatcher is
 // nil (no plugin system available), ModifyPricing always returns (nil, nil).
-func newPluginPricingModifier(dispatcher hookdispatch.Dispatcher) billing.PricingModifier {
-	return &pluginPricingModifier{dispatcher: dispatcher}
+func NewPluginPricingModifier(dispatcher hookdispatch.Dispatcher) billingdomain.PricingModifier {
+	return &PluginPricingModifier{dispatcher: dispatcher}
 }
 
 // BeginFlow pins plugin versions for the duration of a checkout flow. If no
 // dispatcher is available, returns ctx unchanged.
-func (m *pluginPricingModifier) BeginFlow(ctx context.Context) context.Context {
+func (m *PluginPricingModifier) BeginFlow(ctx context.Context) context.Context {
 	if m.dispatcher == nil {
 		return ctx
 	}
@@ -46,12 +46,12 @@ func (m *pluginPricingModifier) BeginFlow(ctx context.Context) context.Context {
 // ModifyPricing dispatches the pricing.calculate hook to the plugin system and
 // translates the JSON response into a domain PricingModification. Returns
 // (nil, nil) when no dispatcher is available or no plugin handles the hook.
-func (m *pluginPricingModifier) ModifyPricing(
+func (m *PluginPricingModifier) ModifyPricing(
 	ctx context.Context,
 	invoiceID, userID, planID string,
 	subtotal int64,
 	currency string,
-) (*billing.PricingModification, error) {
+) (*billingdomain.PricingModification, error) {
 	if m.dispatcher == nil {
 		return nil, nil
 	}
@@ -81,9 +81,12 @@ func (m *pluginPricingModifier) ModifyPricing(
 		return nil, fmt.Errorf("unmarshal pricing result: %w", err)
 	}
 
-	return &billing.PricingModification{
+	return &billingdomain.PricingModification{
 		Subtotal: result.Subtotal,
 		Discount: result.Discount,
 		Reason:   result.Reason,
 	}, nil
 }
+
+// compile-time interface check
+var _ billingdomain.PricingModifier = (*PluginPricingModifier)(nil)

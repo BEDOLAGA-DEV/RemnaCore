@@ -8,7 +8,8 @@ import "context"
 // context do not propagate into billing.
 //
 // Translation from billing's ACL types to payment domain types happens at the
-// adapter boundary (wired via Fx in internal/app/payment_gateway_adapter.go).
+// adapter boundary (internal/adapter/billing/payment_gateway_adapter.go, wired
+// via Fx in internal/app/wiring_billing.go).
 //
 // # Scope: charge creation only
 //
@@ -47,7 +48,7 @@ import "context"
 //
 //	CheckoutService.StartCheckout
 //	  → PaymentGateway.CreateCharge (this interface)
-//	    → paymentGatewayAdapter (internal/app/)
+//	    → PaymentGatewayAdapter (internal/adapter/billing/)
 //	      → payment.PaymentFacade.CreateCharge
 //	        → plugin: payment.create_charge hook
 //

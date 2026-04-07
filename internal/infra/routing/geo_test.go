@@ -1,9 +1,11 @@
-package infra
+package routing
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/infra/health"
 )
 
 func TestHaversine(t *testing.T) {
@@ -119,7 +121,7 @@ func TestLatencyScore(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			node := NodeHealth{LastLatencyMs: tt.latencyMs}
+			node := health.NodeHealth{LastLatencyMs: tt.latencyMs}
 			score := latencyScore(node)
 			assert.InDelta(t, tt.want, score, tt.delta)
 		})
@@ -134,14 +136,14 @@ func TestGeoProximityScore_WithCoordinates(t *testing.T) {
 		UserCountry:   "DE",
 	}
 
-	frankfurt := NodeHealth{
+	frankfurt := health.NodeHealth{
 		NodeID:      "de1",
 		CountryCode: "DE",
 		Latitude:    50.1109,
 		Longitude:   8.6821,
 	}
 
-	sydney := NodeHealth{
+	sydney := health.NodeHealth{
 		NodeID:      "au1",
 		CountryCode: "AU",
 		Latitude:    -33.8688,
@@ -159,8 +161,8 @@ func TestGeoProximityScore_WithCoordinates(t *testing.T) {
 func TestGeoProximityScore_FallbackToCountryCode(t *testing.T) {
 	// No coordinates: falls back to country match.
 	req := RouteRequest{UserCountry: "US"}
-	sameCountry := NodeHealth{CountryCode: "US"}
-	diffCountry := NodeHealth{CountryCode: "JP"}
+	sameCountry := health.NodeHealth{CountryCode: "US"}
+	diffCountry := health.NodeHealth{CountryCode: "JP"}
 
 	assert.Equal(t, GeoScoreSameCountry, geoProximityScore(req, sameCountry))
 	assert.Equal(t, GeoScoreDifferentCountry, geoProximityScore(req, diffCountry))
@@ -168,7 +170,7 @@ func TestGeoProximityScore_FallbackToCountryCode(t *testing.T) {
 
 func TestGeoProximityScore_NoCountryNoCoords(t *testing.T) {
 	req := RouteRequest{}
-	node := NodeHealth{CountryCode: "US"}
+	node := health.NodeHealth{CountryCode: "US"}
 
 	assert.Equal(t, GeoScoreDifferentCountry, geoProximityScore(req, node))
 }

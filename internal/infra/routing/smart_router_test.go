@@ -1,4 +1,4 @@
-package infra
+package routing
 
 import (
 	"context"
@@ -6,14 +6,16 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/infra/health"
 )
 
-func seedCache(cache *NodeHealthCache, nodes []NodeHealth) {
+func seedCache(cache *health.NodeHealthCache, nodes []health.NodeHealth) {
 	cache.Update(nodes)
 }
 
-func defaultNodes() []NodeHealth {
-	return []NodeHealth{
+func defaultNodes() []health.NodeHealth {
+	return []health.NodeHealth{
 		{NodeID: "us1", Name: "US-East-01", IsOnline: true, CountryCode: "US", TrafficUsed: 0},
 		{NodeID: "de1", Name: "DE-Frankfurt-01", IsOnline: true, CountryCode: "DE", TrafficUsed: 10 << 30},
 		{NodeID: "jp1", Name: "JP-Tokyo-01", IsOnline: true, CountryCode: "JP", TrafficUsed: 50 << 30},
@@ -21,7 +23,7 @@ func defaultNodes() []NodeHealth {
 }
 
 func TestSelectNode_Browsing(t *testing.T) {
-	cache := NewNodeHealthCache()
+	cache := health.NewNodeHealthCache()
 	seedCache(cache, defaultNodes())
 
 	router := NewSmartRouter(cache, nil, nil)
@@ -40,7 +42,7 @@ func TestSelectNode_Browsing(t *testing.T) {
 }
 
 func TestSelectNode_Gaming(t *testing.T) {
-	cache := NewNodeHealthCache()
+	cache := health.NewNodeHealthCache()
 	seedCache(cache, defaultNodes())
 
 	router := NewSmartRouter(cache, nil, nil)
@@ -57,7 +59,7 @@ func TestSelectNode_Gaming(t *testing.T) {
 }
 
 func TestSelectNode_Streaming(t *testing.T) {
-	cache := NewNodeHealthCache()
+	cache := health.NewNodeHealthCache()
 	seedCache(cache, defaultNodes())
 
 	router := NewSmartRouter(cache, nil, nil)
@@ -74,7 +76,7 @@ func TestSelectNode_Streaming(t *testing.T) {
 }
 
 func TestSelectNode_NoNodes(t *testing.T) {
-	cache := NewNodeHealthCache()
+	cache := health.NewNodeHealthCache()
 
 	router := NewSmartRouter(cache, nil, nil)
 
@@ -87,8 +89,8 @@ func TestSelectNode_NoNodes(t *testing.T) {
 }
 
 func TestSelectNode_PremiumBonus(t *testing.T) {
-	cache := NewNodeHealthCache()
-	seedCache(cache, []NodeHealth{
+	cache := health.NewNodeHealthCache()
+	seedCache(cache, []health.NodeHealth{
 		{NodeID: "us1", Name: "US-East-01", IsOnline: true, CountryCode: "US", TrafficUsed: 0},
 	})
 
@@ -115,7 +117,7 @@ func TestSelectNode_PremiumBonus(t *testing.T) {
 }
 
 func TestSelectNode_AllowedNodesFilter(t *testing.T) {
-	cache := NewNodeHealthCache()
+	cache := health.NewNodeHealthCache()
 	seedCache(cache, defaultNodes())
 
 	router := NewSmartRouter(cache, nil, nil)
@@ -133,7 +135,7 @@ func TestSelectNode_AllowedNodesFilter(t *testing.T) {
 }
 
 func TestSelectNode_AllowedNodesFilter_NoneMatch(t *testing.T) {
-	cache := NewNodeHealthCache()
+	cache := health.NewNodeHealthCache()
 	seedCache(cache, defaultNodes())
 
 	router := NewSmartRouter(cache, nil, nil)
@@ -148,7 +150,7 @@ func TestSelectNode_AllowedNodesFilter_NoneMatch(t *testing.T) {
 }
 
 func TestSelectNode_FallbackNodes(t *testing.T) {
-	cache := NewNodeHealthCache()
+	cache := health.NewNodeHealthCache()
 	seedCache(cache, defaultNodes())
 
 	router := NewSmartRouter(cache, nil, nil)

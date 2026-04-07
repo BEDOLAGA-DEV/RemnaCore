@@ -128,6 +128,7 @@ func TestPluginDoesNotImportDomainDirectly(t *testing.T) {
 func TestAdapterPluginIsolation(t *testing.T) {
 	// Peer adapter packages that adapter/plugin must not import.
 	peerAdapters := []string{
+		modulePrefix + "/internal/adapter/billing",
 		modulePrefix + "/internal/adapter/nats",
 		modulePrefix + "/internal/adapter/postgres",
 		modulePrefix + "/internal/adapter/remnawave",
@@ -158,6 +159,55 @@ func TestAdapterPluginIsolation(t *testing.T) {
 	forbidden = append(forbidden, forbiddenLayers...)
 
 	checkImports(t, filepath.Join("internal", "adapter", "plugin"), forbidden)
+}
+
+// TestAdapterBillingIsolation verifies that internal/adapter/billing only
+// depends on the domain ports it implements (billing.PaymentGateway,
+// billing.PricingModifier) and the payment domain it bridges to, plus shared
+// pkg/ libraries. It must NOT import other domain contexts, peer adapter
+// packages, or upper-layer packages.
+//
+// Allowed imports:
+//   - internal/domain/billing (PaymentGateway, PricingModifier ports)
+//   - internal/domain/payment (PaymentFacade for ACL bridge)
+//   - pkg/hookdispatch
+//   - stdlib
+//
+// Forbidden: all other internal packages.
+func TestAdapterBillingIsolation(t *testing.T) {
+	// Peer adapter packages that adapter/billing must not import.
+	peerAdapters := []string{
+		modulePrefix + "/internal/adapter/nats",
+		modulePrefix + "/internal/adapter/plugin",
+		modulePrefix + "/internal/adapter/postgres",
+		modulePrefix + "/internal/adapter/remnawave",
+		modulePrefix + "/internal/adapter/valkey",
+	}
+
+	// Domain contexts that adapter/billing must not import (billing and payment
+	// are allowed since this adapter bridges those two contexts).
+	forbiddenDomains := []string{
+		modulePrefix + "/internal/domain/identity",
+		modulePrefix + "/internal/domain/multisub",
+		modulePrefix + "/internal/domain/reseller",
+	}
+
+	// Upper-layer packages that no adapter should import.
+	forbiddenLayers := []string{
+		modulePrefix + "/internal/gateway",
+		modulePrefix + "/internal/plugin",
+		modulePrefix + "/internal/infra",
+		modulePrefix + "/internal/telegram",
+		modulePrefix + "/internal/app",
+		modulePrefix + "/internal/observability",
+	}
+
+	var forbidden []string
+	forbidden = append(forbidden, peerAdapters...)
+	forbidden = append(forbidden, forbiddenDomains...)
+	forbidden = append(forbidden, forbiddenLayers...)
+
+	checkImports(t, filepath.Join("internal", "adapter", "billing"), forbidden)
 }
 
 // TestPluginRuntimeDoesNotImportAdapterPlugin verifies that the WASM plugin

@@ -1,4 +1,7 @@
-package infra
+// Package proxy provides the SubscriptionProxy which serves VPN subscription
+// configs to clients through a multi-tier cache (L1 in-memory LRU, L2 Valkey,
+// L3 Remnawave).
+package proxy
 
 import (
 	"sync"

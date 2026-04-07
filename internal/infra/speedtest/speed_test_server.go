@@ -1,4 +1,6 @@
-package infra
+// Package speedtest provides a lightweight HTTP server for client-side
+// download, upload, and ping speed testing.
+package speedtest
 
 import (
 	"context"
@@ -13,13 +15,6 @@ import (
 	"time"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
-)
-
-// Shared infrastructure constants.
-const (
-	// ShutdownTimeout is the maximum time allowed for graceful HTTP server
-	// shutdown across all infrastructure services.
-	ShutdownTimeout = 5 * time.Second
 )
 
 // Speed test server constants.
@@ -37,6 +32,9 @@ const (
 	// SpeedTestRateLimitWindow is the sliding window duration for speed test
 	// rate limiting.
 	SpeedTestRateLimitWindow = time.Minute
+
+	// ShutdownTimeout is the maximum time allowed for graceful HTTP server shutdown.
+	ShutdownTimeout = 5 * time.Second
 )
 
 // SpeedTestServer provides download, upload, and ping endpoints for client-side

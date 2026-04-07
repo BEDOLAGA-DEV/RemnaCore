@@ -1,108 +1,8 @@
 // Package app wires all Fx modules together into a single application.
 //
-// # Context Map — Cross-Bounded-Context Communication
-//
-// RemnaCore has five bounded contexts: identity, billing, multisub, payment,
-// and reseller. This section documents every cross-context communication path.
-// Understanding these connections is critical for future microservice extraction.
-//
-// ## Event-Driven (via NATS JetStream, through transactional outbox)
-//
-//   billing → multisub:
-//     Events: subscription.activated, subscription.cancelled, subscription.paused,
-//             subscription.resumed, subscription.expired
-//     Path:   BillingService publishes → outbox → NATS → BillingEventConsumer
-//             → MultiSubOrchestrator (Remnawave provisioning/deprovisioning)
-//     Wiring: wiring_nats.go (BillingEventConsumer), wiring_multisub.go (orchestrator)
-//
-//   identity → (all contexts via plugins):
-//     Events: user.registered, user.email_verified, user.password_reset_requested
-//     Path:   IdentityService publishes → outbox → NATS → PluginAsyncConsumer
-//             → notification plugins (email, Telegram)
-//     Wiring: wiring_nats.go (PluginAsyncConsumer)
-//
-//   payment → billing (planned):
-//     Events: payment.charge_completed, payment.refund_completed
-//     Path:   (currently handled synchronously in webhook handler; future
-//             event consumer for async invoice state transitions)
-//
-// ## Synchronous Calls (via ACL interfaces)
-//
-//   billing → payment:
-//     Interface: billing.PaymentGateway (defined in billing/payment_gateway.go)
-//     Method:    CreateCharge (checkout flow only)
-//     Adapter:   paymentGatewayAdapter (payment_gateway_adapter.go)
-//     Path:      CheckoutService.StartCheckout → PaymentGateway.CreateCharge
-//                → paymentGatewayAdapter → payment.PaymentFacade.CreateCharge
-//                → plugin: payment.create_charge hook
-//     Wiring:    wiring_billing.go (newPaymentGatewayAdapter)
-//
-//   billing → plugin:
-//     Interface: hookdispatch.Dispatcher (defined in pkg/hookdispatch/)
-//     Method:    DispatchSync for pricing.calculate hook
-//     Path:      CheckoutService → Dispatcher → plugin.HookDispatcher → WASM
-//     Wiring:    wiring_plugin.go (HookDispatcher → hookdispatch.Dispatcher)
-//
-//   gateway → payment + billing (webhook completion):
-//     Path:      PaymentWebhookHandler (gateway layer)
-//                → payment.PaymentFacade.VerifyWebhook (plugin: payment.verify_webhook)
-//                → payment.PaymentFacade.CompletePayment
-//                → billing.CheckoutService.CompleteCheckout
-//                  → BillingService.PayInvoice → publishes invoice.paid,
-//                    subscription.activated
-//     Note:      This is a gateway-layer orchestration, not a domain-to-domain
-//                call. The gateway handler coordinates two bounded contexts.
-//     Wiring:    wiring_nats.go (provideWebhookHandler), wiring_http.go
-//
-//   multisub → billing (lookup ports, read-only):
-//     Interfaces: multisub.PlanProvider, multisub.SubscriptionProvider
-//     Path:       MultiSubOrchestrator needs plan/subscription info to
-//                 calculate bindings. Adapter reads from billing's DB tables.
-//     Adapter:    natsadapter.BillingSubscriptionLookup
-//     Wiring:     wiring_multisub.go (PlanProvider, SubscriptionProvider)
-//
-//   multisub → remnawave (external system):
-//     Interface:  multisub.RemnawaveGateway (defined in multisub/gateway.go)
-//     Methods:    CreateUser, DeleteUser, EnableUser, DisableUser, GetUser
-//     Adapter:    remnawave.GatewayAdapter (internal/adapter/remnawave/)
-//     Wiring:     wiring_multisub.go
-//
-//   multisub → plugin (optional, gated by HooksVPNProviderEnabled):
-//     Interface:  multisub.VPNProvider (defined in multisub/vpn_provider.go)
-//     Methods:    CreateUser, GetUser, DeleteUser, EnableUser, DisableUser
-//     Adapter:    pluginadapter.pluginVPNProvider (internal/adapter/plugin/)
-//     Path:       VPNProvider dispatches hooks to WASM plugins via Dispatcher;
-//                 HTTP transport handled by resilientVPNExecutor with circuit breaker.
-//     Wiring:     wiring_multisub.go (provideVPNProvider)
-//     Note:       Returns nil when feature flag is off — sagas use RemnawaveGateway directly.
-//
-// ## Shared Kernel (via pkg/)
-//
-//   All contexts:        domainevent (Event, Publisher), clock (Clock),
-//                        txmanager (Runner)
-//   Identity + gateway:  authutil (JWT issuer, password hashing)
-//   Billing + multisub + payment: hookdispatch (Dispatcher interface for WASM plugins)
-//
-// ## Remnawave Webhooks (external → platform)
-//
-//   Path: Remnawave panel → /api/webhooks/remnawave → remnawave.WebhookHandler
-//         → natsadapter.EventPublisher (publishes as domain events to NATS)
-//   Note: These are external-origin events, not cross-context domain events.
-//   Wiring: wiring_nats.go (provideWebhookHandler), wiring_http.go
-//
-// ## Microservice Extraction Guidance
-//
-// When extracting bounded contexts into separate services:
-//   - Event-driven connections need no changes (NATS is already decoupled).
-//   - Synchronous ACL calls (PaymentGateway, PlanProvider, SubscriptionProvider)
-//     must be replaced with gRPC/HTTP calls to the extracted service.
-//   - The gateway-layer webhook orchestration (payment → billing completion)
-//     should become an event choreography: payment publishes charge_completed,
-//     billing subscribes and completes checkout.
-//   - Shared kernel packages (pkg/) move to a shared library or are duplicated
-//     per service.
-//   - The multisub→billing lookup adapters must become cross-service API calls
-//     or be replaced with local read models populated by billing events.
+// Cross-context communication is declared in context_map.go and verified by
+// TestContextMapMatchesRealImports and TestContextMapCoversEventCatalogConsumers
+// in tests/archtest/.
 package app
 
 import (
@@ -116,6 +16,89 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
 )
 
+// WiringModule names used in ModuleOrder and WiringConstraints.
+const (
+	ModuleIdentity = "identity"
+	ModuleBilling  = "billing"
+	ModuleMultisub = "multisub"
+	ModulePayment  = "payment"
+	ModuleReseller = "reseller"
+	ModulePlugin   = "plugin"
+	ModuleNATS     = "nats"
+	ModuleInfra    = "infra"
+	ModuleHTTP     = "http"
+	ModuleTelegram = "telegram"
+	ModuleTracing  = "tracing"
+)
+
+// ModuleOrder documents the Fx module loading sequence. fx.Invoke hooks
+// execute in declaration order, so modules with startup hooks (fx.Invoke)
+// MUST appear in the correct position. Constraints are verified by
+// TestWiringOrderSatisfiesConstraints.
+var ModuleOrder = []string{
+	ModuleIdentity,
+	ModuleBilling,
+	ModuleMultisub,
+	ModulePayment,
+	ModuleReseller,
+	ModulePlugin,
+	ModuleNATS,
+	ModuleInfra,
+	ModuleHTTP,
+	ModuleTelegram,
+	ModuleTracing,
+}
+
+// WiringConstraint documents that the module named Before must appear
+// before the module named After in ModuleOrder. Reason explains why.
+type WiringConstraint struct {
+	Before string
+	After  string
+	Reason string
+}
+
+// WiringConstraints enumerates every ordering invariant between wiring
+// modules. Each constraint corresponds to a real runtime dependency:
+// fx.Invoke hooks execute in declaration order, so placing After before
+// Before would cause a startup failure or silent misbehaviour.
+var WiringConstraints = []WiringConstraint{
+	{
+		Before: ModulePlugin,
+		After:  ModuleNATS,
+		Reason: "loadEnabledPlugins must complete before startBillingEventConsumer and startPluginAsyncConsumer",
+	},
+	{
+		Before: ModuleNATS,
+		After:  ModuleHTTP,
+		Reason: "event consumers and outbox relay must be running before HTTP server accepts traffic",
+	},
+	{
+		Before: ModuleInfra,
+		After:  ModuleHTTP,
+		Reason: "health monitor and speed test must start before HTTP server advertises readiness",
+	},
+	{
+		Before: ModulePlugin,
+		After:  ModuleHTTP,
+		Reason: "plugins must be loaded before HTTP handlers dispatch hooks",
+	},
+	{
+		Before: ModuleIdentity,
+		After:  ModuleHTTP,
+		Reason: "identity service and JWT issuer must be available before HTTP auth middleware runs",
+	},
+	{
+		Before: ModuleBilling,
+		After:  ModuleNATS,
+		Reason: "CheckoutService must be available before BillingEventConsumer starts",
+	},
+	{
+		Before: ModuleMultisub,
+		After:  ModuleNATS,
+		Reason: "MultiSubOrchestrator must be available before BillingEventConsumer routes events to it",
+	},
+}
+
 // New constructs the Fx application with all modules wired together.
 //
 // Startup ordering (Fx.Invoke hooks execute in declaration order):
@@ -125,6 +108,8 @@ import (
 //  4. Event consumers -- depend on plugins being loaded
 //  5. Health monitor + speed test + subscription proxy
 //  6. HTTP server -- last, only accepts traffic after all deps ready
+//
+// See WiringConstraints and TestWiringOrderSatisfiesConstraints.
 func New() *fx.App {
 	return fx.New(
 		// Config
@@ -140,20 +125,19 @@ func New() *fx.App {
 		remnawave.Module,
 
 		// Domain-scoped wiring (repos, interface bindings, lifecycle hooks).
-		// pluginWiring MUST appear before natsWiring so that loadEnabledPlugins
-		// runs before startBillingEventConsumer / startPluginAsyncConsumer.
-		identityWiring,
-		billingWiring,
-		multisubWiring,
-		paymentWiring,
-		resellerWiring,
-		pluginWiring,
+		// Order must satisfy WiringConstraints — see wiring_order_test.go.
+		identityWiring,  // ModuleIdentity
+		billingWiring,   // ModuleBilling
+		multisubWiring,  // ModuleMultisub
+		paymentWiring,   // ModulePayment
+		resellerWiring,  // ModuleReseller
+		pluginWiring,    // ModulePlugin
 
 		// Cross-cutting infrastructure wiring
-		natsWiring,
-		infraWiring,
-		httpWiring,
-		telegramWiring,
-		tracingWiring,
+		natsWiring,      // ModuleNATS
+		infraWiring,     // ModuleInfra
+		httpWiring,      // ModuleHTTP
+		telegramWiring,  // ModuleTelegram
+		tracingWiring,   // ModuleTracing
 	)
 }
