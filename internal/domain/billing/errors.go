@@ -39,6 +39,22 @@ var (
 	// that callers using billing.ErrFamilyNotEnabled continue to work.
 	ErrFamilyNotEnabled = aggregate.ErrFamilyNotEnabled
 
+	// ErrPendingPlanInactive is an alias to the aggregate-level sentinel so
+	// that callers using billing.ErrPendingPlanInactive continue to work.
+	ErrPendingPlanInactive = aggregate.ErrPendingPlanInactive
+
+	// ErrPlanAlreadyActive is an alias to the aggregate-level sentinel so
+	// that callers using billing.ErrPlanAlreadyActive continue to work.
+	ErrPlanAlreadyActive = aggregate.ErrPlanAlreadyActive
+
+	// ErrPlanAlreadyInactive is an alias to the aggregate-level sentinel so
+	// that callers using billing.ErrPlanAlreadyInactive continue to work.
+	ErrPlanAlreadyInactive = aggregate.ErrPlanAlreadyInactive
+
+	// ErrAddonNotOnPlan is an alias to the aggregate-level sentinel so
+	// that callers using billing.ErrAddonNotOnPlan continue to work.
+	ErrAddonNotOnPlan = aggregate.ErrAddonNotOnPlan
+
 	// ErrCancellationBlocked is returned when a plugin blocks subscription cancellation.
 	ErrCancellationBlocked = errors.New("cancellation blocked by plugin")
 

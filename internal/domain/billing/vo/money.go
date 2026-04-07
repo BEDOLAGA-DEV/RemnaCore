@@ -161,6 +161,50 @@ func (m Money) LessThanOrEqual(other Money) (bool, error) {
 	return m.Amount <= other.Amount, nil
 }
 
+// RoundingMode defines how fractional cents are handled in percent-of-money
+// calculations.
+type RoundingMode int
+
+const (
+	// RoundFloor truncates toward zero (Go integer division).
+	// This is the platform's default for percent discounts: rounding in favor
+	// of a smaller discount ensures the merchant never undercharges.
+	RoundFloor RoundingMode = iota
+
+	// RoundHalfUp rounds to nearest, with ties going away from zero.
+	// Available for future use (e.g., tax calculations).
+	RoundHalfUp
+)
+
+// PercentOf calculates pct/PercentBase of the money amount using the
+// specified rounding mode. pct is in basis-point units where PercentBase
+// (10000) represents 100%.
+//
+// Policy: the platform uses RoundFloor for percent discounts so that
+// fractional cents are truncated, producing a smaller discount amount.
+// This guarantees the merchant is never undercharged.
+//
+// Examples with RoundFloor:
+//
+//	Money{Amount: 1000}.PercentOf(3333, RoundFloor) → Money{Amount: 333}
+//	  (33.33% of $10.00 = $3.33, not $3.334)
+//	Money{Amount: 999}.PercentOf(5000, RoundFloor)  → Money{Amount: 499}
+//	  (50% of $9.99 = $4.99, not $4.995)
+func (m Money) PercentOf(pct int64, rounding RoundingMode) Money {
+	switch rounding {
+	case RoundHalfUp:
+		return Money{
+			Amount:   (m.Amount*pct + PercentBase/2) / PercentBase,
+			Currency: m.Currency,
+		}
+	default: // RoundFloor — platform default
+		return Money{
+			Amount:   m.Amount * pct / PercentBase,
+			Currency: m.Currency,
+		}
+	}
+}
+
 // String returns a human-readable representation such as "12.99 USD".
 func (m Money) String() string {
 	major := m.Amount / CentsPerUnit

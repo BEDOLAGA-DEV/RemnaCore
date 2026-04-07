@@ -271,3 +271,151 @@ func TestPlan_CalculateTotal_PartialAddons(t *testing.T) {
 	// 999 + 299 = 1298
 	assert.Equal(t, int64(1298), total.Amount)
 }
+
+func TestPlan_Deactivate(t *testing.T) {
+	tests := []struct {
+		name     string
+		isActive bool
+		wantErr  error
+	}{
+		{"active plan can be deactivated", true, nil},
+		{"inactive plan returns error", false, ErrPlanAlreadyInactive},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plan := newTestPlan(t)
+			plan.IsActive = tt.isActive
+			now := time.Now()
+
+			err := plan.Deactivate(now)
+
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+				assert.False(t, plan.IsActive)
+				assert.Equal(t, now, plan.UpdatedAt)
+			}
+		})
+	}
+}
+
+func TestPlan_Reactivate(t *testing.T) {
+	tests := []struct {
+		name     string
+		isActive bool
+		wantErr  error
+	}{
+		{"inactive plan can be reactivated", false, nil},
+		{"active plan returns error", true, ErrPlanAlreadyActive},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plan := newTestPlan(t)
+			plan.IsActive = tt.isActive
+			now := time.Now()
+
+			err := plan.Reactivate(now)
+
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+				assert.True(t, plan.IsActive)
+				assert.Equal(t, now, plan.UpdatedAt)
+			}
+		})
+	}
+}
+
+func TestPlan_RemoveAddon(t *testing.T) {
+	tests := []struct {
+		name    string
+		addonID string
+		wantErr error
+	}{
+		{"existing addon removed", "addon-1", nil},
+		{"missing addon returns error", "nonexistent", ErrAddonNotOnPlan},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plan := newTestPlan(t)
+			addon := Addon{
+				ID:    "addon-1",
+				Name:  "Extra Traffic",
+				Price: vo.NewMoney(299, vo.CurrencyUSD),
+				Type:  AddonTraffic,
+			}
+			require.NoError(t, plan.AddAddon(addon, time.Now()))
+			now := time.Now()
+
+			err := plan.RemoveAddon(tt.addonID, now)
+
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				assert.Len(t, plan.AvailableAddons, 1)
+			} else {
+				require.NoError(t, err)
+				assert.Empty(t, plan.AvailableAddons)
+				assert.Equal(t, now, plan.UpdatedAt)
+			}
+		})
+	}
+}
+
+func TestPlan_RemoveAddon_MultipleAddons(t *testing.T) {
+	plan := newTestPlan(t)
+	addon1 := Addon{ID: "addon-1", Name: "Traffic", Price: vo.NewMoney(299, vo.CurrencyUSD), Type: AddonTraffic}
+	addon2 := Addon{ID: "addon-2", Name: "Nodes", Price: vo.NewMoney(499, vo.CurrencyUSD), Type: AddonNodes}
+	require.NoError(t, plan.AddAddon(addon1, time.Now()))
+	require.NoError(t, plan.AddAddon(addon2, time.Now()))
+
+	err := plan.RemoveAddon("addon-1", time.Now())
+
+	require.NoError(t, err)
+	assert.Len(t, plan.AvailableAddons, 1)
+	assert.Equal(t, "addon-2", plan.AvailableAddons[0].ID)
+}
+
+func TestPlan_UpdateBasePrice(t *testing.T) {
+	tests := []struct {
+		name     string
+		newPrice vo.Money
+		wantErr  error
+	}{
+		{"valid price update", vo.NewMoney(1499, vo.CurrencyUSD), nil},
+		{"zero price rejected", vo.NewMoney(0, vo.CurrencyUSD), ErrBasePriceNotPositive},
+		{"negative price rejected", vo.NewMoney(-100, vo.CurrencyUSD), ErrBasePriceNotPositive},
+		{"currency mismatch rejected", vo.NewMoney(1499, vo.CurrencyEUR), vo.ErrCurrencyMismatch},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plan := newTestPlan(t)
+			now := time.Now()
+
+			err := plan.UpdateBasePrice(tt.newPrice, now)
+
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.newPrice, plan.BasePrice)
+				assert.Equal(t, now, plan.UpdatedAt)
+			}
+		})
+	}
+}
+
+// newTestPlan creates a valid Plan for use in tests. It reduces boilerplate
+// compared to calling validPlanParams + NewPlan in every test.
+func newTestPlan(t *testing.T) *Plan {
+	t.Helper()
+	name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily := validPlanParams()
+	plan, err := NewPlan(name, desc, price, interval, traffic, devices, countries, protocols, tier, maxBindings, familyEnabled, maxFamily, time.Now())
+	require.NoError(t, err)
+	return plan
+}

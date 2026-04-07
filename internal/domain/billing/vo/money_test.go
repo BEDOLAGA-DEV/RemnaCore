@@ -550,6 +550,106 @@ func TestMoney_String(t *testing.T) {
 	}
 }
 
+func TestMoney_PercentOf(t *testing.T) {
+	tests := []struct {
+		name     string
+		money    Money
+		pct      int64
+		rounding RoundingMode
+		want     int64
+	}{
+		{
+			name:     "floor 33.33% of 1000",
+			money:    NewMoney(1000, CurrencyUSD),
+			pct:      3333,
+			rounding: RoundFloor,
+			want:     333, // 1000 * 3333 / 10000 = 333.3 → 333
+		},
+		{
+			name:     "floor 50% of 999",
+			money:    NewMoney(999, CurrencyUSD),
+			pct:      5000,
+			rounding: RoundFloor,
+			want:     499, // 999 * 5000 / 10000 = 499.5 → 499
+		},
+		{
+			name:     "floor 100% of 1000",
+			money:    NewMoney(1000, CurrencyUSD),
+			pct:      PercentBase,
+			rounding: RoundFloor,
+			want:     1000,
+		},
+		{
+			name:     "floor 0.01% of 10000",
+			money:    NewMoney(10000, CurrencyUSD),
+			pct:      1,
+			rounding: RoundFloor,
+			want:     1, // 10000 * 1 / 10000 = 1
+		},
+		{
+			name:     "floor 0.01% of 9999 truncates to zero",
+			money:    NewMoney(9999, CurrencyUSD),
+			pct:      1,
+			rounding: RoundFloor,
+			want:     0, // 9999 * 1 / 10000 = 0.9999 → 0
+		},
+		{
+			name:     "floor zero amount",
+			money:    Zero(CurrencyUSD),
+			pct:      5000,
+			rounding: RoundFloor,
+			want:     0,
+		},
+		{
+			name:     "half_up 33.33% of 1000",
+			money:    NewMoney(1000, CurrencyUSD),
+			pct:      3333,
+			rounding: RoundHalfUp,
+			want:     333, // (1000*3333 + 5000) / 10000 = 3338000/10000 = 333
+		},
+		{
+			name:     "half_up 50% of 999",
+			money:    NewMoney(999, CurrencyUSD),
+			pct:      5000,
+			rounding: RoundHalfUp,
+			want:     500, // (999*5000 + 5000) / 10000 = 5000000/10000 = 500
+		},
+		{
+			name:     "half_up 0.01% of 9999",
+			money:    NewMoney(9999, CurrencyUSD),
+			pct:      1,
+			rounding: RoundHalfUp,
+			want:     1, // (9999*1 + 5000) / 10000 = 14999/10000 = 1
+		},
+		{
+			name:     "preserves currency",
+			money:    NewMoney(1000, CurrencyRUB),
+			pct:      2500,
+			rounding: RoundFloor,
+			want:     250,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.money.PercentOf(tt.pct, tt.rounding)
+
+			assert.Equal(t, tt.want, result.Amount)
+			assert.Equal(t, tt.money.Currency, result.Currency,
+				"PercentOf must preserve the original currency")
+		})
+	}
+}
+
+func TestMoney_PercentOf_Immutability(t *testing.T) {
+	original := NewMoney(1000, CurrencyUSD)
+
+	result := original.PercentOf(5000, RoundFloor)
+
+	assert.Equal(t, int64(1000), original.Amount, "original must not change")
+	assert.Equal(t, int64(500), result.Amount)
+}
+
 func TestMoney_Immutability(t *testing.T) {
 	original := NewMoney(1000, CurrencyUSD)
 	other := NewMoney(500, CurrencyUSD)

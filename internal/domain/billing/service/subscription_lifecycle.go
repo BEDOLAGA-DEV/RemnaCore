@@ -131,7 +131,17 @@ func (s *BillingService) RenewSubscription(ctx context.Context, subID string) er
 		})
 
 		now := s.clock.Now()
-		if err := sub.Renew(now); err != nil {
+
+		pendingPlanActive := true
+		if sub.PendingPlanID != nil {
+			pendingPlan, err := s.plans.GetByID(txCtx, *sub.PendingPlanID)
+			if err != nil {
+				return fmt.Errorf("load pending plan: %w", err)
+			}
+			pendingPlanActive = pendingPlan.IsActive
+		}
+
+		if err := sub.Renew(now, pendingPlanActive); err != nil {
 			return fmt.Errorf("renew subscription: %w", err)
 		}
 
@@ -394,7 +404,8 @@ func applyRenewalHookOverrides(inv *aggregate.Invoice, hookResp json.RawMessage,
 	var discount *int64
 	if resp.DiscountPercent != nil {
 		pct := int64(*resp.DiscountPercent)
-		discountAmount := inv.Subtotal.Amount * pct / vo.PercentBase
+		// Floor rounding: see vo.RoundFloor and Money.PercentOf documentation.
+		discountAmount := inv.Subtotal.PercentOf(pct, vo.RoundFloor).Amount
 		discount = &discountAmount
 	}
 

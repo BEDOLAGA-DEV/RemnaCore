@@ -3,6 +3,7 @@ package aggregate
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,6 +19,9 @@ var (
 	ErrNegativeTrafficLimit      = errors.New("traffic limit must not be negative")
 	ErrAddonAlreadyExists        = errors.New("addon already exists on this plan")
 	ErrAddonNotFound             = errors.New("addon not found")
+	ErrPlanAlreadyActive         = errors.New("plan is already active")
+	ErrPlanAlreadyInactive       = errors.New("plan is already inactive")
+	ErrAddonNotOnPlan            = errors.New("addon not found on plan")
 )
 
 // PlanTier categorises a plan into a pricing tier.
@@ -134,13 +138,68 @@ func NewPlan(
 }
 
 // Deactivate marks the plan as inactive. Inactive plans cannot be used for
-// new checkouts.
-func (p *Plan) Deactivate(now time.Time) {
+// new checkouts. Returns ErrPlanAlreadyInactive if the plan is already inactive.
+func (p *Plan) Deactivate(now time.Time) error {
+	if !p.IsActive {
+		return ErrPlanAlreadyInactive
+	}
 	p.IsActive = false
 	p.UpdatedAt = now
 	p.RecordEvent(domainevent.NewTyped(PlanDeactivatedPayload{
 		PlanID: p.ID,
 	}, now, p.ID))
+	return nil
+}
+
+// Reactivate marks a previously deactivated plan as active again.
+// Returns ErrPlanAlreadyActive if the plan is already active.
+func (p *Plan) Reactivate(now time.Time) error {
+	if p.IsActive {
+		return ErrPlanAlreadyActive
+	}
+	p.IsActive = true
+	p.UpdatedAt = now
+	p.RecordEvent(domainevent.NewTyped(PlanUpdatedPayload{
+		PlanID: p.ID,
+		Name:   p.Name,
+	}, now, p.ID))
+	return nil
+}
+
+// RemoveAddon removes an addon from the plan by ID.
+// Returns ErrAddonNotOnPlan if the addon is not found on this plan.
+func (p *Plan) RemoveAddon(addonID string, now time.Time) error {
+	idx := slices.IndexFunc(p.AvailableAddons, func(a Addon) bool {
+		return a.ID == addonID
+	})
+	if idx == -1 {
+		return ErrAddonNotOnPlan
+	}
+	p.AvailableAddons = slices.Delete(p.AvailableAddons, idx, idx+1)
+	p.UpdatedAt = now
+	p.RecordEvent(domainevent.NewTyped(PlanUpdatedPayload{
+		PlanID: p.ID,
+		Name:   p.Name,
+	}, now, p.ID))
+	return nil
+}
+
+// UpdateBasePrice changes the plan's base price. The new price must be positive
+// and in the same currency as the current base price.
+func (p *Plan) UpdateBasePrice(newPrice vo.Money, now time.Time) error {
+	if !newPrice.IsPositive() {
+		return ErrBasePriceNotPositive
+	}
+	if newPrice.Currency != p.BasePrice.Currency {
+		return vo.ErrCurrencyMismatch
+	}
+	p.BasePrice = newPrice
+	p.UpdatedAt = now
+	p.RecordEvent(domainevent.NewTyped(PlanUpdatedPayload{
+		PlanID: p.ID,
+		Name:   p.Name,
+	}, now, p.ID))
+	return nil
 }
 
 // AddAddon adds an addon to the plan. Returns an error if an addon with the

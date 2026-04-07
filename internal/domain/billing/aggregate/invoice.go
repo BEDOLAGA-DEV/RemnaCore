@@ -304,9 +304,10 @@ func calculateTotal(items []vo.LineItem, discounts []vo.Discount, currency vo.Cu
 	for _, d := range discounts {
 		switch d.Type {
 		case vo.DiscountPercent:
-			// Percent discount: percentage of subtotal
-			discountAmount := subtotal.Amount * d.Value / vo.PercentBase
-			disc := vo.NewMoney(discountAmount, currency)
+			// Percent discounts use floor rounding (integer truncation): the
+			// platform rounds in favor of a smaller discount, ensuring the
+			// merchant never undercharges. See vo.RoundFloor documentation.
+			disc := subtotal.PercentOf(d.Value, vo.RoundFloor)
 			discount, err = discount.Add(disc)
 			if err != nil {
 				return vo.Money{}, vo.Money{}, vo.Money{}, err

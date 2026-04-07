@@ -13,9 +13,12 @@ const (
 	DiscountFixed   DiscountType = "fixed"
 )
 
-// PercentBase is the divisor for percentage calculations. Using 10000 (basis
-// points) allows fractional percentages like 12.5% (represented as 1250).
+// PercentBase is the denominator for percent calculations.
+// A value of 10000 means percentages are expressed in basis points:
 // 10000 = 100.00%, 5000 = 50%, 1250 = 12.5%, 100 = 1%, 1 = 0.01%.
+//
+// All percent-of-money calculations use floor rounding (integer division)
+// per the platform's rounding policy. See Money.PercentOf and RoundFloor.
 const PercentBase = 10000
 
 const (
@@ -63,6 +66,10 @@ func NewFixedDiscount(amount int64, currency Currency, code string, expiresAt *t
 
 // Apply calculates the discounted price. Returns the original price unchanged
 // if the discount has expired. The result is floored at zero for fixed discounts.
+//
+// Percent discounts use floor rounding (integer division) on the remaining
+// price, which is equivalent to ceiling the discount. This follows the
+// platform rounding policy: see RoundFloor and Money.PercentOf.
 func (d Discount) Apply(price Money, now time.Time) (Money, error) {
 	if d.IsExpiredAt(now) {
 		return price, nil // expired discount, return original price
@@ -70,8 +77,10 @@ func (d Discount) Apply(price Money, now time.Time) (Money, error) {
 
 	switch d.Type {
 	case DiscountPercent:
-		discounted := price.Amount * (maxPercent - d.Value) / maxPercent
-		return NewMoney(discounted, price.Currency), nil
+		// Floor the remaining amount: price * (100% - pct) / 100%.
+		// Integer division truncates toward zero (RoundFloor).
+		remaining := price.PercentOf(maxPercent-d.Value, RoundFloor)
+		return remaining, nil
 	case DiscountFixed:
 		if d.Currency != "" && d.Currency != price.Currency {
 			return Money{}, ErrCurrencyMismatch

@@ -123,7 +123,7 @@ func TestSubscription_RenewWithPendingPlanID(t *testing.T) {
 		sub.DomainEvents() // drain downgrade event
 
 		renewTime := sub.Period.End.Add(time.Second) // after period ends
-		err := sub.Renew(renewTime)
+		err := sub.Renew(renewTime, true)
 
 		require.NoError(t, err)
 		assert.Equal(t, "plan-basic", sub.PlanID, "plan must switch to pending plan")
@@ -138,11 +138,25 @@ func TestSubscription_RenewWithPendingPlanID(t *testing.T) {
 		sub := newActiveSub(t, now)
 
 		renewTime := sub.Period.End.Add(time.Second)
-		err := sub.Renew(renewTime)
+		err := sub.Renew(renewTime, true)
 
 		require.NoError(t, err)
 		assert.Equal(t, "plan-old", sub.PlanID, "plan must remain unchanged")
 		assert.Nil(t, sub.PendingPlanID)
+	})
+
+	t.Run("renew with inactive pending plan returns ErrPendingPlanInactive", func(t *testing.T) {
+		sub := newActiveSub(t, now)
+		require.NoError(t, sub.Downgrade("plan-basic", now))
+		sub.DomainEvents() // drain downgrade event
+
+		renewTime := sub.Period.End.Add(time.Second)
+		err := sub.Renew(renewTime, false)
+
+		assert.ErrorIs(t, err, aggregate.ErrPendingPlanInactive)
+		assert.Equal(t, "plan-old", sub.PlanID, "plan must not change on failure")
+		require.NotNil(t, sub.PendingPlanID, "pending plan must not be cleared on failure")
+		assert.Equal(t, "plan-basic", *sub.PendingPlanID)
 	})
 }
 
@@ -168,7 +182,7 @@ func TestSubscription_Upgrade_ClearsPendingPlanID(t *testing.T) {
 
 		// Renew should keep the upgraded plan, not apply the old downgrade.
 		renewTime := sub.Period.End.Add(time.Second)
-		require.NoError(t, sub.Renew(renewTime))
+		require.NoError(t, sub.Renew(renewTime, true))
 
 		assert.Equal(t, "plan-premium", sub.PlanID, "plan must remain upgraded after renew")
 		assert.Nil(t, sub.PendingPlanID)

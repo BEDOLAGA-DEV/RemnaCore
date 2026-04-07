@@ -58,6 +58,28 @@ func TestNewInvoice_WithPercentDiscount(t *testing.T) {
 	assert.Equal(t, int64(8000), inv.Total.Amount)
 }
 
+// TestNewInvoice_PercentDiscountFloorRounding verifies the platform's rounding
+// policy: fractional cents from percent discounts are truncated (floor),
+// producing a smaller discount and ensuring the merchant never undercharges.
+func TestNewInvoice_PercentDiscountFloorRounding(t *testing.T) {
+	items := []vo.LineItem{
+		vo.NewLineItem("Plan", vo.LineItemPlan, vo.NewMoney(999, vo.CurrencyUSD), 1),
+	}
+	// 33.33% of 999 cents = 332.9667 → floor to 332 (integer truncation).
+	// The discount is computed as subtotal * pct / PercentBase, not as
+	// subtotal - subtotal * (PercentBase - pct) / PercentBase, so the floor
+	// applies directly to the discount amount.
+	discount, err := vo.NewPercentDiscount(3333, "THIRD", nil)
+	require.NoError(t, err)
+
+	inv, err := NewInvoice("sub-1", "user-1", items, []vo.Discount{discount}, vo.CurrencyUSD, time.Now())
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(999), inv.Subtotal.Amount)
+	assert.Equal(t, int64(332), inv.TotalDiscount.Amount, "floor rounding: 999*3333/10000=332")
+	assert.Equal(t, int64(667), inv.Total.Amount)
+}
+
 func TestNewInvoice_WithFixedDiscount(t *testing.T) {
 	items := []vo.LineItem{
 		vo.NewLineItem("Premium Plan", vo.LineItemPlan, vo.NewMoney(10000, vo.CurrencyUSD), 1),

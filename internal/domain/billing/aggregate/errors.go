@@ -32,3 +32,7 @@ var ErrNegativeTotal = errors.New("invoice total must not be negative")
 
 // ErrSamePlan indicates an attempt to upgrade or downgrade to the current plan.
 var ErrSamePlan = errors.New("cannot change to the same plan")
+
+// ErrPendingPlanInactive indicates the pending plan (from a deferred downgrade)
+// is no longer active and cannot be applied during renewal.
+var ErrPendingPlanInactive = errors.New("pending plan is no longer active")

@@ -37,6 +37,7 @@ var (
 	BillingPlanNotActive           = New("BILLING.PLAN_NOT_ACTIVE", "plan is not active", http.StatusBadRequest)
 	BillingNoPriceConfigured       = New("BILLING.NO_PRICE_CONFIGURED", "plan has no price configured", http.StatusBadRequest)
 	BillingFamilyNotEnabled        = New("BILLING.FAMILY_NOT_ENABLED", "family sharing not enabled for this plan", http.StatusConflict)
+	BillingPendingPlanInactive     = New("BILLING.PENDING_PLAN_INACTIVE", "pending plan is no longer active", http.StatusConflict)
 	BillingCancellationBlocked     = New("BILLING.CANCELLATION_BLOCKED", "subscription cancellation blocked", http.StatusForbidden)
 	BillingCheckoutBlocked         = New("BILLING.CHECKOUT_BLOCKED", "checkout blocked by plugin", http.StatusForbidden)
 	BillingInvalidTransition       = New("BILLING.INVALID_TRANSITION", "invalid subscription state transition", http.StatusConflict)
@@ -54,6 +55,9 @@ var (
 	BillingInvoiceMustBePending    = New("BILLING.INVOICE_MUST_BE_PENDING", "invoice must be pending to mark paid", http.StatusConflict)
 	BillingInvoicePendingForFailed = New("BILLING.INVOICE_PENDING_FOR_FAILED", "invoice must be pending to mark failed", http.StatusConflict)
 	BillingInvoiceMustBePaid       = New("BILLING.INVOICE_MUST_BE_PAID", "invoice must be paid to refund", http.StatusConflict)
+	BillingPlanAlreadyActive       = New("BILLING.PLAN_ALREADY_ACTIVE", "plan is already active", http.StatusConflict)
+	BillingPlanAlreadyInactive     = New("BILLING.PLAN_ALREADY_INACTIVE", "plan is already inactive", http.StatusConflict)
+	BillingAddonNotOnPlan          = New("BILLING.ADDON_NOT_ON_PLAN", "addon not found on plan", http.StatusNotFound)
 )
 
 // MultiSub error codes.

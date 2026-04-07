@@ -290,12 +290,15 @@ func (s *Subscription) Downgrade(newPlanID string, now time.Time) error {
 //
 // If a PendingPlanID was set by a prior Downgrade, it is applied during renewal
 // and the pending field is cleared.
-func (s *Subscription) Renew(now time.Time) error {
+func (s *Subscription) Renew(now time.Time, pendingPlanActive bool) error {
 	if s.Status != StatusActive {
 		return ErrSubscriptionNotActiveForRenewal
 	}
 	if now.Before(s.Period.End) {
 		return ErrPeriodNotElapsed
+	}
+	if s.PendingPlanID != nil && !pendingPlanActive {
+		return ErrPendingPlanInactive
 	}
 	s.Period = s.Period.Next()
 	if s.PendingPlanID != nil {

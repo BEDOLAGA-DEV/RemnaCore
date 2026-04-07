@@ -52,6 +52,7 @@ func TestMapDomainError(t *testing.T) {
 		{"billing plan not active", billing.ErrPlanNotActive, "BILLING.PLAN_NOT_ACTIVE", http.StatusBadRequest},
 		{"billing no price", billing.ErrNoPriceConfigured, "BILLING.NO_PRICE_CONFIGURED", http.StatusBadRequest},
 		{"billing family disabled", billing.ErrFamilyNotEnabled, "BILLING.FAMILY_NOT_ENABLED", http.StatusConflict},
+		{"billing pending plan inactive", billing.ErrPendingPlanInactive, "BILLING.PENDING_PLAN_INACTIVE", http.StatusConflict},
 
 		// Billing aggregate errors
 		{"aggregate invalid transition", aggregate.ErrInvalidTransition, "BILLING.INVALID_TRANSITION", http.StatusConflict},
@@ -70,6 +71,9 @@ func TestMapDomainError(t *testing.T) {
 		{"aggregate inv pending failed", aggregate.ErrInvoiceMustBePendingForFailed, "BILLING.INVOICE_PENDING_FOR_FAILED", http.StatusConflict},
 		{"aggregate inv must be paid", aggregate.ErrInvoiceMustBePaidForRefund, "BILLING.INVOICE_MUST_BE_PAID", http.StatusConflict},
 		{"aggregate sub not active renewal", aggregate.ErrSubscriptionNotActiveForRenewal, "BILLING.SUBSCRIPTION_NOT_ACTIVE", http.StatusConflict},
+		{"aggregate plan already active", aggregate.ErrPlanAlreadyActive, "BILLING.PLAN_ALREADY_ACTIVE", http.StatusConflict},
+		{"aggregate plan already inactive", aggregate.ErrPlanAlreadyInactive, "BILLING.PLAN_ALREADY_INACTIVE", http.StatusConflict},
+		{"aggregate addon not on plan", aggregate.ErrAddonNotOnPlan, "BILLING.ADDON_NOT_ON_PLAN", http.StatusNotFound},
 
 		// ── MultiSub ────────────────────────────────────────────────────
 		{"multisub binding not found", multisub.ErrBindingNotFound, "MULTISUB.BINDING_NOT_FOUND", http.StatusNotFound},

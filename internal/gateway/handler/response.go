@@ -119,6 +119,8 @@ func mapDomainError(err error) *apierror.Error {
 		return apierror.BillingNoPriceConfigured
 	case errors.Is(err, billing.ErrFamilyNotEnabled):
 		return apierror.BillingFamilyNotEnabled
+	case errors.Is(err, billing.ErrPendingPlanInactive):
+		return apierror.BillingPendingPlanInactive
 	case errors.Is(err, billing.ErrCancellationBlocked):
 		return apierror.BillingCancellationBlocked
 	case errors.Is(err, billing.ErrCheckoutBlocked):
@@ -157,6 +159,12 @@ func mapDomainError(err error) *apierror.Error {
 		return apierror.BillingInvoiceMustBePaid
 	case errors.Is(err, aggregate.ErrSubscriptionNotActiveForRenewal):
 		return apierror.BillingSubscriptionNotActive
+	case errors.Is(err, aggregate.ErrPlanAlreadyActive):
+		return apierror.BillingPlanAlreadyActive
+	case errors.Is(err, aggregate.ErrPlanAlreadyInactive):
+		return apierror.BillingPlanAlreadyInactive
+	case errors.Is(err, aggregate.ErrAddonNotOnPlan):
+		return apierror.BillingAddonNotOnPlan
 
 	// ── MultiSub ─────────────────────────────────────────────────────────
 	case errors.Is(err, multisub.ErrBindingNotFound):
