@@ -40,25 +40,27 @@ const compensateHookSuffix = ".compensate"
 // execute in priority order with payload chaining; async hooks are published to
 // NATS for background processing.
 type HookDispatcher struct {
-	mu            sync.RWMutex
-	registrations map[string][]HookRegistration // hookName -> sorted registrations
-	runtime       *RuntimePool
-	publisher     domainevent.Publisher
-	metrics       *observability.Metrics
-	logger        *slog.Logger
-	clock         clock.Clock
+	mu              sync.RWMutex
+	registrations   map[string][]HookRegistration // hookName -> sorted registrations
+	runtime         *RuntimePool
+	publisher       domainevent.Publisher
+	metrics         *observability.Metrics
+	logger          *slog.Logger
+	clock           clock.Clock
+	circuitBreakers *hookCircuitBreakers
 }
 
 // NewHookDispatcher creates a dispatcher wired to the given runtime pool,
 // event publisher, and Prometheus metrics collector.
 func NewHookDispatcher(runtime *RuntimePool, publisher domainevent.Publisher, metrics *observability.Metrics, logger *slog.Logger, clk clock.Clock) *HookDispatcher {
 	return &HookDispatcher{
-		registrations: make(map[string][]HookRegistration),
-		runtime:       runtime,
-		publisher:     publisher,
-		metrics:       metrics,
-		logger:        logger,
-		clock:         clk,
+		registrations:   make(map[string][]HookRegistration),
+		runtime:         runtime,
+		publisher:       publisher,
+		metrics:         metrics,
+		logger:          logger,
+		clock:           clk,
+		circuitBreakers: newHookCircuitBreakers(),
 	}
 }
 
@@ -85,7 +87,8 @@ func (d *HookDispatcher) RegisterHooks(regs []HookRegistration) {
 	}
 }
 
-// UnregisterHooks removes all hook registrations for the given plugin slug.
+// UnregisterHooks removes all hook registrations for the given plugin slug
+// and clears any associated circuit breakers.
 func (d *HookDispatcher) UnregisterHooks(pluginSlug string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -103,11 +106,14 @@ func (d *HookDispatcher) UnregisterHooks(pluginSlug string) {
 			d.registrations[hookName] = filtered
 		}
 	}
+
+	d.circuitBreakers.removeByPlugin(pluginSlug)
 }
 
 // SwapHooks atomically replaces all hooks for a plugin. This holds the write
 // lock across both the unregister and register operations, preventing a window
-// where the plugin has zero hooks registered.
+// where the plugin has zero hooks registered. Circuit breakers for the plugin
+// are reset so the new version starts with a clean slate.
 func (d *HookDispatcher) SwapHooks(pluginSlug string, newRegs []HookRegistration) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -142,6 +148,9 @@ func (d *HookDispatcher) SwapHooks(pluginSlug string, newRegs []HookRegistration
 			return d.registrations[hookName][i].Priority < d.registrations[hookName][j].Priority
 		})
 	}
+
+	// Reset breakers so the new plugin version starts with a clean slate.
+	d.circuitBreakers.removeByPlugin(pluginSlug)
 }
 
 // dispatchStep represents the outcome of a single plugin execution within a chain.
@@ -154,7 +163,25 @@ type dispatchStep struct {
 // executePluginStep builds a HookContext, calls the WASM runtime, records metrics,
 // publishes events, and returns the parsed result. Both DispatchSync and
 // DispatchSyncSafe delegate to this method for the per-plugin execution logic.
+//
+// The circuit breaker is checked before calling the WASM runtime. If the
+// breaker is open, the step returns ErrCircuitBreakerOpen immediately.
+// Callers decide how to handle this: DispatchSync propagates the error;
+// DispatchSyncSafe skips the plugin and continues the chain.
 func (d *HookDispatcher) executePluginStep(ctx context.Context, reg HookRegistration, hookName string, payload json.RawMessage) *dispatchStep {
+	// Check per-plugin-hook circuit breaker.
+	breakerKey := reg.PluginSlug + breakerKeySeparator + hookName
+	breaker := d.circuitBreakers.get(breakerKey)
+
+	if !breaker.allow() {
+		d.logger.Warn("hook circuit breaker open, skipping plugin",
+			"plugin", reg.PluginSlug,
+			"hook", hookName,
+		)
+		d.recordCircuitBreakerTrip(reg.PluginSlug, hookName)
+		return &dispatchStep{err: fmt.Errorf("%w: %s:%s", ErrCircuitBreakerOpen, reg.PluginSlug, hookName)}
+	}
+
 	hookCtx := sdk.HookContext{
 		HookName:  hookName,
 		RequestID: uuid.Must(uuid.NewV7()).String(),
@@ -182,6 +209,7 @@ func (d *HookDispatcher) executePluginStep(ctx context.Context, reg HookRegistra
 	d.recordHookDuration(reg.PluginSlug, hookName, elapsed.Seconds())
 
 	if callErr != nil {
+		breaker.recordFailure()
 		d.recordHookError(reg.PluginSlug, hookName)
 		d.recordHookTotal(reg.PluginSlug, hookName, "error")
 
@@ -190,6 +218,11 @@ func (d *HookDispatcher) executePluginStep(ctx context.Context, reg HookRegistra
 			callErr = fmt.Errorf("%w: plugin %q timed out after %v", ErrHookTimeout, reg.PluginSlug, timeout)
 		} else {
 			callErr = fmt.Errorf("hook %q failed for plugin %q: %w", hookName, reg.PluginSlug, callErr)
+		}
+
+		// Record a circuit breaker trip metric if this failure opened the breaker.
+		if breaker.isOpen() {
+			d.recordCircuitBreakerTrip(reg.PluginSlug, hookName)
 		}
 
 		// Publish failure event.
@@ -211,10 +244,13 @@ func (d *HookDispatcher) executePluginStep(ctx context.Context, reg HookRegistra
 
 	var result sdk.HookResult
 	if err := json.Unmarshal(output, &result); err != nil {
+		breaker.recordFailure()
 		d.recordHookError(reg.PluginSlug, hookName)
 		d.recordHookTotal(reg.PluginSlug, hookName, "error")
 		return &dispatchStep{err: fmt.Errorf("invalid hook result from plugin %q: %w", reg.PluginSlug, err), elapsed: elapsed}
 	}
+
+	breaker.recordSuccess()
 
 	// Sanitize action for metrics.
 	action := string(result.Action)
@@ -345,6 +381,13 @@ func (d *HookDispatcher) DispatchSyncSafe(ctx context.Context, hookName string, 
 
 		step := d.executePluginStep(ctx, reg, hookName, currentPayload)
 		if step.err != nil {
+			// Circuit breaker open: skip this plugin silently and continue
+			// the chain, matching the safe dispatch philosophy of graceful
+			// degradation rather than hard failure.
+			if errors.Is(step.err, ErrCircuitBreakerOpen) {
+				continue
+			}
+
 			result.Err = step.err
 			result.Payload = currentPayload
 			result.ExecutedPlugins = executedPlugins
@@ -543,7 +586,7 @@ func (d *HookDispatcher) BeginFlow(ctx context.Context) context.Context {
 func (d *HookDispatcher) syncTimeoutForPlugin(slug string) time.Duration {
 	inst, err := d.runtime.GetInstance(slug)
 	if err == nil && inst.Manifest != nil {
-		limits := inst.Manifest.EffectiveLimits()
+		limits, _ := inst.Manifest.EffectiveLimits()
 		if limits.TimeoutSyncMs > 0 {
 			return time.Duration(limits.TimeoutSyncMs) * time.Millisecond
 		}
@@ -576,4 +619,13 @@ func (d *HookDispatcher) recordHookTotal(pluginSlug, hookName, action string) {
 		return
 	}
 	d.metrics.PluginHookTotal.WithLabelValues(pluginSlug, hookName, action).Inc()
+}
+
+// recordCircuitBreakerTrip increments the Prometheus counter for circuit
+// breaker trip events. Safe to call when metrics is nil.
+func (d *HookDispatcher) recordCircuitBreakerTrip(pluginSlug, hookName string) {
+	if d.metrics == nil {
+		return
+	}
+	d.metrics.HookCircuitBreakerTrips.WithLabelValues(pluginSlug, hookName).Inc()
 }

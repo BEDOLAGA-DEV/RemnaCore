@@ -111,38 +111,98 @@ func (m *Manifest) Validate() error {
 	return nil
 }
 
+// LimitWarning describes a plugin resource limit that was adjusted by the
+// platform to fit within allowed bounds.
+type LimitWarning struct {
+	Field     string // manifest field name (e.g. "max_memory_mb")
+	Requested int    // value the plugin author specified
+	Applied   int    // value actually used after adjustment
+	Reason    string // "capped at platform maximum" or "set to platform default"
+}
+
+// Limit adjustment reason constants.
+const (
+	limitReasonCapped  = "capped at platform maximum"
+	limitReasonDefault = "set to platform default"
+)
+
 // EffectiveLimits returns a ManifestLimits with platform defaults applied for
-// any field that was left at zero or negative by the plugin author.
-func (m *Manifest) EffectiveLimits() ManifestLimits {
+// any field that was left at zero or negative by the plugin author. It also
+// returns warnings for every field that was adjusted, so callers can log them
+// during plugin loading.
+func (m *Manifest) EffectiveLimits() (ManifestLimits, []LimitWarning) {
 	l := m.Limits
+	var warnings []LimitWarning
+
 	if l.MaxMemoryMB <= 0 {
+		warnings = append(warnings, LimitWarning{
+			Field: "max_memory_mb", Requested: l.MaxMemoryMB,
+			Applied: DefaultMaxMemoryMB, Reason: limitReasonDefault,
+		})
 		l.MaxMemoryMB = DefaultMaxMemoryMB
-	}
-	if l.MaxMemoryMB > MaxMemoryMB {
+	} else if l.MaxMemoryMB > MaxMemoryMB {
+		warnings = append(warnings, LimitWarning{
+			Field: "max_memory_mb", Requested: l.MaxMemoryMB,
+			Applied: MaxMemoryMB, Reason: limitReasonCapped,
+		})
 		l.MaxMemoryMB = MaxMemoryMB
 	}
+
 	if l.MaxFuel <= 0 {
+		warnings = append(warnings, LimitWarning{
+			Field: "max_fuel", Requested: l.MaxFuel,
+			Applied: DefaultMaxFuel, Reason: limitReasonDefault,
+		})
 		l.MaxFuel = DefaultMaxFuel
 	}
+
 	if l.MaxStorageMB <= 0 {
+		warnings = append(warnings, LimitWarning{
+			Field: "max_storage_mb", Requested: l.MaxStorageMB,
+			Applied: DefaultMaxStorageMB, Reason: limitReasonDefault,
+		})
 		l.MaxStorageMB = DefaultMaxStorageMB
 	}
+
 	if l.MaxHTTPCallsPerMin <= 0 {
+		warnings = append(warnings, LimitWarning{
+			Field: "max_http_calls_per_minute", Requested: l.MaxHTTPCallsPerMin,
+			Applied: DefaultMaxHTTPCallsPerMin, Reason: limitReasonDefault,
+		})
 		l.MaxHTTPCallsPerMin = DefaultMaxHTTPCallsPerMin
 	}
+
 	if l.TimeoutSyncMs <= 0 {
+		warnings = append(warnings, LimitWarning{
+			Field: "timeout_sync_ms", Requested: l.TimeoutSyncMs,
+			Applied: DefaultSyncTimeoutMs, Reason: limitReasonDefault,
+		})
 		l.TimeoutSyncMs = DefaultSyncTimeoutMs
 	}
+
 	if l.TimeoutAsyncMs <= 0 {
+		warnings = append(warnings, LimitWarning{
+			Field: "timeout_async_ms", Requested: l.TimeoutAsyncMs,
+			Applied: DefaultAsyncTimeoutMs, Reason: limitReasonDefault,
+		})
 		l.TimeoutAsyncMs = DefaultAsyncTimeoutMs
 	}
+
 	if l.PoolSize <= 0 {
+		warnings = append(warnings, LimitWarning{
+			Field: "pool_size", Requested: l.PoolSize,
+			Applied: DefaultPoolSize, Reason: limitReasonDefault,
+		})
 		l.PoolSize = DefaultPoolSize
-	}
-	if l.PoolSize > MaxPoolSize {
+	} else if l.PoolSize > MaxPoolSize {
+		warnings = append(warnings, LimitWarning{
+			Field: "pool_size", Requested: l.PoolSize,
+			Applied: MaxPoolSize, Reason: limitReasonCapped,
+		})
 		l.PoolSize = MaxPoolSize
 	}
-	return l
+
+	return l, warnings
 }
 
 // ParsePermissions converts the human-friendly manifest permission fields into

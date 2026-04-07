@@ -47,6 +47,7 @@ const (
 	MetricOutboxBackpressureTriggered    = "platform_outbox_backpressure_triggered_total"
 	MetricOutboxReconciliationSeqGap     = "platform_outbox_reconciliation_sequence_gap"
 	MetricOutboxSequenceGaps             = "platform_outbox_sequence_gaps_total"
+	MetricHookCircuitBreakerTrips        = "platform_hook_circuit_breaker_trips_total"
 )
 
 // Metric help string constants.
@@ -91,6 +92,7 @@ const (
 	helpOutboxBackpressureTriggered    = "Times the outbox unpublished count exceeded the backpressure threshold."
 	helpOutboxReconciliationSeqGap     = "Gap between the last published outbox sequence and total JetStream messages. A sustained positive value may indicate missed events from the partial-commit edge case."
 	helpOutboxSequenceGaps             = "Detected sequence gaps in outbox event delivery on the consumer side."
+	helpHookCircuitBreakerTrips        = "Times a per-hook circuit breaker opened due to sustained plugin failures."
 )
 
 // Label name constants.
@@ -209,6 +211,9 @@ type Metrics struct {
 
 	// Consumer-side outbox sequence gap counter
 	OutboxSequenceGaps prometheus.Counter
+
+	// Hook circuit breaker trip counter
+	HookCircuitBreakerTrips *prometheus.CounterVec
 }
 
 // registerRuntimeCollectors replaces the default Go and process collectors with
@@ -409,5 +414,10 @@ func NewMetrics() *Metrics {
 			Name: MetricOutboxSequenceGaps,
 			Help: helpOutboxSequenceGaps,
 		}),
+
+		HookCircuitBreakerTrips: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: MetricHookCircuitBreakerTrips,
+			Help: helpHookCircuitBreakerTrips,
+		}, []string{LabelPlugin, LabelHook}),
 	}
 }

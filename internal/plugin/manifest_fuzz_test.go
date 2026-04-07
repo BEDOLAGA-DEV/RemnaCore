@@ -37,7 +37,7 @@ async = ["test.event"]
 		}
 		// If parsing succeeded, public methods must not panic.
 		manifest.Validate()
-		manifest.EffectiveLimits()
+		_, _ = manifest.EffectiveLimits()
 		manifest.ParsePermissions()
 		manifest.HookRegistrations("test-id")
 	})

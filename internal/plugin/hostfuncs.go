@@ -165,7 +165,7 @@ func (hf *HostFunctions) HTTPRequest(ctx context.Context, pluginSlug string, req
 	// on hf.HTTPClient, which validates resolved IPs in DialContext.
 
 	// Layer 4: per-plugin HTTP rate limiting from manifest limits.
-	limits := p.Manifest.EffectiveLimits()
+	limits, _ := p.Manifest.EffectiveLimits()
 	if limits.MaxHTTPCallsPerMin > 0 {
 		limiter := hf.getOrCreateHTTPLimiter(pluginSlug, limits.MaxHTTPCallsPerMin)
 		if !limiter.Allow() {

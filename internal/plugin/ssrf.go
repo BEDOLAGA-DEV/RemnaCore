@@ -1,3 +1,32 @@
+// ssrf.go implements four-layer SSRF (Server-Side Request Forgery) protection
+// for outbound HTTP requests made by WASM plugins.
+//
+// The layers are applied in order by [HostFunctions.HTTPRequest]:
+//
+//  1. URL path normalization ([normalizeURL]): collapses and rejects path
+//     traversal sequences ("..") before any network operation.
+//
+//  2. Manifest allowlist ([PermissionChecker.ValidateHTTPRequest]): the
+//     normalized URL must match at least one pattern in the plugin's manifest
+//     HTTP allowlist. Patterns support exact match and wildcard suffix
+//     ("https://api.example.com/*").
+//
+//  3. Pre-flight hostname check ([isBlockedHostname]): a fast, zero-DNS check
+//     that rejects URLs whose hostname matches known loopback, private, or
+//     cloud metadata addresses (localhost, 127.0.0.1, 169.254.169.254,
+//     metadata.google.internal, etc.). The comparison is case-insensitive.
+//
+//  4. Transport-level dial guard ([ssrfSafeDialContext]): the custom DialContext
+//     resolves the target hostname to IP addresses, then checks EVERY resolved
+//     IP against [blockedCIDRs] (RFC 1918, loopback, link-local, CGNAT, IPv6
+//     ULA/link-local). If any IP is private, the connection is rejected. The
+//     actual TCP connection is made to the resolved IP, not the original
+//     hostname, eliminating DNS rebinding attacks where a second resolution
+//     returns a different (internal) IP.
+//
+// These layers are independent: even if a plugin's manifest allowlist includes
+// "http://localhost:3000/*", layers 3 and 4 will still reject the request. This
+// ensures that a misconfigured allowlist cannot bypass network security.
 package plugin
 
 import (

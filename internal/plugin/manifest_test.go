@@ -238,7 +238,7 @@ func TestEffectiveLimits_FillsDefaults(t *testing.T) {
 		// Limits left at zero values
 	}
 
-	eff := m.EffectiveLimits()
+	eff, warnings := m.EffectiveLimits()
 
 	assert.Equal(t, DefaultMaxMemoryMB, eff.MaxMemoryMB)
 	assert.Equal(t, DefaultMaxFuel, eff.MaxFuel)
@@ -246,6 +246,24 @@ func TestEffectiveLimits_FillsDefaults(t *testing.T) {
 	assert.Equal(t, DefaultMaxHTTPCallsPerMin, eff.MaxHTTPCallsPerMin)
 	assert.Equal(t, DefaultSyncTimeoutMs, eff.TimeoutSyncMs)
 	assert.Equal(t, DefaultAsyncTimeoutMs, eff.TimeoutAsyncMs)
+
+	// All fields were zero, so every field should produce a default warning.
+	expectedFields := map[string]bool{
+		"max_memory_mb":            false,
+		"max_fuel":                 false,
+		"max_storage_mb":           false,
+		"max_http_calls_per_minute": false,
+		"timeout_sync_ms":          false,
+		"timeout_async_ms":         false,
+		"pool_size":                false,
+	}
+	for _, w := range warnings {
+		expectedFields[w.Field] = true
+		assert.Equal(t, limitReasonDefault, w.Reason, "field %s", w.Field)
+	}
+	for field, found := range expectedFields {
+		assert.True(t, found, "expected default warning for field %s", field)
+	}
 }
 
 func TestEffectiveLimits_PreservesExplicitValues(t *testing.T) {
@@ -261,10 +279,11 @@ func TestEffectiveLimits_PreservesExplicitValues(t *testing.T) {
 			MaxHTTPCallsPerMin: 200,
 			TimeoutSyncMs:      10000,
 			TimeoutAsyncMs:     60000,
+			PoolSize:           8,
 		},
 	}
 
-	eff := m.EffectiveLimits()
+	eff, warnings := m.EffectiveLimits()
 
 	assert.Equal(t, 256, eff.MaxMemoryMB)
 	assert.Equal(t, 5_000_000, eff.MaxFuel)
@@ -272,6 +291,48 @@ func TestEffectiveLimits_PreservesExplicitValues(t *testing.T) {
 	assert.Equal(t, 200, eff.MaxHTTPCallsPerMin)
 	assert.Equal(t, 10000, eff.TimeoutSyncMs)
 	assert.Equal(t, 60000, eff.TimeoutAsyncMs)
+	assert.Equal(t, 8, eff.PoolSize)
+	assert.Empty(t, warnings, "explicit valid values should produce no warnings")
+}
+
+func TestEffectiveLimits_CappedAtMaximum(t *testing.T) {
+	m := &Manifest{
+		Plugin: ManifestPlugin{
+			ID: "test", Name: "Test", Version: "1.0.0",
+		},
+		Hooks: ManifestHooks{Sync: []string{"hook.a"}},
+		Limits: ManifestLimits{
+			MaxMemoryMB:        MaxMemoryMB + 1024,
+			MaxFuel:            5_000_000,
+			MaxStorageMB:       500,
+			MaxHTTPCallsPerMin: 200,
+			TimeoutSyncMs:      10000,
+			TimeoutAsyncMs:     60000,
+			PoolSize:           MaxPoolSize + 8,
+		},
+	}
+
+	eff, warnings := m.EffectiveLimits()
+
+	assert.Equal(t, MaxMemoryMB, eff.MaxMemoryMB, "memory should be capped")
+	assert.Equal(t, MaxPoolSize, eff.PoolSize, "pool size should be capped")
+
+	// Exactly two capped warnings expected.
+	cappedWarnings := make(map[string]LimitWarning)
+	for _, w := range warnings {
+		if w.Reason == limitReasonCapped {
+			cappedWarnings[w.Field] = w
+		}
+	}
+	assert.Len(t, cappedWarnings, 2)
+
+	memWarn := cappedWarnings["max_memory_mb"]
+	assert.Equal(t, MaxMemoryMB+1024, memWarn.Requested)
+	assert.Equal(t, MaxMemoryMB, memWarn.Applied)
+
+	poolWarn := cappedWarnings["pool_size"]
+	assert.Equal(t, MaxPoolSize+8, poolWarn.Requested)
+	assert.Equal(t, MaxPoolSize, poolWarn.Applied)
 }
 
 func TestParsePermissions(t *testing.T) {

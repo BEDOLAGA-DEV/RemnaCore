@@ -111,7 +111,7 @@ func newPluginInstancePool(slug string, factory WASMRunnerFactory, wasm []byte, 
 
 	var limits ManifestLimits
 	if manifest != nil {
-		limits = manifest.EffectiveLimits()
+		limits, _ = manifest.EffectiveLimits()
 	}
 
 	p := &PluginInstancePool{
@@ -434,7 +434,17 @@ func (rp *RuntimePool) LoadPlugin(p *Plugin) error {
 	if rp.runnerFactory != nil && len(p.WASMBytes) > 0 {
 		poolSize := DefaultPoolSize
 		if p.Manifest != nil {
-			poolSize = p.Manifest.EffectiveLimits().PoolSize
+			limits, warnings := p.Manifest.EffectiveLimits()
+			poolSize = limits.PoolSize
+			for _, w := range warnings {
+				rp.logger.Warn("plugin resource limit adjusted",
+					"slug", p.Slug,
+					"field", w.Field,
+					"requested", w.Requested,
+					"applied", w.Applied,
+					"reason", w.Reason,
+				)
+			}
 		}
 
 		pool, err := newPluginInstancePool(p.Slug, rp.runnerFactory, p.WASMBytes, p.Config, p.Manifest, poolSize)
