@@ -35,10 +35,14 @@ func checkSDKCompatibility(pluginSDKVersion string) error {
 }
 
 // parseMajorVersion extracts the major version number from a semver string.
-// It strips leading constraint characters (^, ~, >=, etc.) before parsing.
+// It strips a leading "v" prefix and constraint characters (^, ~, >=, etc.)
+// before parsing.
 func parseMajorVersion(version string) (int, error) {
 	// Strip leading constraint characters.
 	version = strings.TrimLeft(version, "^~>=<! ")
+
+	// Strip leading "v" prefix (e.g., "v1.2.3" -> "1.2.3").
+	version = strings.TrimPrefix(version, "v")
 
 	parts := strings.SplitN(version, ".", semverComponentCount)
 	if len(parts) == 0 || parts[0] == "" {

@@ -26,13 +26,14 @@ func computeWASMHash(data []byte) string {
 // disable, uninstall, and configuration updates. It is the single source of
 // truth for plugin lifecycle operations.
 type LifecycleManager struct {
-	repo       PluginRepository
-	storage    StorageService
-	runtime    *RuntimePool
-	dispatcher *HookDispatcher
-	publisher  domainevent.Publisher
-	logger     *slog.Logger
-	clock      clock.Clock
+	repo           PluginRepository
+	storage        StorageService
+	runtime        *RuntimePool
+	dispatcher     *HookDispatcher
+	hostFunctions  *HostFunctions
+	publisher      domainevent.Publisher
+	logger         *slog.Logger
+	clock          clock.Clock
 }
 
 // NewLifecycleManager creates a LifecycleManager with all required
@@ -42,18 +43,20 @@ func NewLifecycleManager(
 	storage StorageService,
 	runtime *RuntimePool,
 	dispatcher *HookDispatcher,
+	hostFunctions *HostFunctions,
 	publisher domainevent.Publisher,
 	logger *slog.Logger,
 	clk clock.Clock,
 ) *LifecycleManager {
 	return &LifecycleManager{
-		repo:       repo,
-		storage:    storage,
-		runtime:    runtime,
-		dispatcher: dispatcher,
-		publisher:  publisher,
-		logger:     logger,
-		clock:      clk,
+		repo:          repo,
+		storage:       storage,
+		runtime:       runtime,
+		dispatcher:    dispatcher,
+		hostFunctions: hostFunctions,
+		publisher:     publisher,
+		logger:        logger,
+		clock:         clk,
 	}
 }
 
@@ -187,6 +190,11 @@ func (lm *LifecycleManager) Disable(ctx context.Context, pluginID string) error 
 	// Unload from runtime pool (ignore not-found if not loaded).
 	if unloadErr := lm.runtime.UnloadPlugin(p.Slug); unloadErr != nil && !errors.Is(unloadErr, ErrPluginNotFound) {
 		return fmt.Errorf("unloading plugin from runtime: %w", unloadErr)
+	}
+
+	// Remove stale HTTP rate limiter so a re-enable picks up fresh limits.
+	if lm.hostFunctions != nil {
+		lm.hostFunctions.ClearPluginHTTPLimiter(p.Slug)
 	}
 
 	if err := p.Disable(lm.clock.Now()); err != nil {
@@ -359,6 +367,11 @@ func (lm *LifecycleManager) HotReload(ctx context.Context, pluginID string, mani
 	// 5. Detach the old pool before loading the new version so we can drain
 	// it explicitly after the swap (rather than fire-and-forget).
 	oldPool := lm.runtime.DetachPool(old.Slug)
+
+	// Clear stale HTTP rate limiter so the new manifest's limits take effect.
+	if lm.hostFunctions != nil {
+		lm.hostFunctions.ClearPluginHTTPLimiter(old.Slug)
+	}
 
 	// 6. Pre-compile new WASM and install as the active pool.
 	if err := lm.runtime.LoadPlugin(updated); err != nil {

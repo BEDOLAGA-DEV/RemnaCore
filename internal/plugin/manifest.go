@@ -3,12 +3,39 @@ package plugin
 import (
 	"fmt"
 	"regexp"
+	"strings"
 
 	toml "github.com/pelletier/go-toml/v2"
 )
 
 // slugRe is compiled once and reused for every validation call.
 var slugRe = regexp.MustCompile(PluginSlugPattern)
+
+// AllowedHookPrefixes defines the valid namespace prefixes for plugin hooks.
+// Every hook name declared in a manifest must start with one of these prefixes.
+var AllowedHookPrefixes = []string{
+	"checkout.",
+	"subscription.",
+	"pricing.",
+	"payment.",
+	"vpn.",
+	"binding.",
+	"invoice.",
+	"plugin.",
+	"notification.",
+}
+
+// validateHookName checks that a hook name starts with one of the allowed
+// namespace prefixes. Returns ErrInvalidManifest if no prefix matches.
+func validateHookName(name string) error {
+	for _, prefix := range AllowedHookPrefixes {
+		if strings.HasPrefix(name, prefix) {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: hook %q has unknown prefix (allowed: %v)",
+		ErrInvalidManifest, name, AllowedHookPrefixes)
+}
 
 // Manifest is the strongly-typed representation of a plugin.toml file.
 type Manifest struct {
@@ -108,6 +135,18 @@ func (m *Manifest) Validate() error {
 	if len(m.Hooks.Sync) == 0 && len(m.Hooks.Async) == 0 {
 		return fmt.Errorf("%w: at least one hook (sync or async) is required", ErrInvalidManifest)
 	}
+
+	for _, hook := range m.Hooks.Sync {
+		if err := validateHookName(hook); err != nil {
+			return err
+		}
+	}
+	for _, hook := range m.Hooks.Async {
+		if err := validateHookName(hook); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -203,6 +242,22 @@ func (m *Manifest) EffectiveLimits() (ManifestLimits, []LimitWarning) {
 	}
 
 	return l, warnings
+}
+
+// configFieldTypeSecret is the manifest config field type that marks a value
+// as sensitive. Values for secret fields are redacted in admin API responses
+// and structured logs.
+const configFieldTypeSecret = "secret"
+
+// IsSecretField reports whether the config field identified by key is declared
+// as type="secret" in the manifest. Returns false if the manifest or its
+// config map is nil, or if the key is not declared.
+func (m *Manifest) IsSecretField(key string) bool {
+	if m == nil || m.Config == nil {
+		return false
+	}
+	field, ok := m.Config[key]
+	return ok && field.Type == configFieldTypeSecret
 }
 
 // ParsePermissions converts the human-friendly manifest permission fields into

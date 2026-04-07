@@ -26,16 +26,17 @@ const (
 	RetiredPoolGracePeriod = 30 * time.Second
 )
 
-// WASM runner corruption indicators. If a runner error contains any of these
-// substrings (case-insensitive), the runner is considered corrupted and must
-// not be returned to the pool.
+// wasmCorruptionIndicators are patterns that indicate WASM runtime corruption,
+// as opposed to business logic errors. These are specific to Extism/wazero
+// error messages to avoid false positives from Go runtime errors.
 var wasmCorruptionIndicators = []string{
-	"wasm",
-	"memory",
-	"unreachable",
-	"out of fuel",
-	"panic",
-	"trap",
+	"wasm trap:",           // wazero trap errors
+	"wazero:",              // wazero runtime errors
+	"extism:",              // Extism SDK errors
+	"out of fuel",          // fuel exhaustion (CPU budget)
+	"unreachable",          // WASM unreachable instruction
+	"memory.grow",          // WASM memory grow failure
+	"call stack exhausted", // WASM stack overflow
 }
 
 // WASMRunner abstracts the execution of WASM functions so the runtime pool and
@@ -142,7 +143,14 @@ func newPluginInstancePool(slug string, factory WASMRunnerFactory, wasm []byte, 
 // Acquire gets an instance from the pool, blocking until one is available or
 // the context is cancelled/timed out. Returns an error if the pool is
 // draining.
+//
+// A double-check pattern is used to close the race window between the initial
+// draining check and the channel read. Without the post-acquire check, a
+// concurrent Drain call could set draining=true after our check but before we
+// read from the channel, allowing a caller to acquire a runner from a pool
+// that is already draining.
 func (p *PluginInstancePool) Acquire(ctx context.Context) (WASMRunner, error) {
+	// Fast-path check — if already draining, fail immediately.
 	p.mu.Lock()
 	if p.draining {
 		p.mu.Unlock()
@@ -152,6 +160,18 @@ func (p *PluginInstancePool) Acquire(ctx context.Context) (WASMRunner, error) {
 
 	select {
 	case pr := <-p.pool:
+		// Double-check draining after acquire — covers the race window
+		// between the pre-check and the channel read.
+		p.mu.Lock()
+		if p.draining {
+			p.mu.Unlock()
+			// Pool started draining between our check and acquire.
+			// Return the runner to trigger drain completion.
+			p.Release(pr)
+			return nil, fmt.Errorf("%w: plugin %s", ErrPluginDraining, p.slug)
+		}
+		p.mu.Unlock()
+
 		if pr.useCount.Load() >= MaxRunnerUses {
 			// Runner exhausted — close and create a fresh replacement.
 			// Close is best-effort during cleanup; error would not change control flow.

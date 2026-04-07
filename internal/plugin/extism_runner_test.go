@@ -114,7 +114,7 @@ func TestMemoryLimits_PropagatedThroughPool(t *testing.T) {
 
 	m := &Manifest{
 		Plugin: ManifestPlugin{ID: "mem-test", Name: "MemTest", Version: "1.0.0", SDKVersion: CurrentSDKVersion},
-		Hooks:  ManifestHooks{Sync: []string{"hook.test"}},
+		Hooks:  ManifestHooks{Sync: []string{"plugin.test"}},
 		Limits: ManifestLimits{MaxMemoryMB: 128},
 	}
 	p, _ := NewPlugin(m, []byte("fake-wasm"), time.Now())
@@ -137,7 +137,7 @@ func TestMemoryLimits_DefaultAppliedWhenZero(t *testing.T) {
 
 	m := &Manifest{
 		Plugin: ManifestPlugin{ID: "mem-default", Name: "MemDefault", Version: "1.0.0", SDKVersion: CurrentSDKVersion},
-		Hooks:  ManifestHooks{Sync: []string{"hook.test"}},
+		Hooks:  ManifestHooks{Sync: []string{"plugin.test"}},
 		// MaxMemoryMB intentionally omitted (zero value).
 	}
 	p, _ := NewPlugin(m, []byte("fake-wasm"), time.Now())

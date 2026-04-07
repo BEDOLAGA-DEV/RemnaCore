@@ -40,7 +40,7 @@ func mockFactory(callFn func(ctx context.Context, funcName string, input []byte)
 func testPlugin(slug string) *Plugin {
 	m := &Manifest{
 		Plugin: ManifestPlugin{ID: slug, Name: "Test", Version: "1.0.0", SDKVersion: CurrentSDKVersion},
-		Hooks:  ManifestHooks{Sync: []string{"hook.test"}},
+		Hooks:  ManifestHooks{Sync: []string{"plugin.test"}},
 	}
 	p, _ := NewPlugin(m, []byte("fake-wasm"), time.Now())
 	return p
@@ -49,7 +49,7 @@ func testPlugin(slug string) *Plugin {
 func testPluginWithPoolSize(slug string, poolSize int) *Plugin {
 	m := &Manifest{
 		Plugin: ManifestPlugin{ID: slug, Name: "Test", Version: "1.0.0", SDKVersion: CurrentSDKVersion},
-		Hooks:  ManifestHooks{Sync: []string{"hook.test"}},
+		Hooks:  ManifestHooks{Sync: []string{"plugin.test"}},
 		Limits: ManifestLimits{PoolSize: poolSize},
 	}
 	p, _ := NewPlugin(m, []byte("fake-wasm"), time.Now())
@@ -673,8 +673,8 @@ func TestIsRunnerCorrupted(t *testing.T) {
 			corrupted: true,
 		},
 		{
-			name:      "memory limit exceeded",
-			err:       fmt.Errorf("memory limit exceeded"),
+			name:      "memory.grow failure",
+			err:       fmt.Errorf("memory.grow failed: limit exceeded"),
 			corrupted: true,
 		},
 		{
@@ -683,14 +683,24 @@ func TestIsRunnerCorrupted(t *testing.T) {
 			corrupted: true,
 		},
 		{
-			name:      "panic in wasm",
-			err:       fmt.Errorf("panic: runtime error"),
+			name:      "extism runtime error",
+			err:       fmt.Errorf("extism: runtime error"),
 			corrupted: true,
 		},
 		{
-			name:      "trap instruction",
-			err:       fmt.Errorf("trap: call stack exhausted"),
+			name:      "call stack exhausted",
+			err:       fmt.Errorf("call stack exhausted"),
 			corrupted: true,
+		},
+		{
+			name:      "memory limit (non-wasm)",
+			err:       fmt.Errorf("memory limit exceeded"),
+			corrupted: false,
+		},
+		{
+			name:      "panic (non-wasm)",
+			err:       fmt.Errorf("panic: runtime error"),
+			corrupted: false,
 		},
 		{
 			name:      "context deadline exceeded",
@@ -728,6 +738,74 @@ func TestIsRunnerCorrupted(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := isRunnerCorrupted(tt.err)
 			assert.Equal(t, tt.corrupted, result)
+		})
+	}
+}
+
+func TestIsRunnerCorrupted_NoFalsePositives(t *testing.T) {
+	tests := []struct {
+		name      string
+		err       error
+		corrupted bool
+	}{
+		// These should NOT be detected as WASM corruption.
+		{
+			name:      "Go memory allocation error",
+			err:       errors.New("insufficient memory for allocation"),
+			corrupted: false,
+		},
+		{
+			name:      "Go runtime panic",
+			err:       errors.New("panic: runtime error: index out of range"),
+			corrupted: false,
+		},
+		{
+			name:      "Go out of memory",
+			err:       errors.New("out of memory"),
+			corrupted: false,
+		},
+		{
+			name:      "network error",
+			err:       fmt.Errorf("connection refused"),
+			corrupted: false,
+		},
+		{
+			name:      "generic trap word in business error",
+			err:       errors.New("trap occurred in request processing"),
+			corrupted: false,
+		},
+		// These SHOULD be detected as WASM corruption.
+		{
+			name:      "wasm trap unreachable",
+			err:       errors.New("wasm trap: unreachable"),
+			corrupted: true,
+		},
+		{
+			name:      "wazero memory.grow",
+			err:       errors.New("wazero: memory.grow failed"),
+			corrupted: true,
+		},
+		{
+			name:      "extism plugin call",
+			err:       errors.New("extism: plugin call failed"),
+			corrupted: true,
+		},
+		{
+			name:      "fuel exhaustion",
+			err:       errors.New("out of fuel"),
+			corrupted: true,
+		},
+		{
+			name:      "call stack exhausted",
+			err:       errors.New("call stack exhausted"),
+			corrupted: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.corrupted, isRunnerCorrupted(tt.err),
+				"isRunnerCorrupted(%q) = %v, want %v", tt.err.Error(), isRunnerCorrupted(tt.err), tt.corrupted)
 		})
 	}
 }

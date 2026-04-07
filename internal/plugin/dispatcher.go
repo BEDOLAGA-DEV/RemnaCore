@@ -22,6 +22,14 @@ import (
 // NATS subject prefix for async hook dispatch.
 const asyncHookSubjectPrefix = "plugin.hook."
 
+// asyncRetryAttempts is the maximum number of times DispatchAsync will attempt
+// to publish an event before giving up.
+const asyncRetryAttempts = 3
+
+// asyncRetryDelays defines the backoff duration before the 2nd and 3rd attempt.
+// Length must equal asyncRetryAttempts - 1.
+var asyncRetryDelays = [...]time.Duration{1 * time.Second, 5 * time.Second}
+
 // HookVersionSeparator separates a base hook name from its version number.
 const HookVersionSeparator = ".v"
 
@@ -443,10 +451,11 @@ func (d *HookDispatcher) hasHandlers(hookName string) bool {
 	return ok && len(regs) > 0
 }
 
-// DispatchAsync dispatches a hook in a background goroutine with panic recovery.
-// The hook event is published to NATS subject "plugin.hook.{hookName}" for
-// asynchronous processing. Used for post-lifecycle hooks where the result is
-// not needed. Errors are logged but do not propagate to the caller.
+// DispatchAsync dispatches a hook in a background goroutine with panic recovery
+// and in-memory retry with backoff. The hook event is published to NATS subject
+// "plugin.hook.{hookName}" for asynchronous processing. Up to asyncRetryAttempts
+// are made before the event is dropped. Errors are logged but do not propagate
+// to the caller.
 func (d *HookDispatcher) DispatchAsync(ctx context.Context, hookName string, payload json.RawMessage) {
 	go func() {
 		defer func() {
@@ -470,12 +479,26 @@ func (d *HookDispatcher) DispatchAsync(ctx context.Context, hookName string, pay
 			"payload":   string(payload),
 		}, d.clock.Now())
 
-		if err := d.publisher.Publish(ctx, event); err != nil {
-			d.logger.Warn("async hook dispatch failed",
+		var lastErr error
+		for attempt := range asyncRetryAttempts {
+			if attempt > 0 {
+				time.Sleep(asyncRetryDelays[attempt-1])
+			}
+			if err := d.publisher.Publish(ctx, event); err == nil {
+				return
+			} else {
+				lastErr = err
+			}
+			d.logger.Warn("async hook dispatch failed, retrying",
 				"hook", hookName,
-				"error", err,
+				"attempt", attempt+1,
+				"error", lastErr,
 			)
 		}
+		d.logger.Error("async hook dispatch permanently failed",
+			"hook", hookName,
+			"error", lastErr,
+		)
 	}()
 }
 

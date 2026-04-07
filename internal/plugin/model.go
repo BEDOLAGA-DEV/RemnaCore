@@ -102,6 +102,32 @@ func NewPlugin(manifest *Manifest, wasmBytes []byte, now time.Time) (*Plugin, er
 	}, nil
 }
 
+// secretRedactionMarker replaces secret config values in API responses and logs.
+const secretRedactionMarker = "***REDACTED***"
+
+// GetConfigValue returns the config value for the given key. Values for fields
+// declared as type="secret" in the manifest are returned verbatim here; use
+// RedactedConfig for admin API responses and logging.
+func (p *Plugin) GetConfigValue(key string) string {
+	return p.Config[key]
+}
+
+// RedactedConfig returns a copy of the config map with secret values replaced
+// by a redaction marker. Fields are considered secret when declared as
+// type="secret" in the plugin manifest. This is used for admin API responses
+// and structured logging to prevent accidental secret leakage.
+func (p *Plugin) RedactedConfig() map[string]string {
+	redacted := make(map[string]string, len(p.Config))
+	for k, v := range p.Config {
+		if p.Manifest != nil && p.Manifest.IsSecretField(k) {
+			redacted[k] = secretRedactionMarker
+			continue
+		}
+		redacted[k] = v
+	}
+	return redacted
+}
+
 // Enable transitions the plugin to StatusEnabled.
 func (p *Plugin) Enable(now time.Time) error {
 	if !p.canTransitionTo(StatusEnabled) {

@@ -16,10 +16,22 @@ type ExtismRunner struct {
 
 // applyManifestLimits configures resource limits and plugin config on an Extism
 // manifest. This consolidates the shared logic between factory variants.
+//
+// Resource limit enforcement:
+//   - Memory (ENFORCED): MaxMemoryMB is converted to WASM pages via
+//     WASMPagesPerMB (1 MB = 16 pages of 64 KB). Exceeding this limit causes
+//     a wazero trap at runtime.
+//   - CPU (INDIRECT): MaxFuel is mapped to the Extism manifest Timeout field
+//     (milliseconds). The Extism Go SDK does not support fuel-based CPU limits
+//     directly; timeout-based cancellation via context is used instead. A plugin
+//     that enters an infinite loop will be terminated when the timeout elapses.
 func applyManifestLimits(m *extism.Manifest, config map[string]string, limits ManifestLimits) {
+	// Note: Extism Go SDK does not support fuel-based CPU limits directly.
+	// MaxFuel is mapped to the timeout field as the closest available control.
 	if limits.MaxFuel > 0 {
 		m.Timeout = uint64(limits.MaxFuel)
 	}
+	// Memory cap: enforced by wazero at runtime. Growth beyond MaxPages traps.
 	if limits.MaxMemoryMB > 0 {
 		m.Memory = &extism.ManifestMemory{
 			MaxPages: uint32(limits.MaxMemoryMB * WASMPagesPerMB),

@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"sync"
@@ -48,6 +49,46 @@ func (p *syncTestPublisher) Events() []domainevent.Event {
 	out := make([]domainevent.Event, len(p.events))
 	copy(out, p.events)
 	return out
+}
+
+// failNTimesPublisher is a publisher that returns errors for the first N calls,
+// then succeeds. Thread-safe for use with DispatchAsync goroutines.
+type failNTimesPublisher struct {
+	mu          sync.Mutex
+	failCount   int // number of failures before success
+	attempts    int
+	successes   int
+	failures    int
+}
+
+func (p *failNTimesPublisher) Publish(_ context.Context, _ domainevent.Event) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.attempts++
+	if p.failures < p.failCount {
+		p.failures++
+		return fmt.Errorf("simulated publish failure %d", p.failures)
+	}
+	p.successes++
+	return nil
+}
+
+func (p *failNTimesPublisher) AttemptCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.attempts
+}
+
+func (p *failNTimesPublisher) SuccessCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.successes
+}
+
+func (p *failNTimesPublisher) FailureCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.failures
 }
 
 // testErrorLogger returns a logger that only emits error-level messages,
@@ -110,7 +151,7 @@ func testPluginWithPerms(perms []PermissionScope) *Plugin {
 				SDKVersion: CurrentSDKVersion,
 			},
 			Hooks: ManifestHooks{
-				Sync: []string{"test_hook"},
+				Sync: []string{"plugin.test_hook"},
 			},
 		},
 		Permissions: perms,

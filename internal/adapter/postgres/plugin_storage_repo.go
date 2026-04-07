@@ -74,6 +74,11 @@ func (r *PluginStorageRepository) Get(ctx context.Context, pluginSlug, key strin
 	return row.Value, nil
 }
 
+// Set stores a value under a key with optional TTL. Quota enforcement is
+// atomic: an advisory lock per plugin slug (StorageAdvisoryLock) serialises
+// concurrent Set calls for the same plugin within a transaction, preventing
+// TOCTOU races where two concurrent requests could both read the quota as
+// "under limit" and then both write, exceeding the quota.
 func (r *PluginStorageRepository) Set(ctx context.Context, pluginSlug, key string, value []byte, ttlSeconds int64) error {
 	return r.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		q := gen.New(DBFromContext(txCtx, r.pool))

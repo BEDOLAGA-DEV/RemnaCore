@@ -4,11 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/sdk"
 )
+
+// MaxCompensationDuration is the total deadline for the entire compensation
+// chain. Individual plugin timeouts are capped by the remaining budget.
+const MaxCompensationDuration = 15 * time.Second
 
 // compensateChain calls "{hookName}.compensate" on each previously executed
 // plugin in reverse order, passing the original payload. Best-effort: failures
@@ -20,11 +25,31 @@ import (
 func (d *HookDispatcher) compensateChain(hookName string, executedPlugins []string, originalPayload json.RawMessage) []hookdispatch.FailedCompensation {
 	compensateHook := hookName + compensateHookSuffix
 
+	// Create a shared deadline for the entire compensation chain.
+	ctx, cancel := context.WithTimeout(context.Background(), MaxCompensationDuration)
+	defer cancel()
+
 	var failures []hookdispatch.FailedCompensation
 
 	// Reverse order — last executed first.
 	for i := len(executedPlugins) - 1; i >= 0; i-- {
 		slug := executedPlugins[i]
+
+		// Check if total deadline exceeded before calling next plugin.
+		if ctx.Err() != nil {
+			d.logger.Error("compensation chain deadline exceeded, skipping remaining",
+				"hook", hookName,
+				"remaining_plugins", i+1,
+			)
+			for j := i; j >= 0; j-- {
+				failures = append(failures, hookdispatch.FailedCompensation{
+					PluginSlug: executedPlugins[j],
+					HookName:   compensateHook,
+					Error:      "compensation chain deadline exceeded",
+				})
+			}
+			break
+		}
 
 		// Copy the registrations slice under lock to avoid races with
 		// concurrent Register/Unregister calls.
@@ -65,8 +90,15 @@ func (d *HookDispatcher) compensateChain(hookName string, executedPlugins []stri
 			continue
 		}
 
-		timeout := d.syncTimeoutForPlugin(slug)
-		callCtx, callCancel := context.WithTimeout(context.Background(), timeout)
+		// Per-plugin timeout capped by remaining chain deadline.
+		perPlugin := d.syncTimeoutForPlugin(slug)
+		deadline, _ := ctx.Deadline()
+		remaining := time.Until(deadline)
+		if perPlugin > remaining {
+			perPlugin = remaining
+		}
+
+		callCtx, callCancel := context.WithTimeout(ctx, perPlugin)
 		_, err = d.runtime.CallHook(callCtx, slug, targetReg.FuncName, inputBytes)
 		callCancel()
 

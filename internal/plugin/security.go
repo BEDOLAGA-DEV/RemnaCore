@@ -11,13 +11,24 @@
 //
 //   - Memory isolation: every plugin instance has its own linear memory; one
 //     plugin cannot read or write another plugin's memory.
-//   - CPU budget: fuel-based execution limits prevent infinite loops and
-//     runaway computations. The fuel budget is configured per-plugin via
-//     ManifestLimits.MaxFuel (default: [DefaultMaxFuel]).
+//   - Memory cap (ENFORCED): ManifestLimits.MaxMemoryMB (default:
+//     [DefaultMaxMemoryMB], hard cap: [MaxMemoryMB]) limits WASM linear memory
+//     growth. Enforced via [extism.ManifestMemory.MaxPages] in
+//     [applyManifestLimits] (1 MB = [WASMPagesPerMB] pages of 64 KB each).
+//     Exceeding the limit causes a wazero trap.
+//   - CPU budget (INDIRECT): the Extism Go SDK does not expose fuel-based CPU
+//     limits directly. ManifestLimits.MaxFuel is mapped to the Extism manifest
+//     Timeout field (milliseconds), which cancels execution via context after
+//     the elapsed time. A plugin that enters an infinite loop will be
+//     terminated after the timeout elapses. For sync hooks, an additional
+//     per-call timeout from ManifestLimits.TimeoutSyncMs (default:
+//     [DefaultSyncTimeoutMs]) is applied by the dispatcher. Together these
+//     provide bounded CPU usage without true fuel metering.
 //   - No direct filesystem, network, or system call access: all I/O is
 //     mediated through host functions.
-//   - Memory cap: ManifestLimits.MaxMemoryMB (default: [DefaultMaxMemoryMB],
-//     hard cap: [MaxMemoryMB]) limits WASM linear memory growth.
+//
+// See [applyManifestLimits] in extism_runner.go for the enforcement
+// implementation.
 //
 // # Layer 2: Permission System (runtime enforcement)
 //
@@ -59,7 +70,9 @@
 //   - Key validation via [ValidateStorageKey] rejects path traversal (".."),
 //     path separators ("/" and "\"), null bytes, control characters, and
 //     oversized keys.
-//   - Quota enforcement uses advisory locks and transactions for atomicity.
+//   - Quota enforcement is atomic: an advisory lock per plugin slug prevents
+//     concurrent Set requests from bypassing the quota check (TOCTOU-safe).
+//     See StorageAdvisoryLock in plugin_storage_repo.go.
 //   - TTL support enables automatic expiration of temporary data.
 //   - Keys are limited to [MaxStorageKeyLen] bytes.
 //

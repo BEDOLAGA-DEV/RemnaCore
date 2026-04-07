@@ -197,6 +197,31 @@ func TestDispatchAsync_NilPublisher(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 }
 
+func TestDispatchAsync_RetriesOnFailure(t *testing.T) {
+	pub := &failNTimesPublisher{failCount: 2}
+	rp := NewRuntimePool(testErrorLogger(), nil)
+	d := NewHookDispatcher(rp, pub, nil, testErrorLogger(), clock.NewReal())
+
+	d.DispatchAsync(context.Background(), "retry.hook", json.RawMessage(`{"key":"val"}`))
+
+	// Wait for retries to complete (2 failures with backoff, then success).
+	require.Eventually(t, func() bool { return pub.SuccessCount() == 1 }, 15*time.Second, 50*time.Millisecond)
+	assert.Equal(t, 2, pub.FailureCount())
+}
+
+func TestDispatchAsync_PermanentFailure(t *testing.T) {
+	// All 3 attempts will fail — publisher always returns an error.
+	pub := &failNTimesPublisher{failCount: asyncRetryAttempts + 1}
+	rp := NewRuntimePool(testErrorLogger(), nil)
+	d := NewHookDispatcher(rp, pub, nil, testErrorLogger(), clock.NewReal())
+
+	d.DispatchAsync(context.Background(), "perm-fail.hook", json.RawMessage(`{}`))
+
+	// Wait for all retry attempts to exhaust.
+	require.Eventually(t, func() bool { return pub.AttemptCount() == asyncRetryAttempts }, 15*time.Second, 50*time.Millisecond)
+	assert.Equal(t, 0, pub.SuccessCount())
+}
+
 func TestDispatchSync_SkipsAsyncRegistrations(t *testing.T) {
 	d, _ := dispatcherWithMock(t, map[string]func(ctx context.Context, funcName string, input []byte) ([]byte, error){
 		"plugin-a": func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
@@ -249,7 +274,7 @@ func TestDispatchSync_Timeout_CustomManifest(t *testing.T) {
 	// Build a plugin whose manifest declares a 50ms sync timeout.
 	m := &Manifest{
 		Plugin: ManifestPlugin{ID: "fast-timeout", Name: "FastTimeout", Version: "1.0.0", SDKVersion: CurrentSDKVersion},
-		Hooks:  ManifestHooks{Sync: []string{"hook.test"}},
+		Hooks:  ManifestHooks{Sync: []string{"plugin.test"}},
 		Limits: ManifestLimits{TimeoutSyncMs: 50},
 	}
 	p, err := NewPlugin(m, []byte("fake-wasm"), time.Now())

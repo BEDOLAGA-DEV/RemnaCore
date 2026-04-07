@@ -355,6 +355,13 @@ func (hf *HostFunctions) Log(pluginSlug, level, message string, fields map[strin
 	}
 }
 
+// ClearPluginHTTPLimiter removes the per-plugin HTTP rate limiter. Called
+// during disable, uninstall, or hot-reload to prevent stale limiters from
+// persisting across plugin lifecycle transitions.
+func (hf *HostFunctions) ClearPluginHTTPLimiter(pluginSlug string) {
+	hf.httpLimiters.Delete(pluginSlug)
+}
+
 // getOrCreateHTTPLimiter returns the existing rate limiter for a plugin slug,
 // or atomically creates one with the given per-minute limit.
 func (hf *HostFunctions) getOrCreateHTTPLimiter(slug string, maxPerMin int) *httpRateLimiter {

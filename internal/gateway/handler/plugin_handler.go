@@ -37,6 +37,50 @@ type updatePluginConfigRequest struct {
 	Config map[string]string `json:"config"`
 }
 
+// --- Response DTOs ---
+
+// pluginResponse is the admin API representation of a plugin. Secret config
+// values declared as type="secret" in the manifest are replaced with a
+// redaction marker to prevent accidental leakage.
+type pluginResponse struct {
+	ID          string            `json:"id"`
+	Slug        string            `json:"slug"`
+	Name        string            `json:"name"`
+	Version     string            `json:"version"`
+	Description string            `json:"description"`
+	Author      string            `json:"author"`
+	License     string            `json:"license"`
+	Status      string            `json:"status"`
+	Config      map[string]string `json:"config"`
+	ErrorLog    string            `json:"error_log,omitempty"`
+}
+
+// toPluginResponse maps a domain Plugin to the admin API response with secret
+// config values redacted.
+func toPluginResponse(p *plugin.Plugin) pluginResponse {
+	return pluginResponse{
+		ID:          p.ID,
+		Slug:        p.Slug,
+		Name:        p.Name,
+		Version:     p.Version,
+		Description: p.Description,
+		Author:      p.Author,
+		License:     p.License,
+		Status:      string(p.Status),
+		Config:      p.RedactedConfig(),
+		ErrorLog:    p.ErrorLog,
+	}
+}
+
+// toPluginResponses maps a slice of domain Plugins to admin API responses.
+func toPluginResponses(plugins []*plugin.Plugin) []pluginResponse {
+	responses := make([]pluginResponse, len(plugins))
+	for i, p := range plugins {
+		responses[i] = toPluginResponse(p)
+	}
+	return responses
+}
+
 // --- Handlers ---
 
 // ListPlugins handles GET /api/admin/plugins.
@@ -47,7 +91,7 @@ func (h *PluginHandler) ListPlugins(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, plugins)
+	writeJSON(w, http.StatusOK, toPluginResponses(plugins))
 }
 
 // GetPlugin handles GET /api/admin/plugins/{pluginID}.
@@ -64,7 +108,7 @@ func (h *PluginHandler) GetPlugin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, p)
+	writeJSON(w, http.StatusOK, toPluginResponse(p))
 }
 
 // InstallPlugin handles POST /api/admin/plugins.

@@ -201,8 +201,9 @@ func newTestLifecycleManager() (*LifecycleManager, *mockRepo, *mockStorage, *tes
 
 	runtime := NewRuntimePool(logger, factory)
 	dispatcher := NewHookDispatcher(runtime, pub, nil, logger, clock.NewReal())
+	hostFuncs := NewHostFunctions(logger, clock.NewReal())
 
-	lm := NewLifecycleManager(repo, storage, runtime, dispatcher, pub, logger, clock.NewReal())
+	lm := NewLifecycleManager(repo, storage, runtime, dispatcher, hostFuncs, pub, logger, clock.NewReal())
 	return lm, repo, storage, pub
 }
 

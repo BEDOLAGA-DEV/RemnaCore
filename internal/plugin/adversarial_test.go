@@ -577,11 +577,15 @@ func TestAdversarial_RunnerCorruptionIsDetected(t *testing.T) {
 		expected bool
 	}{
 		{"wasm trap", "wasm trap: unreachable", true},
-		{"memory fault", "out of memory", true},
+		{"memory.grow fault", "memory.grow failed: out of bounds", true},
 		{"unreachable instruction", "unreachable executed", true},
 		{"out of fuel", "out of fuel", true},
-		{"panic in wasm", "panic: index out of range", true},
-		{"trap signal", "trap occurred", true},
+		{"wazero error", "wazero: panic in guest", true},
+		{"extism error", "extism: call failed", true},
+		{"call stack exhausted", "call stack exhausted in wasm", true},
+		{"memory (non-wasm)", "out of memory", false},
+		{"panic (non-wasm)", "panic: index out of range", false},
+		{"trap (generic)", "trap occurred", false},
 		{"normal error", "network timeout", false},
 		{"business logic error", "invalid input", false},
 		{"context cancelled", "context canceled", false},
@@ -889,7 +893,7 @@ func TestAdversarial_StorageNamespaceIsolation(t *testing.T) {
 		Slug: "plugin-a",
 		Manifest: &Manifest{
 			Plugin: ManifestPlugin{ID: "plugin-a", Name: "A", Version: "1.0.0", SDKVersion: CurrentSDKVersion},
-			Hooks:  ManifestHooks{Sync: []string{"test_hook"}},
+			Hooks:  ManifestHooks{Sync: []string{"plugin.test_hook"}},
 		},
 		Permissions: []PermissionScope{PermStorageWrite},
 	}
@@ -899,7 +903,7 @@ func TestAdversarial_StorageNamespaceIsolation(t *testing.T) {
 		Slug: "plugin-b",
 		Manifest: &Manifest{
 			Plugin: ManifestPlugin{ID: "plugin-b", Name: "B", Version: "1.0.0", SDKVersion: CurrentSDKVersion},
-			Hooks:  ManifestHooks{Sync: []string{"test_hook"}},
+			Hooks:  ManifestHooks{Sync: []string{"plugin.test_hook"}},
 		},
 		Permissions: []PermissionScope{PermStorageRead},
 	}

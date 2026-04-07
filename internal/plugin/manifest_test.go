@@ -414,3 +414,99 @@ sync = ["invoice.created"]
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrInvalidPluginSlug)
 }
+
+func TestValidateHookName(t *testing.T) {
+	tests := []struct {
+		name    string
+		hook    string
+		wantErr bool
+	}{
+		// Allowed prefixes
+		{"checkout prefix", "checkout.started", false},
+		{"subscription prefix", "subscription.renewed", false},
+		{"pricing prefix", "pricing.calculated", false},
+		{"payment prefix", "payment.completed", false},
+		{"vpn prefix", "vpn.provisioned", false},
+		{"binding prefix", "binding.created", false},
+		{"invoice prefix", "invoice.created", false},
+		{"plugin prefix", "plugin.installed", false},
+		{"notification prefix", "notification.sent", false},
+
+		// Rejected prefixes
+		{"admin prefix rejected", "admin.reset", true},
+		{"system prefix rejected", "system.shutdown", true},
+		{"empty string rejected", "", true},
+		{"bare word rejected", "shutdown", true},
+		{"internal prefix rejected", "internal.migrate", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateHookName(tt.hook)
+			if tt.wantErr {
+				assert.ErrorIs(t, err, ErrInvalidManifest)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestParseManifest_RejectsUnknownHookPrefix(t *testing.T) {
+	tests := []struct {
+		name string
+		toml string
+	}{
+		{
+			"unknown sync hook prefix",
+			`[plugin]
+id          = "bad-hooks"
+name        = "Bad Hooks"
+version     = "1.0.0"
+sdk_version = "1.0.0"
+
+[hooks]
+sync = ["admin.reset"]`,
+		},
+		{
+			"unknown async hook prefix",
+			`[plugin]
+id          = "bad-hooks"
+name        = "Bad Hooks"
+version     = "1.0.0"
+sdk_version = "1.0.0"
+
+[hooks]
+async = ["system.shutdown"]`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseManifest([]byte(tt.toml))
+			require.Error(t, err)
+			assert.ErrorIs(t, err, ErrInvalidManifest)
+			assert.Contains(t, err.Error(), "unknown prefix")
+		})
+	}
+}
+
+func TestParseManifest_AcceptsAllowedHookPrefixes(t *testing.T) {
+	for _, prefix := range AllowedHookPrefixes {
+		hookName := prefix + "test_event"
+		t.Run(hookName, func(t *testing.T) {
+			tomlStr := `
+[plugin]
+id          = "prefix-test"
+name        = "Prefix Test"
+version     = "1.0.0"
+sdk_version = "1.0.0"
+
+[hooks]
+sync = ["` + hookName + `"]
+`
+			_, err := ParseManifest([]byte(tomlStr))
+			assert.NoError(t, err)
+		})
+	}
+}
