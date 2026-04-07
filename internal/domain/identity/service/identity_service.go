@@ -1,4 +1,4 @@
-package identity
+package service
 
 import (
 	"context"
@@ -9,15 +9,45 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
-// EventPublisher is an alias for the shared domainevent.Publisher so that
-// existing callers referencing identity.EventPublisher continue to compile.
-type EventPublisher = domainevent.Publisher
+// RefreshTokenLen is the number of random bytes used for refresh tokens.
+// The resulting hex-encoded string is twice this length (64 chars).
+const RefreshTokenLen = 32
+
+// Repository defines the persistence operations for the identity domain.
+type Repository interface {
+	CreateUser(ctx context.Context, user *aggregate.PlatformUser) error
+	GetUserByID(ctx context.Context, id string) (*aggregate.PlatformUser, error)
+	// GetUserByIDForUpdate retrieves a user by ID with a SELECT FOR UPDATE row
+	// lock. Must be called within a RunInTx transaction to prevent TOCTOU races
+	// during read-modify-write cycles.
+	GetUserByIDForUpdate(ctx context.Context, id string) (*aggregate.PlatformUser, error)
+	GetUserByEmail(ctx context.Context, email string) (*aggregate.PlatformUser, error)
+	GetUserByTelegramID(ctx context.Context, telegramID int64) (*aggregate.PlatformUser, error)
+	UpdateUser(ctx context.Context, user *aggregate.PlatformUser) error
+	ListUsers(ctx context.Context, limit, offset int) ([]*aggregate.PlatformUser, error)
+
+	CreateSession(ctx context.Context, session *aggregate.Session) error
+	GetSessionByRefreshToken(ctx context.Context, token string) (*aggregate.Session, error)
+	DeleteSession(ctx context.Context, id string) error
+	DeleteUserSessions(ctx context.Context, userID string) error
+
+	CreateEmailVerification(ctx context.Context, v *aggregate.EmailVerification) error
+	GetEmailVerification(ctx context.Context, token string) (*aggregate.EmailVerification, error)
+	DeleteEmailVerification(ctx context.Context, id string) error
+
+	CreatePasswordReset(ctx context.Context, pr *aggregate.PasswordReset) error
+	GetPasswordResetByToken(ctx context.Context, token string) (*aggregate.PasswordReset, error)
+	DeletePasswordReset(ctx context.Context, id string) error
+	DeleteUserPasswordResets(ctx context.Context, userID string) error
+}
 
 // Service implements the core identity use-cases: registration, login, email
 // verification, token refresh, and profile retrieval.
@@ -86,7 +116,7 @@ type RegisterInput struct {
 
 // RegisterResult is returned on successful registration.
 type RegisterResult struct {
-	User              *PlatformUser
+	User              *aggregate.PlatformUser
 	VerificationToken string
 }
 
@@ -100,7 +130,7 @@ type LoginInput struct {
 type LoginResult struct {
 	AccessToken  string
 	RefreshToken string
-	User         *PlatformUser
+	User         *aggregate.PlatformUser
 }
 
 // Register creates a new user, generates an email verification token, and
@@ -116,12 +146,12 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (*RegisterR
 	}
 
 	now := s.clock.Now()
-	user, err := NewPlatformUser(input.Email, input.Password, now)
+	user, err := aggregate.NewPlatformUser(input.Email, input.Password, now)
 	if err != nil {
 		return nil, fmt.Errorf("creating user: %w", err)
 	}
 
-	verification, err := NewEmailVerification(user.ID, user.Email, now)
+	verification, err := aggregate.NewEmailVerification(user.ID, user.Email, now)
 	if err != nil {
 		return nil, fmt.Errorf("creating email verification: %w", err)
 	}
@@ -182,7 +212,7 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (*LoginResult, er
 	}
 
 	now := s.clock.Now()
-	session := &Session{
+	session := &aggregate.Session{
 		ID:           uuid.Must(uuid.NewV7()).String(),
 		UserID:       user.ID,
 		RefreshToken: refreshToken,
@@ -195,7 +225,7 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (*LoginResult, er
 			return fmt.Errorf("persisting session: %w", err)
 		}
 		if err := s.publisher.Publish(txCtx, NewUserLoggedInEvent(user.ID, now)); err != nil {
-			return fmt.Errorf("publishing %s: %w", EventUserLoggedIn, err)
+			return fmt.Errorf("publishing %s: %w", aggregate.EventUserLoggedIn, err)
 		}
 		return nil
 	}); err != nil {
@@ -266,7 +296,7 @@ func (s *Service) RefreshToken(ctx context.Context, refreshToken string) (*Login
 	}
 
 	now := s.clock.Now()
-	newSession := &Session{
+	newSession := &aggregate.Session{
 		ID:           uuid.Must(uuid.NewV7()).String(),
 		UserID:       user.ID,
 		RefreshToken: newRefreshToken,
@@ -283,7 +313,7 @@ func (s *Service) RefreshToken(ctx context.Context, refreshToken string) (*Login
 			return fmt.Errorf("persisting new session: %w", err)
 		}
 		if err := s.publisher.Publish(txCtx, NewTokenRefreshedEvent(user.ID, now)); err != nil {
-			return fmt.Errorf("publishing %s: %w", EventTokenRefreshed, err)
+			return fmt.Errorf("publishing %s: %w", aggregate.EventTokenRefreshed, err)
 		}
 		return nil
 	}); err != nil {
@@ -307,7 +337,7 @@ func (s *Service) RefreshToken(ctx context.Context, refreshToken string) (*Login
 }
 
 // GetMe retrieves the authenticated user's profile by ID.
-func (s *Service) GetMe(ctx context.Context, userID string) (*PlatformUser, error) {
+func (s *Service) GetMe(ctx context.Context, userID string) (*aggregate.PlatformUser, error) {
 	user, err := s.repo.GetUserByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("finding user: %w", err)
@@ -316,7 +346,7 @@ func (s *Service) GetMe(ctx context.Context, userID string) (*PlatformUser, erro
 }
 
 // GetByTelegramID retrieves a user by their linked Telegram ID.
-func (s *Service) GetByTelegramID(ctx context.Context, telegramID int64) (*PlatformUser, error) {
+func (s *Service) GetByTelegramID(ctx context.Context, telegramID int64) (*aggregate.PlatformUser, error) {
 	user, err := s.repo.GetUserByTelegramID(ctx, telegramID)
 	if err != nil {
 		return nil, fmt.Errorf("finding user by telegram id: %w", err)
@@ -379,7 +409,7 @@ func (s *Service) UnlinkTelegram(ctx context.Context, userID string) error {
 }
 
 // ListUsers returns a paginated list of all users. Intended for admin endpoints.
-func (s *Service) ListUsers(ctx context.Context, limit, offset int) ([]*PlatformUser, error) {
+func (s *Service) ListUsers(ctx context.Context, limit, offset int) ([]*aggregate.PlatformUser, error) {
 	users, err := s.repo.ListUsers(ctx, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing users: %w", err)
@@ -401,7 +431,7 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 	}
 
 	now := s.clock.Now()
-	reset, err := NewPasswordReset(user.ID, user.Email, now)
+	reset, err := aggregate.NewPasswordReset(user.ID, user.Email, now)
 	if err != nil {
 		return fmt.Errorf("creating password reset: %w", err)
 	}
@@ -416,7 +446,7 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 		}
 		// Notification plugins listen for this event to send the actual email.
 		if err := s.publisher.Publish(txCtx, NewPasswordResetRequestedEvent(user.ID, user.Email, reset.Token, now)); err != nil {
-			return fmt.Errorf("publishing %s: %w", EventPasswordResetRequested, err)
+			return fmt.Errorf("publishing %s: %w", aggregate.EventPasswordResetRequested, err)
 		}
 		return nil
 	})
@@ -440,7 +470,7 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 		return ErrPasswordResetExpired
 	}
 
-	if err := validatePassword(newPassword); err != nil {
+	if err := aggregate.ValidatePassword(newPassword); err != nil {
 		return err
 	}
 
@@ -468,15 +498,11 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 			return fmt.Errorf("deleting password reset: %w", err)
 		}
 		if err := s.publisher.Publish(txCtx, NewPasswordResetEvent(user.ID, now)); err != nil {
-			return fmt.Errorf("publishing %s: %w", EventPasswordReset, err)
+			return fmt.Errorf("publishing %s: %w", aggregate.EventPasswordReset, err)
 		}
 		return domainevent.PublishAll(txCtx, s.publisher, user)
 	})
 }
-
-// RefreshTokenLen is the number of random bytes used for refresh tokens.
-// The resulting hex-encoded string is twice this length (64 chars).
-const RefreshTokenLen = 32
 
 // generateRefreshToken produces a cryptographically random hex string.
 func (s *Service) generateRefreshToken() (string, error) {
@@ -485,4 +511,36 @@ func (s *Service) generateRefreshToken() (string, error) {
 		return "", fmt.Errorf("generating random bytes: %w", err)
 	}
 	return hex.EncodeToString(b), nil
+}
+
+// NewUserLoggedInEvent creates an event for a successful login.
+func NewUserLoggedInEvent(userID string, now time.Time) domainevent.Event {
+	return domainevent.NewTyped(aggregate.UserLoggedInPayload{
+		UserID: userID,
+	}, now, userID)
+}
+
+// NewTokenRefreshedEvent creates an event for a successful token rotation.
+func NewTokenRefreshedEvent(userID string, now time.Time) domainevent.Event {
+	return domainevent.NewTyped(aggregate.TokenRefreshedPayload{
+		UserID: userID,
+	}, now, userID)
+}
+
+// NewPasswordResetRequestedEvent creates an event when a user requests a
+// password reset. Notification plugins listen for this to send the reset email.
+func NewPasswordResetRequestedEvent(userID, email, token string, now time.Time) domainevent.Event {
+	return domainevent.NewTyped(aggregate.PasswordResetRequestedPayload{
+		UserID: userID,
+		Email:  email,
+		Token:  token,
+	}, now, userID)
+}
+
+// NewPasswordResetEvent creates an event when a password has been successfully
+// reset.
+func NewPasswordResetEvent(userID string, now time.Time) domainevent.Event {
+	return domainevent.NewTyped(aggregate.PasswordResetPayload{
+		UserID: userID,
+	}, now, userID)
 }

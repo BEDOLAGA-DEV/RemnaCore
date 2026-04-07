@@ -37,7 +37,7 @@ func TestCreateTenant_Success(t *testing.T) {
 	svc, tenantRepo, _, pub := newTestService(t)
 	ctx := context.Background()
 
-	tenantRepo.On("CreateTenant", ctx, mock.AnythingOfType("*reseller.Tenant")).Return(nil)
+	tenantRepo.On("CreateTenant", ctx, mock.AnythingOfType("*aggregate.Tenant")).Return(nil)
 	pub.On("Publish", ctx, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
 	tenant, plainKey, err := svc.CreateTenant(ctx, "Acme VPN", "acme.vpn.com", "owner-1")
@@ -88,7 +88,7 @@ func TestCreateResellerAccount_Success(t *testing.T) {
 	svc, _, commissionRepo, pub := newTestService(t)
 	ctx := context.Background()
 
-	commissionRepo.On("CreateResellerAccount", ctx, mock.AnythingOfType("*reseller.ResellerAccount")).Return(nil)
+	commissionRepo.On("CreateResellerAccount", ctx, mock.AnythingOfType("*aggregate.ResellerAccount")).Return(nil)
 	pub.On("Publish", ctx, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
 	account, err := svc.CreateResellerAccount(ctx, "tenant-1", "user-1", 25)
@@ -124,7 +124,7 @@ func TestRecordCommission_Success(t *testing.T) {
 		UserID:   "user-1",
 	}
 
-	commissionRepo.On("CreateCommission", ctx, mock.AnythingOfType("*reseller.Commission")).Return(nil)
+	commissionRepo.On("CreateCommission", ctx, mock.AnythingOfType("*aggregate.Commission")).Return(nil)
 	commissionRepo.On("GetResellerAccountByID", ctx, "reseller-1").Return(account, nil)
 	commissionRepo.On("UpdateResellerBalance", ctx, "reseller-1", int64(6500)).Return(nil) // 5000 + 1500
 	pub.On("Publish", ctx, mock.AnythingOfType("domainevent.Event")).Return(nil)
@@ -196,7 +196,7 @@ func TestUpdateBranding_Success(t *testing.T) {
 	tenant := reseller.NewTenant("Acme VPN", "acme.vpn.com", "owner-1", time.Now())
 	tenant.DomainEvents() // flush creation events to simulate DB-loaded aggregate
 	tenantRepo.On("GetTenantByIDForUpdate", ctx, tenant.ID).Return(tenant, nil)
-	tenantRepo.On("UpdateTenant", ctx, mock.AnythingOfType("*reseller.Tenant")).Return(nil)
+	tenantRepo.On("UpdateTenant", ctx, mock.AnythingOfType("*aggregate.Tenant")).Return(nil)
 	pub.On("Publish", mock.Anything, mock.MatchedBy(func(e domainevent.Event) bool {
 		return e.Type == reseller.EventTenantUpdated
 	})).Return(nil)

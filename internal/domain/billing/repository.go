@@ -47,6 +47,10 @@ type SubscriptionRepository interface {
 	// GetOverlapping returns subscriptions whose billing period overlaps the
 	// given [start, end) range. Uses the GiST index via the && operator.
 	GetOverlapping(ctx context.Context, userID, planID string, start, end time.Time) ([]*aggregate.Subscription, error)
+	// GetExpiredActive returns active subscriptions whose billing period ended
+	// before the given time. Used by the SubscriptionScheduler to find
+	// subscriptions due for expiration or renewal.
+	GetExpiredActive(ctx context.Context, before time.Time, limit int) ([]*aggregate.Subscription, error)
 }
 
 // InvoiceRepository defines persistence operations for the Invoice aggregate.

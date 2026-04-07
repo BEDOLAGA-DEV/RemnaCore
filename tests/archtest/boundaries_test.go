@@ -354,6 +354,19 @@ func TestGatewayHandlerSingleContextRule(t *testing.T) {
 	}
 }
 
+// TestBillingDomainNoPluginImports verifies that the billing domain does not
+// import pkg/hookdispatch or pkg/sdk. Hook dispatch is an application-layer
+// concern; the billing service uses injected SyncHookFn / AsyncHookFn
+// callbacks instead. This prevents plugin protocol types from leaking into
+// the domain model.
+func TestBillingDomainNoPluginImports(t *testing.T) {
+	forbidden := []string{
+		modulePrefix + "/pkg/hookdispatch",
+		modulePrefix + "/pkg/sdk",
+	}
+	checkImports(t, filepath.Join("internal", "domain", "billing"), forbidden)
+}
+
 // checkImports walks dir, parses each non-test .go file, and fails the test for
 // every import whose path starts with any of the forbiddenPrefixes.
 func checkImports(t *testing.T, dir string, forbiddenPrefixes []string) {

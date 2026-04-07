@@ -13,16 +13,19 @@ import (
 )
 
 // FamilyHandler exposes HTTP endpoints for family group management.
+//
+// Read-only operations (get family group) use the FamilyReader interface,
+// while write operations (add/remove member) go through FamilyService.
 type FamilyHandler struct {
-	service  *billingservice.BillingService
-	families billing.FamilyRepository
+	service  *billingservice.FamilyService
+	families billing.FamilyReader
 }
 
-// NewFamilyHandler creates a FamilyHandler backed by the billing service and
-// family repository.
+// NewFamilyHandler creates a FamilyHandler backed by the family service and
+// read-only family repository access.
 func NewFamilyHandler(
-	service *billingservice.BillingService,
-	families billing.FamilyRepository,
+	service *billingservice.FamilyService,
+	families billing.FamilyReader,
 ) *FamilyHandler {
 	return &FamilyHandler{
 		service:  service,

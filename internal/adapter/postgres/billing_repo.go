@@ -559,6 +559,51 @@ func pendingChangeToPgtype(pc vo.PendingPlanChange) pgtype.UUID {
 	return pgutil.UUIDToPgtype(pc.PlanID)
 }
 
+// getExpiredActiveSubscriptionsSQL fetches active subscriptions whose billing
+// period ended before the given timestamp. These are candidates for renewal or
+// expiration by the SubscriptionScheduler. The query orders by period_end ASC
+// so that the oldest elapsed subscriptions are processed first.
+const getExpiredActiveSubscriptionsSQL = `
+SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
+       addon_ids, assigned_to, pending_plan_id, cancelled_at, paused_at, created_at, updated_at
+FROM billing.subscriptions
+WHERE status = 'active'
+  AND period_end < $1
+ORDER BY period_end ASC
+LIMIT $2`
+
+// GetExpiredActive returns active subscriptions whose billing period ended
+// before the given time, up to the specified limit.
+func (r *SubscriptionRepository) GetExpiredActive(ctx context.Context, before time.Time, limit int) ([]*aggregate.Subscription, error) {
+	db := DBFromContext(ctx, r.pool)
+	rows, err := db.Query(ctx, getExpiredActiveSubscriptionsSQL,
+		pgutil.TimeToPgtype(before),
+		int32(limit),
+	)
+	if err != nil {
+		return nil, pgutil.MapErr(err, "get expired active subscriptions", billing.ErrSubscriptionNotFound)
+	}
+	defer rows.Close()
+
+	var subs []*aggregate.Subscription
+	for rows.Next() {
+		var f subFields
+		if err := rows.Scan(
+			&f.ID, &f.UserID, &f.PlanID, &f.Status,
+			&f.PeriodStart, &f.PeriodEnd, &f.PeriodInterval,
+			&f.AddonIds, &f.AssignedTo, &f.PendingPlanID, &f.CancelledAt, &f.PausedAt,
+			&f.CreatedAt, &f.UpdatedAt,
+		); err != nil {
+			return nil, pgutil.MapErr(err, "scan expired active subscription", billing.ErrSubscriptionNotFound)
+		}
+		subs = append(subs, subFieldsToDomain(f))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, pgutil.MapErr(err, "iterate expired active subscriptions", billing.ErrSubscriptionNotFound)
+	}
+	return subs, nil
+}
+
 var _ billing.SubscriptionRepository = (*SubscriptionRepository)(nil)
 
 // ---------------------------------------------------------------------------

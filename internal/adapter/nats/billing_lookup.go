@@ -11,21 +11,21 @@ import (
 
 // BillingSubscriptionLookup implements the multisub domain ports
 // (PlanProvider + SubscriptionProvider) by delegating to billing domain
-// repositories. It bridges the NATS consumer's enrichment needs with the
-// billing bounded context and serves as the Anti-Corruption Layer that
+// read-only interfaces. It bridges the NATS consumer's enrichment needs with
+// the billing bounded context and serves as the Anti-Corruption Layer that
 // translates billing types into multisub-local types.
 type BillingSubscriptionLookup struct {
-	subs     billing.SubscriptionRepository
-	plans    billing.PlanRepository
-	families billing.FamilyRepository
+	subs     billing.SubscriptionReader
+	plans    billing.PlanReader
+	families billing.FamilyReader
 }
 
 // NewBillingSubscriptionLookup creates a BillingSubscriptionLookup with the
-// given billing repositories.
+// given billing readers.
 func NewBillingSubscriptionLookup(
-	subs billing.SubscriptionRepository,
-	plans billing.PlanRepository,
-	families billing.FamilyRepository,
+	subs billing.SubscriptionReader,
+	plans billing.PlanReader,
+	families billing.FamilyReader,
 ) *BillingSubscriptionLookup {
 	return &BillingSubscriptionLookup{
 		subs:     subs,

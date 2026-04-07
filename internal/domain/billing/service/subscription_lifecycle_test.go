@@ -16,49 +16,33 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/billingtest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
-	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
-	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/sdk"
 )
 
-// --- Mock dispatcher ---
-
-type mockDispatcher struct {
-	mock.Mock
+// hookRecorder captures sync and async hook dispatch calls for test assertions.
+type hookRecorder struct {
+	syncCalls  []hookCall
+	asyncCalls []hookCall
+	// syncResp is returned by the SyncHookFn when non-nil.
+	syncResp json.RawMessage
 }
 
-func (m *mockDispatcher) DispatchSync(ctx context.Context, hookName string, payload json.RawMessage) (json.RawMessage, error) {
-	args := m.Called(ctx, hookName, payload)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(json.RawMessage), args.Error(1)
+type hookCall struct {
+	hookName string
+	payload  any
 }
 
-func (m *mockDispatcher) DispatchSyncVersioned(ctx context.Context, hookName string, currentVersion int, payload json.RawMessage) (json.RawMessage, error) {
-	args := m.Called(ctx, hookName, currentVersion, payload)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(json.RawMessage), args.Error(1)
+func (r *hookRecorder) syncHook(_ context.Context, hookName string, payload any) (json.RawMessage, error) {
+	r.syncCalls = append(r.syncCalls, hookCall{hookName: hookName, payload: payload})
+	return r.syncResp, nil
 }
 
-func (m *mockDispatcher) DispatchSyncSafe(ctx context.Context, hookName string, payload json.RawMessage) *hookdispatch.ChainResult {
-	args := m.Called(ctx, hookName, payload)
-	return args.Get(0).(*hookdispatch.ChainResult)
-}
-
-func (m *mockDispatcher) DispatchAsync(ctx context.Context, hookName string, payload json.RawMessage) {
-	m.Called(ctx, hookName, payload)
-}
-
-func (m *mockDispatcher) BeginFlow(ctx context.Context) context.Context {
-	m.Called(ctx)
-	return ctx
+func (r *hookRecorder) asyncHook(_ context.Context, hookName string, payload any) {
+	r.asyncCalls = append(r.asyncCalls, hookCall{hookName: hookName, payload: payload})
 }
 
 // --- Helpers ---
 
-// newTestServiceWithHooks creates a BillingService with hooks enabled and a mock dispatcher.
+// newTestServiceWithHooks creates a BillingService with hooks enabled and a hook recorder.
 func newTestServiceWithHooks() (
 	*BillingService,
 	*billingtest.MockPlanRepo,
@@ -66,7 +50,7 @@ func newTestServiceWithHooks() (
 	*billingtest.MockInvoiceRepo,
 	*billingtest.MockFamilyRepo,
 	*billingtest.MockEventPublisher,
-	*mockDispatcher,
+	*hookRecorder,
 ) {
 	plans := &billingtest.MockPlanRepo{}
 	subs := &billingtest.MockSubscriptionRepo{}
@@ -77,14 +61,14 @@ func newTestServiceWithHooks() (
 	trial := NewTrialManager(DefaultTrialDays)
 	txRunner := billingtest.NoopTxRunner{}
 	clk := clock.NewReal()
-	dispatcher := &mockDispatcher{}
+	recorder := &hookRecorder{}
 
 	svc := NewBillingService(
 		plans, subs, invoices, families, publisher, prorate, trial, txRunner, clk, slog.Default(),
-		WithDispatcher(dispatcher),
-		WithHooksEnabled(true),
+		WithSyncHook(recorder.syncHook),
+		WithAsyncHook(recorder.asyncHook),
 	)
-	return svc, plans, subs, invoices, families, publisher, dispatcher
+	return svc, plans, subs, invoices, families, publisher, recorder
 }
 
 // expiredActiveSub returns an active subscription whose billing period has already ended.
@@ -153,19 +137,19 @@ func TestPauseSubscription_AlreadyPaused(t *testing.T) {
 }
 
 func TestPauseSubscription_FiresAsyncHook(t *testing.T) {
-	svc, _, subs, _, _, publisher, dispatcher := newTestServiceWithHooks()
+	svc, _, subs, _, _, publisher, recorder := newTestServiceWithHooks()
 	ctx := context.Background()
 	sub := activeSubscription("user-1", "plan-premium")
 
 	subs.On("GetByIDForUpdate", mock.Anything, "sub-1").Return(sub, nil)
 	subs.On("Update", mock.Anything, sub).Return(nil)
 	publisher.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
-	dispatcher.On("DispatchAsync", mock.Anything, HookSubPausedPost, mock.AnythingOfType("json.RawMessage")).Once()
 
 	err := svc.PauseSubscription(ctx, "sub-1")
 
 	require.NoError(t, err)
-	dispatcher.AssertExpectations(t)
+	require.Len(t, recorder.asyncCalls, 1)
+	assert.Equal(t, HookSubPausedPost, recorder.asyncCalls[0].hookName)
 }
 
 // --- ResumeSubscription ---
@@ -261,29 +245,29 @@ func TestRenewSubscription_PeriodNotElapsed(t *testing.T) {
 }
 
 func TestRenewSubscription_WithRenewingHook(t *testing.T) {
-	svc, plans, subs, invoices, _, publisher, dispatcher := newTestServiceWithHooks()
+	svc, plans, subs, invoices, _, publisher, recorder := newTestServiceWithHooks()
 	ctx := context.Background()
 	sub := expiredActiveSub("user-1", "plan-premium")
 	plan := samplePlan()
 
 	// Hook returns a price override.
-	hookResp := sdk.SubRenewingResponse{PriceOverride: ptr(int64(799))}
+	hookResp := RenewingResponse{PriceOverride: ptr(int64(799))}
 	hookRespBytes, _ := json.Marshal(hookResp)
+	recorder.syncResp = hookRespBytes
 
 	subs.On("GetByIDForUpdate", mock.Anything, "sub-1").Return(sub, nil)
-	dispatcher.On("DispatchSyncSafe", mock.Anything, HookSubRenewing, mock.Anything).Return(&hookdispatch.ChainResult{
-		Payload: hookRespBytes,
-	})
 	subs.On("Update", mock.Anything, sub).Return(nil)
 	plans.On("GetByID", mock.Anything, "plan-premium").Return(plan, nil)
 	invoices.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Invoice")).Return(nil)
 	publisher.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
-	dispatcher.On("DispatchAsync", mock.Anything, HookSubRenewedPost, mock.AnythingOfType("json.RawMessage")).Once()
 
 	err := svc.RenewSubscription(ctx, "sub-1")
 
 	require.NoError(t, err)
-	dispatcher.AssertExpectations(t)
+	require.Len(t, recorder.syncCalls, 1)
+	assert.Equal(t, HookSubRenewing, recorder.syncCalls[0].hookName)
+	require.Len(t, recorder.asyncCalls, 1)
+	assert.Equal(t, HookSubRenewedPost, recorder.asyncCalls[0].hookName)
 }
 
 // --- UpgradeSubscription ---
@@ -342,7 +326,7 @@ func TestUpgradeSubscription_SamePlan(t *testing.T) {
 }
 
 func TestUpgradeSubscription_WithCreditOverrideHook(t *testing.T) {
-	svc, plans, subs, invoices, _, publisher, dispatcher := newTestServiceWithHooks()
+	svc, plans, subs, invoices, _, publisher, recorder := newTestServiceWithHooks()
 	ctx := context.Background()
 	sub := activeSubscription("user-1", "plan-basic")
 	sub.PlanID = "plan-basic"
@@ -357,24 +341,24 @@ func TestUpgradeSubscription_WithCreditOverrideHook(t *testing.T) {
 	premiumPlan := samplePlan()
 
 	// Hook overrides credit to zero.
-	hookResp := sdk.SubUpgradingResponse{CreditOverride: ptr(int64(0))}
+	hookResp := UpgradingResponse{CreditOverride: ptr(int64(0))}
 	hookRespBytes, _ := json.Marshal(hookResp)
+	recorder.syncResp = hookRespBytes
 
 	subs.On("GetByIDForUpdate", mock.Anything, "sub-1").Return(sub, nil)
 	plans.On("GetByID", mock.Anything, "plan-basic").Return(basicPlan, nil)
 	plans.On("GetByID", mock.Anything, "plan-premium").Return(premiumPlan, nil)
-	dispatcher.On("DispatchSyncSafe", mock.Anything, HookSubUpgrading, mock.Anything).Return(&hookdispatch.ChainResult{
-		Payload: hookRespBytes,
-	})
 	subs.On("Update", mock.Anything, sub).Return(nil)
 	invoices.On("Create", mock.Anything, mock.AnythingOfType("*aggregate.Invoice")).Return(nil)
 	publisher.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
-	dispatcher.On("DispatchAsync", mock.Anything, HookSubUpgradedPost, mock.AnythingOfType("json.RawMessage")).Once()
 
 	err := svc.UpgradeSubscription(ctx, "sub-1", "plan-premium")
 
 	require.NoError(t, err)
-	dispatcher.AssertExpectations(t)
+	require.Len(t, recorder.syncCalls, 1)
+	assert.Equal(t, HookSubUpgrading, recorder.syncCalls[0].hookName)
+	require.Len(t, recorder.asyncCalls, 1)
+	assert.Equal(t, HookSubUpgradedPost, recorder.asyncCalls[0].hookName)
 }
 
 // --- DowngradeSubscription ---
@@ -452,35 +436,33 @@ func TestExpireSubscription_AlreadyExpired(t *testing.T) {
 }
 
 func TestExpireSubscription_FiresAsyncHook(t *testing.T) {
-	svc, _, subs, _, _, publisher, dispatcher := newTestServiceWithHooks()
+	svc, _, subs, _, _, publisher, recorder := newTestServiceWithHooks()
 	ctx := context.Background()
 	sub := activeSubscription("user-1", "plan-premium")
 
 	subs.On("GetByIDForUpdate", mock.Anything, "sub-1").Return(sub, nil)
 	subs.On("Update", mock.Anything, sub).Return(nil)
 	publisher.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
-	dispatcher.On("DispatchAsync", mock.Anything, HookSubExpiredPost, mock.AnythingOfType("json.RawMessage")).Once()
 
 	err := svc.ExpireSubscription(ctx, "sub-1")
 
 	require.NoError(t, err)
-	dispatcher.AssertExpectations(t)
+	require.Len(t, recorder.asyncCalls, 1)
+	assert.Equal(t, HookSubExpiredPost, recorder.asyncCalls[0].hookName)
 }
 
 // --- CancelSubscription with hooks ---
 
 func TestCancelSubscription_WithHook_Block(t *testing.T) {
-	svc, _, subs, _, _, _, dispatcher := newTestServiceWithHooks()
+	svc, _, subs, _, _, _, recorder := newTestServiceWithHooks()
 	ctx := context.Background()
 	sub := activeSubscription("user-1", "plan-premium")
 
-	hookResp := sdk.SubCancellingResponse{Block: true}
+	hookResp := CancellingResponse{Block: true}
 	hookRespBytes, _ := json.Marshal(hookResp)
+	recorder.syncResp = hookRespBytes
 
 	subs.On("GetByIDForUpdate", mock.Anything, "sub-1").Return(sub, nil)
-	dispatcher.On("DispatchSyncSafe", mock.Anything, HookSubCancelling, mock.Anything).Return(&hookdispatch.ChainResult{
-		Payload: hookRespBytes,
-	})
 
 	err := svc.CancelSubscription(ctx, "sub-1", nil)
 
@@ -490,24 +472,22 @@ func TestCancelSubscription_WithHook_Block(t *testing.T) {
 	assert.Equal(t, aggregate.StatusActive, sub.Status)
 
 	subs.AssertExpectations(t)
-	dispatcher.AssertExpectations(t)
+	require.Len(t, recorder.syncCalls, 1)
+	assert.Equal(t, HookSubCancelling, recorder.syncCalls[0].hookName)
 }
 
 func TestCancelSubscription_WithHook_Allowed(t *testing.T) {
-	svc, _, subs, _, _, publisher, dispatcher := newTestServiceWithHooks()
+	svc, _, subs, _, _, publisher, recorder := newTestServiceWithHooks()
 	ctx := context.Background()
 	sub := activeSubscription("user-1", "plan-premium")
 
-	hookResp := sdk.SubCancellingResponse{Block: false}
+	hookResp := CancellingResponse{Block: false}
 	hookRespBytes, _ := json.Marshal(hookResp)
+	recorder.syncResp = hookRespBytes
 
 	subs.On("GetByIDForUpdate", mock.Anything, "sub-1").Return(sub, nil)
-	dispatcher.On("DispatchSyncSafe", mock.Anything, HookSubCancelling, mock.Anything).Return(&hookdispatch.ChainResult{
-		Payload: hookRespBytes,
-	})
 	subs.On("Update", mock.Anything, sub).Return(nil)
 	publisher.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
-	dispatcher.On("DispatchAsync", mock.Anything, HookSubCancelledPost, mock.AnythingOfType("json.RawMessage")).Once()
 
 	err := svc.CancelSubscription(ctx, "sub-1", nil)
 
@@ -516,7 +496,10 @@ func TestCancelSubscription_WithHook_Allowed(t *testing.T) {
 
 	subs.AssertExpectations(t)
 	publisher.AssertExpectations(t)
-	dispatcher.AssertExpectations(t)
+	require.Len(t, recorder.syncCalls, 1)
+	assert.Equal(t, HookSubCancelling, recorder.syncCalls[0].hookName)
+	require.Len(t, recorder.asyncCalls, 1)
+	assert.Equal(t, HookSubCancelledPost, recorder.asyncCalls[0].hookName)
 }
 
 // --- Helpers ---

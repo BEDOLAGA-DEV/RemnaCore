@@ -140,6 +140,14 @@ func (m *MockSubscriptionRepo) GetOverlapping(ctx context.Context, userID, planI
 	return args.Get(0).([]*aggregate.Subscription), args.Error(1)
 }
 
+func (m *MockSubscriptionRepo) GetExpiredActive(ctx context.Context, before time.Time, limit int) ([]*aggregate.Subscription, error) {
+	args := m.Called(ctx, before, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*aggregate.Subscription), args.Error(1)
+}
+
 // --- MockInvoiceRepo ---
 
 // MockInvoiceRepo is a testify/mock implementation of billing.InvoiceRepository.

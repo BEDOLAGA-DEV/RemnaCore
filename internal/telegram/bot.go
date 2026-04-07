@@ -32,8 +32,8 @@ type Bot struct {
 	billing  *billingservice.BillingService
 	checkout *billingservice.CheckoutService
 	bindings multisub.BindingRepository
-	plans    billing.PlanRepository
-	subs     billing.SubscriptionRepository
+	plans    billing.PlanReader
+	subs     billing.SubscriptionReader
 	logger   *slog.Logger
 }
 
@@ -45,8 +45,8 @@ func NewBot(
 	billingSvc *billingservice.BillingService,
 	checkoutSvc *billingservice.CheckoutService,
 	bindingRepo multisub.BindingRepository,
-	planRepo billing.PlanRepository,
-	subRepo billing.SubscriptionRepository,
+	planRepo billing.PlanReader,
+	subRepo billing.SubscriptionReader,
 	logger *slog.Logger,
 ) *Bot {
 	return &Bot{

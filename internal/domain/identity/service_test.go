@@ -49,8 +49,8 @@ func TestService_Register_Success(t *testing.T) {
 	ctx := context.Background()
 
 	repo.On("GetUserByEmail", ctx, "alice@example.com").Return(nil, identity.ErrNotFound)
-	repo.On("CreateUser", ctx, mock.AnythingOfType("*identity.PlatformUser")).Return(nil)
-	repo.On("CreateEmailVerification", ctx, mock.AnythingOfType("*identity.EmailVerification")).Return(nil)
+	repo.On("CreateUser", ctx, mock.AnythingOfType("*aggregate.PlatformUser")).Return(nil)
+	repo.On("CreateEmailVerification", ctx, mock.AnythingOfType("*aggregate.EmailVerification")).Return(nil)
 	pub.On("Publish", ctx, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
 	result, err := svc.Register(ctx, identity.RegisterInput{
@@ -96,7 +96,7 @@ func TestService_Login_Success(t *testing.T) {
 	}
 
 	repo.On("GetUserByEmail", ctx, "alice@example.com").Return(user, nil)
-	repo.On("CreateSession", ctx, mock.AnythingOfType("*identity.Session")).Return(nil)
+	repo.On("CreateSession", ctx, mock.AnythingOfType("*aggregate.Session")).Return(nil)
 	pub.On("Publish", ctx, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
 	result, err := svc.Login(ctx, identity.LoginInput{
@@ -169,7 +169,7 @@ func TestService_VerifyEmail_Success(t *testing.T) {
 
 	repo.On("GetEmailVerification", ctx, "abc123").Return(verification, nil)
 	repo.On("GetUserByIDForUpdate", ctx, "user-1").Return(user, nil)
-	repo.On("UpdateUser", ctx, mock.AnythingOfType("*identity.PlatformUser")).Return(nil)
+	repo.On("UpdateUser", ctx, mock.AnythingOfType("*aggregate.PlatformUser")).Return(nil)
 	repo.On("DeleteEmailVerification", ctx, "v-1").Return(nil)
 	pub.On("Publish", ctx, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
@@ -218,7 +218,7 @@ func TestService_RefreshToken_Success(t *testing.T) {
 	repo.On("GetSessionByRefreshToken", mock.Anything, "old-refresh-token").Return(session, nil)
 	repo.On("GetUserByID", mock.Anything, "user-1").Return(user, nil)
 	repo.On("DeleteSession", mock.Anything, "s-1").Return(nil)
-	repo.On("CreateSession", mock.Anything, mock.AnythingOfType("*identity.Session")).Return(nil)
+	repo.On("CreateSession", mock.Anything, mock.AnythingOfType("*aggregate.Session")).Return(nil)
 	pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
 	result, err := svc.RefreshToken(ctx, "old-refresh-token")
@@ -252,7 +252,7 @@ func TestService_RefreshToken_CreateSessionFails_RollsBack(t *testing.T) {
 	repo.On("GetSessionByRefreshToken", mock.Anything, "old-refresh-token").Return(session, nil)
 	repo.On("GetUserByID", mock.Anything, "user-1").Return(user, nil)
 	repo.On("DeleteSession", mock.Anything, "s-1").Return(nil)
-	repo.On("CreateSession", mock.Anything, mock.AnythingOfType("*identity.Session")).Return(createSessionErr)
+	repo.On("CreateSession", mock.Anything, mock.AnythingOfType("*aggregate.Session")).Return(createSessionErr)
 
 	result, err := svc.RefreshToken(ctx, "old-refresh-token")
 

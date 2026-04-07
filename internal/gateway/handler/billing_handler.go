@@ -13,23 +13,30 @@ import (
 )
 
 // BillingHandler exposes HTTP endpoints for plans, subscriptions, and invoices.
+//
+// Read-only operations (list plans, get subscription details) use the Reader
+// interfaces directly. Write operations for subscriptions (create, cancel) go
+// through BillingService, while addon operations go through AddonService.
 type BillingHandler struct {
-	service  *billingservice.BillingService
-	plans    billing.PlanRepository
-	subs     billing.SubscriptionRepository
-	invoices billing.InvoiceRepository
+	service     *billingservice.BillingService
+	addonSvc    *billingservice.AddonService
+	plans       billing.PlanReader
+	subs        billing.SubscriptionReader
+	invoices    billing.InvoiceReader
 }
 
-// NewBillingHandler creates a BillingHandler backed by the billing service and
-// read-only repository access for query endpoints.
+// NewBillingHandler creates a BillingHandler backed by the billing service,
+// addon service, and read-only repository access for query endpoints.
 func NewBillingHandler(
 	service *billingservice.BillingService,
-	plans billing.PlanRepository,
-	subs billing.SubscriptionRepository,
-	invoices billing.InvoiceRepository,
+	addonSvc *billingservice.AddonService,
+	plans billing.PlanReader,
+	subs billing.SubscriptionReader,
+	invoices billing.InvoiceReader,
 ) *BillingHandler {
 	return &BillingHandler{
 		service:  service,
+		addonSvc: addonSvc,
 		plans:    plans,
 		subs:     subs,
 		invoices: invoices,
@@ -239,7 +246,7 @@ func (h *BillingHandler) AddSubscriptionAddon(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if err := h.service.AddSubscriptionAddon(r.Context(), subID, req.AddonID); err != nil {
+	if err := h.addonSvc.AddSubscriptionAddon(r.Context(), subID, req.AddonID); err != nil {
 		writeErrorFromDomain(w, err)
 		return
 	}
@@ -273,7 +280,7 @@ func (h *BillingHandler) RemoveSubscriptionAddon(w http.ResponseWriter, r *http.
 		return
 	}
 
-	if err := h.service.RemoveSubscriptionAddon(r.Context(), subID, addonID); err != nil {
+	if err := h.addonSvc.RemoveSubscriptionAddon(r.Context(), subID, addonID); err != nil {
 		writeErrorFromDomain(w, err)
 		return
 	}

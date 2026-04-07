@@ -280,16 +280,23 @@ func (c *BillingEventConsumer) handleMessage(ctx context.Context, subject string
 	}
 
 	if retryCount < MaxMessageRetries {
-		c.logger.Warn("event processing failed, will retry",
+		delay := retryBackoffDelay(retryCount)
+		c.logger.Warn("event processing failed, will retry after backoff",
 			slog.String("subject", subject),
 			slog.String("msg_id", msg.UUID),
 			slog.Int("retry", retryCount),
 			slog.Int("max_retries", MaxMessageRetries),
+			slog.Duration("backoff", delay),
 			slog.String("error", handleErr.Error()),
 		)
 		c.recordMetric(func(m *observability.Metrics) {
 			m.EventsProcessedTotal.WithLabelValues(string(event.Type), observability.StatusFailed).Inc()
 		})
+		// Application-level backoff: Watermill's Message interface does not
+		// expose NakWithDelay, so we sleep before Nack to prevent rapid
+		// redelivery. The sleep is bounded by the message processing timeout
+		// (context deadline) set in consumeLoop.
+		time.Sleep(delay)
 		msg.Nack()
 		return
 	}

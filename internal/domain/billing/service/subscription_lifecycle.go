@@ -10,32 +10,13 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
-	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/sdk"
-)
-
-// Hook name constants for subscription lifecycle dispatch points.
-// Pre-hooks (sync) are named "{entity}.{verb}ing" and fire before the aggregate
-// transition. Post-hooks (async) are named "{entity}.{past_tense}.post" and
-// fire after the transaction commits.
-const (
-	HookSubCancelling     = "subscription.cancelling"
-	HookSubCancelledPost  = "subscription.cancelled.post"
-	HookSubActivatedPost  = "subscription.activated.post"
-	HookSubPausedPost     = "subscription.paused.post"
-	HookSubResumedPost    = "subscription.resumed.post"
-	HookSubRenewing       = "subscription.renewing"
-	HookSubRenewedPost    = "subscription.renewed.post"
-	HookSubUpgrading      = "subscription.upgrading"
-	HookSubUpgradedPost   = "subscription.upgraded.post"
-	HookSubDowngradedPost = "subscription.downgraded.post"
-	HookSubExpiredPost    = "subscription.expired.post"
 )
 
 // PauseSubscription pauses an active subscription. The read (with FOR UPDATE
 // lock), aggregate transition, update, and outbox events are all performed
 // inside a single database transaction to prevent TOCTOU races.
 func (s *BillingService) PauseSubscription(ctx context.Context, subID string) error {
-	var asyncPayload *subAsyncPayload
+	var asyncPayload *SubAsyncPayload
 
 	err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		sub, err := s.subs.GetByIDForUpdate(txCtx, subID)
@@ -51,7 +32,7 @@ func (s *BillingService) PauseSubscription(ctx context.Context, subID string) er
 			return fmt.Errorf("update subscription: %w", err)
 		}
 
-		asyncPayload = &subAsyncPayload{
+		asyncPayload = &SubAsyncPayload{
 			SubscriptionID: sub.ID,
 			UserID:         sub.UserID,
 			PlanID:         sub.PlanID,
@@ -73,7 +54,7 @@ func (s *BillingService) PauseSubscription(ctx context.Context, subID string) er
 // (with FOR UPDATE lock), aggregate transition, update, and outbox events are
 // all performed inside a single database transaction.
 func (s *BillingService) ResumeSubscription(ctx context.Context, subID string) error {
-	var asyncPayload *subAsyncPayload
+	var asyncPayload *SubAsyncPayload
 
 	err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		sub, err := s.subs.GetByIDForUpdate(txCtx, subID)
@@ -89,7 +70,7 @@ func (s *BillingService) ResumeSubscription(ctx context.Context, subID string) e
 			return fmt.Errorf("update subscription: %w", err)
 		}
 
-		asyncPayload = &subAsyncPayload{
+		asyncPayload = &SubAsyncPayload{
 			SubscriptionID: sub.ID,
 			UserID:         sub.UserID,
 			PlanID:         sub.PlanID,
@@ -115,7 +96,7 @@ func (s *BillingService) ResumeSubscription(ctx context.Context, subID string) e
 // If a PendingChange was set by a prior Downgrade, the aggregate applies it
 // during renewal and the new invoice reflects the downgraded plan's pricing.
 func (s *BillingService) RenewSubscription(ctx context.Context, subID string) error {
-	var asyncPayload *subAsyncPayload
+	var asyncPayload *SubAsyncPayload
 
 	err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		sub, err := s.subs.GetByIDForUpdate(txCtx, subID)
@@ -124,7 +105,7 @@ func (s *BillingService) RenewSubscription(ctx context.Context, subID string) er
 		}
 
 		// Dispatch subscription.renewing pre-hook — plugin can modify price/discount.
-		hookResp, _ := s.dispatchHook(txCtx, HookSubRenewing, sdk.SubRenewingRequest{
+		hookResp, _ := s.dispatchHook(txCtx, HookSubRenewing, RenewingPayload{
 			SubscriptionID: sub.ID,
 			UserID:         sub.UserID,
 			PlanID:         sub.PlanID,
@@ -176,7 +157,7 @@ func (s *BillingService) RenewSubscription(ctx context.Context, subID string) er
 			return err
 		}
 
-		asyncPayload = &subAsyncPayload{
+		asyncPayload = &SubAsyncPayload{
 			SubscriptionID: sub.ID,
 			UserID:         sub.UserID,
 			PlanID:         sub.PlanID,
@@ -198,7 +179,7 @@ func (s *BillingService) RenewSubscription(ctx context.Context, subID string) er
 // prorated pricing. The subscription.upgrading hook is dispatched before the
 // transition to allow plugins to modify proration credit or apply a discount.
 func (s *BillingService) UpgradeSubscription(ctx context.Context, subID, newPlanID string) error {
-	var asyncPayload *subUpgradeAsyncPayload
+	var asyncPayload *SubUpgradeAsyncPayload
 
 	err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		sub, err := s.subs.GetByIDForUpdate(txCtx, subID)
@@ -220,7 +201,7 @@ func (s *BillingService) UpgradeSubscription(ctx context.Context, subID, newPlan
 		credit := s.prorate.CalculateUpgradeCredit(currentPlan, sub.Period, now)
 
 		// Dispatch subscription.upgrading pre-hook — plugin can modify credit/discount.
-		hookResp, _ := s.dispatchHook(txCtx, HookSubUpgrading, sdk.SubUpgradingRequest{
+		hookResp, _ := s.dispatchHook(txCtx, HookSubUpgrading, UpgradingPayload{
 			SubscriptionID:  sub.ID,
 			UserID:          sub.UserID,
 			FromPlanID:      sub.PlanID,
@@ -228,7 +209,7 @@ func (s *BillingService) UpgradeSubscription(ctx context.Context, subID, newPlan
 			ProrationCredit: credit.Amount,
 		})
 		if hookResp != nil {
-			var resp sdk.SubUpgradingResponse
+			var resp UpgradingResponse
 			if err := json.Unmarshal(hookResp, &resp); err == nil && resp.CreditOverride != nil {
 				credit = vo.NewMoney(*resp.CreditOverride, credit.Currency)
 			}
@@ -270,7 +251,7 @@ func (s *BillingService) UpgradeSubscription(ctx context.Context, subID, newPlan
 			return err
 		}
 
-		asyncPayload = &subUpgradeAsyncPayload{
+		asyncPayload = &SubUpgradeAsyncPayload{
 			SubscriptionID: sub.ID,
 			UserID:         sub.UserID,
 			FromPlanID:     oldPlanID,
@@ -293,7 +274,7 @@ func (s *BillingService) UpgradeSubscription(ctx context.Context, subID, newPlan
 // The actual switch happens during the next Renew. No pre-hook is dispatched
 // because the downgrade is deferred (not immediately applied).
 func (s *BillingService) DowngradeSubscription(ctx context.Context, subID, newPlanID string) error {
-	var asyncPayload *subUpgradeAsyncPayload
+	var asyncPayload *SubUpgradeAsyncPayload
 
 	err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		sub, err := s.subs.GetByIDForUpdate(txCtx, subID)
@@ -310,7 +291,7 @@ func (s *BillingService) DowngradeSubscription(ctx context.Context, subID, newPl
 			return fmt.Errorf("update subscription: %w", err)
 		}
 
-		asyncPayload = &subUpgradeAsyncPayload{
+		asyncPayload = &SubUpgradeAsyncPayload{
 			SubscriptionID: sub.ID,
 			UserID:         sub.UserID,
 			FromPlanID:     oldPlanID,
@@ -333,7 +314,7 @@ func (s *BillingService) DowngradeSubscription(ctx context.Context, subID, newPl
 // is a system-initiated action (e.g., triggered by a scheduler when the billing
 // period elapses without renewal). No pre-hook is dispatched.
 func (s *BillingService) ExpireSubscription(ctx context.Context, subID string) error {
-	var asyncPayload *subAsyncPayload
+	var asyncPayload *SubAsyncPayload
 
 	err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		sub, err := s.subs.GetByIDForUpdate(txCtx, subID)
@@ -349,7 +330,7 @@ func (s *BillingService) ExpireSubscription(ctx context.Context, subID string) e
 			return fmt.Errorf("update subscription: %w", err)
 		}
 
-		asyncPayload = &subAsyncPayload{
+		asyncPayload = &SubAsyncPayload{
 			SubscriptionID: sub.ID,
 			UserID:         sub.UserID,
 			PlanID:         sub.PlanID,
@@ -367,23 +348,6 @@ func (s *BillingService) ExpireSubscription(ctx context.Context, subID string) e
 	return nil
 }
 
-// subAsyncPayload is the internal payload for simple post-commit async hooks
-// that only need subscription identification fields.
-type subAsyncPayload struct {
-	SubscriptionID string `json:"subscription_id"`
-	UserID         string `json:"user_id"`
-	PlanID         string `json:"plan_id"`
-}
-
-// subUpgradeAsyncPayload is the internal payload for upgrade/downgrade
-// post-commit async hooks that include both old and new plan IDs.
-type subUpgradeAsyncPayload struct {
-	SubscriptionID string `json:"subscription_id"`
-	UserID         string `json:"user_id"`
-	FromPlanID     string `json:"from_plan_id"`
-	ToPlanID       string `json:"to_plan_id"`
-}
-
 // applyRenewalHookOverrides applies price and discount overrides from the
 // subscription.renewing hook response to a renewal invoice. The invoice must be
 // in draft status. Hook parse failures are silently ignored (fallback to
@@ -392,7 +356,7 @@ func applyRenewalHookOverrides(inv *aggregate.Invoice, hookResp json.RawMessage,
 	if hookResp == nil {
 		return
 	}
-	var resp sdk.SubRenewingResponse
+	var resp RenewingResponse
 	if err := json.Unmarshal(hookResp, &resp); err != nil {
 		return
 	}

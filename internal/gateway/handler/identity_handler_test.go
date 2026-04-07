@@ -53,8 +53,8 @@ func TestRegister_Success(t *testing.T) {
 	h, repo, pub := newTestIdentityHandler(t)
 
 	repo.On("GetUserByEmail", mock.Anything, "alice@example.com").Return(nil, identity.ErrNotFound)
-	repo.On("CreateUser", mock.Anything, mock.AnythingOfType("*identity.PlatformUser")).Return(nil)
-	repo.On("CreateEmailVerification", mock.Anything, mock.AnythingOfType("*identity.EmailVerification")).Return(nil)
+	repo.On("CreateUser", mock.Anything, mock.AnythingOfType("*aggregate.PlatformUser")).Return(nil)
+	repo.On("CreateEmailVerification", mock.Anything, mock.AnythingOfType("*aggregate.EmailVerification")).Return(nil)
 	pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
 	body := `{"email":"alice@example.com","password":"StrongP4ss"}`
@@ -114,7 +114,7 @@ func TestLogin_Success(t *testing.T) {
 	}
 
 	repo.On("GetUserByEmail", mock.Anything, "alice@example.com").Return(user, nil)
-	repo.On("CreateSession", mock.Anything, mock.AnythingOfType("*identity.Session")).Return(nil)
+	repo.On("CreateSession", mock.Anything, mock.AnythingOfType("*aggregate.Session")).Return(nil)
 	pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
 	body := `{"email":"alice@example.com","password":"StrongP4ss"}`
@@ -217,7 +217,7 @@ func TestForgotPassword_Success(t *testing.T) {
 				user := &identity.PlatformUser{ID: "user-1", Email: "alice@example.com"}
 				repo.On("GetUserByEmail", mock.Anything, "alice@example.com").Return(user, nil)
 				repo.On("DeleteUserPasswordResets", mock.Anything, "user-1").Return(nil)
-				repo.On("CreatePasswordReset", mock.Anything, mock.AnythingOfType("*identity.PasswordReset")).Return(nil)
+				repo.On("CreatePasswordReset", mock.Anything, mock.AnythingOfType("*aggregate.PasswordReset")).Return(nil)
 				pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 			},
 		},
@@ -277,7 +277,7 @@ func TestResetPassword_Success(t *testing.T) {
 
 	repo.On("GetPasswordResetByToken", mock.Anything, "valid-token").Return(reset, nil)
 	repo.On("GetUserByIDForUpdate", mock.Anything, "user-1").Return(user, nil)
-	repo.On("UpdateUser", mock.Anything, mock.AnythingOfType("*identity.PlatformUser")).Return(nil)
+	repo.On("UpdateUser", mock.Anything, mock.AnythingOfType("*aggregate.PlatformUser")).Return(nil)
 	repo.On("DeleteUserSessions", mock.Anything, "user-1").Return(nil)
 	repo.On("DeletePasswordReset", mock.Anything, "reset-1").Return(nil)
 	pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)

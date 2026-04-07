@@ -67,7 +67,8 @@ func newBillingTestHarness(t *testing.T) *billingTestHarness {
 	txRunner := billingtest.NoopTxRunner{}
 	svc := billingservice.NewBillingService(plans, subs, invoices, families, pub, prorate, trial, txRunner, clock.NewReal(), slog.Default())
 
-	bh := handler.NewBillingHandler(svc, plans, subs, invoices)
+	addonSvc := billingservice.NewAddonService(subs, plans, pub, txRunner, clock.NewReal(), slog.Default())
+	bh := handler.NewBillingHandler(svc, addonSvc, plans, subs, invoices)
 
 	r := chi.NewRouter()
 	// Public routes.

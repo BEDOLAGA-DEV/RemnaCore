@@ -99,8 +99,8 @@ func TestIdentityFlow(t *testing.T) {
 		h := newIdentityTestHarness(t)
 
 		h.repo.On("GetUserByEmail", mock.Anything, testEmail).Return(nil, identity.ErrNotFound)
-		h.repo.On("CreateUser", mock.Anything, mock.AnythingOfType("*identity.PlatformUser")).Return(nil)
-		h.repo.On("CreateEmailVerification", mock.Anything, mock.AnythingOfType("*identity.EmailVerification")).Return(nil)
+		h.repo.On("CreateUser", mock.Anything, mock.AnythingOfType("*aggregate.PlatformUser")).Return(nil)
+		h.repo.On("CreateEmailVerification", mock.Anything, mock.AnythingOfType("*aggregate.EmailVerification")).Return(nil)
 		h.pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
 		body := `{"email":"` + testEmail + `","password":"` + testPassword + `"}`
@@ -164,7 +164,7 @@ func TestIdentityFlow(t *testing.T) {
 		}
 
 		h.repo.On("GetUserByEmail", mock.Anything, testEmail).Return(user, nil)
-		h.repo.On("CreateSession", mock.Anything, mock.AnythingOfType("*identity.Session")).Return(nil)
+		h.repo.On("CreateSession", mock.Anything, mock.AnythingOfType("*aggregate.Session")).Return(nil)
 		h.pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
 		body := `{"email":"` + testEmail + `","password":"` + testPassword + `"}`
@@ -314,7 +314,7 @@ func TestIdentityFlow(t *testing.T) {
 
 		h.repo.On("GetEmailVerification", mock.Anything, vToken).Return(verification, nil)
 		h.repo.On("GetUserByIDForUpdate", mock.Anything, userID).Return(user, nil)
-		h.repo.On("UpdateUser", mock.Anything, mock.AnythingOfType("*identity.PlatformUser")).Return(nil)
+		h.repo.On("UpdateUser", mock.Anything, mock.AnythingOfType("*aggregate.PlatformUser")).Return(nil)
 		h.repo.On("DeleteEmailVerification", mock.Anything, "v-1").Return(nil)
 		h.pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
@@ -385,7 +385,7 @@ func TestIdentityFlow(t *testing.T) {
 		h.repo.On("GetSessionByRefreshToken", mock.Anything, rToken).Return(session, nil)
 		h.repo.On("GetUserByID", mock.Anything, userID).Return(user, nil)
 		h.repo.On("DeleteSession", mock.Anything, "s-1").Return(nil)
-		h.repo.On("CreateSession", mock.Anything, mock.AnythingOfType("*identity.Session")).Return(nil)
+		h.repo.On("CreateSession", mock.Anything, mock.AnythingOfType("*aggregate.Session")).Return(nil)
 		h.pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
 		body := `{"refresh_token":"` + rToken + `"}`

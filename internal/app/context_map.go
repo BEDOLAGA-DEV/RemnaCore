@@ -161,6 +161,19 @@ var ContextMap = []CrossContextDependency{
 	// Note: handler talks only to payment; billing completion is event-driven.
 	{From: "gateway", To: "payment", Mechanism: MechanismGateway,
 		Description: "PaymentWebhookHandler verifies and completes payments via PaymentFacade"},
+
+	// =====================================================================
+	// Planned event-driven dependencies (not yet implemented)
+	// =====================================================================
+
+	// reseller -> billing: invoice.paid events trigger commission calculation.
+	// Events: invoice.paid (planned consumer)
+	// Path: BillingService publishes invoice.paid -> outbox -> NATS ->
+	//       (future) ResellerEventConsumer -> ResellerService.RecordCommission
+	// Note: ResellerService.RecordCommission already accepts saleID and
+	// saleAmount parameters for this use-case.
+	{From: "reseller", To: "billing", Mechanism: MechanismEvent,
+		Description: "invoice.paid events trigger commission calculation (planned, not yet implemented)"},
 }
 
 // AllowedSyncImports returns the set of allowed synchronous imports between

@@ -88,7 +88,7 @@ func TestStartCheckout_Success(t *testing.T) {
 	// Create checkout service with billing-owned PaymentGateway.
 	checkoutPub := &billingtest.MockEventPublisher{}
 	checkoutPub.On("Publish", mock.Anything, mock.Anything).Return(nil).Maybe()
-	checkoutSvc := NewCheckoutService(billingSvc, paymentGW, pricingMod, checkoutPub, checkoutLogger(), billing.AlwaysAllowRateLimiter{}, clock.NewReal())
+	checkoutSvc := NewCheckoutService(billingSvc, invoices, subs, paymentGW, pricingMod, checkoutPub, checkoutLogger(), billing.AlwaysAllowRateLimiter{}, clock.NewReal())
 
 	result, err := checkoutSvc.StartCheckout(context.Background(), CheckoutRequest{
 		UserID:    "user-1",
@@ -124,7 +124,7 @@ func TestCompleteCheckout_Success(t *testing.T) {
 	publisher.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
 	// Payment gateway and pricing modifier are not needed for CompleteCheckout.
-	checkoutSvc := NewCheckoutService(svc, nil, nil, publisher, checkoutLogger(), billing.AlwaysAllowRateLimiter{}, clock.NewReal())
+	checkoutSvc := NewCheckoutService(svc, invoices, subs, nil, nil, publisher, checkoutLogger(), billing.AlwaysAllowRateLimiter{}, clock.NewReal())
 
 	err := checkoutSvc.CompleteCheckout(context.Background(), "inv-1")
 
@@ -136,7 +136,7 @@ func TestCompleteCheckout_Success(t *testing.T) {
 }
 
 func TestStartCheckout_MissingUserID(t *testing.T) {
-	checkoutSvc := NewCheckoutService(nil, nil, nil, nil, checkoutLogger(), billing.AlwaysAllowRateLimiter{}, clock.NewReal())
+	checkoutSvc := NewCheckoutService(nil, nil, nil, nil, nil, nil, checkoutLogger(), billing.AlwaysAllowRateLimiter{}, clock.NewReal())
 
 	_, err := checkoutSvc.StartCheckout(context.Background(), CheckoutRequest{
 		PlanID: "plan-premium",
@@ -147,7 +147,7 @@ func TestStartCheckout_MissingUserID(t *testing.T) {
 }
 
 func TestStartCheckout_MissingPlanID(t *testing.T) {
-	checkoutSvc := NewCheckoutService(nil, nil, nil, nil, checkoutLogger(), billing.AlwaysAllowRateLimiter{}, clock.NewReal())
+	checkoutSvc := NewCheckoutService(nil, nil, nil, nil, nil, nil, checkoutLogger(), billing.AlwaysAllowRateLimiter{}, clock.NewReal())
 
 	_, err := checkoutSvc.StartCheckout(context.Background(), CheckoutRequest{
 		UserID: "user-1",
@@ -158,7 +158,7 @@ func TestStartCheckout_MissingPlanID(t *testing.T) {
 }
 
 func TestCompleteCheckout_MissingInvoiceID(t *testing.T) {
-	checkoutSvc := NewCheckoutService(nil, nil, nil, nil, checkoutLogger(), billing.AlwaysAllowRateLimiter{}, clock.NewReal())
+	checkoutSvc := NewCheckoutService(nil, nil, nil, nil, nil, nil, checkoutLogger(), billing.AlwaysAllowRateLimiter{}, clock.NewReal())
 
 	err := checkoutSvc.CompleteCheckout(context.Background(), "")
 
@@ -170,7 +170,7 @@ func TestStartCheckout_RateLimited(t *testing.T) {
 	rateLimiter := &billingtest.MockDomainRateLimiter{}
 	rateLimiter.On("AllowCheckout", mock.Anything, "user-1").Return(false, nil)
 
-	checkoutSvc := NewCheckoutService(nil, nil, nil, nil, checkoutLogger(), rateLimiter, clock.NewReal())
+	checkoutSvc := NewCheckoutService(nil, nil, nil, nil, nil, nil, checkoutLogger(), rateLimiter, clock.NewReal())
 
 	_, err := checkoutSvc.StartCheckout(context.Background(), CheckoutRequest{
 		UserID: "user-1",
@@ -209,7 +209,7 @@ func TestStartCheckout_RateLimiterError_FailsOpen(t *testing.T) {
 
 	checkoutPub := &billingtest.MockEventPublisher{}
 	checkoutPub.On("Publish", mock.Anything, mock.Anything).Return(nil).Maybe()
-	checkoutSvc := NewCheckoutService(billingSvc, paymentGW, pricingMod, checkoutPub, checkoutLogger(), rateLimiter, clock.NewReal())
+	checkoutSvc := NewCheckoutService(billingSvc, invoices, subs, paymentGW, pricingMod, checkoutPub, checkoutLogger(), rateLimiter, clock.NewReal())
 
 	result, err := checkoutSvc.StartCheckout(context.Background(), CheckoutRequest{
 		UserID:    "user-1",
@@ -261,7 +261,7 @@ func TestStartCheckout_PricingModifier_DiscountApplied(t *testing.T) {
 
 	checkoutPub := &billingtest.MockEventPublisher{}
 	checkoutPub.On("Publish", mock.Anything, mock.Anything).Return(nil).Maybe()
-	checkoutSvc := NewCheckoutService(billingSvc, paymentGW, pricingMod, checkoutPub, checkoutLogger(), billing.AlwaysAllowRateLimiter{}, clock.NewReal())
+	checkoutSvc := NewCheckoutService(billingSvc, invoices, subs, paymentGW, pricingMod, checkoutPub, checkoutLogger(), billing.AlwaysAllowRateLimiter{}, clock.NewReal())
 
 	result, err := checkoutSvc.StartCheckout(context.Background(), CheckoutRequest{
 		UserID:    "user-1",
@@ -307,7 +307,7 @@ func TestStartCheckout_PricingModifier_Error_OriginalPrice(t *testing.T) {
 
 	checkoutPub := &billingtest.MockEventPublisher{}
 	checkoutPub.On("Publish", mock.Anything, mock.Anything).Return(nil).Maybe()
-	checkoutSvc := NewCheckoutService(billingSvc, paymentGW, pricingMod, checkoutPub, checkoutLogger(), billing.AlwaysAllowRateLimiter{}, clock.NewReal())
+	checkoutSvc := NewCheckoutService(billingSvc, invoices, subs, paymentGW, pricingMod, checkoutPub, checkoutLogger(), billing.AlwaysAllowRateLimiter{}, clock.NewReal())
 
 	result, err := checkoutSvc.StartCheckout(context.Background(), CheckoutRequest{
 		UserID:    "user-1",
@@ -349,7 +349,7 @@ func TestStartCheckout_PricingModifier_NilResult_OriginalPrice(t *testing.T) {
 
 	checkoutPub := &billingtest.MockEventPublisher{}
 	checkoutPub.On("Publish", mock.Anything, mock.Anything).Return(nil).Maybe()
-	checkoutSvc := NewCheckoutService(billingSvc, paymentGW, pricingMod, checkoutPub, checkoutLogger(), billing.AlwaysAllowRateLimiter{}, clock.NewReal())
+	checkoutSvc := NewCheckoutService(billingSvc, invoices, subs, paymentGW, pricingMod, checkoutPub, checkoutLogger(), billing.AlwaysAllowRateLimiter{}, clock.NewReal())
 
 	result, err := checkoutSvc.StartCheckout(context.Background(), CheckoutRequest{
 		UserID:    "user-1",

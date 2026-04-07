@@ -1,6 +1,22 @@
-package identity
+package aggregate
 
 import "github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+
+// Identity-specific event types.
+const (
+	EventUserRegistered         domainevent.EventType = "user.registered"
+	EventEmailVerified          domainevent.EventType = "user.email_verified"
+	EventUserLoggedIn           domainevent.EventType = "user.logged_in"
+	EventProfileUpdated         domainevent.EventType = "user.profile_updated"
+	EventTokenRefreshed         domainevent.EventType = "user.token_refreshed"
+	EventPasswordResetRequested domainevent.EventType = "user.password_reset_requested"
+	EventPasswordReset          domainevent.EventType = "user.password_reset"
+	EventPasswordChanged        domainevent.EventType = "user.password_changed"
+	EventTelegramLinked         domainevent.EventType = "user.telegram_linked"
+	EventTelegramUnlinked       domainevent.EventType = "user.telegram_unlinked"
+)
+
+// --- Event payload types ---
 
 // UserRegisteredPayload is the typed payload for EventUserRegistered.
 type UserRegisteredPayload struct {
@@ -57,15 +73,17 @@ type TelegramUnlinkedPayload struct {
 
 func (UserRegisteredPayload) EventType() domainevent.EventType { return EventUserRegistered }
 func (EmailVerifiedPayload) EventType() domainevent.EventType  { return EventEmailVerified }
-func (UserLoggedInPayload) EventType() domainevent.EventType    { return EventUserLoggedIn }
-func (TokenRefreshedPayload) EventType() domainevent.EventType  { return EventTokenRefreshed }
+func (UserLoggedInPayload) EventType() domainevent.EventType   { return EventUserLoggedIn }
+func (TokenRefreshedPayload) EventType() domainevent.EventType { return EventTokenRefreshed }
 func (PasswordResetRequestedPayload) EventType() domainevent.EventType {
 	return EventPasswordResetRequested
 }
-func (PasswordResetPayload) EventType() domainevent.EventType      { return EventPasswordReset }
-func (PasswordChangedPayload) EventType() domainevent.EventType    { return EventPasswordChanged }
-func (TelegramLinkedPayload) EventType() domainevent.EventType     { return EventTelegramLinked }
-func (TelegramUnlinkedPayload) EventType() domainevent.EventType   { return EventTelegramUnlinked }
+func (PasswordResetPayload) EventType() domainevent.EventType   { return EventPasswordReset }
+func (PasswordChangedPayload) EventType() domainevent.EventType { return EventPasswordChanged }
+func (TelegramLinkedPayload) EventType() domainevent.EventType  { return EventTelegramLinked }
+func (TelegramUnlinkedPayload) EventType() domainevent.EventType {
+	return EventTelegramUnlinked
+}
 
 // Compile-time interface checks.
 var (

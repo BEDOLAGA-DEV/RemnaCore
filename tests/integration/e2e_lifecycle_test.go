@@ -191,9 +191,9 @@ func TestFullLifecycle(t *testing.T) {
 	t.Run("phase1_register", func(t *testing.T) {
 		h.identityRepo.On("GetUserByEmail", mock.Anything, lifecycleTestEmail).
 			Return(nil, identity.ErrNotFound).Once()
-		h.identityRepo.On("CreateUser", mock.Anything, mock.AnythingOfType("*identity.PlatformUser")).
+		h.identityRepo.On("CreateUser", mock.Anything, mock.AnythingOfType("*aggregate.PlatformUser")).
 			Return(nil).Once()
-		h.identityRepo.On("CreateEmailVerification", mock.Anything, mock.AnythingOfType("*identity.EmailVerification")).
+		h.identityRepo.On("CreateEmailVerification", mock.Anything, mock.AnythingOfType("*aggregate.EmailVerification")).
 			Return(nil).Once()
 		h.identityPub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).
 			Return(nil).Once()
@@ -244,7 +244,7 @@ func TestFullLifecycle(t *testing.T) {
 			Return(verification, nil).Once()
 		h.identityRepo.On("GetUserByIDForUpdate", mock.Anything, userID).
 			Return(unverifiedUser, nil).Once()
-		h.identityRepo.On("UpdateUser", mock.Anything, mock.AnythingOfType("*identity.PlatformUser")).
+		h.identityRepo.On("UpdateUser", mock.Anything, mock.AnythingOfType("*aggregate.PlatformUser")).
 			Return(nil).Once()
 		h.identityRepo.On("DeleteEmailVerification", mock.Anything, "ev-lifecycle-1").
 			Return(nil).Once()
@@ -286,7 +286,7 @@ func TestFullLifecycle(t *testing.T) {
 
 		h.identityRepo.On("GetUserByEmail", mock.Anything, lifecycleTestEmail).
 			Return(verifiedUser, nil).Once()
-		h.identityRepo.On("CreateSession", mock.Anything, mock.AnythingOfType("*identity.Session")).
+		h.identityRepo.On("CreateSession", mock.Anything, mock.AnythingOfType("*aggregate.Session")).
 			Return(nil).Once()
 		h.identityPub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).
 			Return(nil).Once()

@@ -3,6 +3,7 @@ package nats
 import (
 	"context"
 	"log/slog"
+	"math/rand/v2"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -33,7 +34,40 @@ const (
 	// key that tracks retry attempts in the database. Using a separate key
 	// prevents conflicts with the idempotency key lifecycle (acquire/release).
 	retryKeyPrefix = "retry:"
+
+	// Exponential backoff delays for retry attempts. Each delay corresponds
+	// to the wait time before Nack'ing the message at that attempt number.
+	// Watermill's Message interface does not support NakWithDelay, so the
+	// backoff is implemented as a sleep before Nack.
+	RetryDelay1 = 5 * time.Second
+	RetryDelay2 = 30 * time.Second
+	RetryDelay3 = 2 * time.Minute
+
+	// retryJitterFraction is the fraction of the delay added as random jitter
+	// to prevent thundering herd on retries. A value of 0.2 means up to 20%
+	// of the base delay is added.
+	retryJitterFraction = 0.2
 )
+
+// retryDelays maps retry attempt index (0-based) to the base backoff delay.
+// Attempts beyond the slice length use the last entry (capped backoff).
+var retryDelays = []time.Duration{RetryDelay1, RetryDelay2, RetryDelay3}
+
+// retryBackoffDelay returns the backoff delay for the given retry attempt
+// (1-based, matching IncrementRetry return value). The delay is the base value
+// from retryDelays plus random jitter of up to retryJitterFraction of the base.
+func retryBackoffDelay(attempt int) time.Duration {
+	idx := attempt - 1
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(retryDelays) {
+		idx = len(retryDelays) - 1
+	}
+	base := retryDelays[idx]
+	jitter := time.Duration(float64(base) * retryJitterFraction * rand.Float64())
+	return base + jitter
+}
 
 // SubscriptionEventHandler defines the contract for handling billing
 // subscription lifecycle events. The MultiSubOrchestrator satisfies this

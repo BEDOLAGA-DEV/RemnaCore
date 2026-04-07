@@ -1,14 +1,49 @@
-package reseller
+package service
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
 
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/aggregate"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/vo"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
+
+// TenantRepository defines the persistence operations for tenants.
+type TenantRepository interface {
+	CreateTenant(ctx context.Context, tenant *aggregate.Tenant) error
+	GetTenantByID(ctx context.Context, id string) (*aggregate.Tenant, error)
+	// GetTenantByIDForUpdate retrieves a tenant by ID with a SELECT FOR UPDATE
+	// row lock. Must be called within a RunInTx transaction to prevent TOCTOU
+	// races during read-modify-write cycles.
+	GetTenantByIDForUpdate(ctx context.Context, id string) (*aggregate.Tenant, error)
+	GetTenantByDomain(ctx context.Context, domain string) (*aggregate.Tenant, error)
+	GetTenantByAPIKeyHash(ctx context.Context, keyHash string) (*aggregate.Tenant, error)
+	UpdateTenant(ctx context.Context, tenant *aggregate.Tenant) error
+	ListTenants(ctx context.Context, limit, offset int) ([]*aggregate.Tenant, error)
+}
+
+// CommissionRepository defines the persistence operations for reseller accounts
+// and commissions.
+type CommissionRepository interface {
+	CreateResellerAccount(ctx context.Context, account *aggregate.ResellerAccount) error
+	GetResellerAccountByID(ctx context.Context, id string) (*aggregate.ResellerAccount, error)
+	GetResellerAccountByUserAndTenant(ctx context.Context, userID, tenantID string) (*aggregate.ResellerAccount, error)
+
+	CreateCommission(ctx context.Context, commission *aggregate.Commission) error
+	GetCommissionByID(ctx context.Context, id string) (*aggregate.Commission, error)
+	// GetCommissionByIDForUpdate retrieves a commission by ID with a SELECT FOR
+	// UPDATE row lock. Must be called within a RunInTx transaction to prevent
+	// TOCTOU races during read-modify-write cycles.
+	GetCommissionByIDForUpdate(ctx context.Context, id string) (*aggregate.Commission, error)
+	GetPendingCommissions(ctx context.Context, resellerID string) ([]*aggregate.Commission, error)
+	UpdateCommission(ctx context.Context, commission *aggregate.Commission) error
+
+	UpdateResellerBalance(ctx context.Context, resellerID string, balance int64) error
+}
 
 // ResellerService implements the core reseller and white-label use-cases:
 // tenant management, reseller account creation, commission tracking, and
@@ -74,9 +109,9 @@ func NewResellerService(
 
 // CreateTenant creates a new tenant, generates an API key, and returns both the
 // persisted tenant and the plain-text API key (shown only once).
-func (s *ResellerService) CreateTenant(ctx context.Context, name, domain, ownerUserID string) (*Tenant, string, error) {
+func (s *ResellerService) CreateTenant(ctx context.Context, name, domain, ownerUserID string) (*aggregate.Tenant, string, error) {
 	now := s.clock.Now()
-	tenant := NewTenant(name, domain, ownerUserID, now)
+	tenant := aggregate.NewTenant(name, domain, ownerUserID, now)
 
 	plainKey, err := tenant.GenerateAPIKey(now)
 	if err != nil {
@@ -105,7 +140,7 @@ func (s *ResellerService) CreateTenant(ctx context.Context, name, domain, ownerU
 }
 
 // GetTenant retrieves a tenant by ID.
-func (s *ResellerService) GetTenant(ctx context.Context, tenantID string) (*Tenant, error) {
+func (s *ResellerService) GetTenant(ctx context.Context, tenantID string) (*aggregate.Tenant, error) {
 	tenant, err := s.tenants.GetTenantByID(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("finding tenant: %w", err)
@@ -114,7 +149,7 @@ func (s *ResellerService) GetTenant(ctx context.Context, tenantID string) (*Tena
 }
 
 // GetTenantByDomain retrieves a tenant by its custom domain.
-func (s *ResellerService) GetTenantByDomain(ctx context.Context, domain string) (*Tenant, error) {
+func (s *ResellerService) GetTenantByDomain(ctx context.Context, domain string) (*aggregate.Tenant, error) {
 	tenant, err := s.tenants.GetTenantByDomain(ctx, domain)
 	if err != nil {
 		return nil, fmt.Errorf("finding tenant by domain: %w", err)
@@ -123,7 +158,7 @@ func (s *ResellerService) GetTenantByDomain(ctx context.Context, domain string) 
 }
 
 // ListTenants returns a paginated list of all tenants.
-func (s *ResellerService) ListTenants(ctx context.Context, limit, offset int) ([]*Tenant, error) {
+func (s *ResellerService) ListTenants(ctx context.Context, limit, offset int) ([]*aggregate.Tenant, error) {
 	tenants, err := s.tenants.ListTenants(ctx, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing tenants: %w", err)
@@ -134,8 +169,8 @@ func (s *ResellerService) ListTenants(ctx context.Context, limit, offset int) ([
 // UpdateBranding updates the branding configuration for a tenant. The read
 // (with FOR UPDATE lock), mutation, update, and event publish are all inside a
 // single transaction to prevent TOCTOU races.
-func (s *ResellerService) UpdateBranding(ctx context.Context, tenantID string, branding BrandingConfig) (*Tenant, error) {
-	var tenant *Tenant
+func (s *ResellerService) UpdateBranding(ctx context.Context, tenantID string, branding vo.BrandingConfig) (*aggregate.Tenant, error) {
+	var tenant *aggregate.Tenant
 	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		var err error
 		tenant, err = s.tenants.GetTenantByIDForUpdate(txCtx, tenantID)
@@ -157,8 +192,8 @@ func (s *ResellerService) UpdateBranding(ctx context.Context, tenantID string, b
 }
 
 // CreateResellerAccount creates a new reseller account linked to a tenant.
-func (s *ResellerService) CreateResellerAccount(ctx context.Context, tenantID, userID string, rate int) (*ResellerAccount, error) {
-	account, err := NewResellerAccount(tenantID, userID, rate, s.clock.Now())
+func (s *ResellerService) CreateResellerAccount(ctx context.Context, tenantID, userID string, rate int) (*aggregate.ResellerAccount, error) {
+	account, err := aggregate.NewResellerAccount(tenantID, userID, rate, s.clock.Now())
 	if err != nil {
 		return nil, err
 	}
@@ -187,8 +222,8 @@ func (s *ResellerService) CreateResellerAccount(ctx context.Context, tenantID, u
 // RecordCommission creates a commission for a sale and updates the reseller's
 // accumulated balance. The commission creation and balance update are wrapped
 // in a database transaction to prevent race conditions on concurrent writes.
-func (s *ResellerService) RecordCommission(ctx context.Context, resellerID, saleID string, saleAmount int64, rate int, currency string) (*Commission, error) {
-	commission, err := NewCommission(resellerID, saleID, saleAmount, rate, currency, s.clock.Now())
+func (s *ResellerService) RecordCommission(ctx context.Context, resellerID, saleID string, saleAmount int64, rate int, currency string) (*aggregate.Commission, error) {
+	commission, err := aggregate.NewCommission(resellerID, saleID, saleAmount, rate, currency, s.clock.Now())
 	if err != nil {
 		return nil, fmt.Errorf("creating commission: %w", err)
 	}
@@ -217,7 +252,7 @@ func (s *ResellerService) RecordCommission(ctx context.Context, resellerID, sale
 	// Aggregate already recorded its own created event in NewCommission().
 	if err := domainevent.PublishAll(ctx, s.publisher, commission); err != nil {
 		s.logger.Warn("failed to publish aggregate events",
-			slog.String("event_type", string(EventCommissionCreated)),
+			slog.String("event_type", string(aggregate.EventCommissionCreated)),
 			slog.Any("error", err),
 		)
 	}
@@ -229,8 +264,8 @@ func (s *ResellerService) RecordCommission(ctx context.Context, resellerID, sale
 // the resulting domain event. The read (with FOR UPDATE lock), mutation,
 // update, and event publish are all inside a single transaction to prevent
 // TOCTOU races.
-func (s *ResellerService) MarkCommissionPaid(ctx context.Context, commissionID string) (*Commission, error) {
-	var commission *Commission
+func (s *ResellerService) MarkCommissionPaid(ctx context.Context, commissionID string) (*aggregate.Commission, error) {
+	var commission *aggregate.Commission
 	err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		var err error
 		commission, err = s.commissions.GetCommissionByIDForUpdate(txCtx, commissionID)
@@ -261,7 +296,7 @@ func (s *ResellerService) MarkCommissionPaid(ctx context.Context, commissionID s
 }
 
 // GetPendingCommissions returns all pending commissions for a reseller.
-func (s *ResellerService) GetPendingCommissions(ctx context.Context, resellerID string) ([]*Commission, error) {
+func (s *ResellerService) GetPendingCommissions(ctx context.Context, resellerID string) ([]*aggregate.Commission, error) {
 	commissions, err := s.commissions.GetPendingCommissions(ctx, resellerID)
 	if err != nil {
 		return nil, fmt.Errorf("listing pending commissions: %w", err)
@@ -272,8 +307,8 @@ func (s *ResellerService) GetPendingCommissions(ctx context.Context, resellerID 
 // ValidateAPIKey hashes the provided plain-text key and looks up the
 // corresponding tenant. Returns ErrInvalidAPIKey if no match is found,
 // or ErrTenantInactive if the matched tenant is disabled.
-func (s *ResellerService) ValidateAPIKey(ctx context.Context, plainKey string) (*Tenant, error) {
-	keyHash := HashAPIKey(plainKey)
+func (s *ResellerService) ValidateAPIKey(ctx context.Context, plainKey string) (*aggregate.Tenant, error) {
+	keyHash := aggregate.HashAPIKey(plainKey)
 
 	tenant, err := s.tenants.GetTenantByAPIKeyHash(ctx, keyHash)
 	if err != nil {
@@ -286,4 +321,3 @@ func (s *ResellerService) ValidateAPIKey(ctx context.Context, plainKey string) (
 
 	return tenant, nil
 }
-

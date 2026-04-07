@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 
@@ -11,8 +10,6 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
-	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
-	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/sdk"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tracing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
@@ -66,23 +63,27 @@ type BillingService struct {
 	prorate    *ProrateCalculator
 	trial      *TrialManager
 	txRunner   txmanager.Runner
-	clock      clock.Clock
-	logger     *slog.Logger
-	dispatcher hookdispatch.Dispatcher // nil-safe; all dispatches guarded
-	hooksEnabled bool                  // subscription lifecycle hooks feature flag
+	clock     clock.Clock
+	logger    *slog.Logger
+	syncHook  SyncHookFn  // nil-safe; all dispatches guarded
+	asyncHook AsyncHookFn // nil-safe; all dispatches guarded
 }
 
 // BillingServiceOption configures optional dependencies on BillingService.
 type BillingServiceOption func(*BillingService)
 
-// WithDispatcher sets the WASM hook dispatcher for subscription lifecycle hooks.
-func WithDispatcher(d hookdispatch.Dispatcher) BillingServiceOption {
-	return func(s *BillingService) { s.dispatcher = d }
+// WithSyncHook sets the synchronous hook dispatch function for pre-transition
+// lifecycle hooks (e.g., subscription.cancelling). The function is called with
+// a domain-local payload struct that is JSON-serializable. Pass nil to disable.
+func WithSyncHook(fn SyncHookFn) BillingServiceOption {
+	return func(s *BillingService) { s.syncHook = fn }
 }
 
-// WithHooksEnabled enables subscription lifecycle hook dispatch points.
-func WithHooksEnabled(enabled bool) BillingServiceOption {
-	return func(s *BillingService) { s.hooksEnabled = enabled }
+// WithAsyncHook sets the asynchronous hook dispatch function for post-commit
+// lifecycle notifications (e.g., subscription.cancelled.post). The function is
+// called with a domain-local payload struct. Pass nil to disable.
+func WithAsyncHook(fn AsyncHookFn) BillingServiceOption {
+	return func(s *BillingService) { s.asyncHook = fn }
 }
 
 // NewBillingService creates a BillingService with the given dependencies.
@@ -119,45 +120,24 @@ func NewBillingService(
 	return s
 }
 
-// dispatchHook dispatches a sync hook if dispatcher is available and hooks are
-// enabled. payload must be a struct with json tags (marshaled via json.Marshal
-// before dispatch). Returns nil response on error or nil dispatcher (fallback
-// to default behavior). Uses DispatchSyncSafe so that plugin failures never
-// block the business operation.
+// dispatchHook dispatches a sync hook via the injected SyncHookFn if set.
+// Returns nil response when no hook function is configured (fallback to
+// default behavior). The hook function handles marshaling, dispatch, error
+// logging, and compensation internally.
 func (s *BillingService) dispatchHook(ctx context.Context, hookName string, payload any) (json.RawMessage, error) {
-	if s.dispatcher == nil || !s.hooksEnabled {
+	if s.syncHook == nil {
 		return nil, nil
 	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("marshal hook payload: %w", err)
-	}
-	result := s.dispatcher.DispatchSyncSafe(ctx, hookName, data)
-	if result.Err != nil {
-		s.logger.Warn("hook dispatch failed, proceeding with defaults",
-			slog.String("hook", hookName),
-			slog.Any("error", result.Err),
-		)
-		return nil, nil
-	}
-	return result.Payload, nil
+	return s.syncHook(ctx, hookName, payload)
 }
 
-// dispatchAsync fires an async hook if dispatcher is available and hooks are
-// enabled. Errors are logged but never propagated (fire-and-forget).
+// dispatchAsync fires an async hook via the injected AsyncHookFn if set.
+// No-op when no hook function is configured.
 func (s *BillingService) dispatchAsync(ctx context.Context, hookName string, payload any) {
-	if s.dispatcher == nil || !s.hooksEnabled {
+	if s.asyncHook == nil {
 		return
 	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		s.logger.Warn("failed to marshal async hook payload",
-			slog.String("hook", hookName),
-			slog.Any("error", err),
-		)
-		return
-	}
-	s.dispatcher.DispatchAsync(ctx, hookName, data)
+	s.asyncHook(ctx, hookName, payload)
 }
 
 // CreateSubscription creates a new subscription and its initial invoice.
@@ -231,7 +211,7 @@ func (s *BillingService) CreateSubscription(
 // subscription.cancelled.post async hook fires for notifications.
 func (s *BillingService) CancelSubscription(ctx context.Context, subID string, reason *string) error {
 	// asyncPayload is captured inside the tx for post-commit async dispatch.
-	var asyncPayload *sdk.SubCancellingRequest
+	var asyncPayload *CancellingPayload
 
 	err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		sub, err := s.subs.GetByIDForUpdate(txCtx, subID)
@@ -240,14 +220,14 @@ func (s *BillingService) CancelSubscription(ctx context.Context, subID string, r
 		}
 
 		// Dispatch subscription.cancelling pre-hook.
-		hookResp, _ := s.dispatchHook(txCtx, HookSubCancelling, sdk.SubCancellingRequest{
+		hookResp, _ := s.dispatchHook(txCtx, HookSubCancelling, CancellingPayload{
 			SubscriptionID: sub.ID,
 			UserID:         sub.UserID,
 			PlanID:         sub.PlanID,
 			Reason:         reason,
 		})
 		if hookResp != nil {
-			var resp sdk.SubCancellingResponse
+			var resp CancellingResponse
 			if err := json.Unmarshal(hookResp, &resp); err == nil && resp.Block {
 				return billing.ErrCancellationBlocked
 			}
@@ -262,7 +242,7 @@ func (s *BillingService) CancelSubscription(ctx context.Context, subID string, r
 		}
 
 		// Capture data for post-commit async hook.
-		asyncPayload = &sdk.SubCancellingRequest{
+		asyncPayload = &CancellingPayload{
 			SubscriptionID: sub.ID,
 			UserID:         sub.UserID,
 			PlanID:         sub.PlanID,
@@ -291,7 +271,7 @@ func (s *BillingService) CancelSubscription(ctx context.Context, subID string, r
 // subscription.activated.post async hook fires for notifications/analytics.
 func (s *BillingService) PayInvoice(ctx context.Context, invoiceID string) error {
 	// asyncPayload is captured inside the tx for post-commit async dispatch.
-	var asyncPayload *sdk.SubActivatedNotification
+	var asyncPayload *ActivatedPayload
 
 	err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		inv, err := s.invoices.GetByIDForUpdate(txCtx, invoiceID)
@@ -344,7 +324,7 @@ func (s *BillingService) PayInvoice(ctx context.Context, invoiceID string) error
 			}
 
 			// Capture data for post-commit async hook.
-			asyncPayload = &sdk.SubActivatedNotification{
+			asyncPayload = &ActivatedPayload{
 				SubscriptionID: sub.ID,
 				UserID:         sub.UserID,
 				PlanID:         sub.PlanID,
@@ -363,145 +343,3 @@ func (s *BillingService) PayInvoice(ctx context.Context, invoiceID string) error
 	}
 	return nil
 }
-
-// AddFamilyMember adds a member to the subscription owner's family group.
-// The subscription's plan must have family sharing enabled. The family group
-// read (with FOR UPDATE lock), mutation, update, and outbox event are all
-// performed inside a single database transaction to prevent TOCTOU races.
-func (s *BillingService) AddFamilyMember(
-	ctx context.Context,
-	subID, memberUserID, nickname string,
-) error {
-	// Subscription and plan are read-only here (no mutation), so they can
-	// safely be read outside the transaction.
-	sub, err := s.subs.GetByID(ctx, subID)
-	if err != nil {
-		return fmt.Errorf("get subscription: %w", err)
-	}
-
-	plan, err := s.plans.GetByID(ctx, sub.PlanID)
-	if err != nil {
-		return fmt.Errorf("get plan: %w", err)
-	}
-
-	now := s.clock.Now()
-	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
-		// Get or create family group (with FOR UPDATE lock when it exists)
-		fg, err := s.families.GetByOwnerIDForUpdate(txCtx, sub.UserID)
-		if err != nil {
-			if !errors.Is(err, billing.ErrFamilyGroupNotFound) {
-				return fmt.Errorf("get family group: %w", err)
-			}
-			// Create a new family group if not found
-			fg, err = aggregate.NewFamilyGroup(sub.UserID, plan.MaxFamilyMembers, now)
-			if err != nil {
-				return fmt.Errorf("create family group: %w", err)
-			}
-			if err := s.families.Create(txCtx, fg); err != nil {
-				return fmt.Errorf("create family group: %w", err)
-			}
-		}
-
-		// Validate family eligibility before adding the member.
-		eligibility := aggregate.FamilyEligibility{
-			Plan:        plan,
-			MemberCount: fg.MemberCount(),
-		}
-		if err := eligibility.Check(); err != nil {
-			return fmt.Errorf("family eligibility: %w", err)
-		}
-
-		if err := fg.AddMember(memberUserID, nickname, now); err != nil {
-			return fmt.Errorf("add family member: %w", err)
-		}
-
-		if err := s.families.Update(txCtx, fg); err != nil {
-			return fmt.Errorf("update family group: %w", err)
-		}
-
-		return domainevent.PublishAll(txCtx, s.publisher, fg)
-	})
-}
-
-// RemoveFamilyMember removes a member from the subscription owner's family
-// group. The family group read (with FOR UPDATE lock), mutation, update, and
-// outbox event are all performed inside a single database transaction to
-// prevent TOCTOU races.
-func (s *BillingService) RemoveFamilyMember(
-	ctx context.Context,
-	subID, memberUserID string,
-) error {
-	// Subscription is read-only here (used only to find the owner).
-	sub, err := s.subs.GetByID(ctx, subID)
-	if err != nil {
-		return fmt.Errorf("get subscription: %w", err)
-	}
-
-	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
-		fg, err := s.families.GetByOwnerIDForUpdate(txCtx, sub.UserID)
-		if err != nil {
-			return fmt.Errorf("get family group: %w", err)
-		}
-
-		if err := fg.RemoveMember(memberUserID, s.clock.Now()); err != nil {
-			return fmt.Errorf("remove family member: %w", err)
-		}
-
-		if err := s.families.Update(txCtx, fg); err != nil {
-			return fmt.Errorf("update family group: %w", err)
-		}
-
-		return domainevent.PublishAll(txCtx, s.publisher, fg)
-	})
-}
-
-// AddSubscriptionAddon adds an addon to a subscription. The plan is loaded to
-// build an AddonSpec that enforces plan-level constraints (available addons,
-// max addons limit). The read (with FOR UPDATE lock), mutation, update, and
-// outbox event are all performed inside a single database transaction to
-// prevent TOCTOU races.
-func (s *BillingService) AddSubscriptionAddon(ctx context.Context, subID, addonID string) error {
-	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
-		sub, err := s.subs.GetByIDForUpdate(txCtx, subID)
-		if err != nil {
-			return fmt.Errorf("get subscription: %w", err)
-		}
-
-		plan, err := s.plans.GetByID(txCtx, sub.PlanID)
-		if err != nil {
-			return fmt.Errorf("get plan: %w", err)
-		}
-
-		spec := aggregate.NewAddonSpec(plan)
-		if err := sub.AddAddon(addonID, spec, s.clock.Now()); err != nil {
-			return err
-		}
-
-		if err := s.subs.Update(txCtx, sub); err != nil {
-			return fmt.Errorf("update subscription: %w", err)
-		}
-		return domainevent.PublishAll(txCtx, s.publisher, sub)
-	})
-}
-
-// RemoveSubscriptionAddon removes an addon from a subscription. The read (with
-// FOR UPDATE lock), mutation, update, and outbox event are all performed inside
-// a single database transaction to prevent TOCTOU races.
-func (s *BillingService) RemoveSubscriptionAddon(ctx context.Context, subID, addonID string) error {
-	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
-		sub, err := s.subs.GetByIDForUpdate(txCtx, subID)
-		if err != nil {
-			return fmt.Errorf("get subscription: %w", err)
-		}
-
-		if err := sub.RemoveAddon(addonID, s.clock.Now()); err != nil {
-			return err
-		}
-
-		if err := s.subs.Update(txCtx, sub); err != nil {
-			return fmt.Errorf("update subscription: %w", err)
-		}
-		return domainevent.PublishAll(txCtx, s.publisher, sub)
-	})
-}
-

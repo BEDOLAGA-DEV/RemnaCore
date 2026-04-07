@@ -1,19 +1,27 @@
 package identity
 
-import "errors"
+import (
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/aggregate"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/service"
+)
 
+// Service-level error aliases re-exported for backward compatibility.
 var (
-	ErrNotFound              = errors.New("not found")
-	ErrEmailTaken            = errors.New("email already taken")
-	ErrInvalidCredentials    = errors.New("invalid credentials")
-	ErrEmailNotVerified      = errors.New("email not verified")
-	ErrTokenExpired          = errors.New("verification token expired")
-	ErrSessionExpired        = errors.New("session expired")
-	ErrPasswordResetExpired  = errors.New("password reset token expired")
-	ErrPasswordResetNotFound = errors.New("password reset token not found")
-	ErrPasswordTooShort      = errors.New("password must be at least 8 characters")
-	ErrPasswordTooWeak       = errors.New("password must contain uppercase, lowercase, and digit characters")
-	ErrDisplayNameTooLong    = errors.New("display name exceeds maximum length")
-	ErrTelegramAlreadyLinked = errors.New("telegram already linked")
-	ErrTelegramNotLinked     = errors.New("telegram not linked")
+	ErrNotFound              = service.ErrNotFound
+	ErrEmailTaken            = service.ErrEmailTaken
+	ErrInvalidCredentials    = service.ErrInvalidCredentials
+	ErrEmailNotVerified      = service.ErrEmailNotVerified
+	ErrTokenExpired          = service.ErrTokenExpired
+	ErrSessionExpired        = service.ErrSessionExpired
+	ErrPasswordResetExpired  = service.ErrPasswordResetExpired
+	ErrPasswordResetNotFound = service.ErrPasswordResetNotFound
+)
+
+// Aggregate-level error aliases re-exported for backward compatibility.
+var (
+	ErrPasswordTooShort      = aggregate.ErrPasswordTooShort
+	ErrPasswordTooWeak       = aggregate.ErrPasswordTooWeak
+	ErrDisplayNameTooLong    = aggregate.ErrDisplayNameTooLong
+	ErrTelegramAlreadyLinked = aggregate.ErrTelegramAlreadyLinked
+	ErrTelegramNotLinked     = aggregate.ErrTelegramNotLinked
 )

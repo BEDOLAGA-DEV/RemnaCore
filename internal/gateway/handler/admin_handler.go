@@ -17,17 +17,21 @@ const (
 )
 
 // AdminHandler exposes HTTP endpoints for the admin panel.
+//
+// All billing data access is read-only (list subscriptions, list invoices),
+// so the handler depends on Reader interfaces rather than full Repository
+// interfaces.
 type AdminHandler struct {
 	identitySvc *identity.Service
-	subs        billing.SubscriptionRepository
-	invoices    billing.InvoiceRepository
+	subs        billing.SubscriptionReader
+	invoices    billing.InvoiceReader
 }
 
 // NewAdminHandler creates an AdminHandler backed by the given services.
 func NewAdminHandler(
 	identitySvc *identity.Service,
-	subs billing.SubscriptionRepository,
-	invoices billing.InvoiceRepository,
+	subs billing.SubscriptionReader,
+	invoices billing.InvoiceReader,
 ) *AdminHandler {
 	return &AdminHandler{
 		identitySvc: identitySvc,

@@ -1,0 +1,15 @@
+package service
+
+import "errors"
+
+// Service-level sentinel errors for identity operations.
+var (
+	ErrNotFound              = errors.New("not found")
+	ErrEmailTaken            = errors.New("email already taken")
+	ErrInvalidCredentials    = errors.New("invalid credentials")
+	ErrEmailNotVerified      = errors.New("email not verified")
+	ErrTokenExpired          = errors.New("verification token expired")
+	ErrSessionExpired        = errors.New("session expired")
+	ErrPasswordResetExpired  = errors.New("password reset token expired")
+	ErrPasswordResetNotFound = errors.New("password reset token not found")
+)
