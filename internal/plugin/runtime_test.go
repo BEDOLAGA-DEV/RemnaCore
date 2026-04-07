@@ -901,3 +901,255 @@ func TestCallHook_CorruptionDuringDrainSignalsDrain(t *testing.T) {
 		t.Fatal("Drain should have completed after corruption handling, but it hung")
 	}
 }
+
+// --- Max-Uses Counter Tests ---
+
+func TestPooledRunner_ImplementsWASMRunner(t *testing.T) {
+	// Verify that pooledRunner satisfies the WASMRunner interface at compile
+	// time and delegates correctly.
+	expected := []byte("output")
+	inner := &mockRunner{
+		callFn: func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+			return expected, nil
+		},
+	}
+
+	var runner WASMRunner = &pooledRunner{runner: inner}
+
+	output, err := runner.Call(context.Background(), "hook.test", nil)
+	require.NoError(t, err)
+	assert.Equal(t, expected, output)
+
+	require.NoError(t, runner.Close())
+	assert.True(t, inner.closed, "Close should delegate to inner runner")
+}
+
+func TestAcquire_IncrementsUseCount(t *testing.T) {
+	factory := mockFactory(nil)
+	pool, err := newPluginInstancePool("use-count", factory, []byte("wasm"), nil, nil, 1)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	ctx := context.Background()
+
+	// Acquire-release cycle should increment use count.
+	r1, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+
+	pr, ok := r1.(*pooledRunner)
+	require.True(t, ok, "Acquire should return a *pooledRunner")
+	assert.Equal(t, int64(1), pr.useCount.Load())
+
+	pool.Release(r1)
+
+	// Second acquire of same runner — use count should be 2.
+	r2, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+
+	pr2, ok := r2.(*pooledRunner)
+	require.True(t, ok)
+	assert.Equal(t, int64(2), pr2.useCount.Load())
+
+	pool.Release(r2)
+}
+
+func TestAcquire_ReplacesExhaustedRunner(t *testing.T) {
+	var factoryCalls atomic.Int32
+	factory := func(_ string, wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
+		factoryCalls.Add(1)
+		return &mockRunner{}, nil
+	}
+
+	pool, err := newPluginInstancePool("exhaust", factory, []byte("wasm"), nil, nil, 1)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	ctx := context.Background()
+
+	// Force the runner to the exhaustion threshold.
+	r, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+
+	pr := r.(*pooledRunner)
+	// Set use count to MaxRunnerUses - 1 (Acquire already added 1).
+	pr.useCount.Store(MaxRunnerUses - 1)
+	pool.Release(r)
+
+	// Initial pool creation used 1 factory call.
+	initialCalls := factoryCalls.Load()
+
+	// Next acquire: use count is MaxRunnerUses-1, Acquire increments to
+	// MaxRunnerUses. This acquire gets the runner right at the threshold.
+	r2, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+	pool.Release(r2)
+
+	// The release should detect exhaustion and trigger replacement.
+	// Wait for the async replacement goroutine.
+	assert.Eventually(t, func() bool {
+		return factoryCalls.Load() > initialCalls
+	}, time.Second, 5*time.Millisecond,
+		"factory should be called to replace exhausted runner")
+
+	// Next acquire should get a fresh runner with reset use count.
+	r3, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+
+	pr3 := r3.(*pooledRunner)
+	assert.Equal(t, int64(1), pr3.useCount.Load(),
+		"fresh runner should have use count 1 after acquire")
+	pool.Release(r3)
+}
+
+func TestAcquire_ReplacesRunnerAtThreshold(t *testing.T) {
+	// When a runner has exactly MaxRunnerUses, Acquire should replace it
+	// inline (not return the exhausted runner).
+	var factoryCalls atomic.Int32
+	factory := func(_ string, wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
+		factoryCalls.Add(1)
+		return &mockRunner{}, nil
+	}
+
+	pool, err := newPluginInstancePool("threshold", factory, []byte("wasm"), nil, nil, 1)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	ctx := context.Background()
+
+	// Get the runner and set it to exactly MaxRunnerUses.
+	r, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+	pr := r.(*pooledRunner)
+	pr.useCount.Store(MaxRunnerUses)
+	pool.Release(r)
+
+	// Release at MaxRunnerUses triggers async replacement via replaceInstance.
+	// Wait for the replacement.
+	assert.Eventually(t, func() bool {
+		// 1 from pool init + 1 from replacement
+		return factoryCalls.Load() >= 2
+	}, time.Second, 5*time.Millisecond)
+
+	initialCalls := factoryCalls.Load()
+
+	// Next acquire should get the fresh runner from replaceInstance.
+	// That runner will have useCount 0, and Acquire checks >= MaxRunnerUses
+	// which is false, so it proceeds normally.
+	r2, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+
+	pr2 := r2.(*pooledRunner)
+	assert.Equal(t, int64(1), pr2.useCount.Load(),
+		"fresh runner should have use count 1")
+
+	// No additional factory call — the replacement was already created.
+	assert.Equal(t, initialCalls, factoryCalls.Load(),
+		"no additional factory call expected")
+	pool.Release(r2)
+}
+
+func TestRelease_ExhaustedRunnerClosedAndReplaced(t *testing.T) {
+	var closedCount atomic.Int32
+	var factoryCalls atomic.Int32
+
+	factory := func(_ string, wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
+		factoryCalls.Add(1)
+		return &trackingMockRunner{onClose: func() { closedCount.Add(1) }}, nil
+	}
+
+	pool, err := newPluginInstancePool("release-exhaust", factory, []byte("wasm"), nil, nil, 1)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	ctx := context.Background()
+	r, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+
+	pr := r.(*pooledRunner)
+	pr.useCount.Store(MaxRunnerUses)
+
+	// Release should close the exhausted runner and trigger async replacement.
+	pool.Release(r)
+
+	// The exhausted runner should be closed.
+	assert.Equal(t, int32(1), closedCount.Load(),
+		"exhausted runner should be closed on release")
+
+	// A replacement should be created asynchronously.
+	assert.Eventually(t, func() bool {
+		// 1 from pool init + 1 replacement
+		return factoryCalls.Load() >= 2
+	}, time.Second, 5*time.Millisecond,
+		"factory should be called to replace exhausted runner")
+}
+
+func TestCallHook_RunnerReplacedAfterMaxUses(t *testing.T) {
+	// End-to-end test: make MaxRunnerUses calls through CallHook and verify
+	// the runner is replaced transparently.
+	var factoryCalls atomic.Int32
+	factory := func(_ string, wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
+		factoryCalls.Add(1)
+		return &mockRunner{
+			callFn: func(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+				return []byte(`{"action":"continue"}`), nil
+			},
+		}, nil
+	}
+
+	rp := NewRuntimePool(testErrorLogger(), factory)
+
+	p := testPluginWithPoolSize("max-uses-e2e", 1)
+	require.NoError(t, rp.LoadPlugin(p))
+
+	ctx := context.Background()
+
+	// Directly set the runner's use count near the threshold to avoid
+	// making 10000 real calls.
+	rp.mu.RLock()
+	pool := rp.plugins["max-uses-e2e"]
+	rp.mu.RUnlock()
+
+	r, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+	pr := r.(*pooledRunner)
+	pr.useCount.Store(MaxRunnerUses - 2) // Next acquire will set it to MaxRunnerUses - 1
+	pool.Release(r)
+
+	initialFactoryCalls := factoryCalls.Load()
+
+	// Make two calls to cross the threshold.
+	for range 2 {
+		output, err := rp.CallHook(ctx, "max-uses-e2e", "hook.test", nil)
+		require.NoError(t, err)
+		assert.Equal(t, []byte(`{"action":"continue"}`), output)
+	}
+
+	// The runner should have been replaced by now (either inline in Acquire
+	// or via Release triggering replaceInstance).
+	assert.Eventually(t, func() bool {
+		return factoryCalls.Load() > initialFactoryCalls
+	}, time.Second, 5*time.Millisecond,
+		"factory should be called to replace exhausted runner during CallHook")
+}
+
+func TestRelease_RawRunnerWrappedAsPooledRunner(t *testing.T) {
+	// When Release receives a raw WASMRunner (not *pooledRunner), it should
+	// wrap it and return it to the pool without panicking.
+	factory := mockFactory(nil)
+	pool, err := newPluginInstancePool("raw-wrap", factory, []byte("wasm"), nil, nil, 2)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	// Drain one runner to make room, then release a raw mockRunner.
+	ctx := context.Background()
+	r, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+
+	// Release a raw runner (simulating the SetRunnerForTest path).
+	raw := &mockRunner{}
+	// Manually increment active to match Release's decrement.
+	atomic.AddInt32(&pool.active, 1)
+	pool.Release(raw)
+
+	pool.Release(r)
+}

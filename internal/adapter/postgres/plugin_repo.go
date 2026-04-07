@@ -169,6 +169,22 @@ func (r *PluginRepository) GetEnabled(ctx context.Context) ([]*plugin.Plugin, er
 	return plugins, nil
 }
 
+func (r *PluginRepository) GetByStatus(ctx context.Context, status plugin.PluginStatus) ([]*plugin.Plugin, error) {
+	rows, err := r.q(ctx).GetEnabledPlugins(ctx, string(status))
+	if err != nil {
+		return nil, pgutil.MapErr(err, "get plugins by status", plugin.ErrPluginNotFound)
+	}
+	plugins := make([]*plugin.Plugin, len(rows))
+	for i, row := range rows {
+		p, convErr := pluginRowToDomain(row)
+		if convErr != nil {
+			return nil, convErr
+		}
+		plugins[i] = p
+	}
+	return plugins, nil
+}
+
 func (r *PluginRepository) UpdateStatus(ctx context.Context, id string, status plugin.PluginStatus, errorLog string, enabledAt *time.Time) error {
 	err := r.q(ctx).UpdatePluginStatus(ctx, gen.UpdatePluginStatusParams{
 		ID:        pgutil.UUIDToPgtype(id),

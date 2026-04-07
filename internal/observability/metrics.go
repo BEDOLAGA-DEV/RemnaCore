@@ -40,9 +40,10 @@ const (
 	MetricEntityLocksEvicted     = "platform_consumer_entity_locks_evicted_total"
 	MetricOutboxUnpublishedCount = "platform_outbox_unpublished_count"
 
-	MetricHookDispatchDuration = "platform_hook_dispatch_duration_seconds"
-	MetricHookDispatchTotal    = "platform_hook_dispatch_total"
-	MetricBindingsLimitedTotal = "platform_bindings_limited_total"
+	MetricHookDispatchDuration      = "platform_hook_dispatch_duration_seconds"
+	MetricHookDispatchTotal         = "platform_hook_dispatch_total"
+	MetricBindingsLimitedTotal      = "platform_bindings_limited_total"
+	MetricWASMRunnerReplacements    = "platform_wasm_runner_replacements_total"
 )
 
 // Metric help string constants.
@@ -80,9 +81,10 @@ const (
 	helpEntityLocksEvicted     = "Total number of entity locks evicted due to TTL expiration."
 	helpOutboxUnpublishedCount = "Number of unpublished events in the outbox."
 
-	helpHookDispatchDuration = "Duration of sync hook dispatches by hook name."
-	helpHookDispatchTotal    = "Total hook dispatches by hook name and result."
-	helpBindingsLimitedTotal = "Current number of bindings in traffic-limited state."
+	helpHookDispatchDuration      = "Duration of sync hook dispatches by hook name."
+	helpHookDispatchTotal         = "Total hook dispatches by hook name and result."
+	helpBindingsLimitedTotal      = "Current number of bindings in traffic-limited state."
+	helpWASMRunnerReplacements    = "WASM runners replaced due to max-uses threshold or corruption."
 )
 
 // Label name constants.
@@ -98,6 +100,7 @@ const (
 	LabelWorkerID  = "worker_id"
 	LabelHookName  = "hook_name"
 	LabelResult    = "result"
+	LabelReason    = "reason"
 )
 
 // DefaultHTTPBuckets defines histogram buckets for HTTP request durations.
@@ -188,6 +191,9 @@ type Metrics struct {
 
 	// Binding state gauge
 	BindingsLimitedTotal prometheus.Gauge
+
+	// WASM runner replacement counter
+	WASMRunnerReplacements *prometheus.CounterVec
 }
 
 // registerRuntimeCollectors replaces the default Go and process collectors with
@@ -368,5 +374,10 @@ func NewMetrics() *Metrics {
 			Name: MetricBindingsLimitedTotal,
 			Help: helpBindingsLimitedTotal,
 		}),
+
+		WASMRunnerReplacements: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: MetricWASMRunnerReplacements,
+			Help: helpWASMRunnerReplacements,
+		}, []string{LabelPlugin, LabelReason}),
 	}
 }

@@ -54,6 +54,24 @@ type WASMRunner interface {
 // implementation uses the Extism Go SDK; tests supply a mock factory.
 type WASMRunnerFactory func(slug string, wasmBytes []byte, config map[string]string, limits ManifestLimits) (WASMRunner, error)
 
+// pooledRunner wraps a WASMRunner with a use counter for proactive replacement.
+// After MaxRunnerUses calls, the runner is replaced with a fresh instance to
+// prevent silent degradation from memory leaks or accumulated WASM state.
+type pooledRunner struct {
+	runner   WASMRunner
+	useCount atomic.Int64
+}
+
+// Call delegates to the underlying runner.
+func (pr *pooledRunner) Call(ctx context.Context, funcName string, input []byte) ([]byte, error) {
+	return pr.runner.Call(ctx, funcName, input)
+}
+
+// Close releases resources held by the underlying runner.
+func (pr *pooledRunner) Close() error {
+	return pr.runner.Close()
+}
+
 // PluginInstancePool manages a pool of WASMRunner instances for a single
 // plugin. It uses a buffered channel as a semaphore-style pool, allowing
 // concurrent callers to each acquire their own instance.
@@ -70,7 +88,7 @@ type PluginInstancePool struct {
 	config   map[string]string
 	manifest *Manifest
 	limits   ManifestLimits
-	pool     chan WASMRunner
+	pool     chan *pooledRunner
 	poolSize int
 
 	// Drain state.
@@ -103,7 +121,7 @@ func newPluginInstancePool(slug string, factory WASMRunnerFactory, wasm []byte, 
 		config:   config,
 		manifest: manifest,
 		limits:   limits,
-		pool:     make(chan WASMRunner, size),
+		pool:     make(chan *pooledRunner, size),
 		poolSize: size,
 		drained:  make(chan struct{}),
 	}
@@ -115,7 +133,7 @@ func newPluginInstancePool(slug string, factory WASMRunnerFactory, wasm []byte, 
 			p.Close() // cleanup already created
 			return nil, fmt.Errorf("create instance %d for %s: %w", i, slug, err)
 		}
-		p.pool <- runner
+		p.pool <- &pooledRunner{runner: runner}
 	}
 
 	return p, nil
@@ -133,9 +151,24 @@ func (p *PluginInstancePool) Acquire(ctx context.Context) (WASMRunner, error) {
 	p.mu.Unlock()
 
 	select {
-	case runner := <-p.pool:
+	case pr := <-p.pool:
+		if pr.useCount.Load() >= MaxRunnerUses {
+			// Runner exhausted — close and create a fresh replacement.
+			_ = pr.runner.Close()
+			slog.Info("replacing exhausted WASM runner",
+				slog.String("slug", p.slug),
+				slog.Int64("uses", pr.useCount.Load()),
+			)
+
+			fresh, err := p.factory(p.slug, p.wasm, p.config, p.limits)
+			if err != nil {
+				return nil, fmt.Errorf("create replacement runner: %w", err)
+			}
+			pr = &pooledRunner{runner: fresh}
+		}
+		pr.useCount.Add(1)
 		atomic.AddInt32(&p.active, 1)
-		return runner, nil
+		return pr, nil
 	case <-ctx.Done():
 		return nil, fmt.Errorf("acquire instance for %s: %w", p.slug, ctx.Err())
 	}
@@ -158,11 +191,24 @@ func (p *PluginInstancePool) Release(runner WASMRunner) {
 		return
 	}
 
+	pr, ok := runner.(*pooledRunner)
+	if !ok {
+		// Fallback: wrap a raw runner (e.g. from SetRunnerForTest).
+		pr = &pooledRunner{runner: runner}
+	}
+
+	// If exhausted, replace instead of returning to pool.
+	if pr.useCount.Load() >= MaxRunnerUses {
+		_ = pr.runner.Close()
+		go p.replaceInstance()
+		return
+	}
+
 	select {
-	case p.pool <- runner:
+	case p.pool <- pr:
 	default:
 		// Pool full (shouldn't happen), close the extra instance.
-		_ = runner.Close()
+		_ = pr.runner.Close()
 	}
 }
 
@@ -218,8 +264,8 @@ func (p *PluginInstancePool) Drain(ctx context.Context) error {
 
 	// Close all remaining idle instances in the pool channel.
 	close(p.pool)
-	for runner := range p.pool {
-		_ = runner.Close()
+	for pr := range p.pool {
+		_ = pr.runner.Close()
 	}
 
 	return nil
@@ -233,8 +279,8 @@ func (p *PluginInstancePool) Close() {
 	p.mu.Unlock()
 
 	close(p.pool)
-	for runner := range p.pool {
-		_ = runner.Close()
+	for pr := range p.pool {
+		_ = pr.runner.Close()
 	}
 }
 
@@ -262,7 +308,7 @@ func (p *PluginInstancePool) replaceInstance() {
 
 	newRunner, err := p.factory(p.slug, p.wasm, p.config, p.limits)
 	if err != nil {
-		slog.Warn("failed to replace corrupted WASM instance",
+		slog.Warn("failed to replace WASM instance",
 			slog.String("slug", p.slug),
 			slog.String("error", err.Error()),
 		)
@@ -273,14 +319,15 @@ func (p *PluginInstancePool) replaceInstance() {
 	// pool channel, even after the draining check above. Recover from the
 	// send-on-closed-channel panic rather than adding lock contention to the
 	// hot path.
-	if !p.trySendToPool(newRunner) {
+	pr := &pooledRunner{runner: newRunner}
+	if !p.trySendToPool(pr) {
 		_ = newRunner.Close()
 	}
 }
 
-// trySendToPool attempts a non-blocking send of runner to the pool channel.
-// Returns false if the pool is full or has been closed by Drain.
-func (p *PluginInstancePool) trySendToPool(runner WASMRunner) (sent bool) {
+// trySendToPool attempts a non-blocking send of a pooled runner to the pool
+// channel. Returns false if the pool is full or has been closed by Drain.
+func (p *PluginInstancePool) trySendToPool(pr *pooledRunner) (sent bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			// Pool channel was closed by Drain — this is expected during
@@ -290,8 +337,8 @@ func (p *PluginInstancePool) trySendToPool(runner WASMRunner) (sent bool) {
 	}()
 
 	select {
-	case p.pool <- runner:
-		slog.Info("replaced corrupted WASM instance", slog.String("slug", p.slug))
+	case p.pool <- pr:
+		slog.Info("replaced WASM instance", slog.String("slug", p.slug))
 		return true
 	default:
 		return false
@@ -590,8 +637,8 @@ func (rp *RuntimePool) SetRunnerForTest(slug string, runner WASMRunner) {
 	}
 
 	// Create a single-slot pool with the test runner.
-	pool := make(chan WASMRunner, 1)
-	pool <- runner
+	pool := make(chan *pooledRunner, 1)
+	pool <- &pooledRunner{runner: runner}
 	rp.plugins[slug] = &PluginInstancePool{
 		slug:     slug,
 		pool:     pool,

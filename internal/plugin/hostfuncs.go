@@ -268,6 +268,9 @@ func (hf *HostFunctions) StorageGet(ctx context.Context, pluginSlug, key string)
 	if !hf.Permissions.HasPermission(p, PermStorageRead) {
 		return nil, fmt.Errorf("%w: plugin %q lacks storage:read permission", ErrPermissionDenied, pluginSlug)
 	}
+	if err := ValidateStorageKey(key); err != nil {
+		return nil, fmt.Errorf("validate storage key: %w", err)
+	}
 	return hf.Storage.Get(ctx, pluginSlug, key)
 }
 
@@ -283,6 +286,9 @@ func (hf *HostFunctions) StorageSet(ctx context.Context, pluginSlug, key string,
 	}
 	if !hf.Permissions.HasPermission(p, PermStorageWrite) {
 		return fmt.Errorf("%w: plugin %q lacks storage:readwrite permission", ErrPermissionDenied, pluginSlug)
+	}
+	if err := ValidateStorageKey(key); err != nil {
+		return fmt.Errorf("validate storage key: %w", err)
 	}
 	return hf.Storage.Set(ctx, pluginSlug, key, value, ttlSeconds)
 }

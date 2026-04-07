@@ -73,6 +73,16 @@ func (r *mockRepo) GetEnabled(_ context.Context) ([]*Plugin, error) {
 	return out, nil
 }
 
+func (r *mockRepo) GetByStatus(_ context.Context, status PluginStatus) ([]*Plugin, error) {
+	var out []*Plugin
+	for _, p := range r.plugins {
+		if p.Status == status {
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
+
 func (r *mockRepo) UpdateStatus(_ context.Context, id string, status PluginStatus, errorLog string, enabledAt *time.Time) error {
 	p, ok := r.plugins[id]
 	if !ok {
@@ -702,4 +712,198 @@ required = true
 	require.NoError(t, err)
 	assert.Equal(t, "2.0.0", stored.Version)
 	assert.Equal(t, "sk-test-123", stored.Config["api_key"])
+}
+
+// --- RecoverErrorPlugins Tests ---
+
+func TestRecoverErrorPlugins_Success(t *testing.T) {
+	lm, repo, _, pub := newTestLifecycleManager()
+	ctx := context.Background()
+
+	// Install, enable, then force into error state.
+	p, err := lm.Install(ctx, validManifestTOML, []byte("fake-wasm"))
+	require.NoError(t, err)
+
+	err = lm.Enable(ctx, p.ID)
+	require.NoError(t, err)
+
+	// Simulate error: disable cleanly, then force status to error in repo.
+	err = lm.Disable(ctx, p.ID)
+	require.NoError(t, err)
+
+	stored := repo.plugins[p.ID]
+	stored.Status = StatusError
+	stored.ErrorLog = "hot reload rollback failed"
+
+	pub.events = nil
+
+	recovered := lm.RecoverErrorPlugins(ctx)
+	assert.Equal(t, 1, recovered)
+
+	// Plugin should now be enabled in repo.
+	after, err := repo.GetByID(ctx, p.ID)
+	require.NoError(t, err)
+	assert.Equal(t, StatusEnabled, after.Status)
+	assert.Empty(t, after.ErrorLog, "error log should be cleared after recovery")
+
+	// Plugin should be loaded in runtime.
+	slugs := lm.runtime.LoadedSlugs()
+	assert.Contains(t, slugs, "test-plugin")
+
+	// Enabled event should be published.
+	require.Len(t, pub.events, 1)
+	assert.Equal(t, EventPluginEnabled, pub.events[0].Type)
+}
+
+func TestRecoverErrorPlugins_NoWASMHash(t *testing.T) {
+	lm, repo, _, _ := newTestLifecycleManager()
+	ctx := context.Background()
+
+	// Install a plugin, then force it into error with no WASM hash.
+	p, err := lm.Install(ctx, validManifestTOML, []byte("fake-wasm"))
+	require.NoError(t, err)
+
+	stored := repo.plugins[p.ID]
+	stored.Status = StatusError
+	stored.ErrorLog = "some failure"
+	stored.WASMHash = "" // no hash available
+
+	recovered := lm.RecoverErrorPlugins(ctx)
+	assert.Equal(t, 0, recovered)
+
+	// Should still be in error state.
+	after, err := repo.GetByID(ctx, p.ID)
+	require.NoError(t, err)
+	assert.Equal(t, StatusError, after.Status)
+}
+
+func TestRecoverErrorPlugins_WASMNotInCAS(t *testing.T) {
+	lm, repo, _, _ := newTestLifecycleManager()
+	ctx := context.Background()
+
+	// Install and enable, then force into error with a hash that doesn't exist in CAS.
+	p, err := lm.Install(ctx, validManifestTOML, []byte("fake-wasm"))
+	require.NoError(t, err)
+
+	err = lm.Enable(ctx, p.ID)
+	require.NoError(t, err)
+
+	err = lm.Disable(ctx, p.ID)
+	require.NoError(t, err)
+
+	stored := repo.plugins[p.ID]
+	stored.Status = StatusError
+	stored.ErrorLog = "CAS failure"
+
+	// Delete the WASM from the CAS store so recovery cannot find it.
+	delete(repo.wasmStore, stored.WASMHash)
+
+	recovered := lm.RecoverErrorPlugins(ctx)
+	assert.Equal(t, 0, recovered)
+
+	// Should still be in error state.
+	after, err := repo.GetByID(ctx, p.ID)
+	require.NoError(t, err)
+	assert.Equal(t, StatusError, after.Status)
+}
+
+func TestRecoverErrorPlugins_NoErrorPlugins(t *testing.T) {
+	lm, _, _, _ := newTestLifecycleManager()
+	ctx := context.Background()
+
+	// Install and enable a healthy plugin.
+	p, err := lm.Install(ctx, validManifestTOML, []byte("fake-wasm"))
+	require.NoError(t, err)
+
+	err = lm.Enable(ctx, p.ID)
+	require.NoError(t, err)
+
+	recovered := lm.RecoverErrorPlugins(ctx)
+	assert.Equal(t, 0, recovered)
+}
+
+func TestRecoverErrorPlugins_PartialRecovery(t *testing.T) {
+	lm, repo, _, pub := newTestLifecycleManager()
+	ctx := context.Background()
+
+	// Plugin 1: recoverable (has WASM hash in CAS).
+	p1, err := lm.Install(ctx, validManifestTOML, []byte("fake-wasm-1"))
+	require.NoError(t, err)
+
+	err = lm.Enable(ctx, p1.ID)
+	require.NoError(t, err)
+
+	err = lm.Disable(ctx, p1.ID)
+	require.NoError(t, err)
+
+	stored1 := repo.plugins[p1.ID]
+	stored1.Status = StatusError
+	stored1.ErrorLog = "transient failure"
+
+	// Plugin 2: not recoverable (no WASM hash).
+	p2, err := lm.Install(ctx, validManifestTOML2, []byte("fake-wasm-2"))
+	require.NoError(t, err)
+
+	stored2 := repo.plugins[p2.ID]
+	stored2.Status = StatusError
+	stored2.ErrorLog = "permanent failure"
+	stored2.WASMHash = ""
+
+	pub.events = nil
+
+	recovered := lm.RecoverErrorPlugins(ctx)
+	assert.Equal(t, 1, recovered)
+
+	// Plugin 1 should be recovered.
+	after1, err := repo.GetByID(ctx, p1.ID)
+	require.NoError(t, err)
+	assert.Equal(t, StatusEnabled, after1.Status)
+
+	// Plugin 2 should still be in error.
+	after2, err := repo.GetByID(ctx, p2.ID)
+	require.NoError(t, err)
+	assert.Equal(t, StatusError, after2.Status)
+}
+
+func TestLoadAllEnabled_RecoverErrorPlugins(t *testing.T) {
+	lm, repo, _, _ := newTestLifecycleManager()
+	ctx := context.Background()
+
+	// Install and enable a plugin.
+	p, err := lm.Install(ctx, validManifestTOML, []byte("fake-wasm"))
+	require.NoError(t, err)
+
+	err = lm.Enable(ctx, p.ID)
+	require.NoError(t, err)
+
+	// Force into error state.
+	err = lm.Disable(ctx, p.ID)
+	require.NoError(t, err)
+
+	stored := repo.plugins[p.ID]
+	stored.Status = StatusError
+	stored.ErrorLog = "crash during hot reload"
+
+	// Create a fresh runtime pool (simulating restart).
+	logger := testErrorLogger()
+	factory := func(_ string, wasmBytes []byte, config map[string]string, _ ManifestLimits) (WASMRunner, error) {
+		return &mockRunner{}, nil
+	}
+	freshRuntime := NewRuntimePool(logger, factory)
+	freshDispatcher := NewHookDispatcher(freshRuntime, &testPublisher{}, nil, logger, clock.NewReal())
+
+	lm.runtime = freshRuntime
+	lm.dispatcher = freshDispatcher
+
+	// LoadAllEnabled should also recover error plugins.
+	err = lm.LoadAllEnabled(ctx)
+	require.NoError(t, err)
+
+	// The error plugin should have been recovered.
+	after, err := repo.GetByID(ctx, p.ID)
+	require.NoError(t, err)
+	assert.Equal(t, StatusEnabled, after.Status)
+
+	slugs := freshRuntime.LoadedSlugs()
+	assert.Contains(t, slugs, "test-plugin")
 }

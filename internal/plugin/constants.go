@@ -59,8 +59,14 @@ const (
 
 // WASM instance pool sizing.
 const (
-	DefaultPoolSize    = 4  // instances per plugin
-	MaxPoolSize        = 16 // hard cap
+	DefaultPoolSize = 4  // instances per plugin
+	MaxPoolSize     = 16 // hard cap
+
+	// MaxRunnerUses is the maximum number of calls a single WASM runner handles
+	// before being replaced with a fresh instance. This prevents silent
+	// degradation from memory leaks or accumulated state in long-running WASM
+	// instances.
+	MaxRunnerUses = 10_000
 )
 
 // WASMHashAlgorithm identifies the hash algorithm used for content-addressable

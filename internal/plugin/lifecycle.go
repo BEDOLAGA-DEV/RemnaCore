@@ -461,7 +461,9 @@ func (lm *LifecycleManager) HotReload(ctx context.Context, pluginID string, mani
 }
 
 // LoadAllEnabled loads all plugins with status=enabled from the database into
-// the runtime pool. Called on application startup to recover state.
+// the runtime pool. Called on application startup to recover state. After
+// loading enabled plugins, it attempts best-effort recovery of plugins stuck
+// in StatusError.
 func (lm *LifecycleManager) LoadAllEnabled(ctx context.Context) error {
 	plugins, err := lm.repo.GetEnabled(ctx)
 	if err != nil {
@@ -515,7 +517,61 @@ func (lm *LifecycleManager) LoadAllEnabled(ctx context.Context) error {
 	}
 
 	lm.logger.Info("all enabled plugins loaded", "count", len(plugins))
+
+	// Attempt best-effort recovery of plugins stuck in StatusError.
+	if recovered := lm.RecoverErrorPlugins(ctx); recovered > 0 {
+		lm.logger.Info("recovered error plugins on startup", "count", recovered)
+	}
+
 	return nil
+}
+
+// RecoverErrorPlugins attempts to recover plugins in StatusError by re-enabling
+// them using their last known good WASM hash. Called during startup after
+// loading enabled plugins. Recovery is best-effort: individual failures are
+// logged and skipped, never propagated.
+func (lm *LifecycleManager) RecoverErrorPlugins(ctx context.Context) int {
+	plugins, err := lm.repo.GetByStatus(ctx, StatusError)
+	if err != nil {
+		lm.logger.Warn("failed to fetch error plugins for recovery",
+			slog.String("error", err.Error()),
+		)
+		return 0
+	}
+
+	if len(plugins) == 0 {
+		return 0
+	}
+
+	lm.logger.Info("attempting recovery of error plugins", "count", len(plugins))
+
+	var recovered int
+	for _, p := range plugins {
+		if p.WASMHash == "" {
+			lm.logger.Warn("cannot recover plugin without WASM hash",
+				slog.String("slug", p.Slug),
+				slog.String("error_log", p.ErrorLog),
+			)
+			continue
+		}
+
+		if err := lm.Enable(ctx, p.ID); err != nil {
+			lm.logger.Warn("recovery failed for error plugin",
+				slog.String("slug", p.Slug),
+				slog.String("previous_error", p.ErrorLog),
+				slog.String("error", err.Error()),
+			)
+			continue
+		}
+
+		lm.logger.Info("recovered error plugin",
+			slog.String("slug", p.Slug),
+			slog.String("previous_error", p.ErrorLog),
+		)
+		recovered++
+	}
+
+	return recovered
 }
 
 // validateRequiredConfig checks that all required config fields from the

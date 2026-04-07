@@ -12,6 +12,7 @@ type PluginRepository interface {
 	GetBySlug(ctx context.Context, slug string) (*Plugin, error)
 	GetAll(ctx context.Context) ([]*Plugin, error)
 	GetEnabled(ctx context.Context) ([]*Plugin, error)
+	GetByStatus(ctx context.Context, status PluginStatus) ([]*Plugin, error)
 	UpdateStatus(ctx context.Context, id string, status PluginStatus, errorLog string, enabledAt *time.Time) error
 	UpdateConfig(ctx context.Context, id string, config map[string]string) error
 	UpdatePlugin(ctx context.Context, p *Plugin) error
