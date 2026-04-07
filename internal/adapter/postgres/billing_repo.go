@@ -152,9 +152,9 @@ func (r *PlanRepository) GetAll(ctx context.Context) ([]*aggregate.Plan, error) 
 	plans := make([]*aggregate.Plan, len(rows))
 	for i, row := range rows {
 		plans[i] = planRowToDomain(row)
-		if err := r.loadAddons(ctx, plans[i]); err != nil {
-			return nil, err
-		}
+	}
+	if err := r.batchLoadAddons(ctx, plans); err != nil {
+		return nil, err
 	}
 	return plans, nil
 }
@@ -167,11 +167,37 @@ func (r *PlanRepository) GetActive(ctx context.Context) ([]*aggregate.Plan, erro
 	plans := make([]*aggregate.Plan, len(rows))
 	for i, row := range rows {
 		plans[i] = planRowToDomain(row)
-		if err := r.loadAddons(ctx, plans[i]); err != nil {
-			return nil, err
-		}
+	}
+	if err := r.batchLoadAddons(ctx, plans); err != nil {
+		return nil, err
 	}
 	return plans, nil
+}
+
+// batchLoadAddons loads addons for multiple plans in a single query,
+// eliminating the N+1 problem from per-plan loadAddons calls.
+func (r *PlanRepository) batchLoadAddons(ctx context.Context, plans []*aggregate.Plan) error {
+	if len(plans) == 0 {
+		return nil
+	}
+	ids := make([]pgtype.UUID, len(plans))
+	for i, p := range plans {
+		ids[i] = pgutil.UUIDToPgtype(p.ID)
+	}
+	addonRows, err := r.q(ctx).GetAddonsByPlanIDs(ctx, ids)
+	if err != nil {
+		return fmt.Errorf("batch load addons: %w", err)
+	}
+	// Group by plan_id
+	byPlan := make(map[string][]aggregate.Addon, len(plans))
+	for _, row := range addonRows {
+		pid := pgutil.PgtypeToUUID(row.PlanID)
+		byPlan[pid] = append(byPlan[pid], addonRowToDomain(row))
+	}
+	for _, p := range plans {
+		p.AvailableAddons = byPlan[p.ID]
+	}
+	return nil
 }
 
 func (r *PlanRepository) Create(ctx context.Context, plan *aggregate.Plan) error {
