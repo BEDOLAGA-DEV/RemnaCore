@@ -98,4 +98,9 @@ export const ENDPOINTS = {
   routing: {
     selectNode: "/api/routing/select",
   },
+
+  // ─── Infrastructure ──────────────────────────────────────────────────
+  infra: {
+    readyz: "/readyz",
+  },
 } as const;

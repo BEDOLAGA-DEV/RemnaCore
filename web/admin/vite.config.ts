@@ -17,6 +17,10 @@ export default defineConfig({
         target: "http://localhost:8080",
         changeOrigin: true,
       },
+      "/readyz": {
+        target: "http://localhost:4000",
+        changeOrigin: true,
+      },
     },
   },
   build: {

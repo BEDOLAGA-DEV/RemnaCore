@@ -5,6 +5,7 @@ import {
   useAdminSubscriptions,
   useAdminInvoices,
   usePlugins,
+  useSystemHealth,
   LoadingSpinner,
   PAGINATION_DEFAULTS,
   cn,
@@ -222,21 +223,14 @@ function buildFeedItems(
   return items.slice(0, FEED_ITEM_LIMIT);
 }
 
-// ─── System Status (static placeholder) ─────────────────────────────────────
+// ─── System Status ──────────────────────────────────────────────────────────
 
-type SystemService = {
-  name: string;
-  status: "healthy" | "degraded" | "unhealthy";
-  latency: string;
+const COMPONENT_DISPLAY_NAMES: Record<string, string> = {
+  postgres: "PostgreSQL",
+  valkey: "Valkey",
+  nats: "NATS JetStream",
+  outbox: "Outbox Relay",
 };
-
-const SYSTEM_SERVICES: SystemService[] = [
-  { name: "PostgreSQL", status: "healthy", latency: "2ms" },
-  { name: "Valkey", status: "healthy", latency: "0.4ms" },
-  { name: "NATS JetStream", status: "healthy", latency: "1ms" },
-  { name: "Outbox Relay", status: "healthy", latency: "3ms" },
-  { name: "Remnawave API", status: "healthy", latency: "12ms" },
-];
 
 // ─── Dashboard Page ─────────────────────────────────────────────────────────
 
@@ -256,6 +250,7 @@ export function AdminDashboardPage() {
     offset: 0,
   });
   const { data: plugins, isLoading: pluginsLoading } = usePlugins();
+  const { data: healthChecks } = useSystemHealth();
 
   const isLoading =
     usersLoading || subsLoading || invoicesLoading || pluginsLoading;
@@ -454,22 +449,30 @@ export function AdminDashboardPage() {
             System Status
           </p>
           <div className="space-y-3">
-            {SYSTEM_SERVICES.map((service) => (
-              <div
-                key={service.name}
-                className="flex items-center justify-between"
-              >
-                <div className="flex items-center gap-2">
-                  <StatusDot status={service.status} />
-                  <span className="text-xs text-foreground">
-                    {service.name}
-                  </span>
+            {healthChecks && healthChecks.length > 0 ? (
+              healthChecks.map((check) => (
+                <div
+                  key={check.name}
+                  className="flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-2">
+                    <StatusDot status={check.status} />
+                    <span className="text-xs text-foreground">
+                      {COMPONENT_DISPLAY_NAMES[check.name] ?? check.name}
+                    </span>
+                  </div>
+                  {check.message ? (
+                    <span className="font-mono text-[11px] text-muted-foreground">
+                      {check.message}
+                    </span>
+                  ) : null}
                 </div>
-                <span className="font-mono text-[11px] text-muted-foreground">
-                  {service.latency}
-                </span>
-              </div>
-            ))}
+              ))
+            ) : (
+              <p className="py-2 text-center font-mono text-xs text-muted-foreground">
+                Loading...
+              </p>
+            )}
           </div>
         </div>
       </div>

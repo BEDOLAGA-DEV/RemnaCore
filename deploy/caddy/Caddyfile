@@ -42,6 +42,9 @@
             header_down Access-Control-Allow-Origin "*"
         }
     }
+    handle /readyz {
+        reverse_proxy remnacore:4000
+    }
     handle {
         root * /srv/admin
         try_files {path} /index.html

@@ -49,4 +49,7 @@ export const QUERY_KEYS = {
       detail: (id: string) => ["admin", "tenants", id] as const,
     },
   },
+  infra: {
+    readyz: ["infra", "readyz"] as const,
+  },
 } as const;
