@@ -2,17 +2,11 @@ package handler
 
 import (
 	"net/http"
-	"regexp"
-	"time"
+	"strings"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/circuitbreaker"
 )
-
-// credentialPattern matches the user-info section of a URI
-// (everything between "://" and "@"). Used to mask passwords in connection
-// strings without destroying the rest of the URL.
-var credentialPattern = regexp.MustCompile(`(://)[^@]+(@)`)
 
 // secretMask is the replacement string for fully-redacted secret values.
 const secretMask = "****"
@@ -61,12 +55,12 @@ type AppSettings struct {
 
 // DatabaseSettings mirrors config.DatabaseConfig with URL credentials masked.
 type DatabaseSettings struct {
-	URL               string        `json:"url"`
-	MaxConns          int32         `json:"max_conns"`
-	MinConns          int32         `json:"min_conns"`
-	MaxConnLifetime   time.Duration `json:"max_conn_lifetime"`
-	MaxConnIdleTime   time.Duration `json:"max_conn_idle_time"`
-	HealthCheckPeriod time.Duration `json:"health_check_period"`
+	URL               string `json:"url"`
+	MaxConns          int32  `json:"max_conns"`
+	MinConns          int32  `json:"min_conns"`
+	MaxConnLifetime   string `json:"max_conn_lifetime"`
+	MaxConnIdleTime   string `json:"max_conn_idle_time"`
+	HealthCheckPeriod string `json:"health_check_period"`
 }
 
 // CacheSettings mirrors config.ValkeyConfig with URL credentials masked.
@@ -81,10 +75,10 @@ type MessageQueueSettings struct {
 
 // JWTSettings mirrors config.JWTConfig. Key paths are not secrets.
 type JWTSettings struct {
-	PrivateKeyPath  string        `json:"private_key_path"`
-	PublicKeyPath   string        `json:"public_key_path"`
-	AccessTokenTTL  time.Duration `json:"access_token_ttl"`
-	RefreshTokenTTL time.Duration `json:"refresh_token_ttl"`
+	PrivateKeyPath  string `json:"private_key_path"`
+	PublicKeyPath   string `json:"public_key_path"`
+	AccessTokenTTL  string `json:"access_token_ttl"`
+	RefreshTokenTTL string `json:"refresh_token_ttl"`
 }
 
 // RemnawaveSettings mirrors config.RemnawaveConfig with tokens masked.
@@ -115,10 +109,10 @@ type PluginSettings struct {
 
 // InfraSettings mirrors config.InfraConfig.
 type InfraSettings struct {
-	HealthCheckInterval   time.Duration `json:"health_check_interval"`
-	MaxConcurrentChecks   int           `json:"max_concurrent_checks"`
-	SpeedTestPort         int           `json:"speed_test_port"`
-	SubscriptionProxyPort int           `json:"subscription_proxy_port"`
+	HealthCheckInterval   string `json:"health_check_interval"`
+	MaxConcurrentChecks   int    `json:"max_concurrent_checks"`
+	SpeedTestPort         int    `json:"speed_test_port"`
+	SubscriptionProxyPort int    `json:"subscription_proxy_port"`
 }
 
 // SpeedTestSettings mirrors config.SpeedTestConfig.
@@ -168,10 +162,10 @@ type FeatureFlagSettings struct {
 
 // CircuitBreakerComponentSettings mirrors circuitbreaker.Config for JSON output.
 type CircuitBreakerComponentSettings struct {
-	MaxFailures uint32        `json:"max_failures"`
-	Timeout     time.Duration `json:"timeout"`
-	MaxRequests uint32        `json:"max_requests"`
-	Interval    time.Duration `json:"interval"`
+	MaxFailures uint32 `json:"max_failures"`
+	Timeout     string `json:"timeout"`
+	MaxRequests uint32 `json:"max_requests"`
+	Interval    string `json:"interval"`
 }
 
 // CircuitBreakerSettings mirrors config.CircuitBreakerConfig.
@@ -208,9 +202,9 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, _ *http.Request) {
 			URL:               maskConnectionString(h.cfg.Database.URL),
 			MaxConns:          h.cfg.Database.MaxConns,
 			MinConns:          h.cfg.Database.MinConns,
-			MaxConnLifetime:   h.cfg.Database.MaxConnLifetime,
-			MaxConnIdleTime:   h.cfg.Database.MaxConnIdleTime,
-			HealthCheckPeriod: h.cfg.Database.HealthCheckPeriod,
+			MaxConnLifetime:   h.cfg.Database.MaxConnLifetime.String(),
+			MaxConnIdleTime:   h.cfg.Database.MaxConnIdleTime.String(),
+			HealthCheckPeriod: h.cfg.Database.HealthCheckPeriod.String(),
 		},
 		Cache: CacheSettings{
 			URL: maskConnectionString(h.cfg.Valkey.URL),
@@ -221,8 +215,8 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, _ *http.Request) {
 		JWT: JWTSettings{
 			PrivateKeyPath:  h.cfg.JWT.PrivateKeyPath,
 			PublicKeyPath:   h.cfg.JWT.PublicKeyPath,
-			AccessTokenTTL:  h.cfg.JWT.AccessTokenTTL,
-			RefreshTokenTTL: h.cfg.JWT.RefreshTokenTTL,
+			AccessTokenTTL:  h.cfg.JWT.AccessTokenTTL.String(),
+			RefreshTokenTTL: h.cfg.JWT.RefreshTokenTTL.String(),
 		},
 		Remnawave: RemnawaveSettings{
 			URL:           h.cfg.Remnawave.URL,
@@ -243,7 +237,7 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, _ *http.Request) {
 			EnableHotReload: h.cfg.Plugin.EnableHotReload,
 		},
 		Infrastructure: InfraSettings{
-			HealthCheckInterval:   h.cfg.Infra.HealthCheckInterval,
+			HealthCheckInterval:   h.cfg.Infra.HealthCheckInterval.String(),
 			MaxConcurrentChecks:   h.cfg.Infra.MaxConcurrentChecks,
 			SpeedTestPort:         h.cfg.Infra.SpeedTestPort,
 			SubscriptionProxyPort: h.cfg.Infra.SubscriptionProxyPort,
@@ -288,7 +282,7 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, _ *http.Request) {
 			VPNProvider: mapCBConfig(h.cfg.CircuitBreaker.VPNProvider),
 		},
 		CORS: CORSSettings{
-			AllowedOrigins: h.cfg.CORS.AllowedOrigins,
+			AllowedOrigins: corsOrigins(h.cfg.CORS.AllowedOrigins),
 		},
 		Tracing: TracingSettings{
 			Endpoint: h.cfg.Tracing.Endpoint,
@@ -299,11 +293,22 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, _ *http.Request) {
 }
 
 // maskConnectionString replaces user credentials in a connection string URI.
-// Input:  "postgres://user:pass@host:5432/db"
+// Input:  "postgres://user:p@ss@host:5432/db"
 // Output: "postgres://****@host:5432/db"
-// If the URL has no credentials (no "@"), it is returned unchanged.
+// Uses strings.LastIndex("@") to handle passwords containing "@" safely.
 func maskConnectionString(raw string) string {
-	return credentialPattern.ReplaceAllString(raw, "${1}"+secretMask+"${2}")
+	if raw == "" {
+		return ""
+	}
+	schemeEnd := strings.Index(raw, "://")
+	if schemeEnd < 0 {
+		return raw
+	}
+	atIdx := strings.LastIndex(raw, "@")
+	if atIdx < 0 || atIdx <= schemeEnd+3 {
+		return raw
+	}
+	return raw[:schemeEnd+3] + secretMask + raw[atIdx:]
 }
 
 // maskOptionalSecret returns secretMask when the SecretString contains a
@@ -315,12 +320,20 @@ func maskOptionalSecret(s config.SecretString) string {
 	return ""
 }
 
+// corsOrigins returns a non-nil slice to avoid JSON null.
+func corsOrigins(origins []string) []string {
+	if origins == nil {
+		return []string{}
+	}
+	return origins
+}
+
 // mapCBConfig converts a circuitbreaker.Config to the JSON-safe response struct.
 func mapCBConfig(cfg circuitbreaker.Config) CircuitBreakerComponentSettings {
 	return CircuitBreakerComponentSettings{
 		MaxFailures: cfg.MaxFailures,
-		Timeout:     cfg.Timeout,
+		Timeout:     cfg.Timeout.String(),
 		MaxRequests: cfg.MaxRequests,
-		Interval:    cfg.Interval,
+		Interval:    cfg.Interval.String(),
 	}
 }

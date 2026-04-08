@@ -51,9 +51,9 @@ export type SystemSettings = {
     cabinet_url: string;
   };
   plugins: {
-    dir: string;
+    plugins_dir: string;
     max_plugins: number;
-    hot_reload: boolean;
+    enable_hot_reload: boolean;
   };
   infrastructure: {
     health_check_interval: string;

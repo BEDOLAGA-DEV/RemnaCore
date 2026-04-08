@@ -279,9 +279,9 @@ function SettingsContent({ settings }: SettingsContentProps) {
 
       {/* Plugins */}
       <SettingsSection title="Plugins" icon={Puzzle}>
-        <SettingRow label="Directory" value={settings.plugins.dir} />
+        <SettingRow label="Directory" value={settings.plugins.plugins_dir} />
         <SettingRow label="Max Plugins" value={settings.plugins.max_plugins} />
-        <SettingBool label="Hot Reload" value={settings.plugins.hot_reload} />
+        <SettingBool label="Hot Reload" value={settings.plugins.enable_hot_reload} />
       </SettingsSection>
 
       {/* Infrastructure */}

@@ -204,6 +204,11 @@ func TestMaskConnectionString(t *testing.T) {
 			raw:  "postgres://admin@db.example.com:5432/remna",
 			want: "postgres://****@db.example.com:5432/remna",
 		},
+		{
+			name: "password containing @ symbol",
+			raw:  "postgres://user:p@ss@host:5432/db",
+			want: "postgres://****@host:5432/db",
+		},
 	}
 
 	for _, tt := range tests {
