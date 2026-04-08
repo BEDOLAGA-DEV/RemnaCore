@@ -1,9 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
-import { apiGet } from "../client.js";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiGet, apiPut } from "../client.js";
 import { QUERY_KEYS } from "../../lib/queryKeys.js";
 import { ENDPOINTS } from "../endpoints.js";
 
-type CircuitBreakerConfig = {
+export type CircuitBreakerConfig = {
   max_failures: number;
   timeout: string;
   max_requests: number;
@@ -108,6 +108,57 @@ export type SystemSettings = {
   };
 };
 
+// Partial update type — all fields optional, only include changed sections.
+export type SettingsUpdate = {
+  billing?: { trial_days?: number };
+  rate_limit?: {
+    checkout_max_per_hour?: number;
+    subscription_max_per_day?: number;
+    login_max_per_window?: number;
+    login_window_minutes?: number;
+    forgot_pwd_max_per_window?: number;
+    forgot_pwd_window_minutes?: number;
+  };
+  feature_flags?: {
+    hooks_subscription_enabled?: boolean;
+    hooks_vpn_provider_enabled?: boolean;
+  };
+  smart_router?: {
+    weight_geo?: number;
+    weight_latency?: number;
+    weight_load?: number;
+    weight_gaming_geo?: number;
+    weight_gaming_latency?: number;
+    weight_gaming_load?: number;
+    weight_streaming_geo?: number;
+    weight_streaming_latency?: number;
+    weight_streaming_load?: number;
+  };
+  speed_test?: {
+    max_concurrent?: number;
+    per_ip_rate_limit?: number;
+    max_upload_bytes?: number;
+  };
+  plugins?: {
+    max_plugins?: number;
+    enable_hot_reload?: boolean;
+  };
+  outbox?: {
+    relay_workers?: number;
+    partition_lookahead?: number;
+    retention_days?: number;
+  };
+  cors?: {
+    allowed_origins?: string[];
+  };
+  circuit_breaker?: {
+    remnawave?: CircuitBreakerConfig;
+    outbox_nats?: CircuitBreakerConfig;
+    valkey?: CircuitBreakerConfig;
+    vpn_provider?: CircuitBreakerConfig;
+  };
+};
+
 const SETTINGS_STALE_TIME_MS = 60_000;
 
 export function useAdminSettings() {
@@ -115,5 +166,16 @@ export function useAdminSettings() {
     queryKey: QUERY_KEYS.admin.settings,
     queryFn: () => apiGet<SystemSettings>(ENDPOINTS.admin.settings),
     staleTime: SETTINGS_STALE_TIME_MS,
+  });
+}
+
+export function useUpdateSettings() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: SettingsUpdate) =>
+      apiPut<SystemSettings>(ENDPOINTS.admin.settings, data),
+    onSuccess: (data) => {
+      queryClient.setQueryData(QUERY_KEYS.admin.settings, data);
+    },
   });
 }

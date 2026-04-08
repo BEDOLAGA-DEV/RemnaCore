@@ -39,6 +39,7 @@ var domainContexts = map[string]string{
 	"multisub": modulePrefix + "/internal/domain/multisub",
 	"payment":  modulePrefix + "/internal/domain/payment",
 	"reseller": modulePrefix + "/internal/domain/reseller",
+	"settings": modulePrefix + "/internal/domain/settings",
 }
 
 // TestDomainIsolation verifies that domain packages never import adapter,

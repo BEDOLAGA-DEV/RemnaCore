@@ -203,8 +203,9 @@ func NewRouter(p RouterParams) http.Handler {
 				admin.Get("/subscriptions", p.AdminHandler.ListSubscriptions)
 				admin.Get("/invoices", p.AdminHandler.ListInvoices)
 
-				// System settings (read-only)
+				// System settings
 				admin.Get("/settings", p.SettingsHandler.GetSettings)
+				admin.Put("/settings", p.SettingsHandler.UpdateSettings)
 
 				// Tenant management
 				admin.Post("/tenants", p.ResellerHandler.CreateTenant)

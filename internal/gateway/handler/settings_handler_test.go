@@ -117,7 +117,7 @@ func testConfig() *config.Config {
 }
 
 func TestGetSettings_ReturnsOK(t *testing.T) {
-	h := NewSettingsHandler(testConfig())
+	h := NewSettingsHandler(testConfig(), nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/settings", nil)
 	rec := httptest.NewRecorder()
@@ -137,10 +137,16 @@ func TestGetSettings_ReturnsOK(t *testing.T) {
 	assert.Equal(t, "/etc/remna/jwt.key", resp.JWT.PrivateKeyPath)
 	assert.Equal(t, "/etc/remna/jwt.pub", resp.JWT.PublicKeyPath)
 	assert.Equal(t, "https://panel.example.com", resp.Remnawave.URL)
+
+	// Editable metadata is populated.
+	assert.NotEmpty(t, resp.Meta.Editable)
+	assert.NotEmpty(t, resp.Meta.ReadOnly)
+	assert.Contains(t, resp.Meta.Editable, "billing")
+	assert.Contains(t, resp.Meta.ReadOnly, "database")
 }
 
 func TestGetSettings_MasksSecrets(t *testing.T) {
-	h := NewSettingsHandler(testConfig())
+	h := NewSettingsHandler(testConfig(), nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/settings", nil)
 	rec := httptest.NewRecorder()
@@ -251,7 +257,7 @@ func TestMaskOptionalSecret(t *testing.T) {
 }
 
 func TestGetSettings_NeverLeaksRawSecrets(t *testing.T) {
-	h := NewSettingsHandler(testConfig())
+	h := NewSettingsHandler(testConfig(), nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/settings", nil)
 	rec := httptest.NewRecorder()
@@ -273,7 +279,7 @@ func TestGetSettings_TelegramBotTokenEmptyNotMasked(t *testing.T) {
 	cfg := testConfig()
 	cfg.Telegram.BotToken = config.NewSecretString("")
 
-	h := NewSettingsHandler(cfg)
+	h := NewSettingsHandler(cfg, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/settings", nil)
 	rec := httptest.NewRecorder()

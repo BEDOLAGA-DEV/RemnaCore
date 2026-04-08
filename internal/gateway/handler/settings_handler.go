@@ -1,27 +1,65 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/settings"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/circuitbreaker"
 )
 
 // secretMask is the replacement string for fully-redacted secret values.
 const secretMask = "****"
 
-// SettingsHandler serves the admin settings endpoint.
+// SettingsHandler serves the admin settings endpoints (GET and PUT).
 type SettingsHandler struct {
-	cfg *config.Config
+	cfg     *config.Config
+	service *settings.Service
 }
 
-// NewSettingsHandler creates a SettingsHandler backed by the given config.
-func NewSettingsHandler(cfg *config.Config) *SettingsHandler {
-	return &SettingsHandler{cfg: cfg}
+// NewSettingsHandler creates a SettingsHandler backed by the given config
+// and settings service.
+func NewSettingsHandler(cfg *config.Config, service *settings.Service) *SettingsHandler {
+	return &SettingsHandler{cfg: cfg, service: service}
 }
 
 // --- Response DTOs ---
+
+// editableSections lists which top-level config sections can be modified at
+// runtime via PUT /api/admin/settings. Read-only sections require a restart.
+var editableSections = []string{
+	"billing",
+	"rate_limit",
+	"feature_flags",
+	"smart_router",
+	"speed_test",
+	"plugins",
+	"outbox",
+	"cors",
+	"circuit_breaker",
+}
+
+// readOnlySections lists which top-level config sections require a restart
+// to change and are not editable at runtime.
+var readOnlySections = []string{
+	"app",
+	"database",
+	"cache",
+	"message_queue",
+	"jwt",
+	"remnawave",
+	"telegram",
+	"infrastructure",
+	"tracing",
+}
+
+// EditableInfo describes which settings sections are editable at runtime.
+type EditableInfo struct {
+	Editable []string `json:"editable"`
+	ReadOnly []string `json:"read_only"`
+}
 
 // SettingsResponse organises the system configuration by category.
 type SettingsResponse struct {
@@ -43,6 +81,7 @@ type SettingsResponse struct {
 	CircuitBreaker CircuitBreakerSettings `json:"circuit_breaker"`
 	CORS           CORSSettings           `json:"cors"`
 	Tracing        TracingSettings        `json:"tracing"`
+	Meta           EditableInfo           `json:"_meta"`
 }
 
 // AppSettings mirrors config.AppConfig.
@@ -287,9 +326,32 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, _ *http.Request) {
 		Tracing: TracingSettings{
 			Endpoint: h.cfg.Tracing.Endpoint,
 		},
+		Meta: EditableInfo{
+			Editable: editableSections,
+			ReadOnly: readOnlySections,
+		},
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// UpdateSettings handles PUT /api/admin/settings -- applies a partial update
+// to the editable runtime settings, persists the overrides to the database,
+// and returns the full updated settings.
+func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
+	var update settings.SettingsUpdate
+	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.service.ApplyOverrides(r.Context(), update); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Return the updated settings by delegating to GetSettings.
+	h.GetSettings(w, r)
 }
 
 // maskConnectionString replaces user credentials in a connection string URI.

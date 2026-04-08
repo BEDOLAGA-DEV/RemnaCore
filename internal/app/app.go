@@ -124,6 +124,11 @@ func New() *fx.App {
 		natsadapter.Module,
 		remnawave.Module,
 
+		// Runtime settings overrides — must run before domain modules so that
+		// DB-persisted overrides are applied to *config.Config before any
+		// domain service reads config values at startup.
+		settingsWiring,
+
 		// Domain-scoped wiring (repos, interface bindings, lifecycle hooks).
 		// Order must satisfy WiringConstraints — see wiring_order_test.go.
 		identityWiring,  // ModuleIdentity
