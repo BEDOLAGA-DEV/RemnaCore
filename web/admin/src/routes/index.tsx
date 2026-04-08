@@ -12,32 +12,16 @@ import {
   formatMoney,
 } from "@remnacore/shared";
 import type { Invoice, Subscription } from "@remnacore/shared";
-import { Sparkline } from "../components/Sparkline.js";
 import { StatusDot } from "../components/StatusDot.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-const MOCK_SPARKLINE_LENGTH = 10;
 const FEED_ITEM_LIMIT = 8;
 const MS_PER_SECOND = 1000;
 const MS_PER_MINUTE = 60_000;
 const MS_PER_HOUR = 3_600_000;
 const MS_PER_DAY = 86_400_000;
 const PERCENT_MULTIPLIER = 100;
-
-function generateSparkline(endValue: number, trend: "up" | "down"): number[] {
-  const points: number[] = [];
-  const base = trend === "up" ? endValue * 0.6 : endValue * 1.4;
-  const step = (endValue - base) / (MOCK_SPARKLINE_LENGTH - 1);
-
-  for (let i = 0; i < MOCK_SPARKLINE_LENGTH; i++) {
-    const jitter = (Math.random() - 0.5) * Math.abs(step) * 2;
-    points.push(Math.max(0, base + step * i + jitter));
-  }
-
-  points[MOCK_SPARKLINE_LENGTH - 1] = endValue;
-  return points;
-}
 
 function formatRelativeTime(isoDate: string): string {
   const diff = Date.now() - new Date(isoDate).getTime();
@@ -52,99 +36,6 @@ function formatRelativeTime(isoDate: string): string {
     return `${Math.floor(diff / MS_PER_HOUR)}h ago`;
   }
   return `${Math.floor(diff / MS_PER_DAY)}d ago`;
-}
-
-// ─── Revenue Chart (SVG) ────────────────────────────────────────────────────
-
-const MOCK_REVENUE_MONTHS = ["Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
-const MOCK_REVENUE_VALUES = [9200, 11400, 10800, 14200, 16100, 18400];
-const CHART_WIDTH = 420;
-const CHART_HEIGHT = 140;
-const CHART_PADDING_X = 32;
-const CHART_PADDING_TOP = 12;
-const CHART_PADDING_BOTTOM = 24;
-
-function RevenueChart() {
-  const { points, areaPath, gradientId } = useMemo(() => {
-    const min = Math.min(...MOCK_REVENUE_VALUES) * 0.8;
-    const max = Math.max(...MOCK_REVENUE_VALUES) * 1.1;
-    const range = max - min || 1;
-    const usableWidth = CHART_WIDTH - CHART_PADDING_X * 2;
-    const usableHeight = CHART_HEIGHT - CHART_PADDING_TOP - CHART_PADDING_BOTTOM;
-    const step = usableWidth / (MOCK_REVENUE_VALUES.length - 1);
-
-    const pts = MOCK_REVENUE_VALUES.map((v, i) => ({
-      x: CHART_PADDING_X + i * step,
-      y:
-        CHART_PADDING_TOP +
-        usableHeight -
-        ((v - min) / range) * usableHeight,
-    }));
-
-    const polyline = pts.map((p) => `${p.x},${p.y}`).join(" ");
-    const firstX = pts[0]?.x ?? 0;
-    const lastX = pts[pts.length - 1]?.x ?? 0;
-    const bottomY = CHART_HEIGHT - CHART_PADDING_BOTTOM;
-    const area = `M ${firstX},${bottomY} L ${pts.map((p) => `${p.x},${p.y}`).join(" L ")} L ${lastX},${bottomY} Z`;
-
-    const id = "rev-chart-grad";
-
-    return { points: pts, polyline, areaPath: area, gradientId: id };
-  }, []);
-
-  return (
-    <svg
-      viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-      className="w-full"
-      preserveAspectRatio="none"
-    >
-      <defs>
-        <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.2} />
-          <stop
-            offset="100%"
-            stopColor="hsl(var(--primary))"
-            stopOpacity={0}
-          />
-        </linearGradient>
-      </defs>
-      <path d={areaPath} fill={`url(#${gradientId})`} />
-      <polyline
-        points={points.map((p) => `${p.x},${p.y}`).join(" ")}
-        fill="none"
-        stroke="hsl(var(--primary))"
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      {points.map((p, i) => (
-        <circle
-          key={MOCK_REVENUE_MONTHS[i]}
-          cx={p.x}
-          cy={p.y}
-          r={3}
-          fill="hsl(var(--primary))"
-        />
-      ))}
-      {MOCK_REVENUE_MONTHS.map((month, i) => {
-        const x =
-          CHART_PADDING_X +
-          (i * (CHART_WIDTH - CHART_PADDING_X * 2)) /
-            (MOCK_REVENUE_MONTHS.length - 1);
-        return (
-          <text
-            key={month}
-            x={x}
-            y={CHART_HEIGHT - 4}
-            textAnchor="middle"
-            className="fill-muted-foreground text-[10px] font-mono"
-          >
-            {month}
-          </text>
-        );
-      })}
-    </svg>
-  );
 }
 
 // ─── Activity Feed Item Types ───────────────────────────────────────────────
@@ -261,6 +152,10 @@ export function AdminDashboardPage() {
     const activeSubs = subs?.filter((s) => s.status === "active").length ?? 0;
     const cancelledSubs =
       subs?.filter((s) => s.status === "cancelled").length ?? 0;
+    const pausedSubs =
+      subs?.filter((s) => s.status === "paused").length ?? 0;
+    const pendingSubs =
+      subs?.filter((s) => s.status === "pending").length ?? 0;
 
     const paidInvoices = invoices?.filter((i) => i.status === "paid") ?? [];
     const totalRevenue = paidInvoices.reduce(
@@ -273,7 +168,7 @@ export function AdminDashboardPage() {
         ? ((cancelledSubs / totalSubs) * PERCENT_MULTIPLIER).toFixed(1)
         : "0.0";
 
-    return { userCount, activeSubs, totalSubs, totalRevenue, churnRate, cancelledSubs };
+    return { userCount, activeSubs, totalSubs, totalRevenue, churnRate, cancelledSubs, pausedSubs, pendingSubs };
   }, [users, subs, invoices]);
 
   const planDistribution = useMemo(() => {
@@ -341,63 +236,42 @@ export function AdminDashboardPage() {
         <KpiCard
           label={t("admin.dashboard.totalUsers")}
           value={stats.userCount.toLocaleString()}
-          change="+12%"
-          trend="up"
-          sparklineData={generateSparkline(stats.userCount, "up")}
-          sparklineColor="hsl(var(--primary))"
         />
         <KpiCard
           label={t("admin.dashboard.activeSubscriptions")}
           value={stats.activeSubs.toLocaleString()}
-          change="+8%"
-          trend="up"
-          sparklineData={generateSparkline(stats.activeSubs, "up")}
-          sparklineColor="hsl(var(--primary))"
         />
         <KpiCard
           label="MRR"
           value={formatMoney(stats.totalRevenue)}
-          change="+23%"
-          trend="up"
-          sparklineData={generateSparkline(stats.totalRevenue, "up")}
-          sparklineColor="hsl(var(--primary))"
         />
         <KpiCard
           label="Churn"
           value={`${stats.churnRate}%`}
-          change="-0.3%"
-          trend="down"
-          sparklineData={generateSparkline(
-            Number.parseFloat(stats.churnRate),
-            "down",
-          )}
-          sparklineColor="hsl(0 84% 60%)"
         />
       </div>
 
-      {/* Row 2: Revenue + Plan Distribution + System Status */}
-      <div className="grid gap-3 lg:grid-cols-[2fr_1fr_1fr]">
-        {/* Revenue Chart */}
+      {/* Row 2: Subscription Funnel + Plan Distribution + System Status */}
+      <div className="grid gap-3 lg:grid-cols-[1fr_1fr_1fr]">
+        {/* Subscription Funnel */}
         <div className="rounded-xl border border-border bg-card p-5">
-          <div className="mb-4 flex items-baseline justify-between">
-            <div>
-              <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                Revenue
-              </p>
-              <div className="mt-1 flex items-baseline gap-2">
-                <span className="font-mono text-xl font-bold tracking-tight text-foreground">
-                  {formatMoney(stats.totalRevenue)}
-                </span>
-                <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[11px] font-medium text-emerald-500">
-                  +23%
-                </span>
-              </div>
-            </div>
-            <span className="font-mono text-[10px] text-muted-foreground">
-              Last 6 months
-            </span>
+          <p className="mb-4 text-[11px] uppercase tracking-wider text-muted-foreground">
+            Subscription Funnel
+          </p>
+          <div className="space-y-3">
+            <FunnelRow label="Active" value={stats.activeSubs} total={stats.totalSubs} color="bg-primary" />
+            <FunnelRow label="Pending" value={stats.pendingSubs} total={stats.totalSubs} color="bg-amber-500" />
+            <FunnelRow label="Paused" value={stats.pausedSubs} total={stats.totalSubs} color="bg-violet-400" />
+            <FunnelRow label="Cancelled" value={stats.cancelledSubs} total={stats.totalSubs} color="bg-red-500" />
           </div>
-          <RevenueChart />
+          <div className="mt-4 border-t border-border pt-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-muted-foreground">Total</span>
+              <span className="font-mono text-sm font-semibold text-foreground">
+                {stats.totalSubs}
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* Plan Distribution */}
@@ -567,48 +441,45 @@ export function AdminDashboardPage() {
 type KpiCardProps = {
   label: string;
   value: string;
-  change: string;
-  trend: "up" | "down";
-  sparklineData: number[];
-  sparklineColor: string;
 };
 
-function KpiCard({
-  label,
-  value,
-  change,
-  trend,
-  sparklineData,
-  sparklineColor,
-}: KpiCardProps) {
-  const isPositiveTrend = trend === "up";
-
+function KpiCard({ label, value }: KpiCardProps) {
   return (
     <div className="rounded-xl border border-border bg-card p-5">
       <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
         {label}
       </p>
-      <div className="mt-2 flex items-end justify-between">
-        <div>
-          <p className="font-mono text-[28px] font-bold leading-none tracking-tight text-foreground">
-            {value}
-          </p>
-          <span
-            className={cn(
-              "mt-2 inline-block rounded px-1.5 py-0.5 font-mono text-[11px] font-medium",
-              isPositiveTrend
-                ? "bg-emerald-500/10 text-emerald-500"
-                : "bg-red-500/10 text-red-500",
-            )}
-          >
-            {change}
-          </span>
-        </div>
-        <Sparkline
-          data={sparklineData}
-          color={sparklineColor}
-          width={80}
-          height={28}
+      <p className="mt-2 font-mono text-[28px] font-bold leading-none tracking-tight text-foreground">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+// ─── Funnel Row ─────────────────────────────────────────────────────────────
+
+type FunnelRowProps = {
+  label: string;
+  value: number;
+  total: number;
+  color: string;
+};
+
+function FunnelRow({ label, value, total, color }: FunnelRowProps) {
+  const percentage = total > 0 ? Math.round((value / total) * PERCENT_MULTIPLIER) : 0;
+
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between">
+        <span className="text-xs text-muted-foreground">{label}</span>
+        <span className="font-mono text-[11px] text-foreground">
+          {value}
+        </span>
+      </div>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+        <div
+          className={cn("h-full rounded-full", color)}
+          style={{ width: `${Math.max(percentage, percentage > 0 ? 2 : 0)}%` }}
         />
       </div>
     </div>
