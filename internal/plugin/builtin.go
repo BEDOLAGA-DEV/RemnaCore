@@ -40,12 +40,6 @@ func BuiltInPlugins() []BuiltInPluginDef {
 	return []BuiltInPluginDef{remnawaveProvider()}
 }
 
-// RegisterExternalBuiltIns adds plugin definitions from self-contained
-// packages (e.g., internal/builtin/tariff). Called by app wiring.
-func RegisterExternalBuiltIns(defs ...BuiltInPluginDef) []BuiltInPluginDef {
-	return append(BuiltInPlugins(), defs...)
-}
-
 func remnawaveProvider() BuiltInPluginDef {
 	return BuiltInPluginDef{
 		Slug:        BuiltInSlugRemnawaveProvider,

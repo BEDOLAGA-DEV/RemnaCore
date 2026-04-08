@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/builtin/tariff"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/builtin"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
 )
@@ -20,7 +20,7 @@ import (
 func seedBuiltInPlugins(repo plugin.PluginRepository, cfg *config.Config, logger *slog.Logger) error {
 	ctx := context.Background()
 
-	allPlugins := plugin.RegisterExternalBuiltIns(tariff.Plugin())
+	allPlugins := append(plugin.BuiltInPlugins(), builtin.AllPlugins()...)
 	for _, def := range allPlugins {
 		existing, err := repo.GetBySlug(ctx, def.Slug)
 		if err == nil && existing != nil {

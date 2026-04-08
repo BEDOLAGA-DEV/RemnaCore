@@ -1,9 +1,14 @@
 package tariff
 
 import (
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/builtin"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
 )
+
+func init() {
+	builtin.RegisterPlugin(Plugin())
+}
 
 // Plugin returns the built-in plugin definition for the tariff-manager.
 func Plugin() plugin.BuiltInPluginDef {
