@@ -12,7 +12,6 @@ import {
 	Check,
 	ChevronDown,
 	CircleDot,
-	CreditCard,
 	Database,
 	Flag,
 	Gauge,
@@ -37,7 +36,6 @@ import { useTranslation } from "react-i18next";
 // ─── Editable Section Keys ──────────────────────────────────────────────────
 
 type EditableSectionKey =
-	| "billing"
 	| "rate_limit"
 	| "feature_flags"
 	| "smart_router"
@@ -412,9 +410,6 @@ function SettingsContent({ settings }: SettingsContentProps) {
 	const [mutationError, setMutationError] = useState<string | null>(null);
 
 	// Per-section form state — only populated when editing
-	const [billingForm, setBillingForm] = useState({
-		trial_days: settings.billing.trial_days,
-	});
 	const [rateLimitForm, setRateLimitForm] = useState({
 		...settings.rate_limit,
 	});
@@ -439,9 +434,6 @@ function SettingsContent({ settings }: SettingsContentProps) {
 			// Reset form state from current settings when entering edit mode
 			setMutationError(null);
 			switch (section) {
-				case "billing":
-					setBillingForm({ trial_days: settings.billing.trial_days });
-					break;
 				case "rate_limit":
 					setRateLimitForm({ ...settings.rate_limit });
 					break;
@@ -484,9 +476,6 @@ function SettingsContent({ settings }: SettingsContentProps) {
 			let payload: SettingsUpdate;
 
 			switch (section) {
-				case "billing":
-					payload = { billing: billingForm };
-					break;
 				case "rate_limit":
 					payload = { rate_limit: rateLimitForm };
 					break;
@@ -532,7 +521,6 @@ function SettingsContent({ settings }: SettingsContentProps) {
 			});
 		},
 		[
-			billingForm,
 			rateLimitForm,
 			smartRouterForm,
 			speedTestForm,
@@ -650,30 +638,6 @@ function SettingsContent({ settings }: SettingsContentProps) {
 					value={settings.remnawave.webhook_secret}
 					masked
 				/>
-			</SettingsSection>
-
-			{/* Billing (editable) */}
-			<SettingsSection
-				title="Billing"
-				icon={CreditCard}
-				actions={makeActions("billing")}
-			>
-				{editingSection === "billing" ? (
-					<>
-						<EditableRow
-							label="Trial Days"
-							value={billingForm.trial_days}
-							onChange={(v) => setBillingForm({ trial_days: v })}
-						/>
-						{mutationError ? (
-							<p className="py-1 text-[12px] text-destructive">
-								{mutationError}
-							</p>
-						) : null}
-					</>
-				) : (
-					<SettingRow label="Trial Days" value={settings.billing.trial_days} />
-				)}
 			</SettingsSection>
 
 			{/* Telegram (read-only) */}

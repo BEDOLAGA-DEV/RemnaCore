@@ -30,7 +30,6 @@ func NewSettingsHandler(cfg *config.Config, service *settings.Service) *Settings
 // editableSections lists which top-level config sections can be modified at
 // runtime via PUT /api/admin/settings. Read-only sections require a restart.
 var editableSections = []string{
-	"billing",
 	"rate_limit",
 	"feature_flags",
 	"smart_router",
@@ -45,6 +44,7 @@ var editableSections = []string{
 // to change and are not editable at runtime.
 var readOnlySections = []string{
 	"app",
+	"billing",
 	"database",
 	"cache",
 	"message_queue",
