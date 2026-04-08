@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
@@ -130,6 +131,18 @@ func (c *Client) do(ctx context.Context, method, path string, body any, dest any
 	}
 
 	return nil
+}
+
+// doWithQuery behaves like do but appends query parameters to the request URL.
+func (c *Client) doWithQuery(ctx context.Context, method, path string, body any, query map[string]string, dest any) error {
+	if len(query) > 0 {
+		params := url.Values{}
+		for k, v := range query {
+			params.Set(k, v)
+		}
+		path = path + "?" + params.Encode()
+	}
+	return c.do(ctx, method, path, body, dest)
 }
 
 // CreateUser provisions a new VPN user in Remnawave.
