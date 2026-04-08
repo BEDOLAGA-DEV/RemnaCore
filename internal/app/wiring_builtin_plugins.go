@@ -36,10 +36,11 @@ func seedBuiltInPlugins(repo plugin.PluginRepository, cfg *config.Config, logger
 			Description: def.Description,
 			Author:      def.Author,
 			IsBuiltIn:   true,
-			Status:      plugin.StatusInstalled,
+			Status:      plugin.StatusEnabled,
 			Config:      make(map[string]string),
 			Manifest:    buildBuiltInManifest(def),
 			InstalledAt: now,
+			EnabledAt:   &now,
 			UpdatedAt:   now,
 		}
 

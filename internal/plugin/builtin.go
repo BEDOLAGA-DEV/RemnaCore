@@ -62,14 +62,6 @@ func tariffManager() BuiltInPluginDef {
 				Options:  []string{"USD", "EUR", "RUB", "GBP", "TRY", "UAH", "KZT"},
 			},
 		},
-		Pages: []ManifestPage{
-			{
-				Path:  "tariffs",
-				Title: "Tariffs",
-				Icon:  "CreditCard",
-				Menu:  PageMenuAdmin,
-			},
-		},
 		Routes: []ManifestRoute{
 			{Method: "GET", Path: "/api/tariffs", Function: "list_tariffs", Public: true},
 			{Method: "GET", Path: "/api/tariffs/{tariffID}", Function: "get_tariff", Public: true},
