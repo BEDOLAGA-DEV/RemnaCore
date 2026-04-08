@@ -39,13 +39,29 @@ type updatePluginConfigRequest struct {
 
 // --- Response DTOs ---
 
+// pluginPageFieldResponse is the API representation of a single form field
+// declared by a plugin page.
+type pluginPageFieldResponse struct {
+	Key             string   `json:"key"`
+	Label           string   `json:"label"`
+	Type            string   `json:"type"`
+	Required        bool     `json:"required"`
+	Default         string   `json:"default,omitempty"`
+	Options         []string `json:"options,omitempty"`
+	OptionsURL      string   `json:"options_url,omitempty"`
+	OptionsValueKey string   `json:"options_value_key,omitempty"`
+	OptionsLabelKey string   `json:"options_label_key,omitempty"`
+}
+
 // pluginPageResponse is the API representation of a single page declared by a
 // plugin manifest.
 type pluginPageResponse struct {
-	Path  string `json:"path"`
-	Title string `json:"title"`
-	Icon  string `json:"icon"`
-	Menu  string `json:"menu"`
+	Path       string                    `json:"path"`
+	Title      string                    `json:"title"`
+	Icon       string                    `json:"icon"`
+	Menu       string                    `json:"menu"`
+	Collection string                    `json:"collection,omitempty"`
+	Fields     []pluginPageFieldResponse `json:"fields,omitempty"`
 }
 
 // pluginResponse is the admin API representation of a plugin. Secret config
@@ -95,13 +111,38 @@ func toPluginPageResponses(p *plugin.Plugin) []pluginPageResponse {
 	pages := make([]pluginPageResponse, len(p.Manifest.Pages))
 	for i, pg := range p.Manifest.Pages {
 		pages[i] = pluginPageResponse{
-			Path:  pg.Path,
-			Title: pg.Title,
-			Icon:  pg.Icon,
-			Menu:  pg.Menu,
+			Path:       pg.Path,
+			Title:      pg.Title,
+			Icon:       pg.Icon,
+			Menu:       pg.Menu,
+			Collection: pg.Collection,
+			Fields:     toPluginPageFieldResponses(pg.Fields),
 		}
 	}
 	return pages
+}
+
+// toPluginPageFieldResponses maps manifest page fields to API response DTOs.
+// Returns nil when the input is empty, so the JSON field is omitted.
+func toPluginPageFieldResponses(fields []plugin.ManifestPageField) []pluginPageFieldResponse {
+	if len(fields) == 0 {
+		return nil
+	}
+	resp := make([]pluginPageFieldResponse, len(fields))
+	for i, f := range fields {
+		resp[i] = pluginPageFieldResponse{
+			Key:             f.Key,
+			Label:           f.Label,
+			Type:            f.Type,
+			Required:        f.Required,
+			Default:         f.Default,
+			Options:         f.Options,
+			OptionsURL:      f.OptionsURL,
+			OptionsValueKey: f.OptionsValueKey,
+			OptionsLabelKey: f.OptionsLabelKey,
+		}
+	}
+	return resp
 }
 
 // toPluginResponses maps a slice of domain Plugins to admin API responses.
@@ -282,12 +323,14 @@ func (h *PluginHandler) UpdatePluginConfig(w http.ResponseWriter, r *http.Reques
 // endpoint. Each entry includes the owning plugin's slug and name so the
 // frontend can group pages by plugin.
 type aggregatedPluginPageResponse struct {
-	PluginSlug string `json:"plugin_slug"`
-	PluginName string `json:"plugin_name"`
-	Path       string `json:"path"`
-	Title      string `json:"title"`
-	Icon       string `json:"icon"`
-	Menu       string `json:"menu"`
+	PluginSlug string                    `json:"plugin_slug"`
+	PluginName string                    `json:"plugin_name"`
+	Path       string                    `json:"path"`
+	Title      string                    `json:"title"`
+	Icon       string                    `json:"icon"`
+	Menu       string                    `json:"menu"`
+	Collection string                    `json:"collection,omitempty"`
+	Fields     []pluginPageFieldResponse `json:"fields,omitempty"`
 }
 
 // ListPluginPages handles GET /api/admin/plugin-pages.
@@ -313,6 +356,8 @@ func (h *PluginHandler) ListPluginPages(w http.ResponseWriter, r *http.Request) 
 				Title:      pg.Title,
 				Icon:       pg.Icon,
 				Menu:       pg.Menu,
+				Collection: pg.Collection,
+				Fields:     toPluginPageFieldResponses(pg.Fields),
 			})
 		}
 	}

@@ -237,6 +237,10 @@ const en = {
       documentJson: "Document (JSON)",
       invalidJson: "Invalid JSON. Please check your syntax.",
       jsonMustBeObject: "Document must be a JSON object.",
+      required: "Required",
+      loadingOptions: "Loading options...",
+      noOptions: "No options available",
+      selectPlaceholder: "Select...",
     },
     tenants: {
       title: "Tenants",
@@ -515,6 +519,10 @@ const ru: typeof en = {
       documentJson: "Документ (JSON)",
       invalidJson: "Некорректный JSON. Проверьте синтаксис.",
       jsonMustBeObject: "Документ должен быть JSON-объектом.",
+      required: "Обязательное",
+      loadingOptions: "Загрузка вариантов...",
+      noOptions: "Нет доступных вариантов",
+      selectPlaceholder: "Выберите...",
     },
     tenants: {
       title: "Тенанты",

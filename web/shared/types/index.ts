@@ -206,11 +206,25 @@ export const PLUGIN_STATUSES = {
 export type PluginStatus =
   (typeof PLUGIN_STATUSES)[keyof typeof PLUGIN_STATUSES];
 
+export type PluginPageField = {
+  key: string;
+  label: string;
+  type: string; // text, number, boolean, select, multiselect, textarea
+  required?: boolean;
+  default?: string;
+  options?: string[];
+  options_url?: string;
+  options_value_key?: string;
+  options_label_key?: string;
+};
+
 export type PluginPage = {
   path: string;
   title: string;
   icon: string;
   menu: string;
+  collection?: string;
+  fields?: PluginPageField[];
 };
 
 export type Plugin = {
@@ -241,6 +255,8 @@ export type AggregatedPluginPage = {
   title: string;
   icon: string;
   menu: string;
+  collection?: string;
+  fields?: PluginPageField[];
 };
 
 // ─── Tenants ────────────────────────────────────────────────────────────────

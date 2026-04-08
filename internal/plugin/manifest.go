@@ -88,10 +88,27 @@ type ManifestRoute struct {
 // register admin or cabinet pages that the frontend renders as dynamic menu
 // items.
 type ManifestPage struct {
-	Path  string `toml:"path"`  // URL path segment, e.g. "tariffs"
-	Title string `toml:"title"` // Display title, e.g. "Tariffs"
-	Icon  string `toml:"icon"`  // Lucide icon name, e.g. "CreditCard"
-	Menu  string `toml:"menu"`  // Where to show: "admin" or "cabinet"
+	Path       string              `toml:"path"`       // URL path segment, e.g. "tariffs"
+	Title      string              `toml:"title"`      // Display title, e.g. "Tariffs"
+	Icon       string              `toml:"icon"`       // Lucide icon name, e.g. "CreditCard"
+	Menu       string              `toml:"menu"`       // Where to show: "admin" or "cabinet"
+	Collection string              `toml:"collection"` // Which collection this page manages
+	Fields     []ManifestPageField `toml:"fields"`     // Form field definitions for the page
+}
+
+// ManifestPageField declares a single form field for a plugin page. The
+// frontend renders these fields when creating or editing documents in the
+// page's collection. Pages without fields fall back to auto-detection.
+type ManifestPageField struct {
+	Key             string   `toml:"key"`               // JSON key in the document
+	Label           string   `toml:"label"`             // Display label
+	Type            string   `toml:"type"`              // text, number, boolean, select, multiselect, textarea
+	Required        bool     `toml:"required"`
+	Default         string   `toml:"default"`           // Default value (string representation)
+	Options         []string `toml:"options"`           // Static options for select/multiselect
+	OptionsURL      string   `toml:"options_url"`       // Dynamic options from URL
+	OptionsValueKey string   `toml:"options_value_key"` // Key in response objects for option value
+	OptionsLabelKey string   `toml:"options_label_key"` // Key in response objects for option label
 }
 
 // ManifestPlugin holds the top-level metadata about the plugin.

@@ -1,12 +1,14 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
 	LoadingSpinner,
+	apiGet,
 	cn,
 	formatDateTime,
 	usePluginCollection,
 	usePluginPages,
 } from "@remnacore/shared";
-import type { PluginDocument } from "@remnacore/shared";
+import type { PluginDocument, PluginPageField } from "@remnacore/shared";
+import { useQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
@@ -41,10 +43,11 @@ function inferFieldType(value: unknown): "boolean" | "number" | "text" {
  * Format a cell value for display.
  */
 function formatCellValue(value: unknown, t: (key: string) => string): string {
-	if (value === null || value === undefined) return "—";
+	if (value === null || value === undefined) return "\u2014";
 	if (typeof value === "boolean")
 		return value ? t("admin.pluginPage.true") : t("admin.pluginPage.false");
 	if (typeof value === "number") return String(value);
+	if (Array.isArray(value)) return value.join(", ");
 	if (typeof value === "object") return JSON.stringify(value);
 	return String(value);
 }
@@ -60,7 +63,7 @@ function prettifyKey(key: string): string {
 		.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-// ─── Dynamic form schema builder ──────────────────────────────────────────────
+// ─── Dynamic form schema builder (auto-detect mode) ──────────────────────────
 
 function buildFormSchema(
 	dataKeys: string[],
@@ -84,6 +87,108 @@ function buildFormSchema(
 	return z.object(shape);
 }
 
+// ─── Schema-driven form helpers ──────────────────────────────────────────────
+
+/**
+ * Build a Zod schema from the plugin's declared field definitions.
+ */
+function buildZodSchemaFromFields(fields: PluginPageField[]) {
+	const shape: Record<string, z.ZodTypeAny> = {};
+
+	for (const field of fields) {
+		switch (field.type) {
+			case "number":
+				shape[field.key] = field.required
+					? z.coerce.number()
+					: z.coerce.number().optional();
+				break;
+			case "boolean":
+				shape[field.key] = z.boolean();
+				break;
+			case "multiselect":
+				shape[field.key] = z.array(z.string());
+				break;
+			case "textarea":
+				shape[field.key] = field.required
+					? z.string().min(1)
+					: z.string();
+				break;
+			case "select":
+				shape[field.key] = field.required
+					? z.string().min(1)
+					: z.string();
+				break;
+			default:
+				shape[field.key] = field.required
+					? z.string().min(1)
+					: z.string();
+		}
+	}
+
+	return z.object(shape);
+}
+
+/**
+ * Build default form values from field definitions.
+ */
+function buildDefaultValues(
+	fields: PluginPageField[],
+): Record<string, unknown> {
+	const values: Record<string, unknown> = {};
+
+	for (const field of fields) {
+		switch (field.type) {
+			case "boolean":
+				values[field.key] = field.default === "true";
+				break;
+			case "number":
+				values[field.key] = field.default ? Number(field.default) : 0;
+				break;
+			case "multiselect":
+				values[field.key] = [];
+				break;
+			default:
+				values[field.key] = field.default ?? "";
+		}
+	}
+
+	return values;
+}
+
+/**
+ * Transform form values before submission.
+ * - textarea fields with keys ending in _uuids or features -> split into arrays
+ * - number fields -> ensure numeric
+ * - multiselect -> already arrays
+ */
+function transformFormValues(
+	values: Record<string, unknown>,
+	fields: PluginPageField[],
+): Record<string, unknown> {
+	const result: Record<string, unknown> = {};
+
+	for (const field of fields) {
+		const value = values[field.key];
+
+		if (
+			field.type === "textarea" &&
+			typeof value === "string" &&
+			(field.key.endsWith("_uuids") || field.key.endsWith("features"))
+		) {
+			result[field.key] = value
+				.split("\n")
+				.map((line) => line.trim())
+				.filter((line) => line.length > 0);
+		} else if (field.type === "number") {
+			result[field.key] = Number(value);
+		} else {
+			result[field.key] = value;
+		}
+	}
+
+	return result;
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function PluginPageView() {
@@ -103,17 +208,26 @@ export function PluginPageView() {
 	const pageInfo = pluginPages?.find(
 		(p) => p.plugin_slug === slug && p.path === pagePath,
 	);
+	const pageFields =
+		pageInfo?.fields && pageInfo.fields.length > 0
+			? pageInfo.fields
+			: undefined;
 
 	const documents = list.data ?? [];
 	const dataKeys = deriveDataKeys(documents);
 
+	// When fields are declared, use field keys for columns; otherwise auto-detect
+	const columnKeys = pageFields ? pageFields.map((f) => f.key) : dataKeys;
+
 	// ─── Table columns ───────────────────────────────────────────────────────
 
 	const columns: ColumnDef<PluginDocument, unknown>[] = [
-		...dataKeys.map(
+		...columnKeys.map(
 			(key): ColumnDef<PluginDocument, unknown> => ({
 				id: `data_${key}`,
-				header: prettifyKey(key),
+				header: pageFields
+					? (pageFields.find((f) => f.key === key)?.label ?? prettifyKey(key))
+					: prettifyKey(key),
 				cell: ({ row }) => {
 					const value = row.original.data[key];
 					return (
@@ -231,17 +345,31 @@ export function PluginPageView() {
 			</div>
 
 			{/* Form (create/edit) */}
-			{formMode !== "closed" && (
-				<PluginDocumentForm
-					mode={formMode}
-					dataKeys={dataKeys}
-					sampleDoc={documents[0]}
-					editingDoc={editingDoc}
-					isPending={create.isPending || update.isPending}
-					onSubmit={handleFormSubmit}
-					onClose={handleFormClose}
-				/>
-			)}
+			{formMode !== "closed" &&
+				(pageFields ? (
+					<SchemaForm
+						fields={pageFields}
+						mode={formMode}
+						initialValues={
+							formMode === "edit" && editingDoc
+								? editingDoc.data
+								: undefined
+						}
+						isPending={create.isPending || update.isPending}
+						onSubmit={handleFormSubmit}
+						onCancel={handleFormClose}
+					/>
+				) : (
+					<PluginDocumentForm
+						mode={formMode}
+						dataKeys={dataKeys}
+						sampleDoc={documents[0]}
+						editingDoc={editingDoc}
+						isPending={create.isPending || update.isPending}
+						onSubmit={handleFormSubmit}
+						onClose={handleFormClose}
+					/>
+				))}
 
 			{/* Table */}
 			{documents.length > 0 ? (
@@ -257,7 +385,522 @@ export function PluginPageView() {
 	);
 }
 
-// ─── Document Form ────────────────────────────────────────────────────────────
+// ─── Schema-Driven Form ──────────────────────────────────────────────────────
+
+type SchemaFormProps = {
+	fields: PluginPageField[];
+	mode: "create" | "edit";
+	initialValues: Record<string, unknown> | undefined;
+	isPending: boolean;
+	onSubmit: (data: Record<string, unknown>) => void;
+	onCancel: () => void;
+};
+
+function SchemaForm({
+	fields,
+	mode,
+	initialValues,
+	isPending,
+	onSubmit,
+	onCancel,
+}: SchemaFormProps) {
+	const { t } = useTranslation();
+
+	const schema = buildZodSchemaFromFields(fields);
+	type FormValues = z.infer<typeof schema>;
+
+	const defaults = buildDefaultValues(fields);
+	const mergedDefaults: Record<string, unknown> = initialValues
+		? { ...defaults, ...initialValues }
+		: defaults;
+
+	const {
+		register,
+		handleSubmit,
+		setValue,
+		watch,
+		formState: { errors },
+	} = useForm<FormValues>({
+		resolver: zodResolver(schema),
+		defaultValues: mergedDefaults as FormValues,
+	});
+
+	const handleFormSubmit = (values: FormValues) => {
+		const transformed = transformFormValues(
+			values as Record<string, unknown>,
+			fields,
+		);
+		onSubmit(transformed);
+	};
+
+	return (
+		<div className="rounded-xl border border-border bg-card p-6">
+			<div className="mb-4 flex items-center justify-between">
+				<h2 className="text-[15px] font-semibold text-foreground">
+					{mode === "create"
+						? t("admin.pluginPage.createTitle")
+						: t("admin.pluginPage.editTitle")}
+				</h2>
+				<button
+					type="button"
+					onClick={onCancel}
+					className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+				>
+					<X size={16} />
+				</button>
+			</div>
+
+			<form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
+				<div className="grid gap-4 sm:grid-cols-2">
+					{fields.map((field) => (
+						<SchemaFormField
+							key={field.key}
+							field={field}
+							register={register}
+							setValue={setValue}
+							watch={watch}
+							error={errors[field.key as keyof FormValues]?.message as string | undefined}
+						/>
+					))}
+				</div>
+
+				<div className="flex items-center gap-3 pt-2">
+					<button
+						type="submit"
+						disabled={isPending}
+						className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-[13px] font-medium text-background transition-colors hover:bg-primary/90 disabled:opacity-40"
+					>
+						{isPending ? (
+							<>
+								<Loader2 size={14} className="animate-spin" />
+								{t("admin.pluginPage.saving")}
+							</>
+						) : (
+							t("common.save")
+						)}
+					</button>
+					<button
+						type="button"
+						onClick={onCancel}
+						className="rounded-lg border border-border bg-card px-4 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+					>
+						{t("common.cancel")}
+					</button>
+				</div>
+			</form>
+		</div>
+	);
+}
+
+// ─── Schema Form Field Renderer ──────────────────────────────────────────────
+
+type SchemaFormFieldProps = {
+	field: PluginPageField;
+	register: ReturnType<typeof useForm>["register"];
+	setValue: ReturnType<typeof useForm>["setValue"];
+	watch: ReturnType<typeof useForm>["watch"];
+	error: string | undefined;
+};
+
+function SchemaFormField({
+	field,
+	register,
+	setValue,
+	watch,
+	error,
+}: SchemaFormFieldProps) {
+	const fieldId = `schema_${field.key}`;
+
+	switch (field.type) {
+		case "boolean":
+			return (
+				<BooleanField
+					field={field}
+					fieldId={fieldId}
+					watch={watch}
+					setValue={setValue}
+				/>
+			);
+		case "select":
+			return (
+				<SelectField
+					field={field}
+					fieldId={fieldId}
+					register={register}
+					error={error}
+				/>
+			);
+		case "multiselect":
+			return (
+				<MultiselectField
+					field={field}
+					fieldId={fieldId}
+					watch={watch}
+					setValue={setValue}
+					error={error}
+				/>
+			);
+		case "textarea":
+			return (
+				<TextareaField
+					field={field}
+					fieldId={fieldId}
+					register={register}
+					error={error}
+				/>
+			);
+		case "number":
+			return (
+				<NumberField
+					field={field}
+					fieldId={fieldId}
+					register={register}
+					error={error}
+				/>
+			);
+		default:
+			return (
+				<TextField
+					field={field}
+					fieldId={fieldId}
+					register={register}
+					error={error}
+				/>
+			);
+	}
+}
+
+// ─── Field Label ─────────────────────────────────────────────────────────────
+
+type FieldLabelProps = {
+	field: PluginPageField;
+	fieldId: string;
+};
+
+function FieldLabel({ field, fieldId }: FieldLabelProps) {
+	return (
+		<label
+			htmlFor={fieldId}
+			className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
+		>
+			{field.label}
+			{field.required && <span className="ml-0.5 text-destructive">*</span>}
+		</label>
+	);
+}
+
+// ─── Text Field ──────────────────────────────────────────────────────────────
+
+type TextFieldProps = {
+	field: PluginPageField;
+	fieldId: string;
+	register: ReturnType<typeof useForm>["register"];
+	error: string | undefined;
+};
+
+function TextField({ field, fieldId, register, error }: TextFieldProps) {
+	return (
+		<div>
+			<FieldLabel field={field} fieldId={fieldId} />
+			<input
+				id={fieldId}
+				type="text"
+				{...register(field.key)}
+				className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground placeholder:text-muted-foreground/50 transition-colors focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/50"
+			/>
+			{error && (
+				<p className="mt-1 text-[11px] text-destructive">{String(error)}</p>
+			)}
+		</div>
+	);
+}
+
+// ─── Number Field ────────────────────────────────────────────────────────────
+
+type NumberFieldProps = {
+	field: PluginPageField;
+	fieldId: string;
+	register: ReturnType<typeof useForm>["register"];
+	error: string | undefined;
+};
+
+function NumberField({ field, fieldId, register, error }: NumberFieldProps) {
+	return (
+		<div>
+			<FieldLabel field={field} fieldId={fieldId} />
+			<input
+				id={fieldId}
+				type="number"
+				step="any"
+				{...register(field.key, { valueAsNumber: true })}
+				className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground placeholder:text-muted-foreground/50 transition-colors focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/50"
+			/>
+			{error && (
+				<p className="mt-1 text-[11px] text-destructive">{String(error)}</p>
+			)}
+		</div>
+	);
+}
+
+// ─── Textarea Field ──────────────────────────────────────────────────────────
+
+type TextareaFieldProps = {
+	field: PluginPageField;
+	fieldId: string;
+	register: ReturnType<typeof useForm>["register"];
+	error: string | undefined;
+};
+
+function TextareaField({
+	field,
+	fieldId,
+	register,
+	error,
+}: TextareaFieldProps) {
+	return (
+		<div className="sm:col-span-2">
+			<FieldLabel field={field} fieldId={fieldId} />
+			<textarea
+				id={fieldId}
+				rows={4}
+				{...register(field.key)}
+				className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground placeholder:text-muted-foreground/50 transition-colors focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/50"
+			/>
+			{error && (
+				<p className="mt-1 text-[11px] text-destructive">{String(error)}</p>
+			)}
+		</div>
+	);
+}
+
+// ─── Boolean Field ───────────────────────────────────────────────────────────
+
+type BooleanFieldProps = {
+	field: PluginPageField;
+	fieldId: string;
+	watch: ReturnType<typeof useForm>["watch"];
+	setValue: ReturnType<typeof useForm>["setValue"];
+};
+
+function BooleanField({ field, fieldId, watch, setValue }: BooleanFieldProps) {
+	const currentValue = watch(field.key) as boolean;
+
+	return (
+		<div className="flex items-center gap-3">
+			<button
+				type="button"
+				id={fieldId}
+				role="switch"
+				aria-label={field.label}
+				aria-checked={!!currentValue}
+				onClick={() => setValue(field.key, !currentValue)}
+				className={cn(
+					"relative h-5 w-9 rounded-full transition-colors",
+					currentValue ? "bg-primary" : "bg-muted",
+				)}
+			>
+				<span
+					className={cn(
+						"absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-background transition-transform",
+						currentValue && "translate-x-4",
+					)}
+				/>
+			</button>
+			<span className="text-[13px] text-foreground">
+				{field.label}
+				{field.required && (
+					<span className="ml-0.5 text-destructive">*</span>
+				)}
+			</span>
+		</div>
+	);
+}
+
+// ─── Select Field ────────────────────────────────────────────────────────────
+
+type SelectFieldProps = {
+	field: PluginPageField;
+	fieldId: string;
+	register: ReturnType<typeof useForm>["register"];
+	error: string | undefined;
+};
+
+function SelectField({ field, fieldId, register, error }: SelectFieldProps) {
+	const { t } = useTranslation();
+
+	return (
+		<div>
+			<FieldLabel field={field} fieldId={fieldId} />
+			<select
+				id={fieldId}
+				{...register(field.key)}
+				className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground transition-colors focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/50"
+			>
+				<option value="">{t("admin.pluginPage.selectPlaceholder")}</option>
+				{field.options?.map((opt) => (
+					<option key={opt} value={opt}>
+						{opt}
+					</option>
+				))}
+			</select>
+			{error && (
+				<p className="mt-1 text-[11px] text-destructive">{String(error)}</p>
+			)}
+		</div>
+	);
+}
+
+// ─── Multiselect Field ───────────────────────────────────────────────────────
+
+type MultiselectFieldProps = {
+	field: PluginPageField;
+	fieldId: string;
+	watch: ReturnType<typeof useForm>["watch"];
+	setValue: ReturnType<typeof useForm>["setValue"];
+	error: string | undefined;
+};
+
+function MultiselectField({
+	field,
+	fieldId,
+	watch,
+	setValue,
+	error,
+}: MultiselectFieldProps) {
+	const selectedValues = (watch(field.key) as string[]) ?? [];
+
+	if (field.options_url) {
+		return (
+			<DynamicMultiselect
+				field={field}
+				fieldId={fieldId}
+				selectedValues={selectedValues}
+				onToggle={(optionValue) => {
+					const next = selectedValues.includes(optionValue)
+						? selectedValues.filter((v) => v !== optionValue)
+						: [...selectedValues, optionValue];
+					setValue(field.key, next);
+				}}
+				error={error}
+			/>
+		);
+	}
+
+	return (
+		<div className="sm:col-span-2">
+			<FieldLabel field={field} fieldId={fieldId} />
+			<div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+				{field.options?.map((opt) => {
+					const isChecked = selectedValues.includes(opt);
+					return (
+						<label
+							key={opt}
+							className={cn(
+								"flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-[13px] transition-colors",
+								isChecked
+									? "border-primary/30 bg-primary/5 text-foreground"
+									: "border-border bg-background text-muted-foreground hover:border-border/80",
+							)}
+						>
+							<input
+								type="checkbox"
+								checked={isChecked}
+								onChange={() => {
+									const next = isChecked
+										? selectedValues.filter((v) => v !== opt)
+										: [...selectedValues, opt];
+									setValue(field.key, next);
+								}}
+								className="h-3.5 w-3.5 rounded border-border accent-primary"
+							/>
+							<span className="font-mono text-[12px]">{opt}</span>
+						</label>
+					);
+				})}
+			</div>
+			{error && (
+				<p className="mt-1 text-[11px] text-destructive">{String(error)}</p>
+			)}
+		</div>
+	);
+}
+
+// ─── Dynamic Multiselect (options from URL) ──────────────────────────────────
+
+type DynamicMultiselectProps = {
+	field: PluginPageField;
+	fieldId: string;
+	selectedValues: string[];
+	onToggle: (value: string) => void;
+	error: string | undefined;
+};
+
+function DynamicMultiselect({
+	field,
+	fieldId,
+	selectedValues,
+	onToggle,
+	error,
+}: DynamicMultiselectProps) {
+	const { t } = useTranslation();
+
+	const { data: remoteOptions, isLoading: optionsLoading } = useQuery({
+		queryKey: ["plugin-options", field.options_url],
+		queryFn: () =>
+			apiGet<Record<string, unknown>[]>(field.options_url as string),
+		enabled: !!field.options_url,
+	});
+
+	const valueKey = field.options_value_key ?? "value";
+	const labelKey = field.options_label_key ?? "label";
+
+	return (
+		<div className="sm:col-span-2">
+			<FieldLabel field={field} fieldId={fieldId} />
+			{optionsLoading ? (
+				<p className="text-[12px] text-muted-foreground">
+					{t("admin.pluginPage.loadingOptions")}
+				</p>
+			) : !remoteOptions || remoteOptions.length === 0 ? (
+				<p className="text-[12px] text-muted-foreground">
+					{t("admin.pluginPage.noOptions")}
+				</p>
+			) : (
+				<div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+					{remoteOptions.map((option) => {
+						const optValue = String(option[valueKey] ?? "");
+						const optLabel = String(option[labelKey] ?? optValue);
+						const isChecked = selectedValues.includes(optValue);
+						return (
+							<label
+								key={optValue}
+								className={cn(
+									"flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-[13px] transition-colors",
+									isChecked
+										? "border-primary/30 bg-primary/5 text-foreground"
+										: "border-border bg-background text-muted-foreground hover:border-border/80",
+								)}
+							>
+								<input
+									type="checkbox"
+									checked={isChecked}
+									onChange={() => onToggle(optValue)}
+									className="h-3.5 w-3.5 rounded border-border accent-primary"
+								/>
+								<span className="font-mono text-[12px]">{optLabel}</span>
+							</label>
+						);
+					})}
+				</div>
+			)}
+			{error && (
+				<p className="mt-1 text-[11px] text-destructive">{String(error)}</p>
+			)}
+		</div>
+	);
+}
+
+// ─── Auto-Detect Document Form (fallback) ────────────────────────────────────
 
 type PluginDocumentFormProps = {
 	mode: "create" | "edit";
