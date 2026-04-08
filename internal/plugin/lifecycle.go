@@ -125,10 +125,13 @@ func (lm *LifecycleManager) Enable(ctx context.Context, pluginID string) error {
 		return fmt.Errorf("get plugin for enable: %w", err)
 	}
 
-	// Verify SDK version compatibility before enabling.
-	if p.Manifest != nil {
-		if err := checkSDKCompatibility(p.Manifest.Plugin.SDKVersion); err != nil {
-			return fmt.Errorf("sdk version check: %w", err)
+	// Built-in plugins skip SDK and WASM checks.
+	if !p.IsBuiltIn {
+		// Verify SDK version compatibility before enabling.
+		if p.Manifest != nil {
+			if err := checkSDKCompatibility(p.Manifest.Plugin.SDKVersion); err != nil {
+				return fmt.Errorf("sdk version check: %w", err)
+			}
 		}
 	}
 
@@ -139,28 +142,32 @@ func (lm *LifecycleManager) Enable(ctx context.Context, pluginID string) error {
 		}
 	}
 
-	// Resolve WASM bytes from content-addressable store if not inline.
-	if p.WASMBytes == nil && p.WASMHash != "" {
-		wasm, err := lm.repo.GetWASMByHash(ctx, p.WASMHash)
-		if err != nil {
-			return fmt.Errorf("loading WASM from content store: %w", err)
-		}
-		p.WASMBytes = wasm
-	}
-
 	if err := p.Enable(lm.clock.Now()); err != nil {
 		return fmt.Errorf("transition plugin to enabled: %w", err)
 	}
 
-	// Load into runtime pool.
-	if err := lm.runtime.LoadPlugin(p); err != nil {
-		return fmt.Errorf("loading plugin into runtime: %w", err)
-	}
+	// Built-in plugins use native Go code — skip WASM loading and hook
+	// registration. Their functionality is wired directly in the application.
+	if !p.IsBuiltIn {
+		// Resolve WASM bytes from content-addressable store if not inline.
+		if p.WASMBytes == nil && p.WASMHash != "" {
+			wasm, err := lm.repo.GetWASMByHash(ctx, p.WASMHash)
+			if err != nil {
+				return fmt.Errorf("loading WASM from content store: %w", err)
+			}
+			p.WASMBytes = wasm
+		}
 
-	// Register hooks in dispatcher.
-	if p.Manifest != nil {
-		regs := p.Manifest.HookRegistrations(p.ID)
-		lm.dispatcher.RegisterHooks(regs)
+		// Load into runtime pool.
+		if err := lm.runtime.LoadPlugin(p); err != nil {
+			return fmt.Errorf("loading plugin into runtime: %w", err)
+		}
+
+		// Register hooks in dispatcher.
+		if p.Manifest != nil {
+			regs := p.Manifest.HookRegistrations(p.ID)
+			lm.dispatcher.RegisterHooks(regs)
+		}
 	}
 
 	// Persist status.
@@ -189,17 +196,20 @@ func (lm *LifecycleManager) Disable(ctx context.Context, pluginID string) error 
 		return fmt.Errorf("get plugin for disable: %w", err)
 	}
 
-	// Unregister hooks first.
-	lm.dispatcher.UnregisterHooks(p.Slug)
+	// Built-in plugins don't use WASM runtime or hook dispatcher.
+	if !p.IsBuiltIn {
+		// Unregister hooks first.
+		lm.dispatcher.UnregisterHooks(p.Slug)
 
-	// Unload from runtime pool (ignore not-found if not loaded).
-	if unloadErr := lm.runtime.UnloadPlugin(p.Slug); unloadErr != nil && !errors.Is(unloadErr, ErrPluginNotFound) {
-		return fmt.Errorf("unloading plugin from runtime: %w", unloadErr)
-	}
+		// Unload from runtime pool (ignore not-found if not loaded).
+		if unloadErr := lm.runtime.UnloadPlugin(p.Slug); unloadErr != nil && !errors.Is(unloadErr, ErrPluginNotFound) {
+			return fmt.Errorf("unloading plugin from runtime: %w", unloadErr)
+		}
 
-	// Remove stale HTTP rate limiter so a re-enable picks up fresh limits.
-	if lm.hostFunctions != nil {
-		lm.hostFunctions.ClearPluginHTTPLimiter(p.Slug)
+		// Remove stale HTTP rate limiter so a re-enable picks up fresh limits.
+		if lm.hostFunctions != nil {
+			lm.hostFunctions.ClearPluginHTTPLimiter(p.Slug)
+		}
 	}
 
 	if err := p.Disable(lm.clock.Now()); err != nil {
@@ -541,6 +551,12 @@ func (lm *LifecycleManager) LoadAllEnabled(ctx context.Context) error {
 	}
 
 	for _, p := range plugins {
+		// Built-in plugins are enabled at the application level — skip WASM loading.
+		if p.IsBuiltIn {
+			lm.logger.Info("built-in plugin is enabled", "slug", p.Slug)
+			continue
+		}
+
 		if p.Manifest != nil {
 			if err := checkSDKCompatibility(p.Manifest.Plugin.SDKVersion); err != nil {
 				lm.logger.Warn("skipping incompatible plugin",
