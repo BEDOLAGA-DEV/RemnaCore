@@ -64,6 +64,7 @@ type RouterParams struct {
 	StatsHandler          *handler.StatsHandler
 	PluginRPCHandler      *handler.PluginRPCHandler
 	PluginRouteHandler    *handler.PluginRouteHandler
+	TariffHandler         *handler.TariffHandler
 	PluginRepo            plugin.PluginRepository
 	TelegramBot           *telegram.Bot
 }
@@ -150,8 +151,9 @@ func NewRouter(p RouterParams) http.Handler {
 		api.Get("/plans", p.BillingHandler.GetPlans)
 		api.Get("/plans/{planID}", p.BillingHandler.GetPlan)
 
-		// Public tariffs — from tariff-manager plugin collections.
-		api.Get("/tariffs", p.PluginRPCHandler.GetPublicTariffs)
+		// Public tariffs — dedicated tariff handler with full CRUD.
+		api.Get("/tariffs", p.TariffHandler.ListTariffs)
+		api.Get("/tariffs/{tariffID}", p.TariffHandler.GetTariff)
 
 		// Public password reset endpoints.
 		api.With(forgotPwdRL).Post("/auth/forgot-password", p.IdentityHandler.ForgotPassword)
@@ -238,6 +240,11 @@ func NewRouter(p RouterParams) http.Handler {
 				admin.Get("/tenants", p.ResellerHandler.ListTenants)
 				admin.Get("/tenants/{tenantID}", p.ResellerHandler.GetTenant)
 				admin.Put("/tenants/{tenantID}/branding", p.ResellerHandler.UpdateBranding)
+
+				// Tariff management
+				admin.Post("/tariffs", p.TariffHandler.CreateTariff)
+				admin.Put("/tariffs/{tariffID}", p.TariffHandler.UpdateTariff)
+				admin.Delete("/tariffs/{tariffID}", p.TariffHandler.DeleteTariff)
 			})
 
 			// Routing

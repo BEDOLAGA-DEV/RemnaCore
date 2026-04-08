@@ -36,6 +36,8 @@ const (
 	RemnawaveConfigKeyURL           = "url"
 	RemnawaveConfigKeyAPIToken      = "api_token"
 	RemnawaveConfigKeyWebhookSecret = "webhook_secret"
+
+	TariffConfigKeyDefaultCurrency = "default_currency"
 )
 
 // BuiltInPlugins returns the list of built-in plugin definitions that should
@@ -51,6 +53,15 @@ func tariffManager() BuiltInPluginDef {
 		Version:     builtInTariffVersion,
 		Description: builtInTariffDescription,
 		Author:      builtInTariffAuthor,
+		ConfigFields: map[string]ManifestConfigField{
+			TariffConfigKeyDefaultCurrency: {
+				Type:     "select",
+				Label:    "Default Currency",
+				Required: false,
+				Default:  "USD",
+				Options:  []string{"USD", "EUR", "RUB", "GBP", "TRY", "UAH", "KZT"},
+			},
+		},
 		Pages: []ManifestPage{
 			{
 				Path:  "tariffs",
@@ -60,12 +71,11 @@ func tariffManager() BuiltInPluginDef {
 			},
 		},
 		Routes: []ManifestRoute{
-			{
-				Method:   "GET",
-				Path:     "/api/tariffs",
-				Function: "handle_list_tariffs",
-				Public:   true,
-			},
+			{Method: "GET", Path: "/api/tariffs", Function: "list_tariffs", Public: true},
+			{Method: "GET", Path: "/api/tariffs/{tariffID}", Function: "get_tariff", Public: true},
+			{Method: "POST", Path: "/api/tariffs", Function: "create_tariff", Public: false},
+			{Method: "PUT", Path: "/api/tariffs/{tariffID}", Function: "update_tariff", Public: false},
+			{Method: "DELETE", Path: "/api/tariffs/{tariffID}", Function: "delete_tariff", Public: false},
 		},
 	}
 }

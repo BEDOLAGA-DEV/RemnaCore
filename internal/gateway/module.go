@@ -31,5 +31,6 @@ var Module = fx.Module("gateway",
 	fx.Provide(handler.NewStatsHandler),
 	fx.Provide(handler.NewPluginRPCHandler),
 	fx.Provide(handler.NewPluginRouteHandler),
+	fx.Provide(handler.NewTariffHandler),
 	fx.Provide(NewRouter),
 )

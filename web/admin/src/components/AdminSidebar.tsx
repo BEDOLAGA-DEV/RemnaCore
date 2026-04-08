@@ -12,6 +12,7 @@ import {
 	Search,
 	Server,
 	Settings,
+	Tag,
 	Users,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -34,6 +35,11 @@ const NAV_ITEMS = [
 		icon: FileText,
 		labelKey: "admin.invoices.title",
 	},
+	{
+		to: "/tariffs" as const,
+		icon: Tag,
+		labelKey: "admin.tariffs.title",
+	},
 	{ to: "/plugins" as const, icon: Puzzle, labelKey: "admin.plugins.title" },
 	{ to: "/nodes" as const, icon: Globe, labelKey: "admin.nodes.title" },
 	{ to: "/tenants" as const, icon: Building2, labelKey: "admin.tenants.title" },
@@ -55,6 +61,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
 	Server,
 	LayoutDashboard,
 	Building2,
+	Tag,
 };
 
 const NAV_LINK_CLASSES = cn(

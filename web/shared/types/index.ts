@@ -264,6 +264,29 @@ export type Tenant = {
   updated_at: string;
 };
 
+// ─── Tariffs ────────────────────────────────────────────────────────
+
+export type Tariff = {
+  id: string;
+  name: string;
+  description: string;
+  price_amount: number;
+  price_currency: string;
+  duration_days: number;
+  traffic_limit_gb: number;
+  device_limit: number;
+  max_purchases_per_user: number;
+  internal_squad_uuids: string[];
+  external_squad_uuids: string[];
+  features: string[];
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TariffInput = Omit<Tariff, "id" | "created_at" | "updated_at">;
+
 // ─── Plugin Documents ──────────────────────────────────────────────────
 
 export type PluginDocument = {
