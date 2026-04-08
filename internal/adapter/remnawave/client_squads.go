@@ -16,7 +16,6 @@ const (
 	subPathAccessibleNodes = "/accessible-nodes"
 	subPathBulkAddUsers    = "/bulk-actions/add-users"
 	subPathBulkRemoveUsers = "/bulk-actions/remove-users"
-	subPathActionsReorder  = "actions/reorder"
 )
 
 // ---------------------------------------------------------------------------

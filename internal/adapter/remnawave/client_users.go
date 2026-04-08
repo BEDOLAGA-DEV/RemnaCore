@@ -11,10 +11,9 @@ import (
 const (
 	APIPathUsersByShortUUID = "/api/users/by-short-uuid/"
 	APIPathUsersByUsername  = "/api/users/by-username/"
-	APIPathUsersTags       = "/api/users/tags"
-	APIPathActionsPrefix   = "/actions/"
-	APIPathResetTraffic    = "reset-traffic"
-	APIPathRevoke          = "revoke"
+	APIPathUsersTags        = "/api/users/tags"
+	APIPathResetTraffic     = "reset-traffic"
+	APIPathRevoke           = "revoke"
 )
 
 // GetAllUsers returns a paginated list of all VPN users.
@@ -53,13 +52,13 @@ func (c *Client) GetUserByUsername(ctx context.Context, username string) (*Remna
 
 // ResetUserTraffic resets the traffic counters for a single VPN user.
 func (c *Client) ResetUserTraffic(ctx context.Context, uuid string) error {
-	path := fmt.Sprintf("%s%s%s%s", APIPathUsers, uuid, APIPathActionsPrefix, APIPathResetTraffic)
+	path := fmt.Sprintf("%s%s%s%s", APIPathUsers, uuid, subPathActions, APIPathResetTraffic)
 	return c.do(ctx, http.MethodPost, path, nil, nil)
 }
 
 // RevokeUser revokes the subscription of a single VPN user.
 func (c *Client) RevokeUser(ctx context.Context, uuid string) error {
-	path := fmt.Sprintf("%s%s%s%s", APIPathUsers, uuid, APIPathActionsPrefix, APIPathRevoke)
+	path := fmt.Sprintf("%s%s%s%s", APIPathUsers, uuid, subPathActions, APIPathRevoke)
 	return c.do(ctx, http.MethodPost, path, nil, nil)
 }
 

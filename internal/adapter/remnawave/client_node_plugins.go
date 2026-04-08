@@ -10,8 +10,7 @@ const APIPathNodePlugins = "/api/node-plugins/"
 
 // Node plugin endpoint path segments.
 const (
-	nodePluginsPathReorder = "actions/reorder"
-	nodePluginsPathClone   = "actions/clone/"
+	nodePluginsPathClone = "actions/clone/"
 )
 
 // GetNodePlugins returns all node plugins.
@@ -57,8 +56,8 @@ func (c *Client) DeleteNodePlugin(ctx context.Context, uuid string) error {
 
 // ReorderNodePlugins sets the ordering of node plugins by their UUIDs.
 func (c *Client) ReorderNodePlugins(ctx context.Context, uuids []string) error {
-	req := ReorderNodePluginsRequest{UUIDs: uuids}
-	return c.do(ctx, http.MethodPost, APIPathNodePlugins+nodePluginsPathReorder, req, nil)
+	req := ReorderRequest{UUIDs: uuids}
+	return c.do(ctx, http.MethodPost, APIPathNodePlugins+subPathActionsReorder, req, nil)
 }
 
 // CloneNodePlugin duplicates an existing node plugin.

@@ -7,7 +7,6 @@ import (
 
 // Remnawave API path constants for node action endpoints.
 const (
-	APIPathNodeActions    = "/actions/"
 	APIPathNodesTags      = "/api/nodes/tags"
 	APIPathNodesActions   = "/api/nodes/actions/"
 	APIPathNodeEnable     = "enable"
@@ -51,22 +50,22 @@ func (c *Client) DeleteNode(ctx context.Context, uuid string) error {
 
 // EnableNode activates a proxy node.
 func (c *Client) EnableNode(ctx context.Context, uuid string) error {
-	return c.do(ctx, http.MethodPost, APIPathNodes+uuid+APIPathNodeActions+APIPathNodeEnable, nil, nil)
+	return c.do(ctx, http.MethodPost, APIPathNodes+uuid+subPathActions+APIPathNodeEnable, nil, nil)
 }
 
 // DisableNode deactivates a proxy node.
 func (c *Client) DisableNode(ctx context.Context, uuid string) error {
-	return c.do(ctx, http.MethodPost, APIPathNodes+uuid+APIPathNodeActions+APIPathNodeDisable, nil, nil)
+	return c.do(ctx, http.MethodPost, APIPathNodes+uuid+subPathActions+APIPathNodeDisable, nil, nil)
 }
 
 // RestartNode restarts a single proxy node.
 func (c *Client) RestartNode(ctx context.Context, uuid string) error {
-	return c.do(ctx, http.MethodPost, APIPathNodes+uuid+APIPathNodeActions+APIPathNodeRestart, nil, nil)
+	return c.do(ctx, http.MethodPost, APIPathNodes+uuid+subPathActions+APIPathNodeRestart, nil, nil)
 }
 
 // ResetNodeTraffic resets traffic counters for a single proxy node.
 func (c *Client) ResetNodeTraffic(ctx context.Context, uuid string) error {
-	return c.do(ctx, http.MethodPost, APIPathNodes+uuid+APIPathNodeActions+APIPathResetTraffic, nil, nil)
+	return c.do(ctx, http.MethodPost, APIPathNodes+uuid+subPathActions+APIPathResetTraffic, nil, nil)
 }
 
 // RestartAllNodes restarts all proxy nodes.

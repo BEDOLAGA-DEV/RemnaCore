@@ -42,6 +42,12 @@ const (
 	APIPathDisable = "/disable"
 )
 
+// Shared sub-path constants used across multiple resource clients.
+const (
+	subPathActions        = "/actions/"
+	subPathActionsReorder = "actions/reorder"
+)
+
 // isHTTPSuccess reports whether the given HTTP status code is in the 2xx range.
 func isHTTPSuccess(statusCode int) bool {
 	const (

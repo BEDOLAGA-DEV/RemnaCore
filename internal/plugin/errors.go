@@ -27,4 +27,5 @@ var (
 	ErrCircuitBreakerOpen    = errors.New("hook circuit breaker open")
 	ErrWASMBinaryTooLarge        = errors.New("WASM binary exceeds maximum size")
 	ErrCannotUninstallBuiltIn    = errors.New("cannot uninstall built-in plugin")
+	ErrCannotHotReloadBuiltIn    = errors.New("cannot hot-reload a built-in plugin")
 )

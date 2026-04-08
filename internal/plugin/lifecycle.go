@@ -304,7 +304,8 @@ func (lm *LifecycleManager) UpdateConfig(ctx context.Context, pluginID string, c
 	// If plugin is enabled, atomically reload with new config.
 	// Uses RuntimePool.LoadPlugin which handles atomic swap + old pool drain,
 	// avoiding the Disable→Enable window that could leave the plugin down.
-	if p.Status == StatusEnabled {
+	// Built-in plugins use native Go code and have no WASM runtime to reload.
+	if p.Status == StatusEnabled && !p.IsBuiltIn {
 		if err := lm.reloadWithConfig(ctx, p, config); err != nil {
 			// Rollback: restore old config in the database.
 			if rollbackErr := lm.repo.UpdateConfig(ctx, p.ID, oldConfig); rollbackErr != nil {
@@ -367,6 +368,10 @@ func (lm *LifecycleManager) HotReload(ctx context.Context, pluginID string, mani
 	old, err := lm.repo.GetByID(ctx, pluginID)
 	if err != nil {
 		return fmt.Errorf("get plugin for hot reload: %w", err)
+	}
+
+	if old.IsBuiltIn {
+		return fmt.Errorf("hot reload built-in plugin %q: %w", old.Slug, ErrCannotHotReloadBuiltIn)
 	}
 
 	if old.Status != StatusEnabled {
@@ -633,6 +638,21 @@ func (lm *LifecycleManager) RecoverErrorPlugins(ctx context.Context) int {
 
 	var recovered int
 	for _, p := range plugins {
+		// Built-in plugins in error state can be re-enabled directly
+		// without WASM hash validation.
+		if p.IsBuiltIn {
+			if err := lm.Enable(ctx, p.ID); err != nil {
+				lm.logger.Warn("failed to recover built-in plugin",
+					slog.String("slug", p.Slug),
+					slog.String("error_log", p.ErrorLog),
+					slog.String("error", err.Error()),
+				)
+				continue
+			}
+			recovered++
+			continue
+		}
+
 		if p.WASMHash == "" {
 			lm.logger.Warn("cannot recover plugin without WASM hash",
 				slog.String("slug", p.Slug),

@@ -29,7 +29,3 @@ type UpdateNodePluginRequest struct {
 	IsEnabled *bool           `json:"isEnabled,omitempty"`
 }
 
-// ReorderNodePluginsRequest is the payload to reorder node plugins.
-type ReorderNodePluginsRequest struct {
-	UUIDs []string `json:"uuids"`
-}

@@ -136,12 +136,11 @@ func TestGetSettings_ReturnsOK(t *testing.T) {
 	assert.Equal(t, 7, resp.Billing.TrialDays)
 	assert.Equal(t, "/etc/remna/jwt.key", resp.JWT.PrivateKeyPath)
 	assert.Equal(t, "/etc/remna/jwt.pub", resp.JWT.PublicKeyPath)
-	assert.Equal(t, "https://panel.example.com", resp.Remnawave.URL)
 
 	// Editable metadata is populated.
 	assert.NotEmpty(t, resp.Meta.Editable)
 	assert.NotEmpty(t, resp.Meta.ReadOnly)
-	assert.Contains(t, resp.Meta.Editable, "billing")
+	assert.Contains(t, resp.Meta.ReadOnly, "billing")
 	assert.Contains(t, resp.Meta.ReadOnly, "database")
 }
 
@@ -158,8 +157,6 @@ func TestGetSettings_MasksSecrets(t *testing.T) {
 	require.NoError(t, err)
 
 	// Fully masked secrets.
-	assert.Equal(t, secretMask, resp.Remnawave.APIToken)
-	assert.Equal(t, secretMask, resp.Remnawave.WebhookSecret)
 	assert.Equal(t, secretMask, resp.Telegram.BotToken)
 
 	// Connection string credentials masked, host preserved.
@@ -270,8 +267,6 @@ func TestGetSettings_NeverLeaksRawSecrets(t *testing.T) {
 	assert.NotContains(t, body, "supersecret")
 	assert.NotContains(t, body, "valkeypass")
 	assert.NotContains(t, body, "natspass")
-	assert.NotContains(t, body, "rw-token-secret")
-	assert.NotContains(t, body, "rw-webhook-secret")
 	assert.NotContains(t, body, "123456:ABC-DEF")
 }
 

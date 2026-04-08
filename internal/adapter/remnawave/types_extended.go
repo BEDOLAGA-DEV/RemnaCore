@@ -32,10 +32,13 @@ type BulkUpdateSquadsRequest struct {
 }
 
 // BulkExtendExpirationRequest is the payload for extending expiration dates.
+// UUIDs is optional: when set, only those users are affected; when omitted,
+// the operation applies to all users.
 type BulkExtendExpirationRequest struct {
-	Days   int    `json:"days"`
-	Hours  int    `json:"hours"`
-	Method string `json:"method"` // "add" or "set"
+	UUIDs  []string `json:"uuids,omitempty"`
+	Days   int      `json:"days"`
+	Hours  int      `json:"hours"`
+	Method string   `json:"method"` // "add" or "set"
 }
 
 // BulkUpdateAllRequest is the payload for updating all users at once.
