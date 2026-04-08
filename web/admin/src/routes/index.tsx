@@ -461,11 +461,11 @@ export function AdminDashboardPage() {
                       {COMPONENT_DISPLAY_NAMES[check.name] ?? check.name}
                     </span>
                   </div>
-                  {check.message ? (
-                    <span className="font-mono text-[11px] text-muted-foreground">
-                      {check.message}
-                    </span>
-                  ) : null}
+                  <span className="font-mono text-[11px] text-muted-foreground">
+                    {check.latency_ms < 1
+                      ? `${(check.latency_ms * 1000).toFixed(0)}µs`
+                      : `${check.latency_ms.toFixed(1)}ms`}
+                  </span>
                 </div>
               ))
             ) : (

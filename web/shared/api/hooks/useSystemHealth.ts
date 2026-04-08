@@ -9,6 +9,7 @@ export type HealthCheck = {
   name: string;
   status: ComponentStatus;
   message?: string;
+  latency_ms: number;
 };
 
 type ReadyzResponse = {

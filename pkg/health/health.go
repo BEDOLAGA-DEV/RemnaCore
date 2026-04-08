@@ -29,9 +29,10 @@ const (
 // internal details in production; it is populated only for operational
 // diagnostics (e.g. "backlog count: 12345").
 type ComponentCheck struct {
-	Name    string `json:"name"`
-	Status  Status `json:"status"`
-	Message string `json:"message,omitempty"`
+	Name      string  `json:"name"`
+	Status    Status  `json:"status"`
+	Message   string  `json:"message,omitempty"`
+	LatencyMs float64 `json:"latency_ms"`
 }
 
 // Checker reports the health of a single infrastructure component.

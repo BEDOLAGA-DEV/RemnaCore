@@ -57,7 +57,10 @@ func (h *HealthHandler) Readyz(w http.ResponseWriter, r *http.Request) {
 
 	checks := make([]health.ComponentCheck, 0, len(h.checkers))
 	for _, c := range h.checkers {
-		checks = append(checks, c.HealthCheck(ctx))
+		start := time.Now()
+		check := c.HealthCheck(ctx)
+		check.LatencyMs = float64(time.Since(start).Microseconds()) / 1000.0
+		checks = append(checks, check)
 	}
 
 	overall := health.Aggregate(checks)
