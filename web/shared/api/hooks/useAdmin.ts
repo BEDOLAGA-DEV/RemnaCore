@@ -72,3 +72,25 @@ export function useAdminTenant(tenantId: string) {
     enabled: !!tenantId,
   });
 }
+
+export type DashboardStats = {
+  total_users: number;
+  active_sessions: number;
+  active_subs: number;
+  cancelled_subs: number;
+  paused_subs: number;
+  pending_subs: number;
+  total_subs: number;
+  total_revenue: number;
+};
+
+const STATS_STALE_TIME_MS = 30_000;
+
+export function useAdminStats() {
+  return useQuery({
+    queryKey: QUERY_KEYS.admin.stats,
+    queryFn: () => apiGet<DashboardStats>(ENDPOINTS.admin.stats),
+    staleTime: STATS_STALE_TIME_MS,
+    refetchInterval: STATS_STALE_TIME_MS,
+  });
+}

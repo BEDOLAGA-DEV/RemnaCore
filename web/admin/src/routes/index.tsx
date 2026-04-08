@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  useAdminUsers,
+  useAdminStats,
   useAdminSubscriptions,
   useAdminInvoices,
   usePlugins,
@@ -128,10 +128,7 @@ const COMPONENT_DISPLAY_NAMES: Record<string, string> = {
 export function AdminDashboardPage() {
   const { t } = useTranslation();
 
-  const { data: users, isLoading: usersLoading } = useAdminUsers({
-    limit: PAGINATION_DEFAULTS.maxLimit,
-    offset: 0,
-  });
+  const { data: serverStats, isLoading: statsLoading } = useAdminStats();
   const { data: subs, isLoading: subsLoading } = useAdminSubscriptions({
     limit: PAGINATION_DEFAULTS.maxLimit,
     offset: 0,
@@ -144,32 +141,26 @@ export function AdminDashboardPage() {
   const { data: healthChecks } = useSystemHealth();
 
   const isLoading =
-    usersLoading || subsLoading || invoicesLoading || pluginsLoading;
+    statsLoading || subsLoading || invoicesLoading || pluginsLoading;
 
   const stats = useMemo(() => {
-    const userCount = users?.length ?? 0;
-    const totalSubs = subs?.length ?? 0;
-    const activeSubs = subs?.filter((s) => s.status === "active").length ?? 0;
-    const cancelledSubs =
-      subs?.filter((s) => s.status === "cancelled").length ?? 0;
-    const pausedSubs =
-      subs?.filter((s) => s.status === "paused").length ?? 0;
-    const pendingSubs =
-      subs?.filter((s) => s.status === "pending").length ?? 0;
-
-    const paidInvoices = invoices?.filter((i) => i.status === "paid") ?? [];
-    const totalRevenue = paidInvoices.reduce(
-      (sum, inv) => sum + inv.total_amount,
-      0,
-    );
+    const s = serverStats;
+    const userCount = s?.total_users ?? 0;
+    const activeSessions = s?.active_sessions ?? 0;
+    const activeSubs = s?.active_subs ?? 0;
+    const cancelledSubs = s?.cancelled_subs ?? 0;
+    const pausedSubs = s?.paused_subs ?? 0;
+    const pendingSubs = s?.pending_subs ?? 0;
+    const totalSubs = s?.total_subs ?? 0;
+    const totalRevenue = s?.total_revenue ?? 0;
 
     const churnRate =
       totalSubs > 0
         ? ((cancelledSubs / totalSubs) * PERCENT_MULTIPLIER).toFixed(1)
         : "0.0";
 
-    return { userCount, activeSubs, totalSubs, totalRevenue, churnRate, cancelledSubs, pausedSubs, pendingSubs };
-  }, [users, subs, invoices]);
+    return { userCount, activeSessions, activeSubs, totalSubs, totalRevenue, churnRate, cancelledSubs, pausedSubs, pendingSubs };
+  }, [serverStats]);
 
   const planDistribution = useMemo(() => {
     if (!subs) return [];
@@ -232,10 +223,15 @@ export function AdminDashboardPage() {
       </div>
 
       {/* Row 1: KPI Cards */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <KpiCard
           label={t("admin.dashboard.totalUsers")}
           value={stats.userCount.toLocaleString()}
+        />
+        <KpiCard
+          label="Sessions"
+          value={stats.activeSessions.toLocaleString()}
+          highlight={stats.activeSessions > 0}
         />
         <KpiCard
           label={t("admin.dashboard.activeSubscriptions")}
@@ -441,15 +437,21 @@ export function AdminDashboardPage() {
 type KpiCardProps = {
   label: string;
   value: string;
+  highlight?: boolean;
 };
 
-function KpiCard({ label, value }: KpiCardProps) {
+function KpiCard({ label, value, highlight }: KpiCardProps) {
   return (
     <div className="rounded-xl border border-border bg-card p-5">
       <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
         {label}
       </p>
-      <p className="mt-2 font-mono text-[28px] font-bold leading-none tracking-tight text-foreground">
+      <p
+        className={cn(
+          "mt-2 font-mono text-[28px] font-bold leading-none tracking-tight",
+          highlight ? "text-primary" : "text-foreground",
+        )}
+      >
         {value}
       </p>
     </div>

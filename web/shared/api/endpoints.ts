@@ -93,6 +93,7 @@ export const ENDPOINTS = {
         `/api/admin/tenants/${tenantId}/branding`,
     },
     settings: "/api/admin/settings",
+    stats: "/api/admin/stats",
   },
 
   // ─── Routing (Protected) ───────────────────────────────────────────────
