@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/remnawave"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pluginstore"
 )
@@ -28,16 +29,20 @@ const priceCurrencyLen = 3
 // TariffHandler provides dedicated CRUD endpoints for tariff management.
 // Tariffs are stored as documents in the tariff-manager plugin's collection
 // but exposed through a first-class API with domain-level validation.
+// The Remnawave client is injected from the remnawave-provider plugin — no
+// duplicate connection config needed.
 type TariffHandler struct {
 	collections pluginstore.Store
+	remnawave   *remnawave.Client
 	logger      *slog.Logger
 }
 
 // NewTariffHandler creates a TariffHandler backed by the given collection
-// store.
-func NewTariffHandler(collections pluginstore.Store, logger *slog.Logger) *TariffHandler {
+// store and Remnawave client (provided by remnawave-provider plugin).
+func NewTariffHandler(collections pluginstore.Store, rw *remnawave.Client, logger *slog.Logger) *TariffHandler {
 	return &TariffHandler{
 		collections: collections,
+		remnawave:   rw,
 		logger:      logger,
 	}
 }
@@ -312,4 +317,30 @@ func documentToTariff(doc *pluginstore.Document) (*TariffResponse, error) {
 		tariff.Features = []string{}
 	}
 	return &tariff, nil
+}
+
+// --- Remnawave data endpoints (proxied from remnawave-provider) ---
+
+// ListSquads handles GET /api/tariffs/squads — returns internal squads from
+// Remnawave for tariff form dropdowns. Connection config comes from the
+// remnawave-provider plugin (shared Fx dependency, no duplicate settings).
+func (h *TariffHandler) ListSquads(w http.ResponseWriter, r *http.Request) {
+	squads, err := h.remnawave.GetInternalSquads(r.Context())
+	if err != nil {
+		h.logger.Error("failed to list squads from remnawave", slog.Any("error", err))
+		writeJSON(w, http.StatusOK, []any{})
+		return
+	}
+	writeJSON(w, http.StatusOK, squads)
+}
+
+// ListNodes handles GET /api/tariffs/nodes — returns nodes from Remnawave.
+func (h *TariffHandler) ListNodes(w http.ResponseWriter, r *http.Request) {
+	nodes, err := h.remnawave.GetNodes(r.Context())
+	if err != nil {
+		h.logger.Error("failed to list nodes from remnawave", slog.Any("error", err))
+		writeJSON(w, http.StatusOK, []any{})
+		return
+	}
+	writeJSON(w, http.StatusOK, nodes)
 }

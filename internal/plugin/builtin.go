@@ -76,6 +76,8 @@ func tariffManager() BuiltInPluginDef {
 			{Method: "POST", Path: "/api/tariffs", Function: "create_tariff", Public: false},
 			{Method: "PUT", Path: "/api/tariffs/{tariffID}", Function: "update_tariff", Public: false},
 			{Method: "DELETE", Path: "/api/tariffs/{tariffID}", Function: "delete_tariff", Public: false},
+			{Method: "GET", Path: "/api/tariffs/squads", Function: "list_squads", Public: false},
+			{Method: "GET", Path: "/api/tariffs/nodes", Function: "list_nodes", Public: false},
 		},
 	}
 }

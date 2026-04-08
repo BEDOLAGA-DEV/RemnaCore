@@ -23,4 +23,6 @@ func registerTariffRoutes(registry *gateway.BuiltinRouteRegistry, h *handler.Tar
 	registry.Register(slug, "create_tariff", h.CreateTariff)
 	registry.Register(slug, "update_tariff", h.UpdateTariff)
 	registry.Register(slug, "delete_tariff", h.DeleteTariff)
+	registry.Register(slug, "list_squads", h.ListSquads)
+	registry.Register(slug, "list_nodes", h.ListNodes)
 }
