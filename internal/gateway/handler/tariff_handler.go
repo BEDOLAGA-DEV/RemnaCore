@@ -90,7 +90,7 @@ func (h *TariffHandler) ListTariffs(w http.ResponseWriter, r *http.Request) {
 	docs, err := h.collections.ListDocuments(r.Context(), tariffPluginSlug, tariffCollection)
 	if err != nil {
 		h.logger.Error("failed to list tariffs", slog.Any("error", err))
-		writeJSON(w, http.StatusOK, []TariffResponse{})
+		writeAPIError(w, apierror.Internal)
 		return
 	}
 

@@ -242,6 +242,7 @@ func NewRouter(p RouterParams) http.Handler {
 				admin.Put("/tenants/{tenantID}/branding", p.ResellerHandler.UpdateBranding)
 
 				// Tariff management
+				admin.Get("/tariffs", p.TariffHandler.ListTariffs)
 				admin.Post("/tariffs", p.TariffHandler.CreateTariff)
 				admin.Put("/tariffs/{tariffID}", p.TariffHandler.UpdateTariff)
 				admin.Delete("/tariffs/{tariffID}", p.TariffHandler.DeleteTariff)
