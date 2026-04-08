@@ -46,9 +46,10 @@ func seedBuiltInPlugins(repo plugin.PluginRepository, cfg *config.Config, logger
 			UpdatedAt:   now,
 		}
 
-		// Seed config from env vars if available (migration path from
-		// env-only configuration to plugin-managed configuration).
-		seedRemnawaveConfig(p, cfg)
+		// Seed config from env vars for remnawave-provider only.
+		if def.Slug == plugin.BuiltInSlugRemnawaveProvider {
+			seedRemnawaveConfig(p, cfg)
+		}
 
 		if err := repo.Create(ctx, p); err != nil {
 			return fmt.Errorf("seed built-in plugin %s: %w", def.Slug, err)
