@@ -34,9 +34,14 @@ func (c *HealthChecker) HealthCheck(ctx context.Context) health.ComponentCheck {
 
 	stats := c.client.PoolStats()
 	totalConns := stats.TotalConns
-	// Degraded when stale connections exceed 25% of pool.
-	const staleRatioThreshold = 0.25
-	if totalConns > 0 && float64(stats.StaleConns)/float64(totalConns) > staleRatioThreshold {
+	// Degraded when stale connections exceed 75% of pool AND pool has a
+	// meaningful number of connections. At low traffic, idle connections
+	// naturally become stale — that is expected and not a health concern.
+	const (
+		staleRatioThreshold = 0.75
+		minConnsForCheck    = 5
+	)
+	if totalConns >= minConnsForCheck && float64(stats.StaleConns)/float64(totalConns) > staleRatioThreshold {
 		return health.ComponentCheck{
 			Name:    componentName,
 			Status:  health.StatusDegraded,
