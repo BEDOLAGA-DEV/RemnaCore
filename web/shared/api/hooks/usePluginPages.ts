@@ -4,7 +4,7 @@ import type {
 	AggregatedPluginPage,
 	PluginDocument,
 } from "../../types/index.js";
-import { apiDelete, apiGet, apiPost, apiPut } from "../client.js";
+import { apiDeleteVoid, apiGet, apiPost, apiPutVoid } from "../client.js";
 import { ENDPOINTS } from "../endpoints.js";
 
 const PLUGIN_PAGES_STALE_TIME_MS = 60_000;
@@ -64,7 +64,7 @@ export function usePluginCollection(pluginSlug: string, collection: string) {
 
 	const update = useMutation({
 		mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) =>
-			apiPut<PluginDocument>(
+			apiPutVoid(
 				ENDPOINTS.plugins.collections.item(pluginSlug, collection, id),
 				data,
 			),
@@ -75,7 +75,7 @@ export function usePluginCollection(pluginSlug: string, collection: string) {
 
 	const remove = useMutation({
 		mutationFn: (id: string) =>
-			apiDelete(ENDPOINTS.plugins.collections.item(pluginSlug, collection, id)),
+			apiDeleteVoid(ENDPOINTS.plugins.collections.item(pluginSlug, collection, id)),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey });
 		},

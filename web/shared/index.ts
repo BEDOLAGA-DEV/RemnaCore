@@ -2,7 +2,7 @@
 export * from "./types/index.js";
 
 // API
-export { apiClient, apiGet, apiPost, apiPut, apiDelete } from "./api/client.js";
+export { apiClient, apiGet, apiPost, apiPut, apiDelete, apiPutVoid, apiDeleteVoid } from "./api/client.js";
 export { ENDPOINTS } from "./api/endpoints.js";
 export type * from "./api/types.js";
 

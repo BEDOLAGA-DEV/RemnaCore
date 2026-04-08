@@ -11,10 +11,10 @@ import (
 	pluginadapter "github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/plugin"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/handler"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pluginstore"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/sdk"
 )
 
@@ -36,7 +36,7 @@ var pluginWiring = fx.Options(
 
 	// Plugin collections -> interface binding for handler
 	fx.Provide(postgres.NewCollectionsRepository),
-	fx.Provide(func(repo *postgres.CollectionsRepository) handler.CollectionStore { return repo }),
+	fx.Provide(func(repo *postgres.CollectionsRepository) pluginstore.Store { return repo }),
 
 	// WASM runner factory — real Extism/wazero runtime.
 	fx.Provide(provideExtismWASMFactory),

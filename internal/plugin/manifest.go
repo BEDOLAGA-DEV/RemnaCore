@@ -166,10 +166,21 @@ func (m *Manifest) Validate() error {
 		}
 	}
 
+	if len(m.Pages) > MaxPagesPerPlugin {
+		return fmt.Errorf("%w: too many pages: %d (max %d)",
+			ErrInvalidManifest, len(m.Pages), MaxPagesPerPlugin)
+	}
+
+	pagePaths := make(map[string]bool, len(m.Pages))
 	for i, page := range m.Pages {
 		if err := validateManifestPage(i, page); err != nil {
 			return err
 		}
+		if pagePaths[page.Path] {
+			return fmt.Errorf("%w: pages[%d]: duplicate path %q",
+				ErrInvalidManifest, i, page.Path)
+		}
+		pagePaths[page.Path] = true
 	}
 
 	return nil
@@ -180,6 +191,10 @@ func (m *Manifest) Validate() error {
 func validateManifestPage(index int, page ManifestPage) error {
 	if page.Path == "" {
 		return fmt.Errorf("%w: pages[%d].path is required", ErrInvalidManifest, index)
+	}
+	if len(page.Path) > MaxPagePathLen {
+		return fmt.Errorf("%w: pages[%d].path too long: %d (max %d)",
+			ErrInvalidManifest, index, len(page.Path), MaxPagePathLen)
 	}
 	if !pagePathRe.MatchString(page.Path) {
 		return fmt.Errorf("%w: pages[%d].path must match %s, got %q",

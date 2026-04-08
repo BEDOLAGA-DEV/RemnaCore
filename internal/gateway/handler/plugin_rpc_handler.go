@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -10,30 +9,20 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pluginstore"
 )
 
 // maxRPCBodyBytes is the maximum request body size for RPC and collection
 // document payloads (1 MB).
 const maxRPCBodyBytes int64 = 1 << 20
 
-// CollectionStore abstracts plugin document storage so the handler does not
-// depend on a concrete postgres type.
-type CollectionStore interface {
-	ListDocuments(ctx context.Context, pluginSlug, collection string) ([]postgres.CollectionDocument, error)
-	GetDocument(ctx context.Context, pluginSlug, collection, id string) (*postgres.CollectionDocument, error)
-	InsertDocument(ctx context.Context, pluginSlug, collection string, doc json.RawMessage) (*postgres.CollectionDocument, error)
-	UpdateDocument(ctx context.Context, id string, doc json.RawMessage) error
-	DeleteDocument(ctx context.Context, id string) error
-}
-
 // PluginRPCHandler handles plugin RPC calls and collection CRUD endpoints.
 type PluginRPCHandler struct {
 	runtime     *plugin.RuntimePool
 	pluginRepo  plugin.PluginRepository
-	collections CollectionStore
+	collections pluginstore.Store
 	logger      *slog.Logger
 }
 
@@ -41,7 +30,7 @@ type PluginRPCHandler struct {
 func NewPluginRPCHandler(
 	runtime *plugin.RuntimePool,
 	pluginRepo plugin.PluginRepository,
-	collections CollectionStore,
+	collections pluginstore.Store,
 	logger *slog.Logger,
 ) *PluginRPCHandler {
 	return &PluginRPCHandler{
@@ -196,7 +185,7 @@ func (h *PluginRPCHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
 
 	doc, err := h.collections.GetDocument(r.Context(), pluginSlug, collection, docID)
 	if err != nil {
-		if errors.Is(err, postgres.ErrCollectionDocNotFound) {
+		if errors.Is(err, pluginstore.ErrDocumentNotFound) {
 			writeAPIError(w, apierror.NotFound)
 			return
 		}
@@ -214,6 +203,7 @@ func (h *PluginRPCHandler) UpdateDocument(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	pluginSlug := chi.URLParam(r, "pluginSlug")
 	docID := chi.URLParam(r, "docID")
 
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxRPCBodyBytes+1))
@@ -231,8 +221,8 @@ func (h *PluginRPCHandler) UpdateDocument(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := h.collections.UpdateDocument(r.Context(), docID, json.RawMessage(body)); err != nil {
-		if errors.Is(err, postgres.ErrCollectionDocNotFound) {
+	if err := h.collections.UpdateDocument(r.Context(), pluginSlug, docID, json.RawMessage(body)); err != nil {
+		if errors.Is(err, pluginstore.ErrDocumentNotFound) {
 			writeAPIError(w, apierror.NotFound)
 			return
 		}
@@ -250,10 +240,11 @@ func (h *PluginRPCHandler) DeleteDocument(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	pluginSlug := chi.URLParam(r, "pluginSlug")
 	docID := chi.URLParam(r, "docID")
 
-	if err := h.collections.DeleteDocument(r.Context(), docID); err != nil {
-		if errors.Is(err, postgres.ErrCollectionDocNotFound) {
+	if err := h.collections.DeleteDocument(r.Context(), pluginSlug, docID); err != nil {
+		if errors.Is(err, pluginstore.ErrDocumentNotFound) {
 			writeAPIError(w, apierror.NotFound)
 			return
 		}

@@ -279,6 +279,9 @@ function PluginDocumentForm({
 	onClose,
 }: PluginDocumentFormProps) {
 	const { t } = useTranslation();
+	const [rawJson, setRawJson] = useState("{}");
+	const [rawJsonError, setRawJsonError] = useState<string | null>(null);
+	const useRawJsonMode = dataKeys.length === 0;
 
 	const schema = buildFormSchema(dataKeys, sampleDoc);
 	type FormValues = z.infer<typeof schema>;
@@ -311,6 +314,20 @@ function PluginDocumentForm({
 		onSubmit(values as Record<string, unknown>);
 	};
 
+	const handleRawJsonSubmit = () => {
+		setRawJsonError(null);
+		try {
+			const parsed: unknown = JSON.parse(rawJson);
+			if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+				setRawJsonError(t("admin.pluginPage.jsonMustBeObject"));
+				return;
+			}
+			onSubmit(parsed as Record<string, unknown>);
+		} catch {
+			setRawJsonError(t("admin.pluginPage.invalidJson"));
+		}
+	};
+
 	return (
 		<div className="rounded-xl border border-border bg-card p-6">
 			<div className="mb-4 flex items-center justify-between">
@@ -328,103 +345,145 @@ function PluginDocumentForm({
 				</button>
 			</div>
 
-			<form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
-				<div className="grid gap-4 sm:grid-cols-2">
-					{dataKeys.map((key) => {
-						const sampleValue = sampleDoc?.data[key];
-						const fieldType = inferFieldType(sampleValue);
+			{useRawJsonMode ? (
+				<div className="space-y-4">
+					<div>
+						<label
+							htmlFor="raw_json"
+							className="mb-1.5 block text-[12px] font-medium text-muted-foreground"
+						>
+							{t("admin.pluginPage.documentJson")}
+						</label>
+						<textarea
+							id="raw_json"
+							rows={6}
+							value={rawJson}
+							onChange={(e) => setRawJson(e.target.value)}
+							className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[12px] text-foreground placeholder:text-muted-foreground/50 transition-colors focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/50"
+							placeholder='{"name": "value", "price": 100}'
+						/>
+						{rawJsonError && (
+							<p className="mt-1 text-[11px] text-destructive">{rawJsonError}</p>
+						)}
+					</div>
+					<div className="flex items-center gap-3 pt-2">
+						<button
+							type="button"
+							onClick={handleRawJsonSubmit}
+							disabled={isPending}
+							className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-[13px] font-medium text-background transition-colors hover:bg-primary/90 disabled:opacity-40"
+						>
+							{isPending ? (
+								<>
+									<Loader2 size={14} className="animate-spin" />
+									{t("admin.pluginPage.saving")}
+								</>
+							) : (
+								t("common.save")
+							)}
+						</button>
+						<button
+							type="button"
+							onClick={onClose}
+							className="rounded-lg border border-border bg-card px-4 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+						>
+							{t("common.cancel")}
+						</button>
+					</div>
+				</div>
+			) : (
+				<form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
+					<div className="grid gap-4 sm:grid-cols-2">
+						{dataKeys.map((key) => {
+							const sampleValue = sampleDoc?.data[key];
+							const fieldType = inferFieldType(sampleValue);
 
-						if (fieldType === "boolean") {
-							const currentValue = watch(key as keyof FormValues);
-							return (
-								<div key={key} className="flex items-center gap-3">
-									<button
-										type="button"
-										role="switch"
-										aria-label={prettifyKey(key)}
-										aria-checked={!!currentValue}
-										onClick={() =>
-											setValue(
-												key as keyof FormValues,
-												!currentValue as FormValues[keyof FormValues],
-											)
-										}
-										className={cn(
-											"relative h-5 w-9 rounded-full transition-colors",
-											currentValue ? "bg-primary" : "bg-muted",
-										)}
-									>
-										<span
+							if (fieldType === "boolean") {
+								const currentValue = watch(key as keyof FormValues);
+								return (
+									<div key={key} className="flex items-center gap-3">
+										<button
+											type="button"
+											role="switch"
+											aria-label={prettifyKey(key)}
+											aria-checked={!!currentValue}
+											onClick={() =>
+												setValue(
+													key as keyof FormValues,
+													!currentValue as FormValues[keyof FormValues],
+												)
+											}
 											className={cn(
-												"absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-background transition-transform",
-												currentValue && "translate-x-4",
+												"relative h-5 w-9 rounded-full transition-colors",
+												currentValue ? "bg-primary" : "bg-muted",
 											)}
-										/>
-									</button>
-									<span className="text-[13px] text-foreground">
+										>
+											<span
+												className={cn(
+													"absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-background transition-transform",
+													currentValue && "translate-x-4",
+												)}
+											/>
+										</button>
+										<span className="text-[13px] text-foreground">
+											{prettifyKey(key)}
+										</span>
+									</div>
+								);
+							}
+
+							return (
+								<div key={key}>
+									<label
+										htmlFor={`field_${key}`}
+										className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
+									>
 										{prettifyKey(key)}
-									</span>
+									</label>
+									<input
+										id={`field_${key}`}
+										type={fieldType === "number" ? "number" : "text"}
+										step={fieldType === "number" ? "any" : undefined}
+										{...register(key as keyof FormValues, {
+											valueAsNumber: fieldType === "number",
+										})}
+										className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground placeholder:text-muted-foreground/50 transition-colors focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/50"
+									/>
+									{errors[key as keyof FormValues] && (
+										<p className="mt-1 text-[11px] text-destructive">
+											{String(errors[key as keyof FormValues]?.message)}
+										</p>
+									)}
 								</div>
 							);
-						}
+						})}
+					</div>
 
-						return (
-							<div key={key}>
-								<label
-									htmlFor={`field_${key}`}
-									className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
-								>
-									{prettifyKey(key)}
-								</label>
-								<input
-									id={`field_${key}`}
-									type={fieldType === "number" ? "number" : "text"}
-									step={fieldType === "number" ? "any" : undefined}
-									{...register(key as keyof FormValues, {
-										valueAsNumber: fieldType === "number",
-									})}
-									className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground placeholder:text-muted-foreground/50 transition-colors focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/50"
-								/>
-								{errors[key as keyof FormValues] && (
-									<p className="mt-1 text-[11px] text-destructive">
-										{String(errors[key as keyof FormValues]?.message)}
-									</p>
-								)}
-							</div>
-						);
-					})}
-				</div>
-
-				{dataKeys.length === 0 && (
-					<p className="text-[12px] text-muted-foreground">
-						{t("admin.pluginPage.noDocuments")}
-					</p>
-				)}
-
-				<div className="flex items-center gap-3 pt-2">
-					<button
-						type="submit"
-						disabled={isPending}
-						className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-[13px] font-medium text-background transition-colors hover:bg-primary/90 disabled:opacity-40"
-					>
-						{isPending ? (
-							<>
-								<Loader2 size={14} className="animate-spin" />
-								{t("admin.pluginPage.saving")}
-							</>
-						) : (
-							t("common.save")
-						)}
-					</button>
-					<button
-						type="button"
-						onClick={onClose}
-						className="rounded-lg border border-border bg-card px-4 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-					>
-						{t("common.cancel")}
-					</button>
-				</div>
-			</form>
+					<div className="flex items-center gap-3 pt-2">
+						<button
+							type="submit"
+							disabled={isPending}
+							className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-[13px] font-medium text-background transition-colors hover:bg-primary/90 disabled:opacity-40"
+						>
+							{isPending ? (
+								<>
+									<Loader2 size={14} className="animate-spin" />
+									{t("admin.pluginPage.saving")}
+								</>
+							) : (
+								t("common.save")
+							)}
+						</button>
+						<button
+							type="button"
+							onClick={onClose}
+							className="rounded-lg border border-border bg-card px-4 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+						>
+							{t("common.cancel")}
+						</button>
+					</div>
+				</form>
+			)}
 		</div>
 	);
 }

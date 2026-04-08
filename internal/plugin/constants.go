@@ -108,6 +108,13 @@ const (
 	// with hyphens, must start with a letter or digit.
 	PagePathPattern = `^[a-z0-9][a-z0-9-]*$`
 
+	// MaxPagePathLen is the maximum allowed length for a page path segment.
+	MaxPagePathLen = 64
+
+	// MaxPagesPerPlugin is the maximum number of UI pages a single plugin may
+	// declare in its manifest.
+	MaxPagesPerPlugin = 20
+
 	// PageMenuAdmin indicates the page appears in the admin panel navigation.
 	PageMenuAdmin = "admin"
 

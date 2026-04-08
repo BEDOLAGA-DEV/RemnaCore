@@ -151,3 +151,24 @@ export async function apiDelete<T>(
     .delete(`${baseUrl}${endpoint}`, { searchParams })
     .json<T>();
 }
+
+/**
+ * PUT request that expects no response body (204 No Content).
+ */
+export async function apiPutVoid(
+  endpoint: string,
+  body?: unknown,
+): Promise<void> {
+  const baseUrl = getBaseUrl();
+  await apiClient.put(`${baseUrl}${endpoint}`, { json: body });
+}
+
+/**
+ * DELETE request that expects no response body (204 No Content).
+ */
+export async function apiDeleteVoid(
+  endpoint: string,
+): Promise<void> {
+  const baseUrl = getBaseUrl();
+  await apiClient.delete(`${baseUrl}${endpoint}`);
+}

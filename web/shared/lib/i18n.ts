@@ -234,6 +234,9 @@ const en = {
       saving: "Saving...",
       true: "Yes",
       false: "No",
+      documentJson: "Document (JSON)",
+      invalidJson: "Invalid JSON. Please check your syntax.",
+      jsonMustBeObject: "Document must be a JSON object.",
     },
     tenants: {
       title: "Tenants",
@@ -509,6 +512,9 @@ const ru: typeof en = {
       saving: "Сохранение...",
       true: "Да",
       false: "Нет",
+      documentJson: "Документ (JSON)",
+      invalidJson: "Некорректный JSON. Проверьте синтаксис.",
+      jsonMustBeObject: "Документ должен быть JSON-объектом.",
     },
     tenants: {
       title: "Тенанты",
