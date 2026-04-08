@@ -92,12 +92,6 @@ export const ENDPOINTS = {
       updateBranding: (tenantId: string) =>
         `/api/admin/tenants/${tenantId}/branding`,
     },
-    tariffs: {
-      list: "/api/tariffs",
-      create: "/api/tariffs",
-      update: (id: string) => `/api/tariffs/${id}`,
-      delete: (id: string) => `/api/tariffs/${id}`,
-    },
     pluginPages: "/api/admin/plugin-pages",
     sessions: "/api/admin/sessions",
     settings: "/api/admin/settings",

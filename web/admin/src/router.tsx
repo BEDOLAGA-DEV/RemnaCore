@@ -16,7 +16,6 @@ import { PluginsPage } from "./routes/plugins/index.js";
 import { InstallPluginPage } from "./routes/plugins/install.js";
 import { PluginPageView } from "./routes/plugins/page.js";
 import { SettingsPage } from "./routes/settings.js";
-import { TariffsPage } from "./routes/tariffs.js";
 import { AdminSubscriptionDetailPage } from "./routes/subscriptions/[id].js";
 import { AdminSubscriptionsPage } from "./routes/subscriptions/index.js";
 import { TenantDetailPage } from "./routes/tenants/[id].js";
@@ -141,12 +140,6 @@ const pluginPageRoute = createRoute({
 	component: PluginPageView,
 });
 
-const tariffsRoute = createRoute({
-	getParentRoute: () => layoutRoute,
-	path: "/tariffs",
-	component: TariffsPage,
-});
-
 const settingsRoute = createRoute({
 	getParentRoute: () => layoutRoute,
 	path: "/settings",
@@ -171,7 +164,6 @@ const routeTree = rootRoute.addChildren([
 		tenantsRoute,
 		tenantDetailRoute,
 		nodesRoute,
-		tariffsRoute,
 		settingsRoute,
 	]),
 ]);
