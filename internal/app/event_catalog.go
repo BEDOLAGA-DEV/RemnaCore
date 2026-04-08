@@ -3,6 +3,7 @@ package app
 import (
 	"reflect"
 
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/remnawave"
 	billingaggregate "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
@@ -16,13 +17,15 @@ import (
 
 // Producer name constants used in catalog entries.
 const (
-	producerBilling  = "billing"
-	producerMultisub = "multisub"
-	producerPayment  = "payment"
-	producerIdentity = "identity"
-	producerReseller = "reseller"
-	producerPlugin   = "plugin"
-	producerInfra    = "infra"
+	producerBilling   = "billing"
+	producerMultisub  = "multisub"
+	producerPayment   = "payment"
+	producerIdentity  = "identity"
+	producerReseller  = "reseller"
+	producerPlugin    = "plugin"
+	producerInfra     = "infra"
+	producerRemnawave = "remnawave"
+	producerSecurity  = "security"
 )
 
 // BuildEventCatalog creates the complete event catalog with all domain events
@@ -41,6 +44,7 @@ func BuildEventCatalog() *domainevent.EventCatalog {
 	registerResellerEvents(c)
 	registerPluginEvents(c)
 	registerInfraEvents(c)
+	registerWebhookEvents(c)
 
 	return c
 }
@@ -520,6 +524,172 @@ func registerInfraEvents(c *domainevent.EventCatalog) {
 		Type:      health.EventNodeHealthChanged,
 		Producer:  producerInfra,
 		Consumers: []string{},
+		Version:   1,
+	})
+}
+
+func registerWebhookEvents(c *domainevent.EventCatalog) {
+	// Webhook-originated events from Remnawave. These use map[string]any
+	// payloads (no typed structs) because the payload schema is defined by
+	// the Remnawave VPN panel, not by RemnaCore domain logic.
+
+	// --- Remnawave user scope ---
+	c.Register(domainevent.CatalogEntry{
+		Type:      remnawave.EventRemnawaveUserModified,
+		Producer:  producerRemnawave,
+		Consumers: []string{},
+		Version:   1,
+	})
+	c.Register(domainevent.CatalogEntry{
+		Type:      remnawave.EventRemnawaveUserDeleted,
+		Producer:  producerRemnawave,
+		Consumers: []string{},
+		Version:   1,
+	})
+
+	// --- Subscription scope (webhook-originated) ---
+	c.Register(domainevent.CatalogEntry{
+		Type:      remnawave.EventSubBindingRevoked,
+		Producer:  producerRemnawave,
+		Consumers: []string{}, // TODO: multisub should handle revocation
+		Version:   1,
+	})
+	c.Register(domainevent.CatalogEntry{
+		Type:      remnawave.EventSubExpired24hAgo,
+		Producer:  producerRemnawave,
+		Consumers: []string{},
+		Version:   1,
+	})
+	c.Register(domainevent.CatalogEntry{
+		Type:      remnawave.EventSubUserNotConnected,
+		Producer:  producerRemnawave,
+		Consumers: []string{},
+		Version:   1,
+	})
+	c.Register(domainevent.CatalogEntry{
+		Type:      remnawave.EventSubTrafficWarningMaxReached,
+		Producer:  producerRemnawave,
+		Consumers: []string{},
+		Version:   1,
+	})
+
+	// --- Security scope ---
+	c.Register(domainevent.CatalogEntry{
+		Type:      remnawave.EventSecurityHWIDDeviceAdded,
+		Producer:  producerSecurity,
+		Consumers: []string{},
+		Version:   1,
+	})
+	c.Register(domainevent.CatalogEntry{
+		Type:      remnawave.EventSecurityHWIDDeviceDeleted,
+		Producer:  producerSecurity,
+		Consumers: []string{},
+		Version:   1,
+	})
+	c.Register(domainevent.CatalogEntry{
+		Type:      remnawave.EventSecurityLoginAttemptFailed,
+		Producer:  producerSecurity,
+		Consumers: []string{},
+		Version:   1,
+	})
+	c.Register(domainevent.CatalogEntry{
+		Type:      remnawave.EventSecurityLoginAttemptSuccess,
+		Producer:  producerSecurity,
+		Consumers: []string{},
+		Version:   1,
+	})
+	c.Register(domainevent.CatalogEntry{
+		Type:      remnawave.EventSecurityTorrentBlockerReport,
+		Producer:  producerSecurity,
+		Consumers: []string{},
+		Version:   1,
+	})
+
+	// --- Infra scope (webhook-originated node events) ---
+	c.Register(domainevent.CatalogEntry{
+		Type:      remnawave.EventInfraNodeCreated,
+		Producer:  producerInfra,
+		Consumers: []string{},
+		Version:   1,
+	})
+	c.Register(domainevent.CatalogEntry{
+		Type:      remnawave.EventInfraNodeModified,
+		Producer:  producerInfra,
+		Consumers: []string{},
+		Version:   1,
+	})
+	c.Register(domainevent.CatalogEntry{
+		Type:      remnawave.EventInfraNodeDisabled,
+		Producer:  producerInfra,
+		Consumers: []string{},
+		Version:   1,
+	})
+	c.Register(domainevent.CatalogEntry{
+		Type:      remnawave.EventInfraNodeEnabled,
+		Producer:  producerInfra,
+		Consumers: []string{},
+		Version:   1,
+	})
+	c.Register(domainevent.CatalogEntry{
+		Type:      remnawave.EventInfraNodeDeleted,
+		Producer:  producerInfra,
+		Consumers: []string{},
+		Version:   1,
+	})
+	c.Register(domainevent.CatalogEntry{
+		Type:      remnawave.EventInfraNodeTrafficNotify,
+		Producer:  producerInfra,
+		Consumers: []string{},
+		Version:   1,
+	})
+	c.Register(domainevent.CatalogEntry{
+		Type:      remnawave.EventInfraSubpageConfigChanged,
+		Producer:  producerInfra,
+		Consumers: []string{},
+		Version:   1,
+	})
+
+	// --- Billing scope (CRM node payment reminders) ---
+	c.Register(domainevent.CatalogEntry{
+		Type:      remnawave.EventBillingNodePaymentDue7d,
+		Producer:  producerRemnawave,
+		Consumers: []string{}, // TODO: billing should handle node payment reminders
+		Version:   1,
+	})
+	c.Register(domainevent.CatalogEntry{
+		Type:      remnawave.EventBillingNodePaymentDue48h,
+		Producer:  producerRemnawave,
+		Consumers: []string{}, // TODO: billing should handle node payment reminders
+		Version:   1,
+	})
+	c.Register(domainevent.CatalogEntry{
+		Type:      remnawave.EventBillingNodePaymentDue24h,
+		Producer:  producerRemnawave,
+		Consumers: []string{}, // TODO: billing should handle node payment reminders
+		Version:   1,
+	})
+	c.Register(domainevent.CatalogEntry{
+		Type:      remnawave.EventBillingNodePaymentDueToday,
+		Producer:  producerRemnawave,
+		Consumers: []string{}, // TODO: billing should handle node payment reminders
+		Version:   1,
+	})
+	c.Register(domainevent.CatalogEntry{
+		Type:      remnawave.EventBillingNodePaymentOverdue24h,
+		Producer:  producerRemnawave,
+		Consumers: []string{}, // TODO: billing should handle node payment reminders
+		Version:   1,
+	})
+	c.Register(domainevent.CatalogEntry{
+		Type:      remnawave.EventBillingNodePaymentOverdue48h,
+		Producer:  producerRemnawave,
+		Consumers: []string{}, // TODO: billing should handle node payment reminders
+		Version:   1,
+	})
+	c.Register(domainevent.CatalogEntry{
+		Type:      remnawave.EventBillingNodePaymentOverdue7d,
+		Producer:  producerRemnawave,
+		Consumers: []string{}, // TODO: billing should handle node payment reminders
 		Version:   1,
 	})
 }

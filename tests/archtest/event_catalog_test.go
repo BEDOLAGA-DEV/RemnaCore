@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	natsadapter "github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/nats"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/remnawave"
 	billingaggregate "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
 	multisubaggregate "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
@@ -23,7 +24,7 @@ import (
 
 // totalExpectedEvents is the expected number of event types across all bounded
 // contexts. Update this constant when adding or removing event types.
-const totalExpectedEvents = 65
+const totalExpectedEvents = 90
 
 // TestAllEventTypesInCatalog verifies that every EventType constant defined
 // across all bounded contexts is registered in the event catalog. Adding a
@@ -200,6 +201,51 @@ func collectAllEventTypes() []domainevent.EventType {
 		// Infra events (1)
 		// =====================================================================
 		health.EventNodeHealthChanged,
+
+		// =====================================================================
+		// Webhook-originated events — Remnawave user scope (2)
+		// =====================================================================
+		remnawave.EventRemnawaveUserModified,
+		remnawave.EventRemnawaveUserDeleted,
+
+		// =====================================================================
+		// Webhook-originated events — Subscription scope (4)
+		// =====================================================================
+		remnawave.EventSubBindingRevoked,
+		remnawave.EventSubExpired24hAgo,
+		remnawave.EventSubUserNotConnected,
+		remnawave.EventSubTrafficWarningMaxReached,
+
+		// =====================================================================
+		// Webhook-originated events — Security scope (5)
+		// =====================================================================
+		remnawave.EventSecurityHWIDDeviceAdded,
+		remnawave.EventSecurityHWIDDeviceDeleted,
+		remnawave.EventSecurityLoginAttemptFailed,
+		remnawave.EventSecurityLoginAttemptSuccess,
+		remnawave.EventSecurityTorrentBlockerReport,
+
+		// =====================================================================
+		// Webhook-originated events — Infra scope (7)
+		// =====================================================================
+		remnawave.EventInfraNodeCreated,
+		remnawave.EventInfraNodeModified,
+		remnawave.EventInfraNodeDisabled,
+		remnawave.EventInfraNodeEnabled,
+		remnawave.EventInfraNodeDeleted,
+		remnawave.EventInfraNodeTrafficNotify,
+		remnawave.EventInfraSubpageConfigChanged,
+
+		// =====================================================================
+		// Webhook-originated events — Billing CRM scope (7)
+		// =====================================================================
+		remnawave.EventBillingNodePaymentDue7d,
+		remnawave.EventBillingNodePaymentDue48h,
+		remnawave.EventBillingNodePaymentDue24h,
+		remnawave.EventBillingNodePaymentDueToday,
+		remnawave.EventBillingNodePaymentOverdue24h,
+		remnawave.EventBillingNodePaymentOverdue48h,
+		remnawave.EventBillingNodePaymentOverdue7d,
 	}
 }
 
