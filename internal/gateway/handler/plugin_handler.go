@@ -39,21 +39,31 @@ type updatePluginConfigRequest struct {
 
 // --- Response DTOs ---
 
+// pluginPageResponse is the API representation of a single page declared by a
+// plugin manifest.
+type pluginPageResponse struct {
+	Path  string `json:"path"`
+	Title string `json:"title"`
+	Icon  string `json:"icon"`
+	Menu  string `json:"menu"`
+}
+
 // pluginResponse is the admin API representation of a plugin. Secret config
 // values declared as type="secret" in the manifest are replaced with a
 // redaction marker to prevent accidental leakage.
 type pluginResponse struct {
-	ID          string            `json:"id"`
-	Slug        string            `json:"slug"`
-	Name        string            `json:"name"`
-	Version     string            `json:"version"`
-	Description string            `json:"description"`
-	Author      string            `json:"author"`
-	License     string            `json:"license"`
-	Status      string            `json:"status"`
-	IsBuiltIn   bool              `json:"is_builtin"`
-	Config      map[string]string `json:"config"`
-	ErrorLog    string            `json:"error_log,omitempty"`
+	ID          string               `json:"id"`
+	Slug        string               `json:"slug"`
+	Name        string               `json:"name"`
+	Version     string               `json:"version"`
+	Description string               `json:"description"`
+	Author      string               `json:"author"`
+	License     string               `json:"license"`
+	Status      string               `json:"status"`
+	IsBuiltIn   bool                 `json:"is_builtin"`
+	Config      map[string]string    `json:"config"`
+	Pages       []pluginPageResponse `json:"pages"`
+	ErrorLog    string               `json:"error_log,omitempty"`
 }
 
 // toPluginResponse maps a domain Plugin to the admin API response with secret
@@ -70,8 +80,28 @@ func toPluginResponse(p *plugin.Plugin) pluginResponse {
 		Status:      string(p.Status),
 		IsBuiltIn:   p.IsBuiltIn,
 		Config:      p.RedactedConfig(),
+		Pages:       toPluginPageResponses(p),
 		ErrorLog:    p.ErrorLog,
 	}
+}
+
+// toPluginPageResponses extracts page declarations from the plugin manifest and
+// maps them to API response DTOs. Returns an empty slice when the manifest has
+// no pages.
+func toPluginPageResponses(p *plugin.Plugin) []pluginPageResponse {
+	if p.Manifest == nil || len(p.Manifest.Pages) == 0 {
+		return []pluginPageResponse{}
+	}
+	pages := make([]pluginPageResponse, len(p.Manifest.Pages))
+	for i, pg := range p.Manifest.Pages {
+		pages[i] = pluginPageResponse{
+			Path:  pg.Path,
+			Title: pg.Title,
+			Icon:  pg.Icon,
+			Menu:  pg.Menu,
+		}
+	}
+	return pages
 }
 
 // toPluginResponses maps a slice of domain Plugins to admin API responses.
@@ -246,4 +276,50 @@ func (h *PluginHandler) UpdatePluginConfig(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "config_updated"})
+}
+
+// aggregatedPluginPageResponse is the response DTO for the plugin pages
+// endpoint. Each entry includes the owning plugin's slug and name so the
+// frontend can group pages by plugin.
+type aggregatedPluginPageResponse struct {
+	PluginSlug string `json:"plugin_slug"`
+	PluginName string `json:"plugin_name"`
+	Path       string `json:"path"`
+	Title      string `json:"title"`
+	Icon       string `json:"icon"`
+	Menu       string `json:"menu"`
+}
+
+// ListPluginPages handles GET /api/admin/plugin-pages.
+// It returns all page declarations from all enabled plugins, allowing the
+// frontend to build dynamic navigation menus.
+func (h *PluginHandler) ListPluginPages(w http.ResponseWriter, r *http.Request) {
+	plugins, err := h.repo.GetEnabled(r.Context())
+	if err != nil {
+		writeErrorFromDomain(w, err)
+		return
+	}
+
+	var pages []aggregatedPluginPageResponse
+	for _, p := range plugins {
+		if p.Manifest == nil {
+			continue
+		}
+		for _, pg := range p.Manifest.Pages {
+			pages = append(pages, aggregatedPluginPageResponse{
+				PluginSlug: p.Slug,
+				PluginName: p.Name,
+				Path:       pg.Path,
+				Title:      pg.Title,
+				Icon:       pg.Icon,
+				Menu:       pg.Menu,
+			})
+		}
+	}
+
+	if pages == nil {
+		pages = []aggregatedPluginPageResponse{}
+	}
+
+	writeJSON(w, http.StatusOK, pages)
 }

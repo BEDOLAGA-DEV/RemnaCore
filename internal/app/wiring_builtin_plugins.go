@@ -88,5 +88,6 @@ func buildBuiltInManifest(def plugin.BuiltInPluginDef) *plugin.Manifest {
 			Author:      def.Author,
 		},
 		Config: def.ConfigFields,
+		Pages:  def.Pages,
 	}
 }

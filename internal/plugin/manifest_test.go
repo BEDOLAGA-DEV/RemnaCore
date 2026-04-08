@@ -61,6 +61,18 @@ max_storage_mb         = 200
 max_http_calls_per_minute = 50
 timeout_sync_ms        = 3000
 timeout_async_ms       = 15000
+
+[[pages]]
+path  = "tariffs"
+title = "Tariffs"
+icon  = "CreditCard"
+menu  = "admin"
+
+[[pages]]
+path  = "my-points"
+title = "My Points"
+icon  = "Star"
+menu  = "cabinet"
 `
 
 const minimalManifestTOML = `
@@ -124,6 +136,17 @@ func TestParseManifest_Full(t *testing.T) {
 	assert.Equal(t, 50, m.Limits.MaxHTTPCallsPerMin)
 	assert.Equal(t, 3000, m.Limits.TimeoutSyncMs)
 	assert.Equal(t, 15000, m.Limits.TimeoutAsyncMs)
+
+	// Pages
+	require.Len(t, m.Pages, 2)
+	assert.Equal(t, "tariffs", m.Pages[0].Path)
+	assert.Equal(t, "Tariffs", m.Pages[0].Title)
+	assert.Equal(t, "CreditCard", m.Pages[0].Icon)
+	assert.Equal(t, PageMenuAdmin, m.Pages[0].Menu)
+	assert.Equal(t, "my-points", m.Pages[1].Path)
+	assert.Equal(t, "My Points", m.Pages[1].Title)
+	assert.Equal(t, "Star", m.Pages[1].Icon)
+	assert.Equal(t, PageMenuCabinet, m.Pages[1].Menu)
 }
 
 func TestParseManifest_Minimal(t *testing.T) {
@@ -136,6 +159,7 @@ func TestParseManifest_Minimal(t *testing.T) {
 	assert.Equal(t, []string{"invoice.created"}, m.Hooks.Sync)
 	assert.Empty(t, m.Hooks.Async)
 	assert.Empty(t, m.Config)
+	assert.Empty(t, m.Pages)
 }
 
 func TestParseManifest_InvalidSlug(t *testing.T) {
@@ -554,6 +578,183 @@ sync = ["` + hookName + `"]
 `
 			_, err := ParseManifest([]byte(tomlStr))
 			assert.NoError(t, err)
+		})
+	}
+}
+
+func TestParseManifest_InvalidPages(t *testing.T) {
+	baseManifest := `
+[plugin]
+id          = "page-test"
+name        = "Page Test"
+version     = "1.0.0"
+sdk_version = "1.0.0"
+
+[hooks]
+sync = ["invoice.created"]
+
+`
+
+	tests := []struct {
+		name     string
+		pageTOML string
+		errMsg   string
+	}{
+		{
+			"missing path",
+			`[[pages]]
+title = "Settings"
+menu  = "admin"
+`,
+			"pages[0].path is required",
+		},
+		{
+			"missing title",
+			`[[pages]]
+path = "settings"
+menu = "admin"
+`,
+			"pages[0].title is required",
+		},
+		{
+			"missing menu",
+			`[[pages]]
+path  = "settings"
+title = "Settings"
+`,
+			"pages[0].menu is required",
+		},
+		{
+			"invalid menu value",
+			`[[pages]]
+path  = "settings"
+title = "Settings"
+menu  = "sidebar"
+`,
+			`must be "admin" or "cabinet"`,
+		},
+		{
+			"path starts with hyphen",
+			`[[pages]]
+path  = "-bad"
+title = "Bad"
+menu  = "admin"
+`,
+			"pages[0].path must match",
+		},
+		{
+			"path contains uppercase",
+			`[[pages]]
+path  = "Bad"
+title = "Bad"
+menu  = "admin"
+`,
+			"pages[0].path must match",
+		},
+		{
+			"path contains spaces",
+			`[[pages]]
+path  = "my page"
+title = "My Page"
+menu  = "admin"
+`,
+			"pages[0].path must match",
+		},
+		{
+			"second page invalid",
+			`[[pages]]
+path  = "good"
+title = "Good"
+menu  = "admin"
+
+[[pages]]
+path  = "also-good"
+title = ""
+menu  = "cabinet"
+`,
+			"pages[1].title is required",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ParseManifest([]byte(baseManifest + tc.pageTOML))
+			require.Error(t, err)
+			assert.ErrorIs(t, err, ErrInvalidManifest)
+			assert.Contains(t, err.Error(), tc.errMsg)
+		})
+	}
+}
+
+func TestParseManifest_ValidPages(t *testing.T) {
+	tests := []struct {
+		name     string
+		pageTOML string
+		expected []ManifestPage
+	}{
+		{
+			"single admin page",
+			`[[pages]]
+path  = "dashboard"
+title = "Dashboard"
+icon  = "LayoutDashboard"
+menu  = "admin"
+`,
+			[]ManifestPage{
+				{Path: "dashboard", Title: "Dashboard", Icon: "LayoutDashboard", Menu: PageMenuAdmin},
+			},
+		},
+		{
+			"cabinet page without icon",
+			`[[pages]]
+path  = "my-vpn"
+title = "My VPN"
+menu  = "cabinet"
+`,
+			[]ManifestPage{
+				{Path: "my-vpn", Title: "My VPN", Icon: "", Menu: PageMenuCabinet},
+			},
+		},
+		{
+			"path with digits",
+			`[[pages]]
+path  = "v2-settings"
+title = "V2 Settings"
+menu  = "admin"
+`,
+			[]ManifestPage{
+				{Path: "v2-settings", Title: "V2 Settings", Icon: "", Menu: PageMenuAdmin},
+			},
+		},
+		{
+			"path starting with digit",
+			`[[pages]]
+path  = "2fa"
+title = "2FA"
+menu  = "cabinet"
+`,
+			[]ManifestPage{
+				{Path: "2fa", Title: "2FA", Icon: "", Menu: PageMenuCabinet},
+			},
+		},
+	}
+
+	baseManifest := `
+[plugin]
+id          = "page-test"
+name        = "Page Test"
+version     = "1.0.0"
+sdk_version = "1.0.0"
+
+[hooks]
+sync = ["invoice.created"]
+
+`
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m, err := ParseManifest([]byte(baseManifest + tc.pageTOML))
+			require.NoError(t, err)
+			assert.Equal(t, tc.expected, m.Pages)
 		})
 	}
 }

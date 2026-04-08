@@ -12,6 +12,10 @@ import (
 // slugRe is compiled once and reused for every validation call.
 var slugRe = regexp.MustCompile(PluginSlugPattern)
 
+// pagePathRe validates page path segments: lowercase alphanumeric with hyphens,
+// must start with a letter or digit.
+var pagePathRe = regexp.MustCompile(PagePathPattern)
+
 // AllowedHookPrefixes defines the valid namespace prefixes for plugin hooks.
 // Every hook name declared in a manifest must start with one of these prefixes.
 var AllowedHookPrefixes = []string{
@@ -45,6 +49,17 @@ type Manifest struct {
 	Hooks       ManifestHooks                  `toml:"hooks"`
 	Config      map[string]ManifestConfigField `toml:"config"`
 	Limits      ManifestLimits                 `toml:"limits"`
+	Pages       []ManifestPage                 `toml:"pages"`
+}
+
+// ManifestPage declares a UI page provided by the plugin. Plugins use this to
+// register admin or cabinet pages that the frontend renders as dynamic menu
+// items.
+type ManifestPage struct {
+	Path  string `toml:"path"`  // URL path segment, e.g. "tariffs"
+	Title string `toml:"title"` // Display title, e.g. "Tariffs"
+	Icon  string `toml:"icon"`  // Lucide icon name, e.g. "CreditCard"
+	Menu  string `toml:"menu"`  // Where to show: "admin" or "cabinet"
 }
 
 // ManifestPlugin holds the top-level metadata about the plugin.
@@ -151,6 +166,35 @@ func (m *Manifest) Validate() error {
 		}
 	}
 
+	for i, page := range m.Pages {
+		if err := validateManifestPage(i, page); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateManifestPage checks that a single page declaration has all required
+// fields and that the menu value is one of the allowed page placements.
+func validateManifestPage(index int, page ManifestPage) error {
+	if page.Path == "" {
+		return fmt.Errorf("%w: pages[%d].path is required", ErrInvalidManifest, index)
+	}
+	if !pagePathRe.MatchString(page.Path) {
+		return fmt.Errorf("%w: pages[%d].path must match %s, got %q",
+			ErrInvalidManifest, index, PagePathPattern, page.Path)
+	}
+	if page.Title == "" {
+		return fmt.Errorf("%w: pages[%d].title is required", ErrInvalidManifest, index)
+	}
+	if page.Menu == "" {
+		return fmt.Errorf("%w: pages[%d].menu is required", ErrInvalidManifest, index)
+	}
+	if page.Menu != PageMenuAdmin && page.Menu != PageMenuCabinet {
+		return fmt.Errorf("%w: pages[%d].menu must be %q or %q, got %q",
+			ErrInvalidManifest, index, PageMenuAdmin, PageMenuCabinet, page.Menu)
+	}
 	return nil
 }
 

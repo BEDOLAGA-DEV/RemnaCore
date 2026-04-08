@@ -206,6 +206,13 @@ export const PLUGIN_STATUSES = {
 export type PluginStatus =
   (typeof PLUGIN_STATUSES)[keyof typeof PLUGIN_STATUSES];
 
+export type PluginPage = {
+  path: string;
+  title: string;
+  icon: string;
+  menu: string;
+};
+
 export type Plugin = {
   id: string;
   slug: string;
@@ -219,11 +226,21 @@ export type Plugin = {
   status: PluginStatus;
   is_builtin: boolean;
   config: Record<string, string>;
+  pages: PluginPage[];
   permissions: string[];
   error_log: string | null;
   installed_at: string;
   enabled_at: string | null;
   updated_at: string;
+};
+
+export type AggregatedPluginPage = {
+  plugin_slug: string;
+  plugin_name: string;
+  path: string;
+  title: string;
+  icon: string;
+  menu: string;
 };
 
 // ─── Tenants ────────────────────────────────────────────────────────────────
@@ -243,6 +260,17 @@ export type Tenant = {
   owner_user_id: string;
   branding_config: BrandingConfig | null;
   is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+// ─── Plugin Documents ──────────────────────────────────────────────────
+
+export type PluginDocument = {
+  id: string;
+  plugin_slug: string;
+  collection: string;
+  data: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 };

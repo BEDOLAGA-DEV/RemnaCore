@@ -15,6 +15,7 @@ export * from "./api/hooks/useBindings.js";
 export * from "./api/hooks/useFamily.js";
 export * from "./api/hooks/useAdmin.js";
 export * from "./api/hooks/usePlugins.js";
+export * from "./api/hooks/usePluginPages.js";
 export * from "./api/hooks/useCheckout.js";
 export * from "./api/hooks/useTenants.js";
 export * from "./api/hooks/useSystemHealth.js";

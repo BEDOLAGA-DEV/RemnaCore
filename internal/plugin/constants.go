@@ -101,3 +101,16 @@ const (
 	PermValueEmit      = "emit"
 	PermValueRoutes    = "routes"
 )
+
+// Page validation constants.
+const (
+	// PagePathPattern validates page path segments: lowercase alphanumeric
+	// with hyphens, must start with a letter or digit.
+	PagePathPattern = `^[a-z0-9][a-z0-9-]*$`
+
+	// PageMenuAdmin indicates the page appears in the admin panel navigation.
+	PageMenuAdmin = "admin"
+
+	// PageMenuCabinet indicates the page appears in the customer cabinet navigation.
+	PageMenuCabinet = "cabinet"
+)

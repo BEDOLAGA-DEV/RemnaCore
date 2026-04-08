@@ -10,6 +10,7 @@ type BuiltInPluginDef struct {
 	Description  string
 	Author       string
 	ConfigFields map[string]ManifestConfigField
+	Pages        []ManifestPage
 }
 
 // Built-in plugin slugs.

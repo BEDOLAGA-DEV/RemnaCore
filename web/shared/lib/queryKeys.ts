@@ -48,9 +48,14 @@ export const QUERY_KEYS = {
         ["admin", "tenants", { limit, offset }] as const,
       detail: (id: string) => ["admin", "tenants", id] as const,
     },
+    pluginPages: ["admin", "plugin-pages"] as const,
     sessions: ["admin", "sessions"] as const,
     settings: ["admin", "settings"] as const,
     stats: ["admin", "stats"] as const,
+  },
+  plugins: {
+    collections: (slug: string, collection: string) =>
+      ["plugins", slug, "collections", collection] as const,
   },
   infra: {
     readyz: ["infra", "readyz"] as const,

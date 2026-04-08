@@ -60,6 +60,7 @@ type RouterParams struct {
 	RoutingHandler        *handler.RoutingHandler
 	SettingsHandler       *handler.SettingsHandler
 	StatsHandler          *handler.StatsHandler
+	PluginRPCHandler      *handler.PluginRPCHandler
 	TelegramBot           *telegram.Bot
 }
 
@@ -184,6 +185,18 @@ func NewRouter(p RouterParams) http.Handler {
 			protected.Post("/family/members", p.FamilyHandler.AddMember)
 			protected.Delete("/family/members/{userID}", p.FamilyHandler.RemoveMember)
 
+			// Plugin RPC — call WASM plugin functions via HTTP.
+			protected.Post("/plugins/{pluginSlug}/rpc/{function}", p.PluginRPCHandler.CallFunction)
+
+			// Plugin Collections — structured JSON document storage for plugins.
+			protected.Route("/plugins/{pluginSlug}/collections/{collection}", func(cr chi.Router) {
+				cr.Get("/", p.PluginRPCHandler.ListDocuments)
+				cr.Post("/", p.PluginRPCHandler.InsertDocument)
+				cr.Get("/{docID}", p.PluginRPCHandler.GetDocument)
+				cr.Put("/{docID}", p.PluginRPCHandler.UpdateDocument)
+				cr.Delete("/{docID}", p.PluginRPCHandler.DeleteDocument)
+			})
+
 			// Admin routes — require admin role (enforced by middleware).
 			protected.Route("/admin", func(admin chi.Router) {
 				admin.Use(middleware.RequireAdmin)
@@ -197,6 +210,7 @@ func NewRouter(p RouterParams) http.Handler {
 				admin.Delete("/plugins/{pluginID}", p.PluginHandler.UninstallPlugin)
 				admin.Put("/plugins/{pluginID}/config", p.PluginHandler.UpdatePluginConfig)
 				admin.Put("/plugins/{pluginID}/reload", p.PluginHandler.HotReloadPlugin)
+				admin.Get("/plugin-pages", p.PluginHandler.ListPluginPages)
 
 				// User / subscription / invoice management
 				admin.Get("/users", p.AdminHandler.ListUsers)

@@ -92,9 +92,22 @@ export const ENDPOINTS = {
       updateBranding: (tenantId: string) =>
         `/api/admin/tenants/${tenantId}/branding`,
     },
+    pluginPages: "/api/admin/plugin-pages",
     sessions: "/api/admin/sessions",
     settings: "/api/admin/settings",
     stats: "/api/admin/stats",
+  },
+
+  // ─── Plugin RPC & Collections ──────────────────────────────────────────
+  plugins: {
+    rpc: (slug: string, functionName: string) =>
+      `/api/plugins/${slug}/rpc/${functionName}`,
+    collections: {
+      list: (slug: string, collection: string) =>
+        `/api/plugins/${slug}/collections/${collection}`,
+      item: (slug: string, collection: string, id: string) =>
+        `/api/plugins/${slug}/collections/${collection}/${id}`,
+    },
   },
 
   // ─── Routing (Protected) ───────────────────────────────────────────────
