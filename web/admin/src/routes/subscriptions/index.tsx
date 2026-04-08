@@ -30,7 +30,7 @@ export function AdminSubscriptionsPage() {
         <Link
           to="/subscriptions/$id"
           params={{ id: row.original.id }}
-          className="font-mono text-xs text-primary hover:underline"
+          className="font-mono text-[11px] text-primary hover:text-primary/80"
         >
           {row.original.id.slice(0, 8)}...
         </Link>
@@ -43,7 +43,7 @@ export function AdminSubscriptionsPage() {
         <Link
           to="/users/$id"
           params={{ id: row.original.user_id }}
-          className="font-mono text-xs text-primary hover:underline"
+          className="font-mono text-[11px] text-primary hover:text-primary/80"
         >
           {row.original.user_id.slice(0, 8)}...
         </Link>
@@ -55,7 +55,7 @@ export function AdminSubscriptionsPage() {
       cell: ({ row }) => (
         <span
           className={cn(
-            "rounded-full px-2 py-0.5 text-xs font-medium",
+            "rounded-full px-2 py-0.5 font-mono text-[11px] font-medium",
             statusColor(row.original.status),
           )}
         >
@@ -67,7 +67,7 @@ export function AdminSubscriptionsPage() {
       accessorKey: "period_end",
       header: t("subscriptions.periodEnd"),
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
+        <span className="font-mono text-[11px] text-muted-foreground">
           {formatDate(row.original.period_end)}
         </span>
       ),
@@ -76,7 +76,7 @@ export function AdminSubscriptionsPage() {
       accessorKey: "created_at",
       header: t("common.createdAt"),
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
+        <span className="font-mono text-[11px] text-muted-foreground">
           {formatDate(row.original.created_at)}
         </span>
       ),
@@ -85,9 +85,11 @@ export function AdminSubscriptionsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-foreground">
-        {t("admin.subscriptions.title")}
-      </h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-[15px] font-semibold text-foreground">
+          {t("admin.subscriptions.title")}
+        </h1>
+      </div>
 
       <DataTable data={subs ?? []} columns={columns} isLoading={isLoading} />
 
@@ -101,7 +103,7 @@ export function AdminSubscriptionsPage() {
             }))
           }
           disabled={pagination.offset === 0}
-          className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent disabled:opacity-50"
+          className="rounded-lg border border-border bg-card px-3 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-40"
         >
           {t("common.back")}
         </button>
@@ -111,7 +113,7 @@ export function AdminSubscriptionsPage() {
             setPagination((p) => ({ ...p, offset: p.offset + p.limit }))
           }
           disabled={(subs?.length ?? 0) < pagination.limit}
-          className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent disabled:opacity-50"
+          className="rounded-lg border border-border bg-card px-3 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-40"
         >
           {t("common.next")}
         </button>

@@ -36,15 +36,18 @@ export function PluginCard({ plugin }: PluginCardProps) {
   };
 
   return (
-    <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+    <div className="rounded-xl border border-border bg-card p-4">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
-          <div className="rounded-lg bg-muted p-2">
+          <div className="relative rounded-lg bg-muted p-2">
             <Puzzle size={20} className="text-primary" />
+            {isEnabled && (
+              <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-green-500" />
+            )}
           </div>
           <div>
-            <h3 className="font-semibold text-foreground">{plugin.name}</h3>
-            <p className="text-xs text-muted-foreground">
+            <h3 className="text-[13px] font-medium text-foreground">{plugin.name}</h3>
+            <p className="font-mono text-[11px] text-muted-foreground">
               {plugin.slug} v{plugin.version}
             </p>
           </div>
@@ -52,7 +55,7 @@ export function PluginCard({ plugin }: PluginCardProps) {
         <Link
           to="/plugins/$id"
           params={{ id: plugin.id }}
-          className="rounded-lg p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
         >
           <ExternalLink size={16} />
         </Link>
@@ -67,7 +70,7 @@ export function PluginCard({ plugin }: PluginCardProps) {
       <div className="mt-4 flex items-center justify-between">
         <span
           className={cn(
-            "rounded-full px-2.5 py-0.5 text-xs font-medium",
+            "rounded-full px-2.5 py-0.5 font-mono text-[11px] font-medium",
             statusColor(plugin.status),
           )}
         >
@@ -78,7 +81,7 @@ export function PluginCard({ plugin }: PluginCardProps) {
           onClick={handleToggle}
           disabled={togglePending || plugin.status === "error"}
           className={cn(
-            "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50",
+            "rounded-lg px-3 py-1 text-[11px] font-medium transition-colors disabled:opacity-50",
             isEnabled
               ? "bg-muted text-foreground hover:bg-muted/80"
               : "bg-primary text-primary-foreground hover:bg-primary/90",

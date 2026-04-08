@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { Link } from "@tanstack/react-router";
-import { Plus, Puzzle } from "lucide-react";
+import { Plus } from "lucide-react";
 import { usePlugins, LoadingSpinner } from "@remnacore/shared";
 import { PluginCard } from "../../components/PluginCard.js";
 
@@ -21,14 +21,14 @@ export function PluginsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-foreground">
+        <h1 className="text-[15px] font-semibold text-foreground">
           {t("admin.plugins.title")}
         </h1>
         <Link
           to="/plugins/install"
-          className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+          className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-3 py-1.5 text-[12px] font-medium text-primary transition-colors hover:bg-primary/20"
         >
-          <Plus size={16} />
+          <Plus size={14} />
           {t("admin.plugins.install")}
         </Link>
       </div>
@@ -41,13 +41,12 @@ export function PluginsPage() {
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border p-12">
-          <Puzzle size={48} className="text-muted-foreground" />
-          <p className="mt-4 text-muted-foreground">
+          <p className="text-[13px] text-muted-foreground">
             {t("admin.plugins.noPlugins")}
           </p>
           <Link
             to="/plugins/install"
-            className="mt-4 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+            className="mt-4 rounded-lg border border-primary/20 bg-primary/10 px-3 py-1.5 text-[12px] font-medium text-primary transition-colors hover:bg-primary/20"
           >
             {t("admin.plugins.install")}
           </Link>

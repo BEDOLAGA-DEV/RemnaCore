@@ -171,6 +171,10 @@ const en = {
   },
   admin: {
     title: "Admin Panel",
+    nerveCenter: "nerve center",
+    searchPlaceholder: "Search anything...",
+    allSystemsNominal: "All systems nominal",
+    live: "LIVE",
     dashboard: {
       title: "Dashboard",
       totalUsers: "Total Users",
@@ -415,6 +419,10 @@ const ru: typeof en = {
   },
   admin: {
     title: "Панель администратора",
+    nerveCenter: "центр управления",
+    searchPlaceholder: "Поиск...",
+    allSystemsNominal: "Все системы в норме",
+    live: "LIVE",
     dashboard: {
       title: "Обзор",
       totalUsers: "Пользователей",

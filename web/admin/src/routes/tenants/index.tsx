@@ -4,7 +4,7 @@ import { Link } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Plus, Loader2, Building2 } from "lucide-react";
+import { Plus, Loader2 } from "lucide-react";
 import { type ColumnDef } from "@tanstack/react-table";
 import {
   useAdminTenants,
@@ -56,7 +56,7 @@ export function TenantsPage() {
         <Link
           to="/tenants/$id"
           params={{ id: row.original.id }}
-          className="font-medium text-primary hover:underline"
+          className="font-medium text-primary hover:text-primary/80"
         >
           {row.original.name}
         </Link>
@@ -66,7 +66,7 @@ export function TenantsPage() {
       accessorKey: "domain",
       header: t("admin.tenants.domain"),
       cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground">
+        <span className="font-mono text-[11px] text-muted-foreground">
           {row.original.domain ?? "—"}
         </span>
       ),
@@ -77,7 +77,7 @@ export function TenantsPage() {
       cell: ({ row }) => (
         <span
           className={cn(
-            "rounded-full px-2 py-0.5 text-xs font-medium",
+            "rounded-full px-2 py-0.5 font-mono text-[11px] font-medium",
             row.original.is_active
               ? "bg-green-500/10 text-green-500"
               : "bg-red-500/10 text-red-500",
@@ -93,7 +93,7 @@ export function TenantsPage() {
       accessorKey: "created_at",
       header: t("common.createdAt"),
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
+        <span className="font-mono text-[11px] text-muted-foreground">
           {formatDate(row.original.created_at)}
         </span>
       ),
@@ -103,22 +103,22 @@ export function TenantsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-foreground">
+        <h1 className="text-[15px] font-semibold text-foreground">
           {t("admin.tenants.title")}
         </h1>
         <button
           type="button"
           onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+          className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-3 py-1.5 text-[12px] font-medium text-primary transition-colors hover:bg-primary/20"
         >
-          <Plus size={16} />
+          <Plus size={14} />
           {t("admin.tenants.create")}
         </button>
       </div>
 
       {showForm && (
-        <div className="rounded-xl border border-border bg-card p-6">
-          <h2 className="mb-4 text-lg font-semibold text-foreground">
+        <div className="rounded-xl border border-border bg-card p-5">
+          <h2 className="mb-4 text-[13px] font-semibold text-foreground">
             {t("admin.tenants.create")}
           </h2>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -126,14 +126,14 @@ export function TenantsPage() {
               <div>
                 <label
                   htmlFor="name"
-                  className="mb-1.5 block text-sm font-medium text-foreground"
+                  className="mb-1.5 block text-[12px] font-medium text-muted-foreground"
                 >
                   {t("common.name")}
                 </label>
                 <input
                   id="name"
                   {...register("name")}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
                 />
                 {errors.name && (
                   <p className="mt-1 text-sm text-destructive">
@@ -145,28 +145,28 @@ export function TenantsPage() {
               <div>
                 <label
                   htmlFor="domain"
-                  className="mb-1.5 block text-sm font-medium text-foreground"
+                  className="mb-1.5 block text-[12px] font-medium text-muted-foreground"
                 >
                   {t("admin.tenants.domain")}
                 </label>
                 <input
                   id="domain"
                   {...register("domain")}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
                 />
               </div>
 
               <div>
                 <label
                   htmlFor="owner_user_id"
-                  className="mb-1.5 block text-sm font-medium text-foreground"
+                  className="mb-1.5 block text-[12px] font-medium text-muted-foreground"
                 >
                   {t("admin.tenants.ownerUserId")}
                 </label>
                 <input
                   id="owner_user_id"
                   {...register("owner_user_id")}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
                 />
                 {errors.owner_user_id && (
                   <p className="mt-1 text-sm text-destructive">
@@ -179,7 +179,7 @@ export function TenantsPage() {
             <button
               type="submit"
               disabled={createTenant.isPending}
-              className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+              className="rounded-lg bg-primary px-4 py-2 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
               {createTenant.isPending ? (
                 <Loader2 size={14} className="animate-spin" />
@@ -208,7 +208,7 @@ export function TenantsPage() {
                 }))
               }
               disabled={pagination.offset === 0}
-              className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent disabled:opacity-50"
+              className="rounded-lg border border-border bg-card px-3 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-40"
             >
               {t("common.back")}
             </button>
@@ -218,7 +218,7 @@ export function TenantsPage() {
                 setPagination((p) => ({ ...p, offset: p.offset + p.limit }))
               }
               disabled={(tenants.length ?? 0) < pagination.limit}
-              className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent disabled:opacity-50"
+              className="rounded-lg border border-border bg-card px-3 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-40"
             >
               {t("common.next")}
             </button>
@@ -226,8 +226,7 @@ export function TenantsPage() {
         </>
       ) : (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border p-12">
-          <Building2 size={48} className="text-muted-foreground" />
-          <p className="mt-4 text-muted-foreground">
+          <p className="text-[13px] text-muted-foreground">
             {t("common.noResults")}
           </p>
         </div>

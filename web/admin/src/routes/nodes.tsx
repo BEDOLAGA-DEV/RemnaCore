@@ -21,9 +21,11 @@ export function NodesPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-foreground">
-        {t("admin.nodes.title")}
-      </h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-[15px] font-semibold text-foreground">
+          {t("admin.nodes.title")}
+        </h1>
+      </div>
 
       {nodes.length > 0 ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -49,8 +51,7 @@ export function NodesPage() {
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border p-12">
-          <Server size={48} className="text-muted-foreground" />
-          <p className="mt-4 text-muted-foreground">
+          <p className="text-[13px] text-muted-foreground">
             {t("admin.nodes.noNodes")}
           </p>
         </div>

@@ -4,7 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Loader2, Shield } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useLogin, useAuthStore, USER_ROLES } from "@remnacore/shared";
 
 const loginSchema = z.object({
@@ -47,23 +47,54 @@ export function AdminLoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="w-full max-w-md space-y-6">
+    <div className="relative flex min-h-screen items-center justify-center bg-background px-4">
+      {/* Subtle animated gradient line at top */}
+      <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-primary via-amber-500 to-primary animate-pulse" />
+
+      <div className="w-full max-w-sm space-y-8">
+        {/* Logo */}
         <div className="text-center">
-          <Shield size={48} className="mx-auto text-primary" />
-          <h1 className="mt-4 text-2xl font-bold text-foreground">
-            {t("admin.title")}
+          <div className="mx-auto flex items-center justify-center">
+            <svg
+              width="40"
+              height="40"
+              viewBox="0 0 20 20"
+              fill="none"
+              aria-hidden="true"
+            >
+              <defs>
+                <linearGradient
+                  id="login-logo-grad"
+                  x1="0"
+                  y1="0"
+                  x2="20"
+                  y2="20"
+                  gradientUnits="userSpaceOnUse"
+                >
+                  <stop stopColor="hsl(187 86% 53%)" />
+                  <stop offset="1" stopColor="hsl(38 92% 50%)" />
+                </linearGradient>
+              </defs>
+              <path
+                d="M10 1L18.66 10L10 19L1.34 10L10 1Z"
+                fill="url(#login-logo-grad)"
+              />
+            </svg>
+          </div>
+          <h1 className="mt-4 text-[20px] font-bold text-foreground tracking-tight">
+            RemnaCore
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t("auth.loginTitle")}
+          <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+            admin console
           </p>
         </div>
 
+        {/* Form */}
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div>
             <label
               htmlFor="email"
-              className="mb-1.5 block text-sm font-medium text-foreground"
+              className="mb-1.5 block text-[12px] font-medium text-muted-foreground"
             >
               {t("common.email")}
             </label>
@@ -72,10 +103,10 @@ export function AdminLoginPage() {
               type="email"
               placeholder={t("auth.emailPlaceholder")}
               {...register("email")}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              className="w-full rounded-lg border border-border bg-card px-3 py-2.5 text-[13px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50 transition-colors"
             />
             {errors.email && (
-              <p className="mt-1 text-sm text-destructive">
+              <p className="mt-1 text-[12px] text-red-500 font-mono">
                 {errors.email.message}
               </p>
             )}
@@ -84,7 +115,7 @@ export function AdminLoginPage() {
           <div>
             <label
               htmlFor="password"
-              className="mb-1.5 block text-sm font-medium text-foreground"
+              className="mb-1.5 block text-[12px] font-medium text-muted-foreground"
             >
               {t("common.password")}
             </label>
@@ -93,10 +124,10 @@ export function AdminLoginPage() {
               type="password"
               placeholder={t("auth.passwordPlaceholder")}
               {...register("password")}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              className="w-full rounded-lg border border-border bg-card px-3 py-2.5 text-[13px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50 transition-colors"
             />
             {errors.password && (
-              <p className="mt-1 text-sm text-destructive">
+              <p className="mt-1 text-[12px] text-red-500 font-mono">
                 {errors.password.message}
               </p>
             )}
@@ -105,7 +136,7 @@ export function AdminLoginPage() {
           <button
             type="submit"
             disabled={loginMutation.isPending}
-            className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+            className="w-full rounded-lg bg-primary py-2.5 text-[13px] font-semibold text-background hover:bg-primary/90 transition-colors disabled:opacity-40"
           >
             {loginMutation.isPending ? (
               <span className="flex items-center justify-center gap-2">
@@ -118,13 +149,13 @@ export function AdminLoginPage() {
           </button>
 
           {loginMutation.isError && (
-            <p className="text-sm text-destructive text-center">
+            <p className="text-[12px] text-red-500 font-mono text-center">
               {t("auth.invalidCredentials")}
             </p>
           )}
 
           {accessDenied && (
-            <p className="text-sm text-destructive text-center">
+            <p className="text-[12px] text-red-500 font-mono text-center">
               {t("auth.accessDeniedAdmin")}
             </p>
           )}

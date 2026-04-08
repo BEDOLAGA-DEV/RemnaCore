@@ -39,6 +39,16 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        success: {
+          DEFAULT: "hsl(var(--success))",
+          foreground: "hsl(var(--success-foreground))",
+        },
+        warning: {
+          DEFAULT: "hsl(var(--warning))",
+          foreground: "hsl(var(--warning-foreground))",
+        },
+        dim: "hsl(var(--dim))",
+        "border-subtle": "hsl(var(--border-subtle))",
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -46,7 +56,7 @@ export default {
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
-        sans: ["Inter", "system-ui", "sans-serif"],
+        sans: ["DM Sans", "-apple-system", "sans-serif"],
         mono: ["JetBrains Mono", "monospace"],
       },
     },

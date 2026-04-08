@@ -25,7 +25,7 @@ export function AdminSubscriptionDetailPage() {
   if (!sub) {
     return (
       <div className="text-center py-12">
-        <p className="text-destructive">{t("common.error")}</p>
+        <p className="text-[12px] text-red-500">{t("common.error")}</p>
       </div>
     );
   }
@@ -34,7 +34,7 @@ export function AdminSubscriptionDetailPage() {
     <div className="mx-auto max-w-2xl space-y-6">
       <Link
         to="/subscriptions"
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        className="text-[13px] text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-1.5"
       >
         <ArrowLeft size={14} />
         {t("common.back")}
@@ -43,16 +43,16 @@ export function AdminSubscriptionDetailPage() {
       <div className="rounded-xl border border-border bg-card p-6">
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-xl font-bold text-foreground">
+            <h1 className="text-[18px] font-semibold text-foreground">
               {t("admin.subscriptions.title")}
             </h1>
-            <p className="mt-1 font-mono text-sm text-muted-foreground">
+            <p className="mt-1 font-mono text-[12px] text-muted-foreground">
               {sub.id}
             </p>
           </div>
           <span
             className={cn(
-              "rounded-full px-3 py-1 text-xs font-medium",
+              "rounded-full px-2.5 py-0.5 font-mono text-[11px] font-medium",
               statusColor(sub.status),
             )}
           >
@@ -60,38 +60,38 @@ export function AdminSubscriptionDetailPage() {
           </span>
         </div>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+        <div className="mt-6 grid gap-5 sm:grid-cols-2">
           <div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
               {t("admin.subscriptions.userId")}
             </p>
             <Link
               to="/users/$id"
               params={{ id: sub.user_id }}
-              className="font-mono text-sm text-primary hover:underline"
+              className="font-mono text-[12px] text-primary hover:text-primary/80 transition-colors"
             >
               {sub.user_id}
             </Link>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
               {t("admin.subscriptions.planId")}
             </p>
-            <p className="font-mono text-sm text-foreground">{sub.plan_id}</p>
+            <p className="font-mono text-[12px] text-foreground">{sub.plan_id}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
               {t("subscriptions.periodEnd")}
             </p>
-            <p className="text-sm font-medium text-foreground">
+            <p className="font-mono text-[13px] text-foreground">
               {formatDate(sub.period_end)}
             </p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
               {t("common.createdAt")}
             </p>
-            <p className="text-sm font-medium text-foreground">
+            <p className="font-mono text-[13px] text-foreground">
               {formatDate(sub.created_at)}
             </p>
           </div>

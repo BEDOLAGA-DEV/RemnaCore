@@ -22,6 +22,15 @@ function healthColor(health: HealthState): string {
   return colors[health];
 }
 
+function dotColor(health: HealthState): string {
+  const colors: Record<HealthState, string> = {
+    healthy: "bg-green-500 shadow-[0_0_4px_theme(colors.green.500)]",
+    degraded: "bg-yellow-500 shadow-[0_0_4px_theme(colors.yellow.500)]",
+    down: "bg-red-500 shadow-[0_0_4px_theme(colors.red.500)]",
+  };
+  return colors[health];
+}
+
 export function NodeHealthBadge({ health }: NodeHealthBadgeProps) {
   const { t } = useTranslation();
 
@@ -30,16 +39,14 @@ export function NodeHealthBadge({ health }: NodeHealthBadgeProps) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium",
+        "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-mono font-medium",
         healthColor(health),
       )}
     >
       <span
         className={cn(
           "h-1.5 w-1.5 rounded-full",
-          health === "healthy" && "bg-green-500",
-          health === "degraded" && "bg-yellow-500",
-          health === "down" && "bg-red-500",
+          dotColor(health),
         )}
       />
       {t(labelKey)}

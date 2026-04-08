@@ -34,12 +34,12 @@ export function DataTable<TData>({
             {table.getHeaderGroups().map((headerGroup) => (
               <tr
                 key={headerGroup.id}
-                className="border-b border-border bg-muted/50"
+                className="border-b border-border bg-card"
               >
                 {headerGroup.headers.map((header) => (
                   <th
                     key={header.id}
-                    className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground"
+                    className="px-4 py-2.5 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
                   >
                     {header.isPlaceholder
                       ? null
@@ -57,7 +57,7 @@ export function DataTable<TData>({
               <tr>
                 <td
                   colSpan={columns.length}
-                  className="px-4 py-8 text-center text-sm text-muted-foreground"
+                  className="px-4 py-8 text-center text-sm font-mono text-muted-foreground"
                 >
                   {t("common.loading")}
                 </td>
@@ -76,14 +76,14 @@ export function DataTable<TData>({
                 <tr
                   key={row.id}
                   className={cn(
-                    "border-b border-border transition-colors hover:bg-muted/30",
+                    "border-b border-border/50 transition-colors hover:bg-secondary",
                     "last:border-0",
                   )}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <td
                       key={cell.id}
-                      className="px-4 py-3 text-sm text-foreground"
+                      className="px-4 py-2.5 text-sm text-foreground"
                     >
                       {flexRender(
                         cell.column.columnDef.cell,

@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
-import { ErrorBoundary, useThemeStore } from "@remnacore/shared";
+import { ErrorBoundary } from "@remnacore/shared";
 import { router } from "./router.js";
 import { useEffect } from "react";
 
@@ -15,12 +15,10 @@ const queryClient = new QueryClient({
 });
 
 export function App() {
-  const { theme } = useThemeStore();
-
   useEffect(() => {
-    document.documentElement.classList.remove("dark", "light");
-    document.documentElement.classList.add(theme);
-  }, [theme]);
+    document.documentElement.classList.remove("light");
+    document.documentElement.classList.add("dark");
+  }, []);
 
   return (
     <ErrorBoundary>

@@ -25,7 +25,7 @@ export function AdminInvoicesPage() {
       accessorKey: "id",
       header: "ID",
       cell: ({ row }) => (
-        <span className="font-mono text-xs text-foreground">
+        <span className="font-mono text-[11px] text-muted-foreground">
           {row.original.id.slice(0, 8)}...
         </span>
       ),
@@ -34,7 +34,7 @@ export function AdminInvoicesPage() {
       accessorKey: "total_amount",
       header: t("invoices.amount"),
       cell: ({ row }) => (
-        <span className="font-medium text-foreground">
+        <span className="font-mono text-[13px] font-semibold text-foreground">
           {formatMoney(row.original.total_amount, row.original.currency)}
         </span>
       ),
@@ -45,7 +45,7 @@ export function AdminInvoicesPage() {
       cell: ({ row }) => (
         <span
           className={cn(
-            "rounded-full px-2 py-0.5 text-xs font-medium",
+            "rounded-full px-2 py-0.5 font-mono text-[11px] font-medium",
             statusColor(row.original.status),
           )}
         >
@@ -57,7 +57,7 @@ export function AdminInvoicesPage() {
       accessorKey: "paid_at",
       header: t("invoices.paidAt"),
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
+        <span className="font-mono text-[11px] text-muted-foreground">
           {formatDate(row.original.paid_at)}
         </span>
       ),
@@ -66,7 +66,7 @@ export function AdminInvoicesPage() {
       accessorKey: "created_at",
       header: t("common.createdAt"),
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
+        <span className="font-mono text-[11px] text-muted-foreground">
           {formatDate(row.original.created_at)}
         </span>
       ),
@@ -75,9 +75,11 @@ export function AdminInvoicesPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-foreground">
-        {t("admin.invoices.title")}
-      </h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-[15px] font-semibold text-foreground">
+          {t("admin.invoices.title")}
+        </h1>
+      </div>
 
       <DataTable
         data={invoices ?? []}
@@ -95,7 +97,7 @@ export function AdminInvoicesPage() {
             }))
           }
           disabled={pagination.offset === 0}
-          className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent disabled:opacity-50"
+          className="rounded-lg border border-border bg-card px-3 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-40"
         >
           {t("common.back")}
         </button>
@@ -105,7 +107,7 @@ export function AdminInvoicesPage() {
             setPagination((p) => ({ ...p, offset: p.offset + p.limit }))
           }
           disabled={(invoices?.length ?? 0) < pagination.limit}
-          className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent disabled:opacity-50"
+          className="rounded-lg border border-border bg-card px-3 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-40"
         >
           {t("common.next")}
         </button>
