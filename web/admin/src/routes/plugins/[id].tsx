@@ -126,7 +126,7 @@ export function PluginDetailPage() {
               {formatDateTime(plugin.installed_at)}
             </p>
           </div>
-          {plugin.permissions.length > 0 && (
+          {plugin.permissions && plugin.permissions.length > 0 && (
             <div className="sm:col-span-2">
               <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
                 {t("admin.plugins.permissions")}
