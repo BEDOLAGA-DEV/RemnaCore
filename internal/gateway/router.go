@@ -146,6 +146,9 @@ func NewRouter(p RouterParams) http.Handler {
 		api.Get("/plans", p.BillingHandler.GetPlans)
 		api.Get("/plans/{planID}", p.BillingHandler.GetPlan)
 
+		// Public tariffs — from tariff-manager plugin collections.
+		api.Get("/tariffs", p.PluginRPCHandler.GetPublicTariffs)
+
 		// Public password reset endpoints.
 		api.With(forgotPwdRL).Post("/auth/forgot-password", p.IdentityHandler.ForgotPassword)
 		api.Post("/auth/reset-password", p.IdentityHandler.ResetPassword)

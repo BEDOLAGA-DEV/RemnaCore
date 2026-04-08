@@ -110,6 +110,11 @@ export const ENDPOINTS = {
     },
   },
 
+  // ─── Tariffs (Public) ──────────────────────────────────────────────────
+  tariffs: {
+    list: "/api/tariffs",
+  },
+
   // ─── Routing (Protected) ───────────────────────────────────────────────
   routing: {
     selectNode: "/api/routing/select",

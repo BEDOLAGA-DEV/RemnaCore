@@ -16,6 +16,7 @@ type BuiltInPluginDef struct {
 // Built-in plugin slugs.
 const (
 	BuiltInSlugRemnawaveProvider = "remnawave-provider"
+	BuiltInSlugTariffManager     = "tariff-manager"
 )
 
 // Built-in plugin metadata constants.
@@ -23,6 +24,10 @@ const (
 	builtInRemnawaveVersion     = "1.0.0"
 	builtInRemnawaveAuthor      = "RemnaCore"
 	builtInRemnawaveDescription = "Built-in VPN provider integration with Remnawave panel. Manages connection configuration (URL, API token, webhook secret) through the admin plugin UI."
+
+	builtInTariffVersion     = "1.0.0"
+	builtInTariffAuthor      = "RemnaCore"
+	builtInTariffDescription = "Tariff management with flexible conditions. Create subscription plans with traffic limits, device limits, squad assignments, and custom pricing rules."
 )
 
 // Built-in config field keys.
@@ -35,7 +40,25 @@ const (
 // BuiltInPlugins returns the list of built-in plugin definitions that should
 // be auto-seeded on startup if they don't already exist in the database.
 func BuiltInPlugins() []BuiltInPluginDef {
-	return []BuiltInPluginDef{remnawaveProvider()}
+	return []BuiltInPluginDef{remnawaveProvider(), tariffManager()}
+}
+
+func tariffManager() BuiltInPluginDef {
+	return BuiltInPluginDef{
+		Slug:        BuiltInSlugTariffManager,
+		Name:        "Tariff Manager",
+		Version:     builtInTariffVersion,
+		Description: builtInTariffDescription,
+		Author:      builtInTariffAuthor,
+		Pages: []ManifestPage{
+			{
+				Path:  "tariffs",
+				Title: "Tariffs",
+				Icon:  "CreditCard",
+				Menu:  PageMenuAdmin,
+			},
+		},
+	}
 }
 
 func remnawaveProvider() BuiltInPluginDef {

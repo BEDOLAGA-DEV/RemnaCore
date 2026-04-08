@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -255,4 +256,38 @@ func (h *PluginRPCHandler) DeleteDocument(w http.ResponseWriter, r *http.Request
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetPublicTariffs handles GET /api/tariffs — returns all active tariff
+// documents from the tariff-manager plugin's "tariffs" collection.
+// This is a public endpoint (no auth required) for the cabinet/landing page.
+func (h *PluginRPCHandler) GetPublicTariffs(w http.ResponseWriter, _ *http.Request) {
+	const tariffPluginSlug = "tariff-manager"
+	const tariffCollection = "tariffs"
+
+	docs, err := h.collections.ListDocuments(context.Background(), tariffPluginSlug, tariffCollection)
+	if err != nil {
+		h.logger.Error("failed to list public tariffs", "error", err)
+		writeJSON(w, http.StatusOK, []pluginstore.Document{})
+		return
+	}
+
+	// Filter to active tariffs only.
+	type publicTariff struct {
+		ID   string          `json:"id"`
+		Data json.RawMessage `json:"data"`
+	}
+	active := make([]publicTariff, 0, len(docs))
+	for _, doc := range docs {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(doc.Data, &fields); err != nil {
+			continue
+		}
+		if isActive, ok := fields["is_active"]; ok && string(isActive) == "false" {
+			continue
+		}
+		active = append(active, publicTariff{ID: doc.ID, Data: doc.Data})
+	}
+
+	writeJSON(w, http.StatusOK, active)
 }
