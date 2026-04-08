@@ -48,6 +48,7 @@ export const QUERY_KEYS = {
         ["admin", "tenants", { limit, offset }] as const,
       detail: (id: string) => ["admin", "tenants", id] as const,
     },
+    sessions: ["admin", "sessions"] as const,
     settings: ["admin", "settings"] as const,
     stats: ["admin", "stats"] as const,
   },

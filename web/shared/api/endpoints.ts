@@ -92,6 +92,7 @@ export const ENDPOINTS = {
       updateBranding: (tenantId: string) =>
         `/api/admin/tenants/${tenantId}/branding`,
     },
+    sessions: "/api/admin/sessions",
     settings: "/api/admin/settings",
     stats: "/api/admin/stats",
   },

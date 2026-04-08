@@ -20,12 +20,24 @@ SET email = $2, password_hash = $3, display_name = $4, email_verified = $5, tele
 WHERE id = $1;
 
 -- name: CreateSession :exec
-INSERT INTO identity.sessions (id, user_id, refresh_token, expires_at, created_at)
-VALUES ($1, $2, $3, $4, $5);
+INSERT INTO identity.sessions (id, user_id, refresh_token, ip_address, user_agent, expires_at, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7);
 
 -- name: GetSessionByRefreshToken :one
-SELECT id, user_id, refresh_token, expires_at, created_at
+SELECT id, user_id, refresh_token, ip_address, user_agent, expires_at, created_at
 FROM identity.sessions WHERE refresh_token = $1;
+
+-- name: ListActiveSessions :many
+SELECT s.id, s.user_id, s.ip_address, s.user_agent, s.expires_at, s.created_at,
+       u.email AS user_email
+FROM identity.sessions s
+JOIN identity.platform_users u ON u.id = s.user_id
+WHERE s.expires_at > now()
+ORDER BY s.created_at DESC
+LIMIT $1 OFFSET $2;
+
+-- name: CountActiveSessions :one
+SELECT count(*) FROM identity.sessions WHERE expires_at > now();
 
 -- name: DeleteSession :exec
 DELETE FROM identity.sessions WHERE id = $1;

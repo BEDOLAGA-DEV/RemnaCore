@@ -141,6 +141,8 @@ type IdentitySession struct {
 	ID           pgtype.UUID        `json:"id"`
 	UserID       pgtype.UUID        `json:"user_id"`
 	RefreshToken string             `json:"refresh_token"`
+	IPAddress    string             `json:"ip_address"`
+	UserAgent    string             `json:"user_agent"`
 	ExpiresAt    pgtype.Timestamptz `json:"expires_at"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }

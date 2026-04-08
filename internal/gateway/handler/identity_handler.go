@@ -2,7 +2,9 @@ package handler
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
+	"strings"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
@@ -86,8 +88,10 @@ func (h *IdentityHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := h.service.Login(r.Context(), identity.LoginInput{
-		Email:    req.Email,
-		Password: req.Password,
+		Email:     req.Email,
+		Password:  req.Password,
+		IPAddress: extractIP(r),
+		UserAgent: r.Header.Get("User-Agent"),
 	})
 	if err != nil {
 		writeErrorFromDomain(w, err)
@@ -293,6 +297,20 @@ func (h *IdentityHandler) ResetPassword(w http.ResponseWriter, r *http.Request) 
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "password reset successful"})
+}
+
+// extractIP returns the client IP from the request, preferring X-Forwarded-For
+// and X-Real-IP proxy headers over RemoteAddr.
+func extractIP(r *http.Request) string {
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		// X-Forwarded-For may contain a comma-separated list; take the first.
+		return strings.TrimSpace(strings.Split(forwarded, ",")[0])
+	}
+	if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
+		return realIP
+	}
+	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	return host
 }
 
 // userToResponse converts a PlatformUser to a JSON-friendly map.

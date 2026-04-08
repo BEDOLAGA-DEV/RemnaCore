@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -57,6 +58,8 @@ func rowToSession(row gen.IdentitySession) *identity.Session {
 		ID:           pgutil.PgtypeToUUID(row.ID),
 		UserID:       pgutil.PgtypeToUUID(row.UserID),
 		RefreshToken: row.RefreshToken,
+		IPAddress:    row.IPAddress,
+		UserAgent:    row.UserAgent,
 		ExpiresAt:    pgutil.PgtypeToTime(row.ExpiresAt),
 		CreatedAt:    pgutil.PgtypeToTime(row.CreatedAt),
 	}
@@ -183,6 +186,8 @@ func (r *IdentityRepository) CreateSession(ctx context.Context, session *identit
 		ID:           pgutil.UUIDToPgtype(session.ID),
 		UserID:       pgutil.UUIDToPgtype(session.UserID),
 		RefreshToken: session.RefreshToken,
+		IPAddress:    session.IPAddress,
+		UserAgent:    session.UserAgent,
 		ExpiresAt:    pgutil.TimeToPgtype(session.ExpiresAt),
 		CreatedAt:    pgutil.TimeToPgtype(session.CreatedAt),
 	})
@@ -211,6 +216,50 @@ func (r *IdentityRepository) DeleteSession(ctx context.Context, id string) error
 func (r *IdentityRepository) DeleteUserSessions(ctx context.Context, userID string) error {
 	err := r.q(ctx).DeleteUserSessions(ctx, pgutil.UUIDToPgtype(userID))
 	return pgutil.MapErr(err, "delete user sessions", identity.ErrNotFound)
+}
+
+// ActiveSession is a read-only DTO for listing active sessions with user email.
+// It is not a domain entity -- it exists to serve admin list queries without
+// inflating domain aggregates with cross-context data.
+type ActiveSession struct {
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
+	UserEmail string    `json:"user_email"`
+	IPAddress string    `json:"ip_address"`
+	UserAgent string    `json:"user_agent"`
+	ExpiresAt time.Time `json:"expires_at"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// ListActiveSessions returns a paginated list of active (non-expired) sessions
+// with the owning user's email. Intended for admin dashboards.
+func (r *IdentityRepository) ListActiveSessions(ctx context.Context, limit, offset int) ([]ActiveSession, int64, error) {
+	total, err := r.q(ctx).CountActiveSessions(ctx)
+	if err != nil {
+		return nil, 0, fmt.Errorf("count active sessions: %w", err)
+	}
+
+	rows, err := r.q(ctx).ListActiveSessions(ctx, gen.ListActiveSessionsParams{
+		Limit:  int32(limit),
+		Offset: int32(offset),
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("list active sessions: %w", err)
+	}
+
+	sessions := make([]ActiveSession, 0, len(rows))
+	for _, row := range rows {
+		sessions = append(sessions, ActiveSession{
+			ID:        pgutil.PgtypeToUUID(row.ID),
+			UserID:    pgutil.PgtypeToUUID(row.UserID),
+			UserEmail: row.UserEmail,
+			IPAddress: row.IPAddress,
+			UserAgent: row.UserAgent,
+			ExpiresAt: pgutil.PgtypeToTime(row.ExpiresAt),
+			CreatedAt: pgutil.PgtypeToTime(row.CreatedAt),
+		})
+	}
+	return sessions, total, nil
 }
 
 func (r *IdentityRepository) CreateEmailVerification(ctx context.Context, v *identity.EmailVerification) error {

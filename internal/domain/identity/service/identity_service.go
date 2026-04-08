@@ -124,10 +124,13 @@ type RegisterResult struct {
 	VerificationToken string
 }
 
-// LoginInput holds the credentials for authentication.
+// LoginInput holds the credentials for authentication plus optional metadata
+// captured from the HTTP request (IP address and user-agent).
 type LoginInput struct {
-	Email    string
-	Password string
+	Email     string
+	Password  string
+	IPAddress string
+	UserAgent string
 }
 
 // LoginResult is returned on successful login or token refresh.
@@ -220,6 +223,8 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (*LoginResult, er
 		ID:           uuid.Must(uuid.NewV7()).String(),
 		UserID:       user.ID,
 		RefreshToken: refreshToken,
+		IPAddress:    input.IPAddress,
+		UserAgent:    input.UserAgent,
 		ExpiresAt:    now.Add(s.refreshTTL),
 		CreatedAt:    now,
 	}

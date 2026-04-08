@@ -64,14 +64,16 @@ func (q *Queries) CreatePasswordReset(ctx context.Context, arg CreatePasswordRes
 }
 
 const createSession = `-- name: CreateSession :exec
-INSERT INTO identity.sessions (id, user_id, refresh_token, expires_at, created_at)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO identity.sessions (id, user_id, refresh_token, ip_address, user_agent, expires_at, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 `
 
 type CreateSessionParams struct {
 	ID           pgtype.UUID        `json:"id"`
 	UserID       pgtype.UUID        `json:"user_id"`
 	RefreshToken string             `json:"refresh_token"`
+	IPAddress    string             `json:"ip_address"`
+	UserAgent    string             `json:"user_agent"`
 	ExpiresAt    pgtype.Timestamptz `json:"expires_at"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
@@ -81,6 +83,8 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 		arg.ID,
 		arg.UserID,
 		arg.RefreshToken,
+		arg.IPAddress,
+		arg.UserAgent,
 		arg.ExpiresAt,
 		arg.CreatedAt,
 	)
@@ -241,7 +245,7 @@ func (q *Queries) GetPasswordResetByToken(ctx context.Context, token string) (Id
 }
 
 const getSessionByRefreshToken = `-- name: GetSessionByRefreshToken :one
-SELECT id, user_id, refresh_token, expires_at, created_at
+SELECT id, user_id, refresh_token, ip_address, user_agent, expires_at, created_at
 FROM identity.sessions WHERE refresh_token = $1
 `
 
@@ -252,6 +256,8 @@ func (q *Queries) GetSessionByRefreshToken(ctx context.Context, refreshToken str
 		&i.ID,
 		&i.UserID,
 		&i.RefreshToken,
+		&i.IPAddress,
+		&i.UserAgent,
 		&i.ExpiresAt,
 		&i.CreatedAt,
 	)
@@ -382,6 +388,70 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]Identit
 			&i.TenantID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const countActiveSessions = `-- name: CountActiveSessions :one
+SELECT count(*) FROM identity.sessions WHERE expires_at > now()
+`
+
+func (q *Queries) CountActiveSessions(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveSessions)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const listActiveSessions = `-- name: ListActiveSessions :many
+SELECT s.id, s.user_id, s.ip_address, s.user_agent, s.expires_at, s.created_at,
+       u.email AS user_email
+FROM identity.sessions s
+JOIN identity.platform_users u ON u.id = s.user_id
+WHERE s.expires_at > now()
+ORDER BY s.created_at DESC
+LIMIT $1 OFFSET $2
+`
+
+type ListActiveSessionsParams struct {
+	Limit  int32 `json:"limit"`
+	Offset int32 `json:"offset"`
+}
+
+type ListActiveSessionsRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	IPAddress string             `json:"ip_address"`
+	UserAgent string             `json:"user_agent"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UserEmail string             `json:"user_email"`
+}
+
+func (q *Queries) ListActiveSessions(ctx context.Context, arg ListActiveSessionsParams) ([]ListActiveSessionsRow, error) {
+	rows, err := q.db.Query(ctx, listActiveSessions, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListActiveSessionsRow{}
+	for rows.Next() {
+		var i ListActiveSessionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.IPAddress,
+			&i.UserAgent,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+			&i.UserEmail,
 		); err != nil {
 			return nil, err
 		}

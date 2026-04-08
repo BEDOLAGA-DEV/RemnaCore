@@ -210,6 +210,7 @@ func NewRouter(p RouterParams) http.Handler {
 
 				// Dashboard stats
 				admin.Get("/stats", p.StatsHandler.GetStats)
+				admin.Get("/sessions", p.StatsHandler.ListSessions)
 
 				// Tenant management
 				admin.Post("/tenants", p.ResellerHandler.CreateTenant)

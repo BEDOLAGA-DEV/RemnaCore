@@ -183,6 +183,9 @@ const en = {
       totalSubscriptions: "Total Subscriptions",
       activeSubscriptions: "Active Subscriptions",
       totalRevenue: "Total Revenue",
+      activeSessions: "Active Sessions",
+      online: "online",
+      noActiveSessions: "No active sessions",
     },
     users: {
       title: "Users",
@@ -436,6 +439,9 @@ const ru: typeof en = {
       totalSubscriptions: "Подписок",
       activeSubscriptions: "Активных подписок",
       totalRevenue: "Доход",
+      activeSessions: "Активные сессии",
+      online: "онлайн",
+      noActiveSessions: "Нет активных сессий",
     },
     users: {
       title: "Пользователи",

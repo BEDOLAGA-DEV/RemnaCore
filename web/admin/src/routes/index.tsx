@@ -1,9 +1,11 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "@tanstack/react-router";
 import {
   useAdminStats,
   useAdminSubscriptions,
   useAdminInvoices,
+  useAdminSessions,
   usePlugins,
   useSystemHealth,
   LoadingSpinner,
@@ -11,7 +13,7 @@ import {
   cn,
   formatMoney,
 } from "@remnacore/shared";
-import type { Invoice, Subscription } from "@remnacore/shared";
+import type { ActiveSession, Invoice, Subscription } from "@remnacore/shared";
 import { StatusDot } from "../components/StatusDot.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -36,6 +38,17 @@ function formatRelativeTime(isoDate: string): string {
     return `${Math.floor(diff / MS_PER_HOUR)}h ago`;
   }
   return `${Math.floor(diff / MS_PER_DAY)}d ago`;
+}
+
+const USER_AGENT_TRUNCATE_LENGTH = 20;
+
+function shortenUserAgent(ua: string): string {
+  if (ua.includes("Chrome")) return "Chrome";
+  if (ua.includes("Firefox")) return "Firefox";
+  if (ua.includes("Safari")) return "Safari";
+  if (ua.includes("Edge")) return "Edge";
+  if (ua.includes("Opera") || ua.includes("OPR")) return "Opera";
+  return ua.slice(0, USER_AGENT_TRUNCATE_LENGTH);
 }
 
 // ─── Activity Feed Item Types ───────────────────────────────────────────────
@@ -138,10 +151,11 @@ export function AdminDashboardPage() {
     offset: 0,
   });
   const { data: plugins, isLoading: pluginsLoading } = usePlugins();
+  const { data: sessions, isLoading: sessionsLoading } = useAdminSessions();
   const { data: healthChecks } = useSystemHealth();
 
   const isLoading =
-    statsLoading || subsLoading || invoicesLoading || pluginsLoading;
+    statsLoading || subsLoading || invoicesLoading || pluginsLoading || sessionsLoading;
 
   const stats = useMemo(() => {
     const s = serverStats;
@@ -246,6 +260,9 @@ export function AdminDashboardPage() {
           value={`${stats.churnRate}%`}
         />
       </div>
+
+      {/* Row 1.5: Active Sessions */}
+      <ActiveSessionsCard sessions={sessions} />
 
       {/* Row 2: Subscription Funnel + Plan Distribution + System Status */}
       <div className="grid gap-3 lg:grid-cols-[1fr_1fr_1fr]">
@@ -484,6 +501,61 @@ function FunnelRow({ label, value, total, color }: FunnelRowProps) {
           style={{ width: `${Math.max(percentage, percentage > 0 ? 2 : 0)}%` }}
         />
       </div>
+    </div>
+  );
+}
+
+// ─── Active Sessions Card ────────────────────────────────────────────────────
+
+type ActiveSessionsCardProps = {
+  sessions: ActiveSession[] | undefined;
+};
+
+function ActiveSessionsCard({ sessions }: ActiveSessionsCardProps) {
+  const { t } = useTranslation();
+  const sessionCount = sessions?.length ?? 0;
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <div className="mb-4 flex items-center gap-2">
+        <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+          {t("admin.dashboard.activeSessions")}
+        </p>
+        <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-emerald-500">
+          {sessionCount} {t("admin.dashboard.online")}
+        </span>
+      </div>
+      {sessionCount > 0 ? (
+        <div className="divide-y divide-border/30">
+          {sessions?.map((session) => (
+            <div
+              key={session.id}
+              className="flex items-center gap-4 py-2 hover:bg-secondary/50"
+            >
+              <Link
+                to="/users/$id"
+                params={{ id: session.user_id }}
+                className="shrink-0 font-mono text-xs text-primary hover:underline"
+              >
+                {session.user_email}
+              </Link>
+              <span className="shrink-0 font-mono text-xs text-foreground">
+                {session.ip_address}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                {shortenUserAgent(session.user_agent)}
+              </span>
+              <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                {formatRelativeTime(session.created_at)}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="py-4 text-center font-mono text-xs text-muted-foreground">
+          {t("admin.dashboard.noActiveSessions")}
+        </p>
+      )}
     </div>
   );
 }

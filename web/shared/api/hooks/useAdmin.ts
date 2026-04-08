@@ -73,6 +73,30 @@ export function useAdminTenant(tenantId: string) {
   });
 }
 
+export type ActiveSession = {
+  id: string;
+  user_id: string;
+  user_email: string;
+  ip_address: string;
+  user_agent: string;
+  expires_at: string;
+  created_at: string;
+};
+
+const SESSIONS_REFETCH_INTERVAL_MS = 30_000;
+
+export function useAdminSessions() {
+  return useQuery({
+    queryKey: QUERY_KEYS.admin.sessions,
+    queryFn: () =>
+      apiGet<ActiveSession[]>(ENDPOINTS.admin.sessions, {
+        limit: 50,
+        offset: 0,
+      }),
+    refetchInterval: SESSIONS_REFETCH_INTERVAL_MS,
+  });
+}
+
 export type DashboardStats = {
   total_users: number;
   active_sessions: number;
