@@ -18,6 +18,7 @@ export * from "./api/hooks/usePlugins.js";
 export * from "./api/hooks/useCheckout.js";
 export * from "./api/hooks/useTenants.js";
 export * from "./api/hooks/useSystemHealth.js";
+export * from "./api/hooks/useSettings.js";
 
 // Hooks - Utility
 export { useDebounce } from "./hooks/useDebounce.js";

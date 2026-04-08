@@ -38,6 +38,8 @@ const en = {
     lightMode: "Light Mode",
     copyToClipboard: "Copy to clipboard",
     copied: "Copied!",
+    errorLoading: "Failed to load data",
+    unknownError: "Unknown error",
   },
   auth: {
     loginTitle: "Sign in to your account",
@@ -233,6 +235,9 @@ const en = {
       degraded: "Degraded",
       down: "Down",
     },
+    settings: {
+      title: "Settings",
+    },
   },
   nav: {
     dashboard: "Dashboard",
@@ -286,6 +291,8 @@ const ru: typeof en = {
     lightMode: "Светлая тема",
     copyToClipboard: "Копировать",
     copied: "Скопировано!",
+    errorLoading: "Не удалось загрузить данные",
+    unknownError: "Неизвестная ошибка",
   },
   auth: {
     loginTitle: "Войдите в аккаунт",
@@ -480,6 +487,9 @@ const ru: typeof en = {
       healthy: "Здоровая",
       degraded: "Деградирована",
       down: "Недоступна",
+    },
+    settings: {
+      title: "Настройки",
     },
   },
   nav: {

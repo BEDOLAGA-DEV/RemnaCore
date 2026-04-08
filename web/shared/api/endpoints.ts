@@ -92,6 +92,7 @@ export const ENDPOINTS = {
       updateBranding: (tenantId: string) =>
         `/api/admin/tenants/${tenantId}/branding`,
     },
+    settings: "/api/admin/settings",
   },
 
   // ─── Routing (Protected) ───────────────────────────────────────────────

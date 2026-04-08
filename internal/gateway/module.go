@@ -27,5 +27,6 @@ var Module = fx.Module("gateway",
 	fx.Provide(handler.NewAdminHandler),
 	fx.Provide(handler.NewResellerHandler),
 	fx.Provide(handler.NewRoutingHandler),
+	fx.Provide(handler.NewSettingsHandler),
 	fx.Provide(NewRouter),
 )

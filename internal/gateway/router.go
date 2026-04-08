@@ -58,6 +58,7 @@ type RouterParams struct {
 	ResellerHandler       *handler.ResellerHandler
 	ResellerService       *reseller.ResellerService
 	RoutingHandler        *handler.RoutingHandler
+	SettingsHandler       *handler.SettingsHandler
 	TelegramBot           *telegram.Bot
 }
 
@@ -201,6 +202,9 @@ func NewRouter(p RouterParams) http.Handler {
 				admin.Get("/users/{userID}", p.AdminHandler.GetUser)
 				admin.Get("/subscriptions", p.AdminHandler.ListSubscriptions)
 				admin.Get("/invoices", p.AdminHandler.ListInvoices)
+
+				// System settings (read-only)
+				admin.Get("/settings", p.SettingsHandler.GetSettings)
 
 				// Tenant management
 				admin.Post("/tenants", p.ResellerHandler.CreateTenant)

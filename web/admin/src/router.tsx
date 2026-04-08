@@ -20,6 +20,7 @@ import { PluginDetailPage } from "./routes/plugins/[id].js";
 import { TenantsPage } from "./routes/tenants/index.js";
 import { TenantDetailPage } from "./routes/tenants/[id].js";
 import { NodesPage } from "./routes/nodes.js";
+import { SettingsPage } from "./routes/settings.js";
 
 const rootRoute = createRootRoute({
   component: Outlet,
@@ -132,6 +133,12 @@ const nodesRoute = createRoute({
   component: NodesPage,
 });
 
+const settingsRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: "/settings",
+  component: SettingsPage,
+});
+
 // ─── Tree ───────────────────────────────────────────────────────────────────
 
 const routeTree = rootRoute.addChildren([
@@ -149,6 +156,7 @@ const routeTree = rootRoute.addChildren([
     tenantsRoute,
     tenantDetailRoute,
     nodesRoute,
+    settingsRoute,
   ]),
 ]);
 

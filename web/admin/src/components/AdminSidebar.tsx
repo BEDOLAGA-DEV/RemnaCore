@@ -9,6 +9,7 @@ import {
   Globe,
   Building2,
   Search,
+  Settings,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn, useAuthStore } from "@remnacore/shared";
@@ -21,6 +22,7 @@ const NAV_ITEMS = [
   { to: "/plugins" as const, icon: Puzzle, labelKey: "admin.plugins.title" },
   { to: "/nodes" as const, icon: Globe, labelKey: "admin.nodes.title" },
   { to: "/tenants" as const, icon: Building2, labelKey: "admin.tenants.title" },
+  { to: "/settings" as const, icon: Settings, labelKey: "admin.settings.title" },
 ] as const;
 
 function formatUtcTime(date: Date): string {
