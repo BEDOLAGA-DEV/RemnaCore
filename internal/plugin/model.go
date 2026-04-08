@@ -45,6 +45,7 @@ type Plugin struct {
 	WASMHash    string            // SHA-256 hex digest of WASMBytes for content-addressable storage
 	Manifest    *Manifest         // parsed plugin.toml
 	Status      PluginStatus
+	IsBuiltIn   bool              // platform-provided; cannot be uninstalled
 	Config      map[string]string // runtime config values (filled by admin)
 	Permissions []PermissionScope
 	ErrorLog    string

@@ -217,6 +217,7 @@ export type Plugin = {
   sdk_version: string | null;
   lang: string | null;
   status: PluginStatus;
+  is_builtin: boolean;
   config: Record<string, string>;
   permissions: string[];
   error_log: string | null;

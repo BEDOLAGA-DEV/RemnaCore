@@ -12,8 +12,8 @@ import (
 )
 
 const createPlugin = `-- name: CreatePlugin :exec
-INSERT INTO plugins.plugin_registry (id, slug, name, version, description, author, license, sdk_version, lang, wasm_bytes, wasm_hash, manifest, status, config, permissions, installed_at, enabled_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+INSERT INTO plugins.plugin_registry (id, slug, name, version, description, author, license, sdk_version, lang, wasm_bytes, wasm_hash, manifest, status, config, permissions, installed_at, enabled_at, updated_at, is_builtin)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
 `
 
 type CreatePluginParams struct {
@@ -35,6 +35,7 @@ type CreatePluginParams struct {
 	InstalledAt pgtype.Timestamptz `json:"installed_at"`
 	EnabledAt   pgtype.Timestamptz `json:"enabled_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	IsBuiltin   bool               `json:"is_builtin"`
 }
 
 func (q *Queries) CreatePlugin(ctx context.Context, arg CreatePluginParams) error {
@@ -57,6 +58,7 @@ func (q *Queries) CreatePlugin(ctx context.Context, arg CreatePluginParams) erro
 		arg.InstalledAt,
 		arg.EnabledAt,
 		arg.UpdatedAt,
+		arg.IsBuiltin,
 	)
 	return err
 }
@@ -71,7 +73,7 @@ func (q *Queries) DeletePlugin(ctx context.Context, id pgtype.UUID) error {
 }
 
 const getAllPlugins = `-- name: GetAllPlugins :many
-SELECT id, slug, name, version, description, author, license, sdk_version, lang, wasm_bytes, manifest, status, config, permissions, error_log, installed_at, enabled_at, updated_at, wasm_hash FROM plugins.plugin_registry ORDER BY installed_at DESC
+SELECT id, slug, name, version, description, author, license, sdk_version, lang, wasm_bytes, manifest, status, config, permissions, error_log, installed_at, enabled_at, updated_at, wasm_hash, is_builtin FROM plugins.plugin_registry ORDER BY installed_at DESC
 `
 
 func (q *Queries) GetAllPlugins(ctx context.Context) ([]PluginsPluginRegistry, error) {
@@ -103,6 +105,7 @@ func (q *Queries) GetAllPlugins(ctx context.Context) ([]PluginsPluginRegistry, e
 			&i.EnabledAt,
 			&i.UpdatedAt,
 			&i.WasmHash,
+			&i.IsBuiltin,
 		); err != nil {
 			return nil, err
 		}
@@ -115,7 +118,7 @@ func (q *Queries) GetAllPlugins(ctx context.Context) ([]PluginsPluginRegistry, e
 }
 
 const getEnabledPlugins = `-- name: GetEnabledPlugins :many
-SELECT id, slug, name, version, description, author, license, sdk_version, lang, wasm_bytes, manifest, status, config, permissions, error_log, installed_at, enabled_at, updated_at, wasm_hash FROM plugins.plugin_registry WHERE status = $1 ORDER BY installed_at DESC
+SELECT id, slug, name, version, description, author, license, sdk_version, lang, wasm_bytes, manifest, status, config, permissions, error_log, installed_at, enabled_at, updated_at, wasm_hash, is_builtin FROM plugins.plugin_registry WHERE status = $1 ORDER BY installed_at DESC
 `
 
 func (q *Queries) GetEnabledPlugins(ctx context.Context, status string) ([]PluginsPluginRegistry, error) {
@@ -147,6 +150,7 @@ func (q *Queries) GetEnabledPlugins(ctx context.Context, status string) ([]Plugi
 			&i.EnabledAt,
 			&i.UpdatedAt,
 			&i.WasmHash,
+			&i.IsBuiltin,
 		); err != nil {
 			return nil, err
 		}
@@ -159,7 +163,7 @@ func (q *Queries) GetEnabledPlugins(ctx context.Context, status string) ([]Plugi
 }
 
 const getPluginByID = `-- name: GetPluginByID :one
-SELECT id, slug, name, version, description, author, license, sdk_version, lang, wasm_bytes, manifest, status, config, permissions, error_log, installed_at, enabled_at, updated_at, wasm_hash FROM plugins.plugin_registry WHERE id = $1
+SELECT id, slug, name, version, description, author, license, sdk_version, lang, wasm_bytes, manifest, status, config, permissions, error_log, installed_at, enabled_at, updated_at, wasm_hash, is_builtin FROM plugins.plugin_registry WHERE id = $1
 `
 
 func (q *Queries) GetPluginByID(ctx context.Context, id pgtype.UUID) (PluginsPluginRegistry, error) {
@@ -185,12 +189,13 @@ func (q *Queries) GetPluginByID(ctx context.Context, id pgtype.UUID) (PluginsPlu
 		&i.EnabledAt,
 		&i.UpdatedAt,
 		&i.WasmHash,
+		&i.IsBuiltin,
 	)
 	return i, err
 }
 
 const getPluginBySlug = `-- name: GetPluginBySlug :one
-SELECT id, slug, name, version, description, author, license, sdk_version, lang, wasm_bytes, manifest, status, config, permissions, error_log, installed_at, enabled_at, updated_at, wasm_hash FROM plugins.plugin_registry WHERE slug = $1
+SELECT id, slug, name, version, description, author, license, sdk_version, lang, wasm_bytes, manifest, status, config, permissions, error_log, installed_at, enabled_at, updated_at, wasm_hash, is_builtin FROM plugins.plugin_registry WHERE slug = $1
 `
 
 func (q *Queries) GetPluginBySlug(ctx context.Context, slug string) (PluginsPluginRegistry, error) {
@@ -216,6 +221,7 @@ func (q *Queries) GetPluginBySlug(ctx context.Context, slug string) (PluginsPlug
 		&i.EnabledAt,
 		&i.UpdatedAt,
 		&i.WasmHash,
+		&i.IsBuiltin,
 	)
 	return i, err
 }

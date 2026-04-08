@@ -50,6 +50,8 @@ func MapToAPIError(err error) *apierror.Error {
 		return apierror.PluginWASMNotFound
 	case errors.Is(err, ErrMissingConfig):
 		return apierror.PluginMissingConfig
+	case errors.Is(err, ErrCannotUninstallBuiltIn):
+		return apierror.PluginCannotUninstallBuiltIn
 	default:
 		return nil
 	}

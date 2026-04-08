@@ -1,6 +1,6 @@
 -- name: CreatePlugin :exec
-INSERT INTO plugins.plugin_registry (id, slug, name, version, description, author, license, sdk_version, lang, wasm_bytes, wasm_hash, manifest, status, config, permissions, installed_at, enabled_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18);
+INSERT INTO plugins.plugin_registry (id, slug, name, version, description, author, license, sdk_version, lang, wasm_bytes, wasm_hash, manifest, status, config, permissions, installed_at, enabled_at, updated_at, is_builtin)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19);
 
 -- name: GetPluginByID :one
 SELECT * FROM plugins.plugin_registry WHERE id = $1;

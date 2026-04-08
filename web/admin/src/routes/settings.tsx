@@ -15,7 +15,6 @@ import {
 	Database,
 	Flag,
 	Gauge,
-	Globe,
 	Globe2,
 	Inbox,
 	Key,
@@ -622,21 +621,6 @@ function SettingsContent({ settings }: SettingsContentProps) {
 				<SettingRow
 					label="Refresh Token TTL"
 					value={settings.jwt.refresh_token_ttl}
-				/>
-			</SettingsSection>
-
-			{/* Remnawave (read-only) */}
-			<SettingsSection title="Remnawave" icon={Globe}>
-				<SettingRow label="URL" value={settings.remnawave.url} />
-				<SettingRow
-					label="API Token"
-					value={settings.remnawave.api_token}
-					masked
-				/>
-				<SettingRow
-					label="Webhook Secret"
-					value={settings.remnawave.webhook_secret}
-					masked
 				/>
 			</SettingsSection>
 

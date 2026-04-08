@@ -37,11 +37,6 @@ export type SystemSettings = {
     access_token_ttl: string;
     refresh_token_ttl: string;
   };
-  remnawave: {
-    url: string;
-    api_token: string;
-    webhook_secret: string;
-  };
   billing: {
     trial_days: number;
   };

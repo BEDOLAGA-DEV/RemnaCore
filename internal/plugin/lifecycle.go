@@ -231,6 +231,10 @@ func (lm *LifecycleManager) Uninstall(ctx context.Context, pluginID string) erro
 		return fmt.Errorf("get plugin for uninstall: %w", err)
 	}
 
+	if p.IsBuiltIn {
+		return ErrCannotUninstallBuiltIn
+	}
+
 	// Disable if currently enabled.
 	if p.Status == StatusEnabled {
 		if err := lm.Disable(ctx, pluginID); err != nil {

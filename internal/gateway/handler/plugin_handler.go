@@ -51,6 +51,7 @@ type pluginResponse struct {
 	Author      string            `json:"author"`
 	License     string            `json:"license"`
 	Status      string            `json:"status"`
+	IsBuiltIn   bool              `json:"is_builtin"`
 	Config      map[string]string `json:"config"`
 	ErrorLog    string            `json:"error_log,omitempty"`
 }
@@ -67,6 +68,7 @@ func toPluginResponse(p *plugin.Plugin) pluginResponse {
 		Author:      p.Author,
 		License:     p.License,
 		Status:      string(p.Status),
+		IsBuiltIn:   p.IsBuiltIn,
 		Config:      p.RedactedConfig(),
 		ErrorLog:    p.ErrorLog,
 	}

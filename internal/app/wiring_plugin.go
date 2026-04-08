@@ -46,6 +46,9 @@ var pluginWiring = fx.Options(
 	// through the pdk_vpn_request host function.
 	fx.Invoke(wireVPNExecutor),
 
+	// Seed built-in plugins before loading enabled plugins
+	fx.Invoke(seedBuiltInPlugins),
+
 	// Load enabled plugins on startup
 	fx.Invoke(loadEnabledPlugins),
 

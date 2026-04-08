@@ -49,7 +49,6 @@ var readOnlySections = []string{
 	"cache",
 	"message_queue",
 	"jwt",
-	"remnawave",
 	"telegram",
 	"infrastructure",
 	"tracing",
@@ -68,7 +67,6 @@ type SettingsResponse struct {
 	Cache          CacheSettings          `json:"cache"`
 	MessageQueue   MessageQueueSettings   `json:"message_queue"`
 	JWT            JWTSettings            `json:"jwt"`
-	Remnawave      RemnawaveSettings      `json:"remnawave"`
 	Billing        BillingSettings        `json:"billing"`
 	Telegram       TelegramSettings       `json:"telegram"`
 	Plugins        PluginSettings         `json:"plugins"`
@@ -118,13 +116,6 @@ type JWTSettings struct {
 	PublicKeyPath   string `json:"public_key_path"`
 	AccessTokenTTL  string `json:"access_token_ttl"`
 	RefreshTokenTTL string `json:"refresh_token_ttl"`
-}
-
-// RemnawaveSettings mirrors config.RemnawaveConfig with tokens masked.
-type RemnawaveSettings struct {
-	URL           string `json:"url"`
-	APIToken      string `json:"api_token"`
-	WebhookSecret string `json:"webhook_secret"`
 }
 
 // BillingSettings mirrors config.BillingConfig.
@@ -256,11 +247,6 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, _ *http.Request) {
 			PublicKeyPath:   h.cfg.JWT.PublicKeyPath,
 			AccessTokenTTL:  h.cfg.JWT.AccessTokenTTL.String(),
 			RefreshTokenTTL: h.cfg.JWT.RefreshTokenTTL.String(),
-		},
-		Remnawave: RemnawaveSettings{
-			URL:           h.cfg.Remnawave.URL,
-			APIToken:      secretMask,
-			WebhookSecret: secretMask,
 		},
 		Billing: BillingSettings{
 			TrialDays: h.cfg.Billing.TrialDays,

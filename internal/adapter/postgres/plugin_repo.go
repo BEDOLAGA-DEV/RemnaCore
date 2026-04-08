@@ -78,6 +78,7 @@ func pluginRowToDomain(row gen.PluginsPluginRegistry) (*plugin.Plugin, error) {
 		WASMHash:    pgutil.DerefStr(row.WasmHash),
 		Manifest:    &manifest,
 		Status:      plugin.PluginStatus(row.Status),
+		IsBuiltIn:   row.IsBuiltin,
 		Config:      cfg,
 		Permissions: stringsToPermissions(row.Permissions),
 		ErrorLog:    pgutil.DerefStr(row.ErrorLog),
@@ -117,6 +118,7 @@ func (r *PluginRepository) Create(ctx context.Context, p *plugin.Plugin) error {
 		InstalledAt: pgutil.TimeToPgtype(p.InstalledAt),
 		EnabledAt:   pgutil.OptTimeToPgtype(p.EnabledAt),
 		UpdatedAt:   pgutil.TimeToPgtype(p.UpdatedAt),
+		IsBuiltin:   p.IsBuiltIn,
 	})
 	if err != nil {
 		if pgutil.IsUniqueViolation(err) {

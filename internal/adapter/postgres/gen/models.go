@@ -252,6 +252,7 @@ type PluginsPluginRegistry struct {
 	EnabledAt   pgtype.Timestamptz `json:"enabled_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 	WasmHash    *string            `json:"wasm_hash"`
+	IsBuiltin   bool               `json:"is_builtin"`
 }
 
 type PluginsPluginStorage struct {

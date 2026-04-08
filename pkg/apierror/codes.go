@@ -149,7 +149,8 @@ var (
 	PluginIncompatibleSDK = New("PLUGIN.INCOMPATIBLE_SDK", "incompatible plugin SDK version", http.StatusConflict)
 	PluginDraining        = New("PLUGIN.DRAINING", "plugin is draining", http.StatusServiceUnavailable)
 	PluginWASMNotFound    = New("PLUGIN.WASM_NOT_FOUND", "WASM binary not found in content store", http.StatusNotFound)
-	PluginMissingConfig   = New("PLUGIN.MISSING_CONFIG", "plugin missing required configuration", http.StatusBadRequest)
+	PluginMissingConfig          = New("PLUGIN.MISSING_CONFIG", "plugin missing required configuration", http.StatusBadRequest)
+	PluginCannotUninstallBuiltIn = New("PLUGIN.CANNOT_UNINSTALL_BUILTIN", "cannot uninstall built-in plugin", http.StatusForbidden)
 )
 
 // Routing error codes.

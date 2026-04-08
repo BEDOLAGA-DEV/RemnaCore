@@ -178,19 +178,21 @@ export function PluginDetailPage() {
             )}
           </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              if (window.confirm(t("common.confirm"))) {
-                uninstall.mutate(plugin.id);
-              }
-            }}
-            disabled={uninstall.isPending}
-            className="flex items-center gap-2 rounded-lg border border-red-500/30 text-red-500 px-4 py-2 text-[13px] font-medium hover:bg-red-500/10 transition-colors disabled:opacity-40"
-          >
-            <Trash2 size={14} />
-            {t("admin.plugins.uninstall")}
-          </button>
+          {!plugin.is_builtin && (
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm(t("common.confirm"))) {
+                  uninstall.mutate(plugin.id);
+                }
+              }}
+              disabled={uninstall.isPending}
+              className="flex items-center gap-2 rounded-lg border border-red-500/30 text-red-500 px-4 py-2 text-[13px] font-medium hover:bg-red-500/10 transition-colors disabled:opacity-40"
+            >
+              <Trash2 size={14} />
+              {t("admin.plugins.uninstall")}
+            </button>
+          )}
         </div>
       </div>
 
