@@ -85,14 +85,21 @@ export type ActiveSession = {
 
 const SESSIONS_REFETCH_INTERVAL_MS = 30_000;
 
+type SessionListResponse = {
+  sessions: ActiveSession[];
+  total: number;
+};
+
 export function useAdminSessions() {
   return useQuery({
     queryKey: QUERY_KEYS.admin.sessions,
-    queryFn: () =>
-      apiGet<ActiveSession[]>(ENDPOINTS.admin.sessions, {
+    queryFn: async () => {
+      const resp = await apiGet<SessionListResponse>(ENDPOINTS.admin.sessions, {
         limit: 50,
         offset: 0,
-      }),
+      });
+      return resp.sessions;
+    },
     refetchInterval: SESSIONS_REFETCH_INTERVAL_MS,
   });
 }
