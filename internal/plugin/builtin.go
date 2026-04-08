@@ -11,6 +11,7 @@ type BuiltInPluginDef struct {
 	Author       string
 	ConfigFields map[string]ManifestConfigField
 	Pages        []ManifestPage
+	Routes       []ManifestRoute
 }
 
 // Built-in plugin slugs.
@@ -56,6 +57,14 @@ func tariffManager() BuiltInPluginDef {
 				Title: "Tariffs",
 				Icon:  "CreditCard",
 				Menu:  PageMenuAdmin,
+			},
+		},
+		Routes: []ManifestRoute{
+			{
+				Method:   "GET",
+				Path:     "/api/tariffs",
+				Function: "handle_list_tariffs",
+				Public:   true,
 			},
 		},
 	}

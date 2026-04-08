@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -73,6 +74,18 @@ path  = "my-points"
 title = "My Points"
 icon  = "Star"
 menu  = "cabinet"
+
+[[routes]]
+method   = "GET"
+path     = "/api/tariffs"
+function = "handle_list_tariffs"
+public   = true
+
+[[routes]]
+method   = "POST"
+path     = "/api/tariffs"
+function = "handle_create_tariff"
+public   = false
 `
 
 const minimalManifestTOML = `
@@ -147,6 +160,17 @@ func TestParseManifest_Full(t *testing.T) {
 	assert.Equal(t, "My Points", m.Pages[1].Title)
 	assert.Equal(t, "Star", m.Pages[1].Icon)
 	assert.Equal(t, PageMenuCabinet, m.Pages[1].Menu)
+
+	// Routes
+	require.Len(t, m.Routes, 2)
+	assert.Equal(t, "GET", m.Routes[0].Method)
+	assert.Equal(t, "/api/tariffs", m.Routes[0].Path)
+	assert.Equal(t, "handle_list_tariffs", m.Routes[0].Function)
+	assert.True(t, m.Routes[0].Public)
+	assert.Equal(t, "POST", m.Routes[1].Method)
+	assert.Equal(t, "/api/tariffs", m.Routes[1].Path)
+	assert.Equal(t, "handle_create_tariff", m.Routes[1].Function)
+	assert.False(t, m.Routes[1].Public)
 }
 
 func TestParseManifest_Minimal(t *testing.T) {
@@ -160,6 +184,7 @@ func TestParseManifest_Minimal(t *testing.T) {
 	assert.Empty(t, m.Hooks.Async)
 	assert.Empty(t, m.Config)
 	assert.Empty(t, m.Pages)
+	assert.Empty(t, m.Routes)
 }
 
 func TestParseManifest_InvalidSlug(t *testing.T) {
@@ -757,4 +782,285 @@ sync = ["invoice.created"]
 			assert.Equal(t, tc.expected, m.Pages)
 		})
 	}
+}
+
+func TestParseManifest_ValidRoutes(t *testing.T) {
+	baseManifest := `
+[plugin]
+id          = "route-test"
+name        = "Route Test"
+version     = "1.0.0"
+sdk_version = "1.0.0"
+
+[hooks]
+sync = ["invoice.created"]
+
+`
+
+	tests := []struct {
+		name      string
+		routeTOML string
+		expected  []ManifestRoute
+	}{
+		{
+			"single public GET route",
+			`[[routes]]
+method   = "GET"
+path     = "/api/tariffs"
+function = "handle_list"
+public   = true
+`,
+			[]ManifestRoute{
+				{Method: "GET", Path: "/api/tariffs", Function: "handle_list", Public: true},
+			},
+		},
+		{
+			"protected POST route",
+			`[[routes]]
+method   = "POST"
+path     = "/api/orders"
+function = "handle_create_order"
+public   = false
+`,
+			[]ManifestRoute{
+				{Method: "POST", Path: "/api/orders", Function: "handle_create_order", Public: false},
+			},
+		},
+		{
+			"all HTTP methods",
+			`[[routes]]
+method   = "GET"
+path     = "/api/items"
+function = "list_items"
+public   = true
+
+[[routes]]
+method   = "POST"
+path     = "/api/items"
+function = "create_item"
+
+[[routes]]
+method   = "PUT"
+path     = "/api/items"
+function = "update_item"
+
+[[routes]]
+method   = "DELETE"
+path     = "/api/items"
+function = "delete_item"
+
+[[routes]]
+method   = "PATCH"
+path     = "/api/items"
+function = "patch_item"
+`,
+			[]ManifestRoute{
+				{Method: "GET", Path: "/api/items", Function: "list_items", Public: true},
+				{Method: "POST", Path: "/api/items", Function: "create_item"},
+				{Method: "PUT", Path: "/api/items", Function: "update_item"},
+				{Method: "DELETE", Path: "/api/items", Function: "delete_item"},
+				{Method: "PATCH", Path: "/api/items", Function: "patch_item"},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m, err := ParseManifest([]byte(baseManifest + tc.routeTOML))
+			require.NoError(t, err)
+			assert.Equal(t, tc.expected, m.Routes)
+		})
+	}
+}
+
+func TestParseManifest_InvalidRoutes(t *testing.T) {
+	baseManifest := `
+[plugin]
+id          = "route-test"
+name        = "Route Test"
+version     = "1.0.0"
+sdk_version = "1.0.0"
+
+[hooks]
+sync = ["invoice.created"]
+
+`
+
+	tests := []struct {
+		name      string
+		routeTOML string
+		errMsg    string
+	}{
+		{
+			"missing method",
+			`[[routes]]
+path     = "/api/items"
+function = "handle_list"
+`,
+			"routes[0].method is required",
+		},
+		{
+			"invalid method",
+			`[[routes]]
+method   = "OPTIONS"
+path     = "/api/items"
+function = "handle_list"
+`,
+			"routes[0].method must be one of",
+		},
+		{
+			"lowercase method rejected",
+			`[[routes]]
+method   = "get"
+path     = "/api/items"
+function = "handle_list"
+`,
+			"routes[0].method must be one of",
+		},
+		{
+			"missing path",
+			`[[routes]]
+method   = "GET"
+function = "handle_list"
+`,
+			"routes[0].path is required",
+		},
+		{
+			"path without /api/ prefix",
+			`[[routes]]
+method   = "GET"
+path     = "/tariffs"
+function = "handle_list"
+`,
+			`routes[0].path must start with "/api/"`,
+		},
+		{
+			"reserved path /api/admin/",
+			`[[routes]]
+method   = "GET"
+path     = "/api/admin/plugins"
+function = "handle_list"
+`,
+			`routes[0].path "/api/admin/plugins" uses reserved prefix "/api/admin/"`,
+		},
+		{
+			"reserved path /api/auth/",
+			`[[routes]]
+method   = "POST"
+path     = "/api/auth/login"
+function = "handle_login"
+`,
+			`routes[0].path "/api/auth/login" uses reserved prefix "/api/auth/"`,
+		},
+		{
+			"reserved path /api/me",
+			`[[routes]]
+method   = "GET"
+path     = "/api/me"
+function = "handle_me"
+`,
+			`routes[0].path "/api/me" uses reserved prefix "/api/me"`,
+		},
+		{
+			"reserved path /api/webhooks/",
+			`[[routes]]
+method   = "POST"
+path     = "/api/webhooks/custom"
+function = "handle_webhook"
+`,
+			`routes[0].path "/api/webhooks/custom" uses reserved prefix "/api/webhooks/"`,
+		},
+		{
+			"missing function",
+			`[[routes]]
+method   = "GET"
+path     = "/api/items"
+`,
+			"routes[0].function is required",
+		},
+		{
+			"invalid function name with uppercase",
+			`[[routes]]
+method   = "GET"
+path     = "/api/items"
+function = "HandleList"
+`,
+			"routes[0].function must match",
+		},
+		{
+			"invalid function name with hyphen",
+			`[[routes]]
+method   = "GET"
+path     = "/api/items"
+function = "handle-list"
+`,
+			"routes[0].function must match",
+		},
+		{
+			"duplicate method+path",
+			`[[routes]]
+method   = "GET"
+path     = "/api/items"
+function = "handle_list_v1"
+
+[[routes]]
+method   = "GET"
+path     = "/api/items"
+function = "handle_list_v2"
+`,
+			"routes[1]: duplicate GET /api/items",
+		},
+		{
+			"second route invalid",
+			`[[routes]]
+method   = "GET"
+path     = "/api/items"
+function = "handle_list"
+
+[[routes]]
+method   = "POST"
+path     = "/api/items"
+function = ""
+`,
+			"routes[1].function is required",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ParseManifest([]byte(baseManifest + tc.routeTOML))
+			require.Error(t, err)
+			assert.ErrorIs(t, err, ErrInvalidManifest)
+			assert.Contains(t, err.Error(), tc.errMsg)
+		})
+	}
+}
+
+func TestParseManifest_ExceedMaxRoutes(t *testing.T) {
+	baseManifest := `
+[plugin]
+id          = "route-test"
+name        = "Route Test"
+version     = "1.0.0"
+sdk_version = "1.0.0"
+
+[hooks]
+sync = ["invoice.created"]
+
+`
+	// Build TOML with MaxRoutesPerPlugin + 1 routes.
+	var routesTOML string
+	for i := 0; i <= MaxRoutesPerPlugin; i++ {
+		routesTOML += fmt.Sprintf(`
+[[routes]]
+method   = "GET"
+path     = "/api/route%d"
+function = "handle_%d"
+`, i, i)
+	}
+
+	_, err := ParseManifest([]byte(baseManifest + routesTOML))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrInvalidManifest)
+	assert.Contains(t, err.Error(), "too many routes")
 }

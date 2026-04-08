@@ -16,6 +16,27 @@ var slugRe = regexp.MustCompile(PluginSlugPattern)
 // must start with a letter or digit.
 var pagePathRe = regexp.MustCompile(PagePathPattern)
 
+// routeFuncRe validates route function names: lowercase alphanumeric with underscores.
+var routeFuncRe = regexp.MustCompile(RouteFunctionPattern)
+
+// allowedRouteMethods is the set of HTTP methods a plugin route may declare.
+var allowedRouteMethods = map[string]bool{
+	"GET":    true,
+	"POST":   true,
+	"PUT":    true,
+	"DELETE": true,
+	"PATCH":  true,
+}
+
+// reservedRoutePathPrefixes are path prefixes owned by the platform. Plugin
+// routes must not start with any of these.
+var reservedRoutePathPrefixes = []string{
+	"/api/admin/",
+	"/api/auth/",
+	"/api/me",
+	"/api/webhooks/",
+}
+
 // AllowedHookPrefixes defines the valid namespace prefixes for plugin hooks.
 // Every hook name declared in a manifest must start with one of these prefixes.
 var AllowedHookPrefixes = []string{
@@ -50,6 +71,17 @@ type Manifest struct {
 	Config      map[string]ManifestConfigField `toml:"config"`
 	Limits      ManifestLimits                 `toml:"limits"`
 	Pages       []ManifestPage                 `toml:"pages"`
+	Routes      []ManifestRoute                `toml:"routes"`
+}
+
+// ManifestRoute declares an HTTP route provided by the plugin. The platform
+// registers these routes on startup and proxies incoming requests to the
+// plugin's RPC function.
+type ManifestRoute struct {
+	Method   string `toml:"method"`   // HTTP method: GET, POST, PUT, DELETE, PATCH
+	Path     string `toml:"path"`     // URL path, e.g. "/api/tariffs"
+	Function string `toml:"function"` // RPC function name to call
+	Public   bool   `toml:"public"`   // If true, no JWT auth required
 }
 
 // ManifestPage declares a UI page provided by the plugin. Plugins use this to
@@ -183,6 +215,24 @@ func (m *Manifest) Validate() error {
 		pagePaths[page.Path] = true
 	}
 
+	if len(m.Routes) > MaxRoutesPerPlugin {
+		return fmt.Errorf("%w: too many routes: %d (max %d)",
+			ErrInvalidManifest, len(m.Routes), MaxRoutesPerPlugin)
+	}
+
+	routeKeys := make(map[string]bool, len(m.Routes))
+	for i, route := range m.Routes {
+		if err := validateManifestRoute(i, route); err != nil {
+			return err
+		}
+		key := route.Method + " " + route.Path
+		if routeKeys[key] {
+			return fmt.Errorf("%w: routes[%d]: duplicate %s %s",
+				ErrInvalidManifest, i, route.Method, route.Path)
+		}
+		routeKeys[key] = true
+	}
+
 	return nil
 }
 
@@ -209,6 +259,39 @@ func validateManifestPage(index int, page ManifestPage) error {
 	if page.Menu != PageMenuAdmin && page.Menu != PageMenuCabinet {
 		return fmt.Errorf("%w: pages[%d].menu must be %q or %q, got %q",
 			ErrInvalidManifest, index, PageMenuAdmin, PageMenuCabinet, page.Menu)
+	}
+	return nil
+}
+
+// validateManifestRoute checks that a single route declaration has all
+// required fields, a valid HTTP method, and does not use a reserved path.
+func validateManifestRoute(index int, route ManifestRoute) error {
+	if route.Method == "" {
+		return fmt.Errorf("%w: routes[%d].method is required", ErrInvalidManifest, index)
+	}
+	if !allowedRouteMethods[route.Method] {
+		return fmt.Errorf("%w: routes[%d].method must be one of GET, POST, PUT, DELETE, PATCH, got %q",
+			ErrInvalidManifest, index, route.Method)
+	}
+	if route.Path == "" {
+		return fmt.Errorf("%w: routes[%d].path is required", ErrInvalidManifest, index)
+	}
+	if !strings.HasPrefix(route.Path, RoutePathPrefix) {
+		return fmt.Errorf("%w: routes[%d].path must start with %q, got %q",
+			ErrInvalidManifest, index, RoutePathPrefix, route.Path)
+	}
+	for _, reserved := range reservedRoutePathPrefixes {
+		if strings.HasPrefix(route.Path, reserved) {
+			return fmt.Errorf("%w: routes[%d].path %q uses reserved prefix %q",
+				ErrInvalidManifest, index, route.Path, reserved)
+		}
+	}
+	if route.Function == "" {
+		return fmt.Errorf("%w: routes[%d].function is required", ErrInvalidManifest, index)
+	}
+	if !routeFuncRe.MatchString(route.Function) {
+		return fmt.Errorf("%w: routes[%d].function must match %s, got %q",
+			ErrInvalidManifest, index, RouteFunctionPattern, route.Function)
 	}
 	return nil
 }

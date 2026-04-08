@@ -121,3 +121,17 @@ const (
 	// PageMenuCabinet indicates the page appears in the customer cabinet navigation.
 	PageMenuCabinet = "cabinet"
 )
+
+// Route validation constants.
+const (
+	// MaxRoutesPerPlugin is the maximum number of HTTP routes a single plugin
+	// may declare in its manifest.
+	MaxRoutesPerPlugin = 50
+
+	// RouteFunctionPattern validates route function names: lowercase
+	// alphanumeric with underscores.
+	RouteFunctionPattern = `^[a-z0-9_]+$`
+
+	// RoutePathPrefix is the required prefix for all plugin-declared routes.
+	RoutePathPrefix = "/api/"
+)

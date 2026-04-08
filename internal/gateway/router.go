@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -15,6 +16,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/handler"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/telegram"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
@@ -61,6 +63,8 @@ type RouterParams struct {
 	SettingsHandler       *handler.SettingsHandler
 	StatsHandler          *handler.StatsHandler
 	PluginRPCHandler      *handler.PluginRPCHandler
+	PluginRouteHandler    *handler.PluginRouteHandler
+	PluginRepo            plugin.PluginRepository
 	TelegramBot           *telegram.Bot
 }
 
@@ -248,6 +252,10 @@ func NewRouter(p RouterParams) http.Handler {
 			})
 		})
 	})
+
+	// Dynamic plugin routes — registered from enabled plugin manifests.
+	logger := slog.Default()
+	RegisterPluginRoutes(r, p.PluginRepo, p.PluginRouteHandler, p.JWT, logger)
 
 	return r
 }
