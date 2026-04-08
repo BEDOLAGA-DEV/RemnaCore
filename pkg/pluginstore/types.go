@@ -26,6 +26,6 @@ type Store interface {
 	ListDocuments(ctx context.Context, pluginSlug, collection string) ([]Document, error)
 	GetDocument(ctx context.Context, pluginSlug, collection, id string) (*Document, error)
 	InsertDocument(ctx context.Context, pluginSlug, collection string, doc json.RawMessage) (*Document, error)
-	UpdateDocument(ctx context.Context, pluginSlug, id string, doc json.RawMessage) error
-	DeleteDocument(ctx context.Context, pluginSlug, id string) error
+	UpdateDocument(ctx context.Context, pluginSlug, collection, id string, doc json.RawMessage) error
+	DeleteDocument(ctx context.Context, pluginSlug, collection, id string) error
 }

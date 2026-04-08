@@ -15,4 +15,4 @@ CREATE INDEX IF NOT EXISTS idx_collections_plugin_collection
 DROP TRIGGER IF EXISTS trigger_plugin_collections_updated ON plugins.collections;
 CREATE TRIGGER trigger_plugin_collections_updated
     BEFORE UPDATE ON plugins.collections
-    FOR EACH ROW EXECUTE FUNCTION identity.set_updated_at();
+    FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();

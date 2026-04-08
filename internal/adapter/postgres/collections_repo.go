@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -32,9 +33,9 @@ const (
 	updateDocumentSQL = `
 		UPDATE plugins.collections
 		SET document = $1, updated_at = now()
-		WHERE id = $2 AND plugin_slug = $3`
+		WHERE id = $2 AND plugin_slug = $3 AND collection = $4`
 
-	deleteDocumentSQL = `DELETE FROM plugins.collections WHERE id = $1 AND plugin_slug = $2`
+	deleteDocumentSQL = `DELETE FROM plugins.collections WHERE id = $1 AND plugin_slug = $2 AND collection = $3`
 
 	deleteCollectionSQL = `
 		DELETE FROM plugins.collections
@@ -83,7 +84,7 @@ func (r *CollectionsRepository) GetDocument(ctx context.Context, pluginSlug, col
 		&d.ID, &d.PluginSlug, &d.Collection, &d.Data, &d.CreatedAt, &d.UpdatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, pluginstore.ErrDocumentNotFound
 		}
 		return nil, fmt.Errorf("get document: %w", err)
@@ -107,8 +108,8 @@ func (r *CollectionsRepository) InsertDocument(ctx context.Context, pluginSlug, 
 // UpdateDocument updates the document content for an existing document by ID,
 // scoped to the given plugin slug.
 // Returns pluginstore.ErrDocumentNotFound if no row was affected.
-func (r *CollectionsRepository) UpdateDocument(ctx context.Context, pluginSlug, id string, doc json.RawMessage) error {
-	tag, err := r.pool.Exec(ctx, updateDocumentSQL, doc, id, pluginSlug)
+func (r *CollectionsRepository) UpdateDocument(ctx context.Context, pluginSlug, collection, id string, doc json.RawMessage) error {
+	tag, err := r.pool.Exec(ctx, updateDocumentSQL, doc, id, pluginSlug, collection)
 	if err != nil {
 		return fmt.Errorf("update document: %w", err)
 	}
@@ -120,8 +121,8 @@ func (r *CollectionsRepository) UpdateDocument(ctx context.Context, pluginSlug, 
 
 // DeleteDocument removes a document by ID, scoped to the given plugin slug.
 // Returns pluginstore.ErrDocumentNotFound if no row was affected.
-func (r *CollectionsRepository) DeleteDocument(ctx context.Context, pluginSlug, id string) error {
-	tag, err := r.pool.Exec(ctx, deleteDocumentSQL, id, pluginSlug)
+func (r *CollectionsRepository) DeleteDocument(ctx context.Context, pluginSlug, collection, id string) error {
+	tag, err := r.pool.Exec(ctx, deleteDocumentSQL, id, pluginSlug, collection)
 	if err != nil {
 		return fmt.Errorf("delete document: %w", err)
 	}

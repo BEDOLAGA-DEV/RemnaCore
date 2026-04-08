@@ -204,6 +204,7 @@ func (h *PluginRPCHandler) UpdateDocument(w http.ResponseWriter, r *http.Request
 	}
 
 	pluginSlug := chi.URLParam(r, "pluginSlug")
+	collection := chi.URLParam(r, "collection")
 	docID := chi.URLParam(r, "docID")
 
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxRPCBodyBytes+1))
@@ -221,7 +222,7 @@ func (h *PluginRPCHandler) UpdateDocument(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := h.collections.UpdateDocument(r.Context(), pluginSlug, docID, json.RawMessage(body)); err != nil {
+	if err := h.collections.UpdateDocument(r.Context(), pluginSlug, collection, docID, json.RawMessage(body)); err != nil {
 		if errors.Is(err, pluginstore.ErrDocumentNotFound) {
 			writeAPIError(w, apierror.NotFound)
 			return
@@ -241,9 +242,10 @@ func (h *PluginRPCHandler) DeleteDocument(w http.ResponseWriter, r *http.Request
 	}
 
 	pluginSlug := chi.URLParam(r, "pluginSlug")
+	collection := chi.URLParam(r, "collection")
 	docID := chi.URLParam(r, "docID")
 
-	if err := h.collections.DeleteDocument(r.Context(), pluginSlug, docID); err != nil {
+	if err := h.collections.DeleteDocument(r.Context(), pluginSlug, collection, docID); err != nil {
 		if errors.Is(err, pluginstore.ErrDocumentNotFound) {
 			writeAPIError(w, apierror.NotFound)
 			return
