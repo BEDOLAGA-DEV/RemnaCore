@@ -64,7 +64,7 @@ type RouterParams struct {
 	StatsHandler          *handler.StatsHandler
 	PluginRPCHandler      *handler.PluginRPCHandler
 	PluginRouteHandler    *handler.PluginRouteHandler
-	TariffHandler         *handler.TariffHandler
+	BuiltinRouteRegistry  *BuiltinRouteRegistry
 	PluginRepo            plugin.PluginRepository
 	TelegramBot           *telegram.Bot
 }
@@ -151,9 +151,8 @@ func NewRouter(p RouterParams) http.Handler {
 		api.Get("/plans", p.BillingHandler.GetPlans)
 		api.Get("/plans/{planID}", p.BillingHandler.GetPlan)
 
-		// Public tariffs — dedicated tariff handler with full CRUD.
-		api.Get("/tariffs", p.TariffHandler.ListTariffs)
-		api.Get("/tariffs/{tariffID}", p.TariffHandler.GetTariff)
+		// Public tariff routes are registered dynamically by the
+		// tariff-manager built-in plugin via RegisterPluginRoutes.
 
 		// Public password reset endpoints.
 		api.With(forgotPwdRL).Post("/auth/forgot-password", p.IdentityHandler.ForgotPassword)
@@ -241,11 +240,8 @@ func NewRouter(p RouterParams) http.Handler {
 				admin.Get("/tenants/{tenantID}", p.ResellerHandler.GetTenant)
 				admin.Put("/tenants/{tenantID}/branding", p.ResellerHandler.UpdateBranding)
 
-				// Tariff management
-				admin.Get("/tariffs", p.TariffHandler.ListTariffs)
-				admin.Post("/tariffs", p.TariffHandler.CreateTariff)
-				admin.Put("/tariffs/{tariffID}", p.TariffHandler.UpdateTariff)
-				admin.Delete("/tariffs/{tariffID}", p.TariffHandler.DeleteTariff)
+				// Tariff management routes are registered dynamically by the
+				// tariff-manager built-in plugin via RegisterPluginRoutes.
 			})
 
 			// Routing
@@ -263,7 +259,7 @@ func NewRouter(p RouterParams) http.Handler {
 
 	// Dynamic plugin routes — registered from enabled plugin manifests.
 	logger := slog.Default()
-	RegisterPluginRoutes(r, p.PluginRepo, p.PluginRouteHandler, p.JWT, logger)
+	RegisterPluginRoutes(r, p.PluginRepo, p.PluginRouteHandler, p.BuiltinRouteRegistry, p.JWT, logger)
 
 	return r
 }

@@ -138,6 +138,9 @@ func New() *fx.App {
 		resellerWiring,  // ModuleReseller
 		pluginWiring,    // ModulePlugin
 
+		// Built-in plugin route handlers
+		builtinRoutesWiring,
+
 		// Cross-cutting infrastructure wiring
 		natsWiring,      // ModuleNATS
 		infraWiring,     // ModuleInfra

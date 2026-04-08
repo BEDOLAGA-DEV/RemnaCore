@@ -17,8 +17,8 @@ import (
 // registers them on the chi router. Public routes are added without auth
 // middleware; protected routes require JWT authentication.
 //
-// Built-in plugins are skipped because their routes are registered natively in
-// the router.
+// For WASM plugins, requests are proxied to the plugin's RPC function.
+// For built-in plugins, the handler is resolved from the BuiltinRouteRegistry.
 //
 // TODO: For hot-reloaded plugins, routes would need re-registration. Currently
 // routes are registered once at startup.
@@ -26,6 +26,7 @@ func RegisterPluginRoutes(
 	r chi.Router,
 	pluginRepo plugin.PluginRepository,
 	routeHandler *handler.PluginRouteHandler,
+	builtinRegistry *BuiltinRouteRegistry,
 	jwtIssuer *authutil.JWTIssuer,
 	logger *slog.Logger,
 ) {
@@ -38,19 +39,31 @@ func RegisterPluginRoutes(
 
 	registered := 0
 	for _, p := range plugins {
-		if p.IsBuiltIn {
-			continue // Built-in plugin routes are registered natively.
-		}
 		if p.Manifest == nil || len(p.Manifest.Routes) == 0 {
 			continue
 		}
 		for _, route := range p.Manifest.Routes {
-			proxyFn := routeHandler.ProxyToPlugin(p.Slug, route.Function)
+			var handlerFn http.HandlerFunc
+
+			if p.IsBuiltIn {
+				// Resolve native Go handler from the built-in registry.
+				handlerFn = builtinRegistry.Lookup(p.Slug, route.Function)
+				if handlerFn == nil {
+					logger.Warn("no built-in handler registered for plugin route",
+						slog.String("plugin", p.Slug),
+						slog.String("function", route.Function),
+					)
+					continue
+				}
+			} else {
+				// Proxy to WASM plugin RPC function.
+				handlerFn = routeHandler.ProxyToPlugin(p.Slug, route.Function)
+			}
 
 			if route.Public {
-				registerRoute(r, route.Method, route.Path, proxyFn)
+				registerRoute(r, route.Method, route.Path, handlerFn)
 			} else {
-				r.With(middleware.Auth(jwtIssuer)).Method(route.Method, route.Path, proxyFn)
+				r.With(middleware.Auth(jwtIssuer)).Method(route.Method, route.Path, handlerFn)
 			}
 
 			registered++
@@ -60,6 +73,7 @@ func RegisterPluginRoutes(
 				slog.String("path", route.Path),
 				slog.String("function", route.Function),
 				slog.Bool("public", route.Public),
+				slog.Bool("builtin", p.IsBuiltIn),
 			)
 		}
 	}
