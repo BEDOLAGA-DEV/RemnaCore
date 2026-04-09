@@ -37,7 +37,20 @@ func RegisterPluginRoutes(
 		return
 	}
 
-	registered := 0
+	// Collect routes by public/protected to register in separate groups.
+	// This ensures chi resolves auth middleware correctly without route
+	// conflicts between public and protected paths.
+	type resolvedRoute struct {
+		method  string
+		path    string
+		handler http.HandlerFunc
+		public  bool
+		slug    string
+		fn      string
+	}
+
+	var routes []resolvedRoute
+
 	for _, p := range plugins {
 		if p.Manifest == nil || len(p.Manifest.Routes) == 0 {
 			continue
@@ -46,7 +59,6 @@ func RegisterPluginRoutes(
 			var handlerFn http.HandlerFunc
 
 			if p.IsBuiltIn {
-				// Resolve native Go handler from the built-in registry.
 				handlerFn = builtinRegistry.Lookup(p.Slug, route.Function)
 				if handlerFn == nil {
 					logger.Warn("no built-in handler registered for plugin route",
@@ -56,26 +68,46 @@ func RegisterPluginRoutes(
 					continue
 				}
 			} else {
-				// Proxy to WASM plugin RPC function.
 				handlerFn = routeHandler.ProxyToPlugin(p.Slug, route.Function)
 			}
 
-			if route.Public {
-				registerRoute(r, route.Method, route.Path, handlerFn)
-			} else {
-				r.With(middleware.Auth(jwtIssuer)).Method(route.Method, route.Path, handlerFn)
-			}
-
-			registered++
-			logger.Info("registered plugin route",
-				slog.String("plugin", p.Slug),
-				slog.String("method", route.Method),
-				slog.String("path", route.Path),
-				slog.String("function", route.Function),
-				slog.Bool("public", route.Public),
-				slog.Bool("builtin", p.IsBuiltIn),
-			)
+			routes = append(routes, resolvedRoute{
+				method:  route.Method,
+				path:    route.Path,
+				handler: handlerFn,
+				public:  route.Public,
+				slug:    p.Slug,
+				fn:      route.Function,
+			})
 		}
+	}
+
+	// Register public routes directly on the router.
+	for _, rt := range routes {
+		if rt.public {
+			registerRoute(r, rt.method, rt.path, rt.handler)
+		}
+	}
+
+	// Register protected routes in a group with auth middleware.
+	r.Group(func(protected chi.Router) {
+		protected.Use(middleware.Auth(jwtIssuer))
+		for _, rt := range routes {
+			if !rt.public {
+				registerRoute(protected, rt.method, rt.path, rt.handler)
+			}
+		}
+	})
+
+	registered := len(routes)
+	for _, rt := range routes {
+		logger.Info("registered plugin route",
+			slog.String("plugin", rt.slug),
+			slog.String("method", rt.method),
+			slog.String("path", rt.path),
+			slog.String("function", rt.fn),
+			slog.Bool("public", rt.public),
+		)
 	}
 
 	if registered > 0 {
