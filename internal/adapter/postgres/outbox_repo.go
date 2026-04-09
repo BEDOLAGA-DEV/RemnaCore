@@ -291,8 +291,21 @@ func (r *OutboxRepository) EnsurePartitions(ctx context.Context, from time.Time,
 			return fmt.Errorf("invalid partition name: %s", name)
 		}
 
+		// Check if partition already exists before CREATE to avoid the
+		// "would overlap" error (IF NOT EXISTS doesn't work for partitions).
+		var exists bool
+		err := r.pool.QueryRow(ctx,
+			"SELECT EXISTS(SELECT 1 FROM pg_class WHERE relname = $1)", name,
+		).Scan(&exists)
+		if err != nil {
+			return fmt.Errorf("check partition %s: %w", name, err)
+		}
+		if exists {
+			continue
+		}
+
 		sql := fmt.Sprintf(
-			"CREATE TABLE IF NOT EXISTS %s PARTITION OF public.outbox FOR VALUES FROM ('%s') TO ('%s')",
+			"CREATE TABLE %s PARTITION OF public.outbox FOR VALUES FROM ('%s') TO ('%s')",
 			name,
 			start.Format(time.DateOnly),
 			end.Format(time.DateOnly),
