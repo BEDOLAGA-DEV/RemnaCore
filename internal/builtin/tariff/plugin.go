@@ -52,13 +52,15 @@ func Plugin() plugin.BuiltInPluginDef {
 			},
 		},
 		Routes: []plugin.ManifestRoute{
+			// Static paths MUST come before parameterized paths to prevent
+			// chi from matching "squads" or "nodes" as {tariffID}.
+			{Method: "GET", Path: "/api/tariffs/squads", Function: "list_squads", Public: true},
+			{Method: "GET", Path: "/api/tariffs/nodes", Function: "list_nodes", Public: true},
 			{Method: "GET", Path: "/api/tariffs", Function: "list_tariffs", Public: true},
 			{Method: "GET", Path: "/api/tariffs/{tariffID}", Function: "get_tariff", Public: true},
 			{Method: "POST", Path: "/api/tariffs", Function: "create_tariff", Public: false},
 			{Method: "PUT", Path: "/api/tariffs/{tariffID}", Function: "update_tariff", Public: false},
 			{Method: "DELETE", Path: "/api/tariffs/{tariffID}", Function: "delete_tariff", Public: false},
-			{Method: "GET", Path: "/api/tariffs/squads", Function: "list_squads", Public: false},
-			{Method: "GET", Path: "/api/tariffs/nodes", Function: "list_nodes", Public: false},
 		},
 	}
 }
