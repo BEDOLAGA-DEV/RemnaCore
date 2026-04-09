@@ -199,15 +199,27 @@ export function PluginPageView() {
 	const { t } = useTranslation();
 	const { data: pluginPages, isLoading: pagesLoading } = usePluginPages();
 
-	// Resolve page info first to get the collection name (may differ from path).
-	const pageInfo = pluginPages?.find(
-		(p) => p.plugin_slug === slug && p.path === pagePath,
-	);
+	// Resolve page info to get collection name and form field schema.
+	// Try exact match first, then fallback to path-only match.
+	const pageInfo =
+		pluginPages?.find(
+			(p) => p.plugin_slug === slug && p.path === pagePath,
+		) ?? pluginPages?.find((p) => p.path === pagePath);
 	const collectionName = pageInfo?.collection || pagePath;
 	const pageFields =
 		pageInfo?.fields && pageInfo.fields.length > 0
 			? pageInfo.fields
 			: undefined;
+
+	// Debug: log when page schema is not found despite pages being loaded.
+	if (!pagesLoading && pluginPages && !pageInfo) {
+		// eslint-disable-next-line no-console
+		console.warn("[PluginPage] pageInfo not found", {
+			slug,
+			pagePath,
+			availablePages: pluginPages.map((p) => `${p.plugin_slug}/${p.path}`),
+		});
+	}
 
 	const { list, create, update, remove } = usePluginCollection(slug, collectionName);
 
