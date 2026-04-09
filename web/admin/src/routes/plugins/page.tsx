@@ -198,20 +198,23 @@ export function PluginPageView() {
 	};
 	const { t } = useTranslation();
 	const { data: pluginPages, isLoading: pagesLoading } = usePluginPages();
-	const { list, create, update, remove } = usePluginCollection(slug, pagePath);
+
+	// Resolve page info first to get the collection name (may differ from path).
+	const pageInfo = pluginPages?.find(
+		(p) => p.plugin_slug === slug && p.path === pagePath,
+	);
+	const collectionName = pageInfo?.collection || pagePath;
+	const pageFields =
+		pageInfo?.fields && pageInfo.fields.length > 0
+			? pageInfo.fields
+			: undefined;
+
+	const { list, create, update, remove } = usePluginCollection(slug, collectionName);
 
 	const [formMode, setFormMode] = useState<"closed" | "create" | "edit">(
 		"closed",
 	);
 	const [editingDocId, setEditingDocId] = useState<string | null>(null);
-
-	const pageInfo = pluginPages?.find(
-		(p) => p.plugin_slug === slug && p.path === pagePath,
-	);
-	const pageFields =
-		pageInfo?.fields && pageInfo.fields.length > 0
-			? pageInfo.fields
-			: undefined;
 
 	const documents = list.data ?? [];
 	const dataKeys = deriveDataKeys(documents);
