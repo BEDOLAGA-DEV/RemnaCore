@@ -256,12 +256,25 @@ func (h *Handler) DeleteTariff(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *Handler) ListSquads(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) ListInternalSquads(w http.ResponseWriter, r *http.Request) {
 	client := h.remnawaveClient(r.Context())
-	h.logger.Info("listing squads", slog.Bool("client_configured", client.IsConfigured()))
 	squads, err := client.GetInternalSquads(r.Context())
 	if err != nil {
-		h.logger.Error("failed to list squads from remnawave", slog.Any("error", err))
+		h.logger.Error("failed to list internal squads", slog.Any("error", err))
+		writeJSON(w, http.StatusOK, []any{})
+		return
+	}
+	if squads == nil {
+		squads = []remnawave.RemnawaveSquad{}
+	}
+	writeJSON(w, http.StatusOK, squads)
+}
+
+func (h *Handler) ListExternalSquads(w http.ResponseWriter, r *http.Request) {
+	client := h.remnawaveClient(r.Context())
+	squads, err := client.GetExternalSquads(r.Context())
+	if err != nil {
+		h.logger.Error("failed to list external squads", slog.Any("error", err))
 		writeJSON(w, http.StatusOK, []any{})
 		return
 	}

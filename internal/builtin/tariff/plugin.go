@@ -43,8 +43,8 @@ func Plugin() plugin.BuiltInPluginDef {
 					{Key: "traffic_limit_gb", Label: "Traffic (GB, 0=unlimited)", Type: "number", Default: "0"},
 					{Key: "device_limit", Label: "Devices (0=unlimited)", Type: "number", Default: "0"},
 					{Key: "max_purchases_per_user", Label: "Max per user (0=unlimited)", Type: "number", Default: "0"},
-					{Key: "internal_squad_uuids", Label: "Internal Squads", Type: "multiselect", OptionsURL: "/api/tariffs/squads", OptionsValueKey: "uuid", OptionsLabelKey: "name"},
-					{Key: "external_squad_uuids", Label: "External Squads", Type: "multiselect", OptionsURL: "/api/tariffs/squads", OptionsValueKey: "uuid", OptionsLabelKey: "name"},
+					{Key: "internal_squad_uuids", Label: "Internal Squads", Type: "multiselect", OptionsURL: "/api/tariffs/internal-squads", OptionsValueKey: "uuid", OptionsLabelKey: "name"},
+					{Key: "external_squad_uuids", Label: "External Squads", Type: "multiselect", OptionsURL: "/api/tariffs/external-squads", OptionsValueKey: "uuid", OptionsLabelKey: "name"},
 					{Key: "features", Label: "Features (one per line)", Type: "textarea"},
 					{Key: "is_active", Label: "Active", Type: "boolean", Default: "true"},
 					{Key: "sort_order", Label: "Sort order", Type: "number", Default: "0"},
@@ -52,9 +52,9 @@ func Plugin() plugin.BuiltInPluginDef {
 			},
 		},
 		Routes: []plugin.ManifestRoute{
-			// Static paths MUST come before parameterized paths to prevent
-			// chi from matching "squads" or "nodes" as {tariffID}.
-			{Method: "GET", Path: "/api/tariffs/squads", Function: "list_squads", Public: false},
+			// Static paths MUST come before parameterized paths.
+			{Method: "GET", Path: "/api/tariffs/internal-squads", Function: "list_internal_squads", Public: false},
+			{Method: "GET", Path: "/api/tariffs/external-squads", Function: "list_external_squads", Public: false},
 			{Method: "GET", Path: "/api/tariffs/nodes", Function: "list_nodes", Public: false},
 			{Method: "GET", Path: "/api/tariffs", Function: "list_tariffs", Public: true},
 			{Method: "GET", Path: "/api/tariffs/{tariffID}", Function: "get_tariff", Public: true},
@@ -72,6 +72,7 @@ func RegisterRoutes(registry *gateway.BuiltinRouteRegistry, h *Handler) {
 	registry.Register(PluginSlug, "create_tariff", h.CreateTariff)
 	registry.Register(PluginSlug, "update_tariff", h.UpdateTariff)
 	registry.Register(PluginSlug, "delete_tariff", h.DeleteTariff)
-	registry.Register(PluginSlug, "list_squads", h.ListSquads)
+	registry.Register(PluginSlug, "list_internal_squads", h.ListInternalSquads)
+	registry.Register(PluginSlug, "list_external_squads", h.ListExternalSquads)
 	registry.Register(PluginSlug, "list_nodes", h.ListNodes)
 }
