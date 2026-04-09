@@ -48,12 +48,15 @@ func NewHandler(collections pluginstore.Store, pluginRepo plugin.PluginRepositor
 }
 
 // remnawaveClient creates a temporary client from the remnawave-provider
-// plugin config stored in the database.
+// plugin config stored in the database. Returns nil if the plugin is
+// not enabled — callers must check before use.
 func (h *Handler) remnawaveClient(ctx context.Context) *remnawave.Client {
 	p, err := h.pluginRepo.GetBySlug(ctx, plugin.BuiltInSlugRemnawaveProvider)
 	if err != nil {
-		h.logger.Warn("failed to load remnawave-provider config", slog.Any("error", err))
-		return remnawave.NewClient("", "")
+		return nil
+	}
+	if p.Status != plugin.StatusEnabled {
+		return nil
 	}
 	return remnawave.NewClient(
 		p.Config[plugin.RemnawaveConfigKeyURL],
@@ -258,6 +261,10 @@ func (h *Handler) DeleteTariff(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) ListInternalSquads(w http.ResponseWriter, r *http.Request) {
 	client := h.remnawaveClient(r.Context())
+	if client == nil {
+		writeJSON(w, http.StatusOK, []any{})
+		return
+	}
 	squads, err := client.GetInternalSquads(r.Context())
 	if err != nil {
 		h.logger.Error("failed to list internal squads", slog.Any("error", err))
@@ -272,6 +279,10 @@ func (h *Handler) ListInternalSquads(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) ListExternalSquads(w http.ResponseWriter, r *http.Request) {
 	client := h.remnawaveClient(r.Context())
+	if client == nil {
+		writeJSON(w, http.StatusOK, []any{})
+		return
+	}
 	squads, err := client.GetExternalSquads(r.Context())
 	if err != nil {
 		h.logger.Error("failed to list external squads", slog.Any("error", err))
@@ -286,6 +297,10 @@ func (h *Handler) ListExternalSquads(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) ListNodes(w http.ResponseWriter, r *http.Request) {
 	client := h.remnawaveClient(r.Context())
+	if client == nil {
+		writeJSON(w, http.StatusOK, []any{})
+		return
+	}
 	nodes, err := client.GetNodes(r.Context())
 	if err != nil {
 		h.logger.Error("failed to list nodes from remnawave", slog.Any("error", err))
