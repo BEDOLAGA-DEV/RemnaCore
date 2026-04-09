@@ -24,11 +24,11 @@ const (
 
 // GetInternalSquads returns all internal squads from Remnawave.
 func (c *Client) GetInternalSquads(ctx context.Context) ([]RemnawaveSquad, error) {
-	var resp APIResponse[[]RemnawaveSquad]
+	var resp internalSquadsResponse
 	if err := c.do(ctx, http.MethodGet, APIPathInternalSquads, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	return resp.Response.InternalSquads, nil
 }
 
 // CreateInternalSquad provisions a new internal squad in Remnawave.
@@ -96,11 +96,11 @@ func (c *Client) ReorderInternalSquads(ctx context.Context, uuids []string) erro
 
 // GetExternalSquads returns all external squads from Remnawave.
 func (c *Client) GetExternalSquads(ctx context.Context) ([]RemnawaveSquad, error) {
-	var resp APIResponse[[]RemnawaveSquad]
+	var resp externalSquadsResponse
 	if err := c.do(ctx, http.MethodGet, APIPathExternalSquads, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	return resp.Response.ExternalSquads, nil
 }
 
 // CreateExternalSquad provisions a new external squad in Remnawave.

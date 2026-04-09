@@ -7,12 +7,29 @@ import (
 
 // RemnawaveSquad represents an internal or external squad in the Remnawave panel.
 type RemnawaveSquad struct {
-	UUID        string          `json:"uuid"`
-	Name        string          `json:"name"`
-	Description string          `json:"description,omitempty"`
-	CreatedAt   time.Time       `json:"createdAt"`
-	UpdatedAt   time.Time       `json:"updatedAt"`
-	Extra       json.RawMessage `json:"extra,omitempty"`
+	UUID      string          `json:"uuid"`
+	Name      string          `json:"name"`
+	Info      json.RawMessage `json:"info,omitempty"`
+	CreatedAt time.Time       `json:"createdAt"`
+	UpdatedAt time.Time       `json:"updatedAt"`
+}
+
+// internalSquadsResponse matches Remnawave's actual response format:
+// {"response": {"total": N, "internalSquads": [...]}}
+type internalSquadsResponse struct {
+	Response struct {
+		Total          int              `json:"total"`
+		InternalSquads []RemnawaveSquad `json:"internalSquads"`
+	} `json:"response"`
+}
+
+// externalSquadsResponse matches Remnawave's actual response format:
+// {"response": {"total": N, "externalSquads": [...]}}
+type externalSquadsResponse struct {
+	Response struct {
+		Total          int              `json:"total"`
+		ExternalSquads []RemnawaveSquad `json:"externalSquads"`
+	} `json:"response"`
 }
 
 // CreateSquadRequest is the payload for creating an internal or external squad.
