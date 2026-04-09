@@ -4,6 +4,7 @@
 package tariff
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/remnawave"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pluginstore"
 )
@@ -32,17 +34,31 @@ const (
 // Handler provides HTTP endpoints for tariff CRUD and Remnawave data lookups.
 type Handler struct {
 	collections pluginstore.Store
-	remnawave   *remnawave.Client
+	pluginRepo  plugin.PluginRepository
 	logger      *slog.Logger
 }
 
 // NewHandler creates a tariff Handler.
-func NewHandler(collections pluginstore.Store, rw *remnawave.Client, logger *slog.Logger) *Handler {
+func NewHandler(collections pluginstore.Store, pluginRepo plugin.PluginRepository, logger *slog.Logger) *Handler {
 	return &Handler{
 		collections: collections,
-		remnawave:   rw,
+		pluginRepo:  pluginRepo,
 		logger:      logger,
 	}
+}
+
+// remnawaveClient creates a temporary client from the remnawave-provider
+// plugin config stored in the database.
+func (h *Handler) remnawaveClient(ctx context.Context) *remnawave.Client {
+	p, err := h.pluginRepo.GetBySlug(ctx, plugin.BuiltInSlugRemnawaveProvider)
+	if err != nil {
+		h.logger.Warn("failed to load remnawave-provider config", slog.Any("error", err))
+		return remnawave.NewClient("", "")
+	}
+	return remnawave.NewClient(
+		p.Config[plugin.RemnawaveConfigKeyURL],
+		p.Config[plugin.RemnawaveConfigKeyAPIToken],
+	)
 }
 
 // --- Request / Response DTOs ---
@@ -241,7 +257,8 @@ func (h *Handler) DeleteTariff(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListSquads(w http.ResponseWriter, r *http.Request) {
-	squads, err := h.remnawave.GetInternalSquads(r.Context())
+	client := h.remnawaveClient(r.Context())
+	squads, err := client.GetInternalSquads(r.Context())
 	if err != nil {
 		h.logger.Error("failed to list squads from remnawave", slog.Any("error", err))
 		writeJSON(w, http.StatusOK, []any{})
@@ -251,7 +268,8 @@ func (h *Handler) ListSquads(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListNodes(w http.ResponseWriter, r *http.Request) {
-	nodes, err := h.remnawave.GetNodes(r.Context())
+	client := h.remnawaveClient(r.Context())
+	nodes, err := client.GetNodes(r.Context())
 	if err != nil {
 		h.logger.Error("failed to list nodes from remnawave", slog.Any("error", err))
 		writeJSON(w, http.StatusOK, []any{})
