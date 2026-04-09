@@ -311,7 +311,7 @@ func Load() (*Config, error) {
 	}
 
 	// Load each prefix group from environment variables.
-	prefixes := []string{"APP_", "DATABASE_", "VALKEY_", "NATS_", "JWT_", "REMNAWAVE_", "BILLING_", "PLUGIN_", "TELEGRAM_", "INFRA_", "OUTBOX_", "CORS_", "TRACING_", "RATELIMIT_", "FEATUREFLAGS_", "CIRCUITBREAKER_", "SMARTROUTER_", "SPEEDTEST_"}
+	prefixes := []string{"APP_", "DATABASE_", "VALKEY_", "NATS_", "JWT_", "BILLING_", "PLUGIN_", "TELEGRAM_", "INFRA_", "OUTBOX_", "CORS_", "TRACING_", "RATELIMIT_", "FEATUREFLAGS_", "CIRCUITBREAKER_", "SMARTROUTER_", "SPEEDTEST_"}
 	for _, prefix := range prefixes {
 		provider := env.Provider(prefix, ".", func(s string) string {
 			// Strip prefix then lowercase and replace _ with . for nesting

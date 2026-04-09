@@ -9,15 +9,14 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/builtin"
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
 )
 
 // seedBuiltInPlugins ensures every built-in plugin definition exists in the
-// database. If a built-in plugin is already present (matched by slug), it is
-// skipped. For new entries the Remnawave connection config is seeded from env
-// vars as a migration path from the old env-only configuration.
-func seedBuiltInPlugins(repo plugin.PluginRepository, cfg *config.Config, logger *slog.Logger) error {
+// database. If a built-in plugin is already present (matched by slug), its
+// manifest is updated. New entries are seeded with empty config — connection
+// settings are managed exclusively through the plugin UI.
+func seedBuiltInPlugins(repo plugin.PluginRepository, logger *slog.Logger) error {
 	ctx := context.Background()
 
 	allPlugins := append(plugin.BuiltInPlugins(), builtin.AllPlugins()...)
@@ -60,11 +59,6 @@ func seedBuiltInPlugins(repo plugin.PluginRepository, cfg *config.Config, logger
 			UpdatedAt:   now,
 		}
 
-		// Seed config from env vars for remnawave-provider only.
-		if def.Slug == plugin.BuiltInSlugRemnawaveProvider {
-			seedRemnawaveConfig(p, cfg)
-		}
-
 		if err := repo.Create(ctx, p); err != nil {
 			return fmt.Errorf("seed built-in plugin %s: %w", def.Slug, err)
 		}
@@ -78,19 +72,6 @@ func seedBuiltInPlugins(repo plugin.PluginRepository, cfg *config.Config, logger
 	return nil
 }
 
-// seedRemnawaveConfig populates the plugin config from env-based Remnawave
-// settings when they are set, providing a smooth migration path.
-func seedRemnawaveConfig(p *plugin.Plugin, cfg *config.Config) {
-	if cfg.Remnawave.URL != "" {
-		p.Config[plugin.RemnawaveConfigKeyURL] = cfg.Remnawave.URL
-	}
-	if cfg.Remnawave.APIToken.Expose() != "" {
-		p.Config[plugin.RemnawaveConfigKeyAPIToken] = cfg.Remnawave.APIToken.Expose()
-	}
-	if cfg.Remnawave.WebhookSecret.Expose() != "" {
-		p.Config[plugin.RemnawaveConfigKeyWebhookSecret] = cfg.Remnawave.WebhookSecret.Expose()
-	}
-}
 
 // buildBuiltInManifest constructs a minimal Manifest for a built-in plugin.
 // Built-in plugins have no WASM hooks — the manifest is stored purely so the
