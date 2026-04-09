@@ -81,6 +81,14 @@ func (c *Client) BaseURL() string {
 	return c.baseURL
 }
 
+// IsConfigured reports whether the client has a non-empty base URL.
+// When Remnawave is configured via plugin UI (not env vars), the client
+// may be created with empty URL at startup and becomes usable only after
+// the admin sets the connection in the plugin config.
+func (c *Client) IsConfigured() bool {
+	return c.baseURL != ""
+}
+
 // do executes an HTTP request against the Remnawave API and decodes the JSON
 // response into dest (when dest is non-nil). It returns an error for non-2xx
 // status codes that includes the response body for debugging.

@@ -92,6 +92,13 @@ func (hm *HealthMonitor) Run(ctx context.Context) {
 // checkAll fetches nodes from Remnawave, updates the cache, and publishes
 // events for state transitions. Fan-out is bounded by a semaphore.
 func (hm *HealthMonitor) checkAll(ctx context.Context) {
+	// Skip health checks when the Remnawave client has no URL configured.
+	// This happens when the connection is managed via the plugin UI and
+	// hasn't been set yet (or env vars were removed).
+	if !hm.remnawaveClient.IsConfigured() {
+		return
+	}
+
 	nodes, err := hm.remnawaveClient.GetNodes(ctx)
 	if err != nil {
 		hm.logger.Error("health check: failed to get nodes", slog.Any("error", err))
