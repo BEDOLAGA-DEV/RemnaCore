@@ -67,5 +67,8 @@ func remnawaveProvider() BuiltInPluginDef {
 				Default:  "",
 			},
 		},
+		Routes: []ManifestRoute{
+			{Method: "POST", Path: "/api/remnawave/test-connection", Function: "test_connection", Public: false},
+		},
 	}
 }

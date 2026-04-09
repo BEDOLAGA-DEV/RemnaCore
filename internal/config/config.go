@@ -232,8 +232,6 @@ var requiredFields = []requiredField{
 	{envVar: "DATABASE_URL", koanfKey: "database.url"},
 	{envVar: "VALKEY_URL", koanfKey: "valkey.url"},
 	{envVar: "NATS_URL", koanfKey: "nats.url"},
-	{envVar: "REMNAWAVE_URL", koanfKey: "remnawave.url"},
-	{envVar: "REMNAWAVE_API_TOKEN", koanfKey: "remnawave.api_token"},
 	{envVar: "JWT_PRIVATE_KEY_PATH", koanfKey: "jwt.private_key_path"},
 	{envVar: "JWT_PUBLIC_KEY_PATH", koanfKey: "jwt.public_key_path"},
 }

@@ -3,13 +3,15 @@ import { Link, useParams } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ArrowLeft, Loader2, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, Trash2, Zap } from "lucide-react";
+import { useState } from "react";
 import {
   usePlugin,
   useUpdatePluginConfig,
   useUninstallPlugin,
   useEnablePlugin,
   useDisablePlugin,
+  apiPost,
   LoadingSpinner,
   formatDateTime,
   cn,
@@ -40,6 +42,8 @@ export function PluginDetailPage() {
   const uninstall = useUninstallPlugin();
   const enable = useEnablePlugin();
   const disable = useDisablePlugin();
+  const [testResult, setTestResult] = useState<{ success: boolean; message?: string; error?: string; node_count?: number } | null>(null);
+  const [testPending, setTestPending] = useState(false);
 
   const {
     register,
@@ -178,6 +182,29 @@ export function PluginDetailPage() {
             )}
           </button>
 
+          {plugin.slug === "remnawave-provider" && isEnabled && (
+            <button
+              type="button"
+              onClick={async () => {
+                setTestPending(true);
+                setTestResult(null);
+                try {
+                  const res = await apiPost<{ success: boolean; message?: string; error?: string; node_count?: number }>("/api/remnawave/test-connection", {});
+                  setTestResult(res);
+                } catch {
+                  setTestResult({ success: false, error: "Request failed" });
+                } finally {
+                  setTestPending(false);
+                }
+              }}
+              disabled={testPending}
+              className="flex items-center gap-2 rounded-lg border border-primary/30 px-4 py-2 text-[13px] font-medium text-primary hover:bg-primary/10 transition-colors disabled:opacity-40"
+            >
+              {testPending ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+              Test Connection
+            </button>
+          )}
+
           {!plugin.is_builtin && (
             <button
               type="button"
@@ -194,6 +221,19 @@ export function PluginDetailPage() {
             </button>
           )}
         </div>
+
+        {testResult && (
+          <div className={cn(
+            "mt-4 rounded-lg p-3 font-mono text-[12px]",
+            testResult.success
+              ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
+              : "bg-red-500/10 border border-red-500/20 text-red-400",
+          )}>
+            {testResult.success
+              ? `Connected successfully. Nodes: ${testResult.node_count ?? 0}`
+              : `Connection failed: ${testResult.error ?? "Unknown error"}`}
+          </div>
+        )}
       </div>
 
       {/* Config editor */}

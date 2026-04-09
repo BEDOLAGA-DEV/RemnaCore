@@ -1,6 +1,7 @@
 package app
 
 import (
+	rwbuiltin "github.com/BEDOLAGA-DEV/RemnaCore/internal/builtin/remnawave"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/builtin/tariff"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway"
 	"go.uber.org/fx"
@@ -18,9 +19,11 @@ import (
 var builtinRoutesWiring = fx.Options(
 	fx.Provide(gateway.NewBuiltinRouteRegistry),
 	fx.Provide(tariff.NewHandler),
+	fx.Provide(rwbuiltin.NewHandler),
 	fx.Invoke(registerBuiltinPluginRoutes),
 )
 
-func registerBuiltinPluginRoutes(registry *gateway.BuiltinRouteRegistry, h *tariff.Handler) {
-	tariff.RegisterRoutes(registry, h)
+func registerBuiltinPluginRoutes(registry *gateway.BuiltinRouteRegistry, tariffH *tariff.Handler, rwH *rwbuiltin.Handler) {
+	tariff.RegisterRoutes(registry, tariffH)
+	rwbuiltin.RegisterRoutes(registry, rwH)
 }
