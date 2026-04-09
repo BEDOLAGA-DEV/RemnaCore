@@ -24,7 +24,21 @@ func seedBuiltInPlugins(repo plugin.PluginRepository, cfg *config.Config, logger
 	for _, def := range allPlugins {
 		existing, err := repo.GetBySlug(ctx, def.Slug)
 		if err == nil && existing != nil {
-			logger.Debug("built-in plugin already seeded", slog.String("slug", def.Slug))
+			// Always update manifest, name, description, version for existing
+			// built-in plugins so new fields/pages/routes take effect.
+			newManifest := buildBuiltInManifest(def)
+			existing.Manifest = newManifest
+			existing.Name = def.Name
+			existing.Version = def.Version
+			existing.Description = def.Description
+			if updateErr := repo.UpdatePlugin(ctx, existing); updateErr != nil {
+				logger.Warn("failed to update built-in plugin manifest",
+					slog.String("slug", def.Slug),
+					slog.Any("error", updateErr),
+				)
+			} else {
+				logger.Info("updated built-in plugin manifest", slog.String("slug", def.Slug))
+			}
 			continue
 		}
 
