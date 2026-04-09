@@ -258,11 +258,15 @@ func (h *Handler) DeleteTariff(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) ListSquads(w http.ResponseWriter, r *http.Request) {
 	client := h.remnawaveClient(r.Context())
+	h.logger.Info("listing squads", slog.Bool("client_configured", client.IsConfigured()))
 	squads, err := client.GetInternalSquads(r.Context())
 	if err != nil {
 		h.logger.Error("failed to list squads from remnawave", slog.Any("error", err))
 		writeJSON(w, http.StatusOK, []any{})
 		return
+	}
+	if squads == nil {
+		squads = []remnawave.RemnawaveSquad{}
 	}
 	writeJSON(w, http.StatusOK, squads)
 }
@@ -274,6 +278,9 @@ func (h *Handler) ListNodes(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("failed to list nodes from remnawave", slog.Any("error", err))
 		writeJSON(w, http.StatusOK, []any{})
 		return
+	}
+	if nodes == nil {
+		nodes = []remnawave.RemnawaveNode{}
 	}
 	writeJSON(w, http.StatusOK, nodes)
 }
