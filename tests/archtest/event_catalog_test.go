@@ -328,6 +328,34 @@ func checkJSONTags(t *testing.T, typ reflect.Type, eventType string) {
 	}
 }
 
+// TestPlannedConsumersTracked documents event->consumer pairs that are planned
+// but not yet implemented. Each entry is a SKIP test with the reason, making
+// them visible in `go test -v` output and test reports. When implemented, move
+// the entry to the actual consumer tests.
+func TestPlannedConsumersTracked(t *testing.T) {
+	// These event->consumer pairs are planned but not yet implemented.
+	// Each entry documents an expected consumer that should be built.
+	// When implemented, move the entry to the actual consumer tests.
+	planned := []struct {
+		event    string
+		consumer string
+		reason   string
+	}{
+		{"subscription.expired", "multisub", "deprovision bindings on expiry"},
+		{"subscription.upgraded", "multisub", "adjust binding resources"},
+		{"subscription.downgraded", "multisub", "adjust binding limits"},
+		{"family_member.added", "multisub", "provision family member bindings"},
+		{"family_member.removed", "multisub", "deprovision family member bindings"},
+		{"billing.node_payment_due_today", "reseller", "notify reseller of payment due"},
+	}
+
+	for _, p := range planned {
+		t.Run(p.event+"→"+p.consumer, func(t *testing.T) {
+			t.Skipf("NOT YET IMPLEMENTED: %s should consume %s — %s", p.consumer, p.event, p.reason)
+		})
+	}
+}
+
 // multsubConsumerName is the consumer name used in the event catalog for the
 // multisub orchestrator, which is the target of the BillingEventConsumer.
 const multisubConsumerName = "multisub"

@@ -9,9 +9,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
-	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/circuitbreaker"
 )
 
 // --- mock repository ---
@@ -40,52 +37,18 @@ func (m *mockOverrideRepo) SaveOverrides(_ context.Context, overrides json.RawMe
 	return nil
 }
 
-// testConfig returns a baseline config for testing.
-func testConfig() *config.Config {
-	return &config.Config{
-		Billing: config.BillingConfig{TrialDays: 7},
-		RateLimit: config.RateLimitConfig{
-			CheckoutMaxPerHour:     10,
-			SubscriptionMaxPerDay:  5,
-			LoginMaxPerWindow:      20,
-			LoginWindowMinutes:     15,
-			ForgotPwdMaxPerWindow:  3,
-			ForgotPwdWindowMinutes: 60,
-		},
-		SmartRouter: config.SmartRouterConfig{
-			WeightGeo:     0.33,
-			WeightLatency: 0.34,
-			WeightLoad:    0.33,
-		},
-		SpeedTest: config.SpeedTestConfig{
-			MaxConcurrent:  10,
-			PerIPRateLimit: 3,
-			MaxUploadBytes: 10 * 1024 * 1024,
-		},
-		Plugin: config.PluginConfig{
-			PluginsDir:      "./plugins",
-			MaxPlugins:      50,
-			EnableHotReload: false,
-		},
-		Outbox: config.OutboxConfig{
-			RelayWorkers:       1,
-			PartitionLookahead: 2,
-			RetentionDays:      90,
-		},
-		FeatureFlags: config.FeatureFlags{
-			HooksSubscriptionEnabled: false,
-			HooksVPNProviderEnabled:  false,
-		},
-		CORS: config.CORSConfig{
-			AllowedOrigins: []string{"http://localhost:3000"},
-		},
-		CircuitBreaker: config.CircuitBreakerConfig{
-			Remnawave:   circuitbreaker.DefaultConfig(),
-			OutboxNATS:  circuitbreaker.DefaultConfigNoInterval(),
-			Valkey:      circuitbreaker.DefaultConfigNoInterval(),
-			VPNProvider: circuitbreaker.DefaultConfig(),
-		},
-	}
+// --- mock config applier ---
+
+type mockConfigApplier struct {
+	lastUpdate *SettingsUpdate
+	callCount  int
+	err        error
+}
+
+func (m *mockConfigApplier) ApplySettingsUpdate(update *SettingsUpdate) error {
+	m.callCount++
+	m.lastUpdate = update
+	return m.err
 }
 
 func intPtr(v int) *int             { return &v }
@@ -289,139 +252,6 @@ func TestValidate(t *testing.T) {
 	}
 }
 
-func TestApplyToConfig_Billing(t *testing.T) {
-	cfg := testConfig()
-	update := &SettingsUpdate{
-		Billing: &BillingUpdate{TrialDays: intPtr(30)},
-	}
-
-	applyToConfig(cfg, update)
-
-	assert.Equal(t, 30, cfg.Billing.TrialDays)
-}
-
-func TestApplyToConfig_RateLimit(t *testing.T) {
-	cfg := testConfig()
-	update := &SettingsUpdate{
-		RateLimit: &RateLimitUpdate{
-			CheckoutMaxPerHour:    intPtr(50),
-			LoginWindowMinutes:    intPtr(30),
-		},
-	}
-
-	applyToConfig(cfg, update)
-
-	assert.Equal(t, 50, cfg.RateLimit.CheckoutMaxPerHour)
-	assert.Equal(t, 30, cfg.RateLimit.LoginWindowMinutes)
-	// Unchanged fields stay at original values.
-	assert.Equal(t, 5, cfg.RateLimit.SubscriptionMaxPerDay)
-	assert.Equal(t, 20, cfg.RateLimit.LoginMaxPerWindow)
-}
-
-func TestApplyToConfig_FeatureFlags(t *testing.T) {
-	cfg := testConfig()
-	update := &SettingsUpdate{
-		FeatureFlags: &FeatureFlagUpdate{
-			HooksSubscriptionEnabled: boolPtr(true),
-		},
-	}
-
-	applyToConfig(cfg, update)
-
-	assert.True(t, cfg.FeatureFlags.HooksSubscriptionEnabled)
-	// Unchanged flag stays at original.
-	assert.False(t, cfg.FeatureFlags.HooksVPNProviderEnabled)
-}
-
-func TestApplyToConfig_SmartRouter(t *testing.T) {
-	cfg := testConfig()
-	update := &SettingsUpdate{
-		SmartRouter: &SmartRouterUpdate{
-			WeightGeo: float64Ptr(0.5),
-		},
-	}
-
-	applyToConfig(cfg, update)
-
-	assert.InDelta(t, 0.5, cfg.SmartRouter.WeightGeo, 0.001)
-	// Unchanged.
-	assert.InDelta(t, 0.34, cfg.SmartRouter.WeightLatency, 0.001)
-}
-
-func TestApplyToConfig_SpeedTest(t *testing.T) {
-	cfg := testConfig()
-	update := &SettingsUpdate{
-		SpeedTest: &SpeedTestUpdate{
-			MaxConcurrent: intPtr(20),
-		},
-	}
-
-	applyToConfig(cfg, update)
-
-	assert.Equal(t, 20, cfg.SpeedTest.MaxConcurrent)
-	assert.Equal(t, 3, cfg.SpeedTest.PerIPRateLimit) // unchanged
-}
-
-func TestApplyToConfig_Plugins(t *testing.T) {
-	cfg := testConfig()
-	update := &SettingsUpdate{
-		Plugins: &PluginUpdate{
-			EnableHotReload: boolPtr(true),
-		},
-	}
-
-	applyToConfig(cfg, update)
-
-	assert.True(t, cfg.Plugin.EnableHotReload)
-	assert.Equal(t, 50, cfg.Plugin.MaxPlugins) // unchanged
-	assert.Equal(t, "./plugins", cfg.Plugin.PluginsDir) // never changed
-}
-
-func TestApplyToConfig_Outbox(t *testing.T) {
-	cfg := testConfig()
-	update := &SettingsUpdate{
-		Outbox: &OutboxUpdate{
-			RelayWorkers: intPtr(4),
-		},
-	}
-
-	applyToConfig(cfg, update)
-
-	assert.Equal(t, 4, cfg.Outbox.RelayWorkers)
-	assert.Equal(t, 2, cfg.Outbox.PartitionLookahead) // unchanged
-}
-
-func TestApplyToConfig_CORS(t *testing.T) {
-	cfg := testConfig()
-	newOrigins := []string{"https://app.example.com", "https://admin.example.com"}
-	update := &SettingsUpdate{
-		CORS: &CORSUpdate{
-			AllowedOrigins: &newOrigins,
-		},
-	}
-
-	applyToConfig(cfg, update)
-
-	assert.Equal(t, newOrigins, cfg.CORS.AllowedOrigins)
-}
-
-func TestApplyToConfig_CircuitBreaker(t *testing.T) {
-	cfg := testConfig()
-	update := &SettingsUpdate{
-		CircuitBreaker: &CircuitBreakerUpdate{
-			Remnawave: &CircuitBreakerComponentUpdate{
-				MaxFailures: uint32Ptr(10),
-			},
-		},
-	}
-
-	applyToConfig(cfg, update)
-
-	assert.Equal(t, uint32(10), cfg.CircuitBreaker.Remnawave.MaxFailures)
-	// Other components unchanged.
-	assert.Equal(t, circuitbreaker.DefaultMaxFailures, cfg.CircuitBreaker.Valkey.MaxFailures)
-}
-
 func TestMergeUpdates_PartialOverlay(t *testing.T) {
 	existing := &SettingsUpdate{
 		Billing:   &BillingUpdate{TrialDays: intPtr(14)},
@@ -456,9 +286,9 @@ func TestMergeUpdates_EmptyExisting(t *testing.T) {
 
 func TestApplyOverrides_EndToEnd(t *testing.T) {
 	repo := &mockOverrideRepo{}
-	cfg := testConfig()
+	applier := &mockConfigApplier{}
 	logger := slog.Default()
-	svc := NewService(cfg, repo, logger)
+	svc := NewService(applier, repo, logger)
 
 	ctx := context.Background()
 
@@ -469,13 +299,16 @@ func TestApplyOverrides_EndToEnd(t *testing.T) {
 	err := svc.ApplyOverrides(ctx, update)
 	require.NoError(t, err)
 
-	// Config was updated in-memory.
-	assert.Equal(t, 30, cfg.Billing.TrialDays)
+	// Applier was called with the merged update.
+	require.Equal(t, 1, applier.callCount)
+	require.NotNil(t, applier.lastUpdate)
+	require.NotNil(t, applier.lastUpdate.Billing)
+	assert.Equal(t, 30, *applier.lastUpdate.Billing.TrialDays)
 
 	// Overrides were persisted.
 	require.NotNil(t, repo.stored)
 
-	// Apply a second, independent update — billing should be preserved.
+	// Apply a second, independent update — billing should be preserved in merge.
 	update2 := SettingsUpdate{
 		FeatureFlags: &FeatureFlagUpdate{
 			HooksSubscriptionEnabled: boolPtr(true),
@@ -484,42 +317,49 @@ func TestApplyOverrides_EndToEnd(t *testing.T) {
 	err = svc.ApplyOverrides(ctx, update2)
 	require.NoError(t, err)
 
-	// Both changes present.
-	assert.Equal(t, 30, cfg.Billing.TrialDays)
-	assert.True(t, cfg.FeatureFlags.HooksSubscriptionEnabled)
+	// Applier called a second time with both changes merged.
+	require.Equal(t, 2, applier.callCount)
+	require.NotNil(t, applier.lastUpdate.Billing)
+	assert.Equal(t, 30, *applier.lastUpdate.Billing.TrialDays)
+	require.NotNil(t, applier.lastUpdate.FeatureFlags)
+	assert.True(t, *applier.lastUpdate.FeatureFlags.HooksSubscriptionEnabled)
 }
 
 func TestLoadOverrides_EmptyBlob(t *testing.T) {
 	repo := &mockOverrideRepo{stored: json.RawMessage(`{}`)}
-	cfg := testConfig()
+	applier := &mockConfigApplier{}
 	logger := slog.Default()
-	svc := NewService(cfg, repo, logger)
+	svc := NewService(applier, repo, logger)
 
 	err := svc.LoadOverrides(context.Background())
 	require.NoError(t, err)
 
-	// Config unchanged.
-	assert.Equal(t, 7, cfg.Billing.TrialDays)
+	// Applier was NOT called — no overrides to apply.
+	assert.Equal(t, 0, applier.callCount)
 }
 
 func TestLoadOverrides_WithPersistedValues(t *testing.T) {
 	stored := json.RawMessage(`{"billing":{"trial_days":21}}`)
 	repo := &mockOverrideRepo{stored: stored}
-	cfg := testConfig()
+	applier := &mockConfigApplier{}
 	logger := slog.Default()
-	svc := NewService(cfg, repo, logger)
+	svc := NewService(applier, repo, logger)
 
 	err := svc.LoadOverrides(context.Background())
 	require.NoError(t, err)
 
-	assert.Equal(t, 21, cfg.Billing.TrialDays)
+	// Applier was called with the deserialized update.
+	require.Equal(t, 1, applier.callCount)
+	require.NotNil(t, applier.lastUpdate)
+	require.NotNil(t, applier.lastUpdate.Billing)
+	assert.Equal(t, 21, *applier.lastUpdate.Billing.TrialDays)
 }
 
 func TestApplyOverrides_ValidationRejectsInvalid(t *testing.T) {
 	repo := &mockOverrideRepo{}
-	cfg := testConfig()
+	applier := &mockConfigApplier{}
 	logger := slog.Default()
-	svc := NewService(cfg, repo, logger)
+	svc := NewService(applier, repo, logger)
 
 	update := SettingsUpdate{
 		Billing: &BillingUpdate{TrialDays: intPtr(-5)},
@@ -527,8 +367,8 @@ func TestApplyOverrides_ValidationRejectsInvalid(t *testing.T) {
 	err := svc.ApplyOverrides(context.Background(), update)
 	require.Error(t, err)
 
-	// Config was NOT changed.
-	assert.Equal(t, 7, cfg.Billing.TrialDays)
+	// Applier was NOT called — validation failed before apply.
+	assert.Equal(t, 0, applier.callCount)
 
 	// Nothing was persisted.
 	assert.Nil(t, repo.stored)

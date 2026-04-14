@@ -205,23 +205,32 @@ func TestNoUndeclaredCrossContextImports(t *testing.T) {
 	for sourceCtx, targets := range allowed {
 		for _, targetCtx := range targets {
 			t.Run(sourceCtx+"->"+targetCtx, func(t *testing.T) {
-				targetPrefix := modulePrefix + "/internal/domain/" + targetCtx
+				// Build search prefixes. Domain contexts live under
+				// internal/domain/{ctx}, but some targets (infra, plugin)
+				// are infrastructure packages at internal/{ctx} without a
+				// domain sub-package. Search both locations so that
+				// config-mutation ports (e.g., settings -> infra) are found
+				// in app wiring without a direct domain-to-domain import.
+				targetPrefixes := []string{
+					modulePrefix + "/internal/domain/" + targetCtx,
+					modulePrefix + "/internal/" + targetCtx,
+				}
 
 				// Search domain packages of the source context.
 				sourceDomainDir := filepath.Join(root, "internal", "domain", sourceCtx)
-				foundInDomain := hasImportOfPrefix(t, sourceDomainDir, targetPrefix)
+				foundInDomain := hasImportOfAnyPrefix(t, sourceDomainDir, targetPrefixes)
 
 				// Search adapter packages (adapters bridge contexts).
 				adapterDir := filepath.Join(root, "internal", "adapter")
-				foundInAdapter := hasImportOfPrefix(t, adapterDir, targetPrefix)
+				foundInAdapter := hasImportOfAnyPrefix(t, adapterDir, targetPrefixes)
 
 				// Search app wiring (wiring_*.go files may reference both contexts).
 				appDir := filepath.Join(root, "internal", "app")
-				foundInApp := hasImportOfPrefix(t, appDir, targetPrefix)
+				foundInApp := hasImportOfAnyPrefix(t, appDir, targetPrefixes)
 
 				if !foundInDomain && !foundInAdapter && !foundInApp {
 					t.Errorf("ContextMap declares %s -> %s (port/acl) but no import of %s found in domain, adapter, or app packages",
-						sourceCtx, targetCtx, targetPrefix)
+						sourceCtx, targetCtx, strings.Join(targetPrefixes, " or "))
 				}
 			})
 		}
@@ -270,6 +279,20 @@ func hasImportOfPrefix(t *testing.T, dir, prefix string) bool {
 	})
 
 	return found
+}
+
+// hasImportOfAnyPrefix returns true if any non-test Go file in dir imports a
+// path starting with any of the given prefixes. This extends hasImportOfPrefix
+// for targets that may live at multiple locations (e.g., internal/domain/{ctx}
+// or internal/{ctx} for infrastructure packages).
+func hasImportOfAnyPrefix(t *testing.T, dir string, prefixes []string) bool {
+	t.Helper()
+	for _, prefix := range prefixes {
+		if hasImportOfPrefix(t, dir, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // TestAllowedSyncImportsConsistency verifies that AllowedSyncImports returns

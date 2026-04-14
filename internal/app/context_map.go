@@ -163,6 +163,26 @@ var ContextMap = []CrossContextDependency{
 		Description: "PaymentWebhookHandler verifies and completes payments via PaymentFacade"},
 
 	// =====================================================================
+	// Synchronous ports — Settings context (runtime config)
+	// =====================================================================
+
+	// settings -> billing: ConfigApplier port for runtime config mutations.
+	// Settings applies trial days, rate limits, etc. through the port interface.
+	// Communication is through the ConfigApplier port, not domain events.
+	{From: "settings", To: "billing", Mechanism: MechanismPort,
+		Description: "ConfigApplier port for trial days, rate limits"},
+
+	// settings -> infra: ConfigApplier port for infra runtime config.
+	// Settings applies speed test, health check interval, etc.
+	{From: "settings", To: "infra", Mechanism: MechanismPort,
+		Description: "ConfigApplier port for speed test, health check interval"},
+
+	// settings -> plugin: ConfigApplier port for plugin runtime config.
+	// Settings applies max plugins, hot reload toggle, etc.
+	{From: "settings", To: "plugin", Mechanism: MechanismPort,
+		Description: "ConfigApplier port for max plugins, hot reload"},
+
+	// =====================================================================
 	// Planned event-driven dependencies (not yet implemented)
 	// =====================================================================
 

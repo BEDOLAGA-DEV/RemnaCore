@@ -7,9 +7,6 @@ import (
 	"log/slog"
 	"sync"
 	"time"
-
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
-	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/circuitbreaker"
 )
 
 // weightMin is the minimum allowed value for a smart router weight.
@@ -20,27 +17,27 @@ const weightMax = 1.0
 
 // Service manages runtime configuration overrides. It reads the current
 // overrides from the database, merges incoming partial updates, persists
-// the merged result, and applies it to the shared in-memory *config.Config.
+// the merged result, and applies it via the ConfigApplier port.
 type Service struct {
-	mu     sync.Mutex
-	cfg    *config.Config
-	repo   OverrideRepository
-	logger *slog.Logger
+	mu      sync.Mutex
+	applier ConfigApplier
+	repo    OverrideRepository
+	logger  *slog.Logger
 }
 
-// NewService creates a Service that manages runtime overrides for the given
-// config, persisted via repo.
-func NewService(cfg *config.Config, repo OverrideRepository, logger *slog.Logger) *Service {
+// NewService creates a Service that manages runtime overrides, persisted via
+// repo and applied to the runtime configuration via applier.
+func NewService(applier ConfigApplier, repo OverrideRepository, logger *slog.Logger) *Service {
 	return &Service{
-		cfg:    cfg,
-		repo:   repo,
-		logger: logger,
+		applier: applier,
+		repo:    repo,
+		logger:  logger,
 	}
 }
 
 // LoadOverrides reads persisted overrides from the database and applies them
-// to the in-memory config. This should be called once at startup after the
-// database connection is established.
+// to the runtime configuration via the ConfigApplier. This should be called
+// once at startup after the database connection is established.
 func (s *Service) LoadOverrides(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -61,7 +58,9 @@ func (s *Service) LoadOverrides(ctx context.Context) error {
 		return fmt.Errorf("unmarshal settings overrides: %w", err)
 	}
 
-	applyToConfig(s.cfg, &update)
+	if err := s.applier.ApplySettingsUpdate(&update); err != nil {
+		return fmt.Errorf("apply loaded settings overrides: %w", err)
+	}
 
 	s.logger.Info("applied runtime settings overrides from database")
 
@@ -70,7 +69,7 @@ func (s *Service) LoadOverrides(ctx context.Context) error {
 
 // ApplyOverrides validates the incoming partial update, merges it with the
 // existing persisted overrides, saves the merged result to the database,
-// and applies the values to the in-memory config.
+// and applies the values via the ConfigApplier.
 func (s *Service) ApplyOverrides(ctx context.Context, partial SettingsUpdate) error {
 	if err := validate(&partial); err != nil {
 		return fmt.Errorf("validate settings update: %w", err)
@@ -105,8 +104,10 @@ func (s *Service) ApplyOverrides(ctx context.Context, partial SettingsUpdate) er
 		return fmt.Errorf("save merged overrides: %w", err)
 	}
 
-	// Apply the full merged overrides to the in-memory config.
-	applyToConfig(s.cfg, merged)
+	// Apply the full merged overrides to the runtime configuration.
+	if err := s.applier.ApplySettingsUpdate(merged); err != nil {
+		return fmt.Errorf("apply merged settings overrides: %w", err)
+	}
 
 	s.logger.Info("applied runtime settings update")
 
@@ -445,171 +446,5 @@ func mergeUint32Ptr(dst **uint32, src *uint32) {
 func mergeDurationPtr(dst **time.Duration, src *time.Duration) {
 	if src != nil {
 		*dst = src
-	}
-}
-
-// applyToConfig writes all non-nil override values to the shared config struct.
-func applyToConfig(cfg *config.Config, u *SettingsUpdate) {
-	if u.Billing != nil {
-		applyBilling(cfg, u.Billing)
-	}
-	if u.RateLimit != nil {
-		applyRateLimit(cfg, u.RateLimit)
-	}
-	if u.FeatureFlags != nil {
-		applyFeatureFlags(cfg, u.FeatureFlags)
-	}
-	if u.SmartRouter != nil {
-		applySmartRouter(cfg, u.SmartRouter)
-	}
-	if u.SpeedTest != nil {
-		applySpeedTest(cfg, u.SpeedTest)
-	}
-	if u.Plugins != nil {
-		applyPlugins(cfg, u.Plugins)
-	}
-	if u.Outbox != nil {
-		applyOutbox(cfg, u.Outbox)
-	}
-	if u.CORS != nil {
-		applyCORS(cfg, u.CORS)
-	}
-	if u.CircuitBreaker != nil {
-		applyCircuitBreaker(cfg, u.CircuitBreaker)
-	}
-}
-
-func applyBilling(cfg *config.Config, b *BillingUpdate) {
-	if b.TrialDays != nil {
-		cfg.Billing.TrialDays = *b.TrialDays
-	}
-}
-
-func applyRateLimit(cfg *config.Config, rl *RateLimitUpdate) {
-	if rl.CheckoutMaxPerHour != nil {
-		cfg.RateLimit.CheckoutMaxPerHour = *rl.CheckoutMaxPerHour
-	}
-	if rl.SubscriptionMaxPerDay != nil {
-		cfg.RateLimit.SubscriptionMaxPerDay = *rl.SubscriptionMaxPerDay
-	}
-	if rl.LoginMaxPerWindow != nil {
-		cfg.RateLimit.LoginMaxPerWindow = *rl.LoginMaxPerWindow
-	}
-	if rl.LoginWindowMinutes != nil {
-		cfg.RateLimit.LoginWindowMinutes = *rl.LoginWindowMinutes
-	}
-	if rl.ForgotPwdMaxPerWindow != nil {
-		cfg.RateLimit.ForgotPwdMaxPerWindow = *rl.ForgotPwdMaxPerWindow
-	}
-	if rl.ForgotPwdWindowMinutes != nil {
-		cfg.RateLimit.ForgotPwdWindowMinutes = *rl.ForgotPwdWindowMinutes
-	}
-}
-
-func applyFeatureFlags(cfg *config.Config, ff *FeatureFlagUpdate) {
-	if ff.HooksSubscriptionEnabled != nil {
-		cfg.FeatureFlags.HooksSubscriptionEnabled = *ff.HooksSubscriptionEnabled
-	}
-	if ff.HooksVPNProviderEnabled != nil {
-		cfg.FeatureFlags.HooksVPNProviderEnabled = *ff.HooksVPNProviderEnabled
-	}
-}
-
-func applySmartRouter(cfg *config.Config, sr *SmartRouterUpdate) {
-	if sr.WeightGeo != nil {
-		cfg.SmartRouter.WeightGeo = *sr.WeightGeo
-	}
-	if sr.WeightLatency != nil {
-		cfg.SmartRouter.WeightLatency = *sr.WeightLatency
-	}
-	if sr.WeightLoad != nil {
-		cfg.SmartRouter.WeightLoad = *sr.WeightLoad
-	}
-	if sr.WeightGamingGeo != nil {
-		cfg.SmartRouter.WeightGamingGeo = *sr.WeightGamingGeo
-	}
-	if sr.WeightGamingLatency != nil {
-		cfg.SmartRouter.WeightGamingLatency = *sr.WeightGamingLatency
-	}
-	if sr.WeightGamingLoad != nil {
-		cfg.SmartRouter.WeightGamingLoad = *sr.WeightGamingLoad
-	}
-	if sr.WeightStreamingGeo != nil {
-		cfg.SmartRouter.WeightStreamingGeo = *sr.WeightStreamingGeo
-	}
-	if sr.WeightStreamingLatency != nil {
-		cfg.SmartRouter.WeightStreamingLatency = *sr.WeightStreamingLatency
-	}
-	if sr.WeightStreamingLoad != nil {
-		cfg.SmartRouter.WeightStreamingLoad = *sr.WeightStreamingLoad
-	}
-}
-
-func applySpeedTest(cfg *config.Config, st *SpeedTestUpdate) {
-	if st.MaxConcurrent != nil {
-		cfg.SpeedTest.MaxConcurrent = *st.MaxConcurrent
-	}
-	if st.PerIPRateLimit != nil {
-		cfg.SpeedTest.PerIPRateLimit = *st.PerIPRateLimit
-	}
-	if st.MaxUploadBytes != nil {
-		cfg.SpeedTest.MaxUploadBytes = *st.MaxUploadBytes
-	}
-}
-
-func applyPlugins(cfg *config.Config, p *PluginUpdate) {
-	if p.MaxPlugins != nil {
-		cfg.Plugin.MaxPlugins = *p.MaxPlugins
-	}
-	if p.EnableHotReload != nil {
-		cfg.Plugin.EnableHotReload = *p.EnableHotReload
-	}
-}
-
-func applyOutbox(cfg *config.Config, o *OutboxUpdate) {
-	if o.RelayWorkers != nil {
-		cfg.Outbox.RelayWorkers = *o.RelayWorkers
-	}
-	if o.PartitionLookahead != nil {
-		cfg.Outbox.PartitionLookahead = *o.PartitionLookahead
-	}
-	if o.RetentionDays != nil {
-		cfg.Outbox.RetentionDays = *o.RetentionDays
-	}
-}
-
-func applyCORS(cfg *config.Config, c *CORSUpdate) {
-	if c.AllowedOrigins != nil {
-		cfg.CORS.AllowedOrigins = *c.AllowedOrigins
-	}
-}
-
-func applyCircuitBreaker(cfg *config.Config, cb *CircuitBreakerUpdate) {
-	if cb.Remnawave != nil {
-		applyCBComponent(&cfg.CircuitBreaker.Remnawave, cb.Remnawave)
-	}
-	if cb.OutboxNATS != nil {
-		applyCBComponent(&cfg.CircuitBreaker.OutboxNATS, cb.OutboxNATS)
-	}
-	if cb.Valkey != nil {
-		applyCBComponent(&cfg.CircuitBreaker.Valkey, cb.Valkey)
-	}
-	if cb.VPNProvider != nil {
-		applyCBComponent(&cfg.CircuitBreaker.VPNProvider, cb.VPNProvider)
-	}
-}
-
-func applyCBComponent(cfg *circuitbreaker.Config, update *CircuitBreakerComponentUpdate) {
-	if update.MaxFailures != nil {
-		cfg.MaxFailures = *update.MaxFailures
-	}
-	if update.Timeout != nil {
-		cfg.Timeout = *update.Timeout
-	}
-	if update.MaxRequests != nil {
-		cfg.MaxRequests = *update.MaxRequests
-	}
-	if update.Interval != nil {
-		cfg.Interval = *update.Interval
 	}
 }

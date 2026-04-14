@@ -29,6 +29,7 @@ var forbiddenInfraFromDomain = []string{
 	modulePrefix + "/internal/telegram",
 	modulePrefix + "/internal/app",
 	modulePrefix + "/internal/observability",
+	modulePrefix + "/internal/config",
 }
 
 // domainContexts maps bounded context names to their module-qualified import

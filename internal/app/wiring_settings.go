@@ -7,15 +7,18 @@ import (
 	"go.uber.org/fx"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres"
+	adaptersettings "github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/settings"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/settings"
 )
 
 // settingsWiring provides the runtime settings override infrastructure:
-// repository, service, and a startup hook that loads persisted overrides
-// onto the shared *config.Config before other modules read it.
+// repository, config applier adapter, service, and a startup hook that loads
+// persisted overrides onto the shared runtime config before other modules read it.
 var settingsWiring = fx.Options(
 	fx.Provide(postgres.NewSettingsRepository),
 	fx.Provide(func(repo *postgres.SettingsRepository) settings.OverrideRepository { return repo }),
+	fx.Provide(adaptersettings.NewRuntimeConfigApplier),
+	fx.Provide(func(a *adaptersettings.RuntimeConfigApplier) settings.ConfigApplier { return a }),
 	fx.Provide(settings.NewService),
 	fx.Invoke(loadSettingsOverrides),
 )
