@@ -1,20 +1,16 @@
 import { Outlet } from "@tanstack/react-router";
 import { ErrorBoundary } from "@remnacore/shared";
 import { Navbar } from "../components/Navbar.js";
-import { Sidebar } from "../components/Sidebar.js";
 
 export function Layout() {
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="min-h-screen ambient-bg">
       <Navbar />
-      <div className="flex flex-1">
-        <Sidebar />
-        <main className="flex-1 overflow-auto p-4 lg:p-6">
-          <ErrorBoundary>
-            <Outlet />
-          </ErrorBoundary>
-        </main>
-      </div>
+      <main className="relative z-[1] mx-auto max-w-[1200px] px-6 pb-16 pt-7 lg:px-6 md:px-4 sm:px-4">
+        <ErrorBoundary>
+          <Outlet />
+        </ErrorBoundary>
+      </main>
     </div>
   );
 }

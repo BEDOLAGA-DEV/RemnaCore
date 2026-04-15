@@ -32,20 +32,22 @@ export function CheckoutPage() {
   }
 
   return (
-    <div className="mx-auto max-w-lg space-y-6">
+    <div className="mx-auto max-w-lg space-y-6 animate-fade-up">
       <Link
         to="/plans"
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
       >
         <ArrowLeft size={14} />
         {t("common.back")}
       </Link>
 
-      <h1 className="text-2xl font-bold text-foreground">
+      <h1 className="text-2xl font-bold tracking-[-0.03em] text-foreground">
         {t("checkout.title")}
       </h1>
 
-      <CheckoutForm plan={plan} selectedAddonIds={[]} />
+      <div className="animate-fade-up" style={{ animationDelay: "80ms" }}>
+        <CheckoutForm plan={plan} selectedAddonIds={[]} />
+      </div>
     </div>
   );
 }

@@ -55,8 +55,8 @@ export function FamilyPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">
+      <div className="animate-fade-up">
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">
           {t("family.title")}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -65,18 +65,24 @@ export function FamilyPage() {
       </div>
 
       {isError || !family ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border p-12">
+        <div
+          className="animate-fade-up flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card/50 p-12"
+          style={{ animationDelay: "100ms", animationFillMode: "backwards" }}
+        >
           <Users size={48} className="text-muted-foreground" />
           <p className="mt-4 text-muted-foreground">{t("family.noGroup")}</p>
         </div>
       ) : (
         <>
-          <div className="rounded-xl border border-border bg-card p-5">
+          <div
+            className="animate-fade-up rounded-lg border border-border bg-card p-5"
+            style={{ animationDelay: "100ms", animationFillMode: "backwards" }}
+          >
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-foreground">
+              <h2 className="text-lg font-semibold tracking-tight text-foreground">
                 {t("family.title")}
               </h2>
-              <span className="text-sm text-muted-foreground">
+              <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
                 {t("family.maxMembers", { count: family.max_members })}
               </span>
             </div>
@@ -92,8 +98,11 @@ export function FamilyPage() {
           </div>
 
           {/* Add member form */}
-          <div className="rounded-xl border border-border bg-card p-5">
-            <h3 className="mb-4 text-lg font-semibold text-foreground">
+          <div
+            className="animate-fade-up rounded-lg border border-border bg-card p-5"
+            style={{ animationDelay: "200ms", animationFillMode: "backwards" }}
+          >
+            <h3 className="mb-4 text-lg font-semibold tracking-tight text-foreground">
               {t("family.addMember")}
             </h3>
             <form
@@ -103,14 +112,14 @@ export function FamilyPage() {
               <div>
                 <label
                   htmlFor="subscription_id"
-                  className="mb-1.5 block text-sm font-medium text-foreground"
+                  className="mb-1.5 block text-xs font-medium text-foreground"
                 >
                   Subscription ID
                 </label>
                 <input
                   id="subscription_id"
                   {...register("subscription_id")}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  className="w-full rounded-[10px] border border-input bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 />
                 {errors.subscription_id && (
                   <p className="mt-1 text-sm text-destructive">
@@ -122,14 +131,14 @@ export function FamilyPage() {
               <div>
                 <label
                   htmlFor="member_user_id"
-                  className="mb-1.5 block text-sm font-medium text-foreground"
+                  className="mb-1.5 block text-xs font-medium text-foreground"
                 >
                   {t("family.memberEmail")}
                 </label>
                 <input
                   id="member_user_id"
                   {...register("member_user_id")}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  className="w-full rounded-[10px] border border-input bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 />
                 {errors.member_user_id && (
                   <p className="mt-1 text-sm text-destructive">
@@ -141,21 +150,21 @@ export function FamilyPage() {
               <div>
                 <label
                   htmlFor="nickname"
-                  className="mb-1.5 block text-sm font-medium text-foreground"
+                  className="mb-1.5 block text-xs font-medium text-foreground"
                 >
                   {t("family.nickname")}
                 </label>
                 <input
                   id="nickname"
                   {...register("nickname")}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  className="w-full rounded-[10px] border border-input bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
 
               <button
                 type="submit"
                 disabled={addMember.isPending}
-                className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+                className="w-full rounded-[10px] bg-primary py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
               >
                 {addMember.isPending ? (
                   <Loader2 size={16} className="mx-auto animate-spin" />

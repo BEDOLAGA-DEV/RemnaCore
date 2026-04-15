@@ -24,38 +24,56 @@ export function TrafficPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-foreground">
+      <h1
+        className="animate-fade-up text-3xl font-bold tracking-tight text-foreground"
+      >
         {t("traffic.title")}
       </h1>
 
       {/* Summary cards */}
       <div className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-xl border border-border bg-card p-5">
-          <p className="text-sm text-muted-foreground">{t("traffic.total")}</p>
-          <p className="mt-1 text-2xl font-bold text-foreground">
+        <div
+          className="animate-fade-up rounded-lg border border-border bg-card p-5"
+          style={{ animationDelay: "50ms", animationFillMode: "backwards" }}
+        >
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            {t("traffic.total")}
+          </p>
+          <p className="mt-1.5 font-mono text-2xl font-bold text-foreground">
             {formatBytes(totalTraffic)}
           </p>
         </div>
-        <div className="rounded-xl border border-border bg-card p-5">
-          <p className="text-sm text-muted-foreground">
+        <div
+          className="animate-fade-up rounded-lg border border-border bg-card p-5"
+          style={{ animationDelay: "100ms", animationFillMode: "backwards" }}
+        >
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
             {t("bindings.title")}
           </p>
-          <p className="mt-1 text-2xl font-bold text-foreground">
+          <p className="mt-1.5 font-mono text-2xl font-bold text-foreground">
             {allBindings.length}
           </p>
         </div>
-        <div className="rounded-xl border border-border bg-card p-5">
-          <p className="text-sm text-muted-foreground">
+        <div
+          className="animate-fade-up rounded-lg border border-border bg-card p-5"
+          style={{ animationDelay: "150ms", animationFillMode: "backwards" }}
+        >
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
             {t("bindings.status.synced")}
           </p>
-          <p className="mt-1 text-2xl font-bold text-foreground">
+          <p className="mt-1.5 font-mono text-2xl font-bold text-foreground">
             {allBindings.filter((b) => b.status === "synced").length}
           </p>
         </div>
       </div>
 
       {/* Traffic chart */}
-      <TrafficChart bindings={allBindings} />
+      <div
+        className="animate-fade-up"
+        style={{ animationDelay: "200ms", animationFillMode: "backwards" }}
+      >
+        <TrafficChart bindings={allBindings} />
+      </div>
     </div>
   );
 }

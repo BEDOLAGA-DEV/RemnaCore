@@ -20,7 +20,7 @@ export function TrafficChart({ bindings }: TrafficChartProps) {
 
   if (bindings.length === 0) {
     return (
-      <div className="flex h-64 items-center justify-center rounded-xl border border-border bg-card">
+      <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-border bg-card">
         <p className="text-sm text-muted-foreground">{t("traffic.noData")}</p>
       </div>
     );
@@ -33,37 +33,40 @@ export function TrafficChart({ bindings }: TrafficChartProps) {
   }));
 
   return (
-    <div className="rounded-xl border border-border bg-card p-6">
-      <h3 className="mb-4 text-lg font-semibold text-foreground">
+    <div className="rounded-lg border border-border bg-card p-6">
+      <h3 className="mb-4 text-base font-semibold tracking-tight text-foreground">
         {t("traffic.title")}
       </h3>
       <ResponsiveContainer width="100%" height={300}>
         <AreaChart data={chartData}>
-          <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+          <CartesianGrid
+            strokeDasharray="3 3"
+            stroke="rgba(255,235,210,0.06)"
+          />
           <XAxis
             dataKey="name"
             className="text-xs"
-            tick={{ fill: "hsl(var(--muted-foreground))" }}
+            tick={{ fill: "var(--muted-foreground)" }}
           />
           <YAxis
             tickFormatter={(value: number) => formatBytes(value)}
             className="text-xs"
-            tick={{ fill: "hsl(var(--muted-foreground))" }}
+            tick={{ fill: "var(--muted-foreground)" }}
           />
           <Tooltip
             formatter={(value: number) => [formatBytes(value), t("traffic.used")]}
             contentStyle={{
-              backgroundColor: "hsl(var(--card))",
-              border: "1px solid hsl(var(--border))",
-              borderRadius: "0.5rem",
+              backgroundColor: "var(--card)",
+              border: "1px solid var(--border)",
+              borderRadius: "10px",
             }}
-            labelStyle={{ color: "hsl(var(--foreground))" }}
+            labelStyle={{ color: "var(--foreground)" }}
           />
           <Area
             type="monotone"
             dataKey="traffic"
-            stroke="hsl(var(--primary))"
-            fill="hsl(var(--primary))"
+            stroke="var(--primary)"
+            fill="var(--primary)"
             fillOpacity={0.1}
           />
         </AreaChart>

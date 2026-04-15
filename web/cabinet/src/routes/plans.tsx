@@ -27,17 +27,23 @@ export function PlansPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 animate-fade-up">
       <div className="text-center">
-        <h1 className="text-2xl font-bold text-foreground">
+        <h1 className="text-3xl font-bold tracking-[-0.03em] text-foreground">
           {t("plans.title")}
         </h1>
-        <p className="mt-1 text-muted-foreground">{t("plans.subtitle")}</p>
+        <p className="mt-2 text-muted-foreground">{t("plans.subtitle")}</p>
       </div>
 
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {plans?.map((plan) => (
-          <PlanCard key={plan.id} plan={plan} onSelect={handleSelect} />
+        {plans?.map((plan, index) => (
+          <div
+            key={plan.id}
+            className="animate-fade-up"
+            style={{ animationDelay: `${index * 80}ms` }}
+          >
+            <PlanCard plan={plan} onSelect={handleSelect} />
+          </div>
         ))}
       </div>
     </div>

@@ -69,12 +69,17 @@ export function ProfilePage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-6">
-      <h1 className="text-2xl font-bold text-foreground">
+      <h1
+        className="animate-fade-up text-3xl font-bold tracking-tight text-foreground"
+      >
         {t("profile.title")}
       </h1>
 
       {/* Profile form */}
-      <div className="rounded-xl border border-border bg-card p-6">
+      <div
+        className="animate-fade-up rounded-lg border border-border bg-card p-6"
+        style={{ animationDelay: "50ms", animationFillMode: "backwards" }}
+      >
         <form
           onSubmit={handleProfileSubmit(onProfileSubmit)}
           className="space-y-4"
@@ -82,7 +87,7 @@ export function ProfilePage() {
           <div>
             <label
               htmlFor="email"
-              className="mb-1.5 block text-sm font-medium text-foreground"
+              className="mb-1.5 block text-xs font-medium text-foreground"
             >
               {t("common.email")}
             </label>
@@ -91,21 +96,21 @@ export function ProfilePage() {
               type="email"
               value={user.email}
               disabled
-              className="w-full rounded-lg border border-input bg-muted px-3 py-2 text-sm text-muted-foreground cursor-not-allowed"
+              className="w-full cursor-not-allowed rounded-[10px] border border-input bg-muted px-3 py-2.5 text-sm text-muted-foreground"
             />
           </div>
 
           <div>
             <label
               htmlFor="display_name"
-              className="mb-1.5 block text-sm font-medium text-foreground"
+              className="mb-1.5 block text-xs font-medium text-foreground"
             >
               {t("profile.displayName")}
             </label>
             <input
               id="display_name"
               {...registerProfile("display_name")}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              className="w-full rounded-[10px] border border-input bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             />
             {profileErrors.display_name && (
               <p className="mt-1 text-sm text-destructive">
@@ -117,7 +122,7 @@ export function ProfilePage() {
           <button
             type="submit"
             disabled={updateProfile.isPending}
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+            className="rounded-[10px] bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
           >
             {updateProfile.isPending ? (
               <Loader2 size={14} className="animate-spin" />
@@ -127,7 +132,7 @@ export function ProfilePage() {
           </button>
 
           {updateProfile.isSuccess && (
-            <p className="flex items-center gap-1 text-sm text-green-500">
+            <p className="flex items-center gap-1 text-sm text-primary">
               <Check size={14} />
               {t("profile.updateSuccess")}
             </p>
@@ -136,15 +141,18 @@ export function ProfilePage() {
       </div>
 
       {/* Telegram section */}
-      <div className="rounded-xl border border-border bg-card p-6">
-        <h2 className="mb-4 text-lg font-semibold text-foreground">
+      <div
+        className="animate-fade-up rounded-lg border border-border bg-card p-6"
+        style={{ animationDelay: "150ms", animationFillMode: "backwards" }}
+      >
+        <h2 className="mb-4 text-lg font-semibold tracking-tight text-foreground">
           Telegram
         </h2>
 
         {user.telegram_id ? (
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-green-500">
+              <p className="text-sm text-primary">
                 {t("profile.telegramLinked")}
               </p>
               <p className="mt-1 font-mono text-sm text-muted-foreground">
@@ -155,7 +163,7 @@ export function ProfilePage() {
               type="button"
               onClick={() => unlinkTelegram.mutate()}
               disabled={unlinkTelegram.isPending}
-              className="flex items-center gap-2 rounded-lg border border-destructive px-3 py-2 text-sm text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 rounded-[10px] border border-destructive px-3 py-2 text-sm text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
             >
               <Unlink size={14} />
               {t("profile.unlinkTelegram")}
@@ -169,7 +177,7 @@ export function ProfilePage() {
             <div>
               <label
                 htmlFor="telegram_id"
-                className="mb-1.5 block text-sm font-medium text-foreground"
+                className="mb-1.5 block text-xs font-medium text-foreground"
               >
                 {t("profile.telegramId")}
               </label>
@@ -177,7 +185,7 @@ export function ProfilePage() {
                 id="telegram_id"
                 type="number"
                 {...registerTelegram("telegram_id")}
-                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                className="w-full rounded-[10px] border border-input bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               />
               {telegramErrors.telegram_id && (
                 <p className="mt-1 text-sm text-destructive">
@@ -189,7 +197,7 @@ export function ProfilePage() {
             <button
               type="submit"
               disabled={linkTelegram.isPending}
-              className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+              className="rounded-[10px] bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
               {linkTelegram.isPending ? (
                 <Loader2 size={14} className="animate-spin" />

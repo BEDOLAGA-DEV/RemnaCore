@@ -30,10 +30,10 @@ export function FamilyMemberList({
         return (
           <div
             key={member.id}
-            className="flex items-center justify-between rounded-lg border border-border bg-card p-3"
+            className="flex items-center justify-between rounded-[10px] border border-border bg-card p-3"
           >
             <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent">
                 {isOwner ? (
                   <Crown size={14} className="text-primary" />
                 ) : (
@@ -54,7 +54,7 @@ export function FamilyMemberList({
                 type="button"
                 onClick={() => onRemove(member.user_id)}
                 disabled={isRemoving}
-                className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors disabled:opacity-50"
+                className="rounded-[10px] p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
                 aria-label={t("family.removeMember")}
               >
                 <Trash2 size={14} />

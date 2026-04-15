@@ -14,11 +14,11 @@ import { BindingLinks } from "../../components/BindingLinks.js";
 
 function statusColor(status: SubscriptionStatus): string {
   const colors: Record<SubscriptionStatus, string> = {
-    active: "bg-green-500/10 text-green-500",
-    pending: "bg-yellow-500/10 text-yellow-500",
-    cancelled: "bg-red-500/10 text-red-500",
-    expired: "bg-gray-500/10 text-gray-500",
-    paused: "bg-blue-500/10 text-blue-500",
+    active: "bg-[rgba(45,212,191,0.10)] text-[#2dd4bf]",
+    pending: "bg-[rgba(245,158,11,0.10)] text-[#f59e0b]",
+    cancelled: "bg-[rgba(245,236,227,0.06)] text-[rgba(245,236,227,0.24)]",
+    expired: "bg-[rgba(245,236,227,0.06)] text-[rgba(245,236,227,0.24)]",
+    paused: "bg-[rgba(196,149,106,0.10)] text-[#c4956a]",
   };
   return colors[status];
 }
@@ -47,16 +47,18 @@ export function SubscriptionDetailPage() {
     <div className="mx-auto max-w-2xl space-y-6">
       <Link
         to="/subscriptions"
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
       >
         <ArrowLeft size={14} />
         {t("common.back")}
       </Link>
 
-      <div className="rounded-xl border border-border bg-card p-6">
+      <div
+        className="animate-fade-up rounded-lg border border-border bg-card p-6"
+      >
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-xl font-bold text-foreground">
+            <h1 className="text-xl font-bold tracking-[-0.03em] text-foreground">
               {t("common.details")}
             </h1>
             <p className="mt-1 font-mono text-sm text-muted-foreground">
@@ -78,7 +80,7 @@ export function SubscriptionDetailPage() {
             <span className="text-xs text-muted-foreground">
               {t("subscriptions.periodEnd")}
             </span>
-            <p className="text-sm font-medium text-foreground">
+            <p className="mt-0.5 font-mono text-sm font-medium text-foreground">
               {formatDate(subscription.period_end)}
             </p>
           </div>
@@ -86,7 +88,7 @@ export function SubscriptionDetailPage() {
             <span className="text-xs text-muted-foreground">
               {t("common.createdAt")}
             </span>
-            <p className="text-sm font-medium text-foreground">
+            <p className="mt-0.5 font-mono text-sm font-medium text-foreground">
               {formatDate(subscription.created_at)}
             </p>
           </div>
@@ -102,7 +104,7 @@ export function SubscriptionDetailPage() {
                 }
               }}
               disabled={cancelMutation.isPending}
-              className="rounded-lg border border-destructive px-4 py-2 text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+              className="rounded-[10px] border border-destructive px-4 py-2 text-sm font-medium text-destructive transition-all hover:bg-destructive/10 disabled:opacity-50"
             >
               {cancelMutation.isPending ? (
                 <Loader2 size={14} className="animate-spin" />
@@ -115,8 +117,11 @@ export function SubscriptionDetailPage() {
       </div>
 
       {/* Bindings */}
-      <div className="space-y-4">
-        <h2 className="text-lg font-semibold text-foreground">
+      <div
+        className="animate-fade-up space-y-4"
+        style={{ animationDelay: "100ms" }}
+      >
+        <h2 className="text-lg font-bold tracking-[-0.03em] text-foreground">
           {t("bindings.title")}
         </h2>
         {bindingsLoading ? (
