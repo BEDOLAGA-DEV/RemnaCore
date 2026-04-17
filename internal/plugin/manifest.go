@@ -41,6 +41,7 @@ var reservedRoutePathPrefixes = []string{
 // Every hook name declared in a manifest must start with one of these prefixes.
 var AllowedHookPrefixes = []string{
 	"ab.",
+	"balance.",
 	"binding.",
 	"checkout.",
 	"cohort.",
