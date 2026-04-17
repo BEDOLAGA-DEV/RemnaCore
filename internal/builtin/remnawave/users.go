@@ -391,3 +391,56 @@ func (h *Handler) GetIPFetchResult(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{"panel_id": panelID, "result": result})
 }
+
+// ListAllHWIDDevices returns all HWID devices across a panel.
+func (h *Handler) ListAllHWIDDevices(w http.ResponseWriter, r *http.Request) {
+	panelID := chi.URLParam(r, "panelID")
+	client, err := h.buildClientForPanel(r.Context(), panelID)
+	if err != nil {
+		writeAPIError(w, apierror.NotFound)
+		return
+	}
+	devices, err := client.GetAllHWIDDevices(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"devices": []any{}})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"panel_id": panelID, "devices": devices})
+}
+
+// CreateHWIDDevice registers a new HWID device for a user.
+func (h *Handler) CreateHWIDDevice(w http.ResponseWriter, r *http.Request) {
+	panelID := chi.URLParam(r, "panelID")
+	client, err := h.buildClientForPanel(r.Context(), panelID)
+	if err != nil {
+		writeAPIError(w, apierror.NotFound)
+		return
+	}
+	var req rwclient.CreateHWIDDeviceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("invalid request body"))
+		return
+	}
+	device, err := client.CreateHWIDDevice(r.Context(), req)
+	if err != nil {
+		writeAPIError(w, apierror.Internal)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"panel_id": panelID, "device": device})
+}
+
+// DeleteAllUserHWID wipes all HWID devices for a user.
+func (h *Handler) DeleteAllUserHWID(w http.ResponseWriter, r *http.Request) {
+	panelID := chi.URLParam(r, "panelID")
+	userUUID := chi.URLParam(r, "userUUID")
+	client, err := h.buildClientForPanel(r.Context(), panelID)
+	if err != nil {
+		writeAPIError(w, apierror.NotFound)
+		return
+	}
+	if err := client.DeleteAllHWIDDevices(r.Context(), userUUID); err != nil {
+		writeAPIError(w, apierror.Internal)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"action": "all_hwid_deleted"})
+}

@@ -225,3 +225,189 @@ func (h *Handler) ReorderSquad(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{"action": "reordered"})
 }
+
+// =====================================================================
+// External squad operations
+// =====================================================================
+
+// CreateExternalSquad creates a new external squad on a panel.
+func (h *Handler) CreateExternalSquad(w http.ResponseWriter, r *http.Request) {
+	panelID := chi.URLParam(r, "panelID")
+	client, err := h.buildClientForPanel(r.Context(), panelID)
+	if err != nil {
+		writeAPIError(w, apierror.NotFound)
+		return
+	}
+	var req rwclient.CreateSquadRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("invalid request body"))
+		return
+	}
+	squad, err := client.CreateExternalSquad(r.Context(), req)
+	if err != nil {
+		writeAPIError(w, apierror.Internal)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"panel_id": panelID, "squad": squad})
+}
+
+// UpdateExternalSquad updates an external squad.
+func (h *Handler) UpdateExternalSquad(w http.ResponseWriter, r *http.Request) {
+	panelID := chi.URLParam(r, "panelID")
+	squadUUID := chi.URLParam(r, "squadUUID")
+	client, err := h.buildClientForPanel(r.Context(), panelID)
+	if err != nil {
+		writeAPIError(w, apierror.NotFound)
+		return
+	}
+	var req rwclient.UpdateSquadRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("invalid request body"))
+		return
+	}
+	req.UUID = squadUUID
+	squad, err := client.UpdateExternalSquad(r.Context(), req)
+	if err != nil {
+		writeAPIError(w, apierror.Internal)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"panel_id": panelID, "squad": squad})
+}
+
+// DeleteExternalSquad deletes an external squad.
+func (h *Handler) DeleteExternalSquad(w http.ResponseWriter, r *http.Request) {
+	panelID := chi.URLParam(r, "panelID")
+	squadUUID := chi.URLParam(r, "squadUUID")
+	client, err := h.buildClientForPanel(r.Context(), panelID)
+	if err != nil {
+		writeAPIError(w, apierror.NotFound)
+		return
+	}
+	if err := client.DeleteExternalSquad(r.Context(), squadUUID); err != nil {
+		writeAPIError(w, apierror.Internal)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetSquadByUUID returns a single internal or external squad by UUID.
+func (h *Handler) GetSquadByUUID(w http.ResponseWriter, r *http.Request) {
+	panelID := chi.URLParam(r, "panelID")
+	squadUUID := chi.URLParam(r, "squadUUID")
+	squadType := r.URL.Query().Get("type") // "internal" or "external"
+	client, err := h.buildClientForPanel(r.Context(), panelID)
+	if err != nil {
+		writeAPIError(w, apierror.NotFound)
+		return
+	}
+	if squadType == "external" {
+		squad, err := client.GetExternalSquadByUUID(r.Context(), squadUUID)
+		if err != nil {
+			writeAPIError(w, apierror.Internal)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"panel_id": panelID, "type": "external", "squad": squad})
+		return
+	}
+	squad, err := client.GetInternalSquadByUUID(r.Context(), squadUUID)
+	if err != nil {
+		writeAPIError(w, apierror.Internal)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"panel_id": panelID, "type": "internal", "squad": squad})
+}
+
+// GetSquadNodes returns accessible nodes for a squad.
+func (h *Handler) GetSquadNodes(w http.ResponseWriter, r *http.Request) {
+	panelID := chi.URLParam(r, "panelID")
+	squadUUID := chi.URLParam(r, "squadUUID")
+	squadType := r.URL.Query().Get("type")
+	client, err := h.buildClientForPanel(r.Context(), panelID)
+	if err != nil {
+		writeAPIError(w, apierror.NotFound)
+		return
+	}
+	if squadType == "external" {
+		nodes, err := client.GetExternalSquadNodes(r.Context(), squadUUID)
+		if err != nil {
+			writeAPIError(w, apierror.Internal)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"panel_id": panelID, "nodes": nodes})
+		return
+	}
+	nodes, err := client.GetInternalSquadNodes(r.Context(), squadUUID)
+	if err != nil {
+		writeAPIError(w, apierror.Internal)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"panel_id": panelID, "nodes": nodes})
+}
+
+// AddUsersToExternalSquad adds users to an external squad.
+func (h *Handler) AddUsersToExternalSquad(w http.ResponseWriter, r *http.Request) {
+	panelID := chi.URLParam(r, "panelID")
+	squadUUID := chi.URLParam(r, "squadUUID")
+	client, err := h.buildClientForPanel(r.Context(), panelID)
+	if err != nil {
+		writeAPIError(w, apierror.NotFound)
+		return
+	}
+	var req struct {
+		UserUUIDs []string `json:"user_uuids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("invalid request body"))
+		return
+	}
+	if err := client.AddUsersToExternalSquad(r.Context(), squadUUID, req.UserUUIDs); err != nil {
+		writeAPIError(w, apierror.Internal)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"action": "users_added"})
+}
+
+// RemoveUsersFromExternalSquad removes users from an external squad.
+func (h *Handler) RemoveUsersFromExternalSquad(w http.ResponseWriter, r *http.Request) {
+	panelID := chi.URLParam(r, "panelID")
+	squadUUID := chi.URLParam(r, "squadUUID")
+	client, err := h.buildClientForPanel(r.Context(), panelID)
+	if err != nil {
+		writeAPIError(w, apierror.NotFound)
+		return
+	}
+	var req struct {
+		UserUUIDs []string `json:"user_uuids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("invalid request body"))
+		return
+	}
+	if err := client.RemoveUsersFromExternalSquad(r.Context(), squadUUID, req.UserUUIDs); err != nil {
+		writeAPIError(w, apierror.Internal)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"action": "users_removed"})
+}
+
+// ReorderExternalSquads reorders external squads on a panel.
+func (h *Handler) ReorderExternalSquads(w http.ResponseWriter, r *http.Request) {
+	panelID := chi.URLParam(r, "panelID")
+	client, err := h.buildClientForPanel(r.Context(), panelID)
+	if err != nil {
+		writeAPIError(w, apierror.NotFound)
+		return
+	}
+	var req struct {
+		UUIDs []string `json:"uuids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("invalid request body"))
+		return
+	}
+	if err := client.ReorderExternalSquads(r.Context(), req.UUIDs); err != nil {
+		writeAPIError(w, apierror.Internal)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"action": "reordered"})
+}

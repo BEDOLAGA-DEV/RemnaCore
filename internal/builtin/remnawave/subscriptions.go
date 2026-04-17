@@ -68,3 +68,23 @@ func (h *Handler) GetSubscriptionByShortUUID(w http.ResponseWriter, r *http.Requ
 
 	writeJSON(w, http.StatusOK, map[string]any{"panel_id": panelID, "subscription": sub})
 }
+
+// GetSubscriptionByUsername returns a subscription by username.
+func (h *Handler) GetSubscriptionByUsername(w http.ResponseWriter, r *http.Request) {
+	panelID := chi.URLParam(r, "panelID")
+	username := chi.URLParam(r, "username")
+
+	client, err := h.buildClientForPanel(r.Context(), panelID)
+	if err != nil {
+		writeAPIError(w, apierror.NotFound)
+		return
+	}
+
+	sub, err := client.GetSubscriptionByUsername(r.Context(), username)
+	if err != nil {
+		writeAPIError(w, apierror.Internal)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"panel_id": panelID, "subscription": sub})
+}

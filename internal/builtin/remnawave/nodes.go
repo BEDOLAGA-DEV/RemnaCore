@@ -454,5 +454,36 @@ func (h *Handler) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-// ensure rwclient import is used
-var _ rwclient.CreateNodeRequest
+// FetchNodeUsersIPs starts an async IP fetch for all users on a node.
+func (h *Handler) FetchNodeUsersIPs(w http.ResponseWriter, r *http.Request) {
+	panelID := chi.URLParam(r, "panelID")
+	nodeUUID := chi.URLParam(r, "nodeUUID")
+	client, err := h.buildClientForPanel(r.Context(), panelID)
+	if err != nil {
+		writeAPIError(w, apierror.NotFound)
+		return
+	}
+	job, err := client.FetchNodeUsersIPs(r.Context(), nodeUUID)
+	if err != nil {
+		writeAPIError(w, apierror.Internal)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"panel_id": panelID, "job": job})
+}
+
+// GetFetchNodeUsersIPsResult polls the result of a node-level IP fetch job.
+func (h *Handler) GetFetchNodeUsersIPsResult(w http.ResponseWriter, r *http.Request) {
+	panelID := chi.URLParam(r, "panelID")
+	jobID := chi.URLParam(r, "jobID")
+	client, err := h.buildClientForPanel(r.Context(), panelID)
+	if err != nil {
+		writeAPIError(w, apierror.NotFound)
+		return
+	}
+	result, err := client.GetFetchNodeUsersIPsResult(r.Context(), jobID)
+	if err != nil {
+		writeAPIError(w, apierror.Internal)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"panel_id": panelID, "result": result})
+}

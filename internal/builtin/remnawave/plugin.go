@@ -166,6 +166,26 @@ func RegisterRoutes(registry *gateway.BuiltinRouteRegistry, h *Handler) {
 	r("list_subscriptions", h.ListSubscriptions)
 	r("get_subscription_by_uuid", h.GetSubscriptionByUUID)
 	r("get_subscription_by_short_uuid", h.GetSubscriptionByShortUUID)
+	r("get_subscription_by_username", h.GetSubscriptionByUsername)
+
+	// External Squads
+	r("create_external_squad", h.CreateExternalSquad)
+	r("update_external_squad", h.UpdateExternalSquad)
+	r("delete_external_squad", h.DeleteExternalSquad)
+	r("get_squad_by_uuid", h.GetSquadByUUID)
+	r("get_squad_nodes", h.GetSquadNodes)
+	r("add_users_to_external_squad", h.AddUsersToExternalSquad)
+	r("remove_users_from_external_squad", h.RemoveUsersFromExternalSquad)
+	r("reorder_external_squads", h.ReorderExternalSquads)
+
+	// HWID expanded
+	r("list_all_hwid_devices", h.ListAllHWIDDevices)
+	r("create_hwid_device", h.CreateHWIDDevice)
+	r("delete_all_user_hwid", h.DeleteAllUserHWID)
+
+	// IP Control node-level
+	r("fetch_node_users_ips", h.FetchNodeUsersIPs)
+	r("get_fetch_node_users_ips_result", h.GetFetchNodeUsersIPsResult)
 
 	// Metadata
 	r("get_user_metadata", h.GetUserMetadata)
@@ -309,6 +329,26 @@ func remnawaveRoutes() []plugin.ManifestRoute {
 		{Method: "GET", Path: "/api/remnawave/subscriptions/{panelID}", Function: "list_subscriptions", Public: false},
 		{Method: "GET", Path: "/api/remnawave/subscriptions/{panelID}/by-uuid/{subUUID}", Function: "get_subscription_by_uuid", Public: false},
 		{Method: "GET", Path: "/api/remnawave/subscriptions/{panelID}/by-short-uuid/{shortUUID}", Function: "get_subscription_by_short_uuid", Public: false},
+		{Method: "GET", Path: "/api/remnawave/subscriptions/{panelID}/by-username/{username}", Function: "get_subscription_by_username", Public: false},
+
+		// --- External Squads ---
+		{Method: "POST", Path: "/api/remnawave/squads/external/{panelID}", Function: "create_external_squad", Public: false},
+		{Method: "PUT", Path: "/api/remnawave/squads/external/{panelID}/{squadUUID}", Function: "update_external_squad", Public: false},
+		{Method: "DELETE", Path: "/api/remnawave/squads/external/{panelID}/{squadUUID}", Function: "delete_external_squad", Public: false},
+		{Method: "GET", Path: "/api/remnawave/squads/{panelID}/{squadUUID}", Function: "get_squad_by_uuid", Public: false},
+		{Method: "GET", Path: "/api/remnawave/squads/{panelID}/{squadUUID}/nodes", Function: "get_squad_nodes", Public: false},
+		{Method: "POST", Path: "/api/remnawave/squads/external/{panelID}/{squadUUID}/add-users", Function: "add_users_to_external_squad", Public: false},
+		{Method: "POST", Path: "/api/remnawave/squads/external/{panelID}/{squadUUID}/remove-users", Function: "remove_users_from_external_squad", Public: false},
+		{Method: "POST", Path: "/api/remnawave/squads/external/{panelID}/reorder", Function: "reorder_external_squads", Public: false},
+
+		// --- HWID expanded ---
+		{Method: "GET", Path: "/api/remnawave/hwid/{panelID}/devices", Function: "list_all_hwid_devices", Public: false},
+		{Method: "POST", Path: "/api/remnawave/hwid/{panelID}/devices", Function: "create_hwid_device", Public: false},
+		{Method: "DELETE", Path: "/api/remnawave/hwid/{panelID}/{userUUID}/all", Function: "delete_all_user_hwid", Public: false},
+
+		// --- IP Control node-level ---
+		{Method: "POST", Path: "/api/remnawave/ip-control/{panelID}/node/{nodeUUID}/fetch", Function: "fetch_node_users_ips", Public: false},
+		{Method: "GET", Path: "/api/remnawave/ip-control/{panelID}/node/result/{jobID}", Function: "get_fetch_node_users_ips_result", Public: false},
 
 		// --- Metadata ---
 		{Method: "GET", Path: "/api/remnawave/metadata/{panelID}/user/{userUUID}", Function: "get_user_metadata", Public: false},
