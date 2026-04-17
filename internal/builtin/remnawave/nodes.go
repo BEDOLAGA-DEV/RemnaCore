@@ -231,6 +231,11 @@ func (h *Handler) BulkNodeAction(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, apierror.ValidationFailed.WithDetails("uuids is required"))
 		return
 	}
+	const maxBulkSize = 100
+	if len(req.UUIDs) > maxBulkSize {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails(fmt.Sprintf("maximum %d UUIDs per request", maxBulkSize)))
+		return
+	}
 
 	results := make([]map[string]any, 0, len(req.UUIDs))
 	for _, uuid := range req.UUIDs {

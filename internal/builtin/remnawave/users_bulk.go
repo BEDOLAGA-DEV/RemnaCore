@@ -2,6 +2,7 @@ package remnawave
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 
@@ -10,6 +11,20 @@ import (
 	rwclient "github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/remnawave"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
 )
+
+const maxBulkUUIDs = 1000
+
+func validateUUIDList(uuids []string, w http.ResponseWriter) bool {
+	if len(uuids) == 0 {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("uuids is required"))
+		return false
+	}
+	if len(uuids) > maxBulkUUIDs {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails(fmt.Sprintf("maximum %d UUIDs per request", maxBulkUUIDs)))
+		return false
+	}
+	return true
+}
 
 // BulkDeleteUsersByStatus deletes all users with a given status.
 func (h *Handler) BulkDeleteUsersByStatus(w http.ResponseWriter, r *http.Request) {
@@ -26,6 +41,12 @@ func (h *Handler) BulkDeleteUsersByStatus(w http.ResponseWriter, r *http.Request
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, apierror.ValidationFailed.WithDetails("invalid request body"))
+		return
+	}
+
+	allowedStatuses := map[string]bool{"disabled": true, "expired": true, "limited": true}
+	if !allowedStatuses[req.Status] {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("status must be disabled, expired, or limited"))
 		return
 	}
 
@@ -80,6 +101,10 @@ func (h *Handler) BulkResetTraffic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !validateUUIDList(req.UUIDs, w) {
+		return
+	}
+
 	if err := client.BulkResetTraffic(r.Context(), req.UUIDs); err != nil {
 		writeAPIError(w, apierror.Internal)
 		return
@@ -106,6 +131,10 @@ func (h *Handler) BulkRevokeSubscription(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	if !validateUUIDList(req.UUIDs, w) {
+		return
+	}
+
 	if err := client.BulkRevokeSubscription(r.Context(), req.UUIDs); err != nil {
 		writeAPIError(w, apierror.Internal)
 		return
@@ -129,6 +158,10 @@ func (h *Handler) BulkDeleteUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, apierror.ValidationFailed.WithDetails("invalid request body"))
+		return
+	}
+
+	if !validateUUIDList(req.UUIDs, w) {
 		return
 	}
 

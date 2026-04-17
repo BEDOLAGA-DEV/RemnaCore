@@ -197,6 +197,11 @@ func (h *Handler) BulkHostAction(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, apierror.ValidationFailed.WithDetails("uuids is required"))
 		return
 	}
+	const maxBulkSize = 100
+	if len(req.UUIDs) > maxBulkSize {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("maximum 100 UUIDs per request"))
+		return
+	}
 
 	var actionErr error
 	switch req.Action {
