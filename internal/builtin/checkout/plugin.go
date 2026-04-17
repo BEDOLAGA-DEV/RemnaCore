@@ -81,11 +81,30 @@ func checkoutRoutes() []plugin.ManifestRoute {
 
 func checkoutPages() []plugin.ManifestPage {
 	return []plugin.ManifestPage{
-		{Path: "checkout-sessions", Title: "Checkout Sessions", Icon: "ShoppingCart", Menu: plugin.PageMenuAdmin},
-		{Path: "saved-methods", Title: "Saved Payment Methods", Icon: "CreditCard", Menu: plugin.PageMenuAdmin},
-		{Path: "abandonment", Title: "Abandonment Recovery", Icon: "Clock", Menu: plugin.PageMenuAdmin},
-		{Path: "checkout-analytics", Title: "Analytics", Icon: "TrendingUp", Menu: plugin.PageMenuAdmin},
-		{Path: "checkout-settings", Title: "Settings", Icon: "Settings", Menu: plugin.PageMenuAdmin},
+		{
+			Path: "checkout-sessions", Title: "Checkout Sessions", Icon: "ShoppingCart", Menu: plugin.PageMenuAdmin,
+			Collection: collectionSessions,
+			Fields: []plugin.ManifestPageField{
+				{Key: "user_id", Label: "User ID", Type: "text"},
+				{Key: "tariff_id", Label: "Tariff ID", Type: "text"},
+				{Key: "final_price_cents", Label: "Price (cents)", Type: "number"},
+				{Key: "currency", Label: "Currency", Type: "text"},
+				{Key: "status", Label: "Status", Type: "select", Options: []string{"pending", "processing", "completed", "failed", "expired", "abandoned", "cancelled"}},
+				{Key: "payment_mode", Label: "Mode", Type: "select", Options: []string{"single", "split"}},
+				{Key: "promo_code", Label: "Promo Code", Type: "text"},
+			},
+		},
+		{
+			Path: "saved-methods", Title: "Saved Methods", Icon: "CreditCard", Menu: plugin.PageMenuAdmin,
+			Collection: collectionSavedMethods,
+			Fields: []plugin.ManifestPageField{
+				{Key: "user_id", Label: "User ID", Type: "text"},
+				{Key: "provider", Label: "Provider", Type: "text"},
+				{Key: "last4", Label: "Last 4", Type: "text"},
+				{Key: "brand", Label: "Brand", Type: "text"},
+				{Key: "is_default", Label: "Default", Type: "boolean"},
+			},
+		},
 	}
 }
 

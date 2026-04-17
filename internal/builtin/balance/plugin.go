@@ -79,14 +79,28 @@ func balanceRoutes() []plugin.ManifestRoute {
 
 func balancePages() []plugin.ManifestPage {
 	return []plugin.ManifestPage{
-		{Path: "wallets", Title: "User Wallets", Icon: "Wallet", Menu: plugin.PageMenuAdmin},
-		{Path: "ledger", Title: "Ledger", Icon: "BookOpen", Menu: plugin.PageMenuAdmin},
-		{Path: "topups", Title: "Top-ups", Icon: "ArrowUpCircle", Menu: plugin.PageMenuAdmin},
-		{Path: "balance-analytics", Title: "Analytics", Icon: "BarChart3", Menu: plugin.PageMenuAdmin},
-		{Path: "balance-settings", Title: "Settings", Icon: "Settings", Menu: plugin.PageMenuAdmin},
-		{Path: "my-balance", Title: "My Balance", Icon: "Wallet", Menu: plugin.PageMenuCabinet},
-		{Path: "my-transactions", Title: "Transactions", Icon: "List", Menu: plugin.PageMenuCabinet},
-		{Path: "topup", Title: "Top Up", Icon: "Plus", Menu: plugin.PageMenuCabinet},
+		{
+			Path: "wallets", Title: "User Wallets", Icon: "Wallet", Menu: plugin.PageMenuAdmin,
+			Collection: CollectionWallets,
+			Fields: []plugin.ManifestPageField{
+				{Key: "user_id", Label: "User ID", Type: "text", Required: true},
+				{Key: "kind", Label: "Wallet", Type: "select", Required: true, Options: []string{"money", "bonus"}},
+				{Key: "currency", Label: "Currency", Type: "text", Default: "RUB"},
+				{Key: "balance_cents", Label: "Balance (cents)", Type: "number", Default: "0"},
+				{Key: "hold_cents", Label: "Hold (cents)", Type: "number", Default: "0"},
+			},
+		},
+		{
+			Path: "topups", Title: "Top-ups", Icon: "ArrowUpCircle", Menu: plugin.PageMenuAdmin,
+			Collection: CollectionTopUps,
+			Fields: []plugin.ManifestPageField{
+				{Key: "user_id", Label: "User ID", Type: "text", Required: true},
+				{Key: "amount_cents", Label: "Amount (cents)", Type: "number", Required: true},
+				{Key: "currency", Label: "Currency", Type: "text", Default: "RUB"},
+				{Key: "status", Label: "Status", Type: "select", Default: "pending", Options: []string{"pending", "processing", "completed", "failed", "cancelled"}},
+				{Key: "payment_method", Label: "Method", Type: "text"},
+			},
+		},
 	}
 }
 

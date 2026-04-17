@@ -166,13 +166,6 @@ func Plugin() plugin.BuiltInPluginDef {
 					{Key: "user_count", Label: "Users", Type: "number", Default: "0"},
 				},
 			},
-			// --- Page 6: Analytics ---
-			{
-				Path:  "tariff-analytics",
-				Title: "Analytics",
-				Icon:  "TrendingUp",
-				Menu:  plugin.PageMenuAdmin,
-			},
 		},
 		Routes: tariffRoutes(),
 	}

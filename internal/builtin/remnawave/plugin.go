@@ -378,46 +378,17 @@ func remnawavePages() []plugin.ManifestPage {
 			},
 		},
 		{
-			Path:  "dashboard",
-			Title: "Overview",
-			Icon:  "LayoutDashboard",
-			Menu:  plugin.PageMenuAdmin,
-		},
-		{
-			Path:  "nodes",
-			Title: "Nodes",
-			Icon:  "Network",
-			Menu:  plugin.PageMenuAdmin,
-		},
-		{
-			Path:  "users",
-			Title: "VPN Users",
-			Icon:  "Users",
-			Menu:  plugin.PageMenuAdmin,
-		},
-		{
-			Path:  "squads",
-			Title: "Squads",
-			Icon:  "Boxes",
-			Menu:  plugin.PageMenuAdmin,
-		},
-		{
-			Path:       "hwid-inspector",
-			Title:      "HWID Devices",
-			Icon:       "Smartphone",
+			Path:       "geo-routing",
+			Title:      "Geo Routing",
+			Icon:       "Globe",
 			Menu:       plugin.PageMenuAdmin,
-		},
-		{
-			Path:  "traffic",
-			Title: "Traffic Analytics",
-			Icon:  "TrendingUp",
-			Menu:  plugin.PageMenuAdmin,
-		},
-		{
-			Path:       "settings",
-			Title:      "Connection Settings",
-			Icon:       "Settings",
-			Menu:       plugin.PageMenuAdmin,
+			Collection: CollectionGeoRoutingRules,
+			Fields: []plugin.ManifestPageField{
+				{Key: "country_code", Label: "Country (ISO-3166)", Type: "text", Required: true},
+				{Key: "panel_id", Label: "Panel ID", Type: "text", Required: true},
+				{Key: "priority", Label: "Priority", Type: "number", Default: "0"},
+				{Key: "is_active", Label: "Active", Type: "boolean", Default: "true"},
+			},
 		},
 	}
 }
