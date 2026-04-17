@@ -123,47 +123,76 @@ func (h *Handler) ListSources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify session exists.
-	if _, err := h.loadSession(w, r, sessionID); err != nil {
+	session, err := h.loadSession(w, r, sessionID)
+	if err != nil {
 		return
 	}
 
-	// Hardcoded sources -- in production this would query the balance plugin
-	// and configured payment providers.
-	sources := []AvailableSource{
-		{
-			Kind:           "balance_money",
-			Label:          "Balance (money)",
-			Currency:       defaultCurrency,
-			MaxAmountCents: 0,
-			Icon:           "wallet",
-			Order:          1,
-		},
-		{
-			Kind:           "balance_bonus",
-			Label:          "Balance (bonus)",
-			Currency:       defaultCurrency,
-			MaxAmountCents: 0,
-			Icon:           "gift",
-			Order:          2,
-		},
-		{
-			Kind:     "stripe",
-			Label:    "Stripe",
-			Currency: "USD",
-			Icon:     "credit-card",
-			Order:    3,
-		},
-		{
-			Kind:     "yookassa",
-			Label:    "YooKassa",
-			Currency: defaultCurrency,
-			Icon:     "credit-card",
-			Order:    4,
-		},
+	uid := r.Header.Get("X-User-ID")
+	sources := make([]AvailableSource, 0)
+
+	// Query balance plugin collections for real wallet balances
+	balanceDocs, _ := h.collections.ListDocuments(r.Context(), "user-balance", "wallets")
+	for _, doc := range balanceDocs {
+		var wallet struct {
+			UserID       string `json:"user_id"`
+			Kind         string `json:"kind"`
+			BalanceCents int64  `json:"balance_cents"`
+			HoldCents    int64  `json:"hold_cents"`
+		}
+		if json.Unmarshal(doc.Data, &wallet) != nil || wallet.UserID != uid {
+			continue
+		}
+		available := wallet.BalanceCents - wallet.HoldCents
+		if available <= 0 {
+			continue
+		}
+		switch wallet.Kind {
+		case "money":
+			sources = append(sources, AvailableSource{
+				Kind: "balance_money", Label: "Balance",
+				Currency: session.Currency, MaxAmountCents: available,
+				Icon: "wallet", Order: 1,
+			})
+		case "bonus":
+			sources = append(sources, AvailableSource{
+				Kind: "balance_bonus", Label: "Bonus",
+				Currency: session.Currency, MaxAmountCents: available,
+				Icon: "gift", Order: 2,
+			})
+		}
 	}
 
-	writeJSON(w, http.StatusOK, sources)
+	// Query enabled payment plugins
+	enabledPlugins, _ := h.pluginRepo.GetEnabled(r.Context())
+	for _, p := range enabledPlugins {
+		// Payment provider plugins have "payment" in their category
+		if p.Slug == "stripe-payment" {
+			sources = append(sources, AvailableSource{
+				Kind: "stripe", Label: "Stripe", Icon: "credit-card", Order: 10,
+			})
+		}
+		if p.Slug == "yookassa-payment" {
+			sources = append(sources, AvailableSource{
+				Kind: "yookassa", Label: "YooKassa", Icon: "credit-card", Order: 11,
+			})
+		}
+	}
+
+	// Fallback: always show at least card providers if no plugins detected
+	if len(sources) == 0 {
+		sources = append(sources,
+			AvailableSource{Kind: "stripe", Label: "Card Payment", Icon: "credit-card", Order: 10},
+		)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"session_id":    session.ID,
+		"final_price":   session.FinalPriceCents,
+		"currency":      session.Currency,
+		"sources":       sources,
+		"split_allowed": true,
+	})
 }
 
 // ValidateSession checks whether a checkout session is still valid.
@@ -232,13 +261,21 @@ func (h *Handler) ConfirmSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate sum of sources equals final price.
+	// Validate individual source amounts (reject negative/zero).
 	var totalCents int64
-	for _, src := range req.Sources {
+	for i, src := range req.Sources {
+		if src.AmountCents <= 0 {
+			writeAPIError(w, apierror.ValidationFailed.WithDetails(
+				fmt.Sprintf("sources[%d].amount_cents must be positive", i)))
+			return
+		}
 		totalCents += src.AmountCents
 	}
-	if session.FinalPriceCents > 0 && totalCents != session.FinalPriceCents {
-		writeAPIError(w, apierror.BillingInsufficientFunds.WithDetails("sum of sources does not match final price"))
+
+	// Always validate sum matches final price.
+	if totalCents != session.FinalPriceCents {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails(
+			fmt.Sprintf("sum of sources (%d) does not match final price (%d)", totalCents, session.FinalPriceCents)))
 		return
 	}
 

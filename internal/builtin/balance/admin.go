@@ -65,6 +65,10 @@ func (h *Handler) AdminAdjust(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, apierror.ValidationFailed.WithDetails("amount_cents must be non-zero"))
 		return
 	}
+	if !isValidWalletKind(req.WalletKind) {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("wallet_kind must be 'money' or 'bonus'"))
+		return
+	}
 	entry := LedgerEntry{
 		UserID: userID, Wallet: WalletKind(req.WalletKind), AmountCents: req.AmountCents,
 		Kind: EntryAdjust, SourceType: "admin_adjust",
@@ -97,6 +101,14 @@ func (h *Handler) AdminTransfer(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.AmountCents <= 0 {
 		writeAPIError(w, apierror.ValidationFailed.WithDetails("amount_cents must be positive"))
+		return
+	}
+	if !isValidWalletKind(req.FromWallet) || !isValidWalletKind(req.ToWallet) {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("from_wallet and to_wallet must be 'money' or 'bonus'"))
+		return
+	}
+	if req.FromWallet == req.ToWallet {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("from_wallet and to_wallet must be different"))
 		return
 	}
 	now := time.Now()
@@ -204,6 +216,32 @@ func (h *Handler) AdminApproveTopUp(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	topup.Status = TopUpCompleted
 	topup.CompletedAt = &now
+
+	// Credit the user's money wallet via ledger entry
+	creditEntry := LedgerEntry{
+		UserID:      topup.UserID,
+		Wallet:      WalletMoney,
+		AmountCents: topup.AmountCents,
+		Currency:    topup.Currency,
+		Kind:        EntryTopUp,
+		SourceType:  "topup",
+		SourceID:    topupID,
+		ReferenceID: "topup_" + topupID,
+		Description: "Top-up approved by admin",
+		CreatedAt:   now,
+		CreatedBy:   "admin",
+	}
+	creditData, err := json.Marshal(creditEntry)
+	if err != nil {
+		writeAPIError(w, apierror.Internal)
+		return
+	}
+	if _, err := h.collections.InsertDocument(r.Context(), PluginSlug, CollectionLedger, json.RawMessage(creditData)); err != nil {
+		writeAPIError(w, apierror.Internal)
+		return
+	}
+
+	// Update topup status
 	data, err := json.Marshal(topup)
 	if err != nil {
 		writeAPIError(w, apierror.Internal)
@@ -213,7 +251,12 @@ func (h *Handler) AdminApproveTopUp(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, apierror.Internal)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"topup_id": topupID, "status": "completed"})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"topup_id":     topupID,
+		"status":       "completed",
+		"amount_cents": topup.AmountCents,
+		"wallet":       "money",
+	})
 }
 
 func (h *Handler) AdminRejectTopUp(w http.ResponseWriter, r *http.Request) {
@@ -270,4 +313,9 @@ func (h *Handler) AdminExportCSV(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Disposition", "attachment; filename=ledger_export.json")
 	writeJSON(w, http.StatusOK, entries)
+}
+
+// isValidWalletKind checks if a wallet kind string is valid.
+func isValidWalletKind(kind string) bool {
+	return kind == string(WalletMoney) || kind == string(WalletBonus)
 }

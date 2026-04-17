@@ -27,11 +27,11 @@ const (
 
 // Config key names stored in plugin.Config map.
 const (
-	ConfigKeyMinTopUpCents   = "min_topup_cents"
-	ConfigKeyMaxTopUpCents   = "max_topup_cents"
-	ConfigKeyCurrency        = "currency"
-	ConfigKeyTopUpPresets     = "topup_presets"
-	ConfigKeyAllowedProviders = "allowed_providers"
+	ConfigKeyMinTopUpCents    = "money_min_topup_cents"
+	ConfigKeyMaxTopUpCents    = "money_max_topup_cents"
+	ConfigKeyCurrency         = "default_currency"
+	ConfigKeyTopUpPresets     = "topup_presets_cents"
+	ConfigKeyAllowedProviders = "topup_providers"
 
 	defaultMinTopUpCents = 100
 	defaultMaxTopUpCents = 1_000_000

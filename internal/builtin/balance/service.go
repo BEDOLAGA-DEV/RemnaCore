@@ -138,8 +138,10 @@ func (s *BalanceService) Spend(ctx context.Context, userID string, wallet Wallet
 }
 
 // Hold places a hold on funds (blocks them from being used elsewhere).
+// Creates a negative ledger entry and increases hold_cents on the wallet.
+// The balance_cents is reduced by the hold amount; on release, a positive
+// compensating entry restores it.
 func (s *BalanceService) Hold(ctx context.Context, userID string, wallet WalletKind, amountCents int64, currency, referenceID string) (*LedgerEntry, error) {
-	// Verify sufficient available balance
 	available, err := s.GetAvailableBalance(ctx, userID, wallet)
 	if err != nil {
 		return nil, err
@@ -148,15 +150,16 @@ func (s *BalanceService) Hold(ctx context.Context, userID string, wallet WalletK
 		return nil, fmt.Errorf("insufficient available balance for hold: available=%d, requested=%d", available, amountCents)
 	}
 
-	// Update hold on wallet
+	// Update hold tracking on wallet
 	if err := s.updateWalletHold(ctx, userID, wallet, amountCents); err != nil {
 		return nil, err
 	}
 
+	// Create negative hold entry (satisfies CHECK amount_cents <> 0)
 	return s.CreateEntry(ctx, LedgerEntry{
 		UserID:      userID,
 		Wallet:      wallet,
-		AmountCents: 0, // hold doesn't change balance, just blocks funds
+		AmountCents: -amountCents,
 		Currency:    currency,
 		Kind:        EntryHold,
 		SourceType:  "hold",
@@ -165,9 +168,23 @@ func (s *BalanceService) Hold(ctx context.Context, userID string, wallet WalletK
 	})
 }
 
-// ReleaseHold releases a previously placed hold.
-func (s *BalanceService) ReleaseHold(ctx context.Context, userID string, wallet WalletKind, amountCents int64, referenceID string) error {
-	return s.updateWalletHold(ctx, userID, wallet, -amountCents)
+// ReleaseHold releases a previously placed hold by creating a positive
+// compensating entry and reducing hold_cents on the wallet.
+func (s *BalanceService) ReleaseHold(ctx context.Context, userID string, wallet WalletKind, amountCents int64, currency, referenceID string) (*LedgerEntry, error) {
+	if err := s.updateWalletHold(ctx, userID, wallet, -amountCents); err != nil {
+		return nil, err
+	}
+
+	return s.CreateEntry(ctx, LedgerEntry{
+		UserID:      userID,
+		Wallet:      wallet,
+		AmountCents: amountCents,
+		Currency:    currency,
+		Kind:        EntryRelease,
+		SourceType:  "hold",
+		ReferenceID: "release_" + referenceID,
+		Description: fmt.Sprintf("Release hold of %d cents for %s", amountCents, referenceID),
+	})
 }
 
 // updateWalletBalance updates or creates a wallet document.
