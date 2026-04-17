@@ -8,6 +8,7 @@ import (
 
 	// Built-in plugins self-register via init().
 	// Add a blank import for each new built-in plugin package here.
+	_ "github.com/BEDOLAGA-DEV/RemnaCore/internal/builtin/remnawave"
 	_ "github.com/BEDOLAGA-DEV/RemnaCore/internal/builtin/tariff"
 )
 
