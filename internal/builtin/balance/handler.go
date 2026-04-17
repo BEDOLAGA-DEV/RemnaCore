@@ -136,12 +136,10 @@ func parseLimit(r *http.Request) int {
 	return v
 }
 
-// userID extracts the current user identifier from the request.
-// It checks the query param first, then falls back to X-User-ID header.
+// userID extracts the authenticated user identifier from the request.
+// Uses only the trusted X-User-ID header set by auth middleware.
+// Never trusts query parameters for user identity.
 func userID(r *http.Request) string {
-	if uid := r.URL.Query().Get("user_id"); uid != "" {
-		return uid
-	}
 	return r.Header.Get("X-User-ID")
 }
 
@@ -369,6 +367,13 @@ func (h *Handler) GetTopUp(w http.ResponseWriter, r *http.Request) {
 	}
 	topup.ID = doc.ID
 
+	// Ownership check
+	uid := userID(r)
+	if uid != "" && topup.UserID != "" && topup.UserID != uid {
+		writeAPIError(w, apierror.NotFound)
+		return
+	}
+
 	writeJSON(w, http.StatusOK, topup)
 }
 
@@ -396,6 +401,13 @@ func (h *Handler) CancelTopUp(w http.ResponseWriter, r *http.Request) {
 	var topup TopUp
 	if err := json.Unmarshal(doc.Data, &topup); err != nil {
 		writeAPIError(w, apierror.Internal)
+		return
+	}
+
+	// Ownership check
+	uid := userID(r)
+	if uid != "" && topup.UserID != "" && topup.UserID != uid {
+		writeAPIError(w, apierror.NotFound)
 		return
 	}
 

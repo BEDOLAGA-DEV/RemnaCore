@@ -13,14 +13,10 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pluginstore"
 )
 
-const (
-	collectionWallets = "wallets"
-	collectionLedger  = "ledger"
-	collectionTopUps  = "topups"
-)
+// Collection constants defined in handler.go: CollectionWallets, CollectionLedger, CollectionTopUps
 
 func (h *Handler) AdminListWallets(w http.ResponseWriter, r *http.Request) {
-	docs, err := h.collections.ListDocuments(r.Context(), PluginSlug, collectionWallets)
+	docs, err := h.collections.ListDocuments(r.Context(), PluginSlug, CollectionWallets)
 	if err != nil {
 		h.logger.Error("failed to list wallets", slog.Any("error", err))
 		writeAPIError(w, apierror.Internal)
@@ -39,7 +35,7 @@ func (h *Handler) AdminGetUserBalance(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, apierror.ValidationFailed.WithDetails("userID is required"))
 		return
 	}
-	docs, err := h.collections.ListDocuments(r.Context(), PluginSlug, collectionWallets)
+	docs, err := h.collections.ListDocuments(r.Context(), PluginSlug, CollectionWallets)
 	if err != nil {
 		writeAPIError(w, apierror.Internal)
 		return
@@ -80,7 +76,7 @@ func (h *Handler) AdminAdjust(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, apierror.Internal)
 		return
 	}
-	doc, err := h.collections.InsertDocument(r.Context(), PluginSlug, collectionLedger, json.RawMessage(data))
+	doc, err := h.collections.InsertDocument(r.Context(), PluginSlug, CollectionLedger, json.RawMessage(data))
 	if err != nil {
 		writeAPIError(w, apierror.Internal)
 		return
@@ -110,23 +106,37 @@ func (h *Handler) AdminTransfer(w http.ResponseWriter, r *http.Request) {
 		Kind: EntryTransfer, SourceType: "transfer", ReferenceID: ref + "_debit",
 		Description: req.Description, CreatedAt: now, CreatedBy: "admin",
 	}
-	debitData, _ := json.Marshal(debit)
-	h.collections.InsertDocument(r.Context(), PluginSlug, collectionLedger, json.RawMessage(debitData))
+	debitData, err := json.Marshal(debit)
+	if err != nil {
+		writeAPIError(w, apierror.Internal)
+		return
+	}
+	if _, err := h.collections.InsertDocument(r.Context(), PluginSlug, CollectionLedger, json.RawMessage(debitData)); err != nil {
+		writeAPIError(w, apierror.Internal)
+		return
+	}
 
 	credit := LedgerEntry{
 		UserID: userID, Wallet: WalletKind(req.ToWallet), AmountCents: req.AmountCents,
 		Kind: EntryTransfer, SourceType: "transfer", ReferenceID: ref + "_credit",
 		Description: req.Description, CreatedAt: now, CreatedBy: "admin",
 	}
-	creditData, _ := json.Marshal(credit)
-	h.collections.InsertDocument(r.Context(), PluginSlug, collectionLedger, json.RawMessage(creditData))
+	creditData, err := json.Marshal(credit)
+	if err != nil {
+		writeAPIError(w, apierror.Internal)
+		return
+	}
+	if _, err := h.collections.InsertDocument(r.Context(), PluginSlug, CollectionLedger, json.RawMessage(creditData)); err != nil {
+		writeAPIError(w, apierror.Internal)
+		return
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"action": "transferred", "amount": req.AmountCents})
 }
 
 func (h *Handler) AdminUserLedger(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "userID")
-	docs, err := h.collections.ListDocuments(r.Context(), PluginSlug, collectionLedger)
+	docs, err := h.collections.ListDocuments(r.Context(), PluginSlug, CollectionLedger)
 	if err != nil {
 		writeAPIError(w, apierror.Internal)
 		return
@@ -142,7 +152,7 @@ func (h *Handler) AdminUserLedger(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) AdminLedger(w http.ResponseWriter, r *http.Request) {
-	docs, err := h.collections.ListDocuments(r.Context(), PluginSlug, collectionLedger)
+	docs, err := h.collections.ListDocuments(r.Context(), PluginSlug, CollectionLedger)
 	if err != nil {
 		writeAPIError(w, apierror.Internal)
 		return
@@ -155,7 +165,7 @@ func (h *Handler) AdminLedger(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) AdminListTopUps(w http.ResponseWriter, r *http.Request) {
-	docs, err := h.collections.ListDocuments(r.Context(), PluginSlug, collectionTopUps)
+	docs, err := h.collections.ListDocuments(r.Context(), PluginSlug, CollectionTopUps)
 	if err != nil {
 		writeAPIError(w, apierror.Internal)
 		return
@@ -173,7 +183,7 @@ func (h *Handler) AdminApproveTopUp(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, apierror.ValidationFailed.WithDetails("topup ID is required"))
 		return
 	}
-	doc, err := h.collections.GetDocument(r.Context(), PluginSlug, collectionTopUps, topupID)
+	doc, err := h.collections.GetDocument(r.Context(), PluginSlug, CollectionTopUps, topupID)
 	if err != nil {
 		if errors.Is(err, pluginstore.ErrDocumentNotFound) {
 			writeAPIError(w, apierror.NotFound)
@@ -199,7 +209,7 @@ func (h *Handler) AdminApproveTopUp(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, apierror.Internal)
 		return
 	}
-	if err := h.collections.UpdateDocument(r.Context(), PluginSlug, collectionTopUps, topupID, json.RawMessage(data)); err != nil {
+	if err := h.collections.UpdateDocument(r.Context(), PluginSlug, CollectionTopUps, topupID, json.RawMessage(data)); err != nil {
 		writeAPIError(w, apierror.Internal)
 		return
 	}
@@ -212,7 +222,7 @@ func (h *Handler) AdminRejectTopUp(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, apierror.ValidationFailed.WithDetails("topup ID is required"))
 		return
 	}
-	doc, err := h.collections.GetDocument(r.Context(), PluginSlug, collectionTopUps, topupID)
+	doc, err := h.collections.GetDocument(r.Context(), PluginSlug, CollectionTopUps, topupID)
 	if err != nil {
 		if errors.Is(err, pluginstore.ErrDocumentNotFound) {
 			writeAPIError(w, apierror.NotFound)
@@ -232,7 +242,7 @@ func (h *Handler) AdminRejectTopUp(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, apierror.Internal)
 		return
 	}
-	if err := h.collections.UpdateDocument(r.Context(), PluginSlug, collectionTopUps, topupID, json.RawMessage(data)); err != nil {
+	if err := h.collections.UpdateDocument(r.Context(), PluginSlug, CollectionTopUps, topupID, json.RawMessage(data)); err != nil {
 		writeAPIError(w, apierror.Internal)
 		return
 	}
@@ -249,7 +259,7 @@ func (h *Handler) AdminAnalytics(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) AdminExportCSV(w http.ResponseWriter, r *http.Request) {
-	docs, err := h.collections.ListDocuments(r.Context(), PluginSlug, collectionLedger)
+	docs, err := h.collections.ListDocuments(r.Context(), PluginSlug, CollectionLedger)
 	if err != nil {
 		writeAPIError(w, apierror.Internal)
 		return

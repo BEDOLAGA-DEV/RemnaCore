@@ -3,6 +3,7 @@ package checkout
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -61,9 +62,12 @@ func (h *Handler) CreateSession(w http.ResponseWriter, r *http.Request) {
 		req.Quantity = 1
 	}
 
+	uid := r.Header.Get("X-User-ID")
+
 	now := time.Now()
 	session := CheckoutSession{
 		ID:              uuid.NewString(),
+		UserID:          uid,
 		TariffID:        req.TariffID,
 		Quantity:        req.Quantity,
 		Currency:        defaultCurrency,
@@ -370,13 +374,19 @@ func (h *Handler) ListSavedMethods(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	uid := r.Header.Get("X-User-ID")
 	methods := make([]SavedMethod, 0, len(docs))
 	for _, doc := range docs {
 		var m SavedMethod
 		if json.Unmarshal(doc.Data, &m) != nil {
 			continue
 		}
+		// Filter by user — never show other users' saved methods
+		if uid != "" && m.UserID != "" && m.UserID != uid {
+			continue
+		}
 		m.ID = doc.ID
+		m.TokenID = "" // never expose raw token to client
 		methods = append(methods, m)
 	}
 
@@ -492,6 +502,13 @@ func (h *Handler) loadSession(w http.ResponseWriter, r *http.Request, sessionID 
 		return nil, err
 	}
 	session.ID = doc.ID
+
+	// Ownership check — reject if session belongs to a different user
+	uid := r.Header.Get("X-User-ID")
+	if uid != "" && session.UserID != "" && session.UserID != uid {
+		writeAPIError(w, apierror.NotFound)
+		return nil, fmt.Errorf("session ownership mismatch")
+	}
 
 	return &session, nil
 }

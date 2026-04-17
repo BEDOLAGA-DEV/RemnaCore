@@ -25,7 +25,7 @@ func NewExpiryWorker(service *BalanceService, logger *slog.Logger) *ExpiryWorker
 // Each expired entry generates a compensating entry that zeroes out the
 // original amount. Idempotent via reference_id = "expire_" + original_id.
 func (w *ExpiryWorker) Run(ctx context.Context) (int, error) {
-	docs, err := w.service.store.ListDocuments(ctx, PluginSlug, collectionLedger)
+	docs, err := w.service.store.ListDocuments(ctx, PluginSlug, CollectionLedger)
 	if err != nil {
 		return 0, fmt.Errorf("list ledger entries: %w", err)
 	}

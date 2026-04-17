@@ -25,7 +25,7 @@ func NewBalanceService(store pluginstore.Store) *BalanceService {
 
 // GetWallets returns both wallets for a user.
 func (s *BalanceService) GetWallets(ctx context.Context, userID string) ([]Wallet, error) {
-	docs, err := s.store.ListDocuments(ctx, PluginSlug, collectionWallets)
+	docs, err := s.store.ListDocuments(ctx, PluginSlug, CollectionWallets)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +66,7 @@ func (s *BalanceService) CreateEntry(ctx context.Context, entry LedgerEntry) (*L
 	}
 
 	// Check idempotency — scan for existing entry with same reference
-	docs, err := s.store.ListDocuments(ctx, PluginSlug, collectionLedger)
+	docs, err := s.store.ListDocuments(ctx, PluginSlug, CollectionLedger)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +104,7 @@ func (s *BalanceService) CreateEntry(ctx context.Context, entry LedgerEntry) (*L
 	if err != nil {
 		return nil, err
 	}
-	doc, err := s.store.InsertDocument(ctx, PluginSlug, collectionLedger, json.RawMessage(data))
+	doc, err := s.store.InsertDocument(ctx, PluginSlug, CollectionLedger, json.RawMessage(data))
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +172,7 @@ func (s *BalanceService) ReleaseHold(ctx context.Context, userID string, wallet 
 
 // updateWalletBalance updates or creates a wallet document.
 func (s *BalanceService) updateWalletBalance(ctx context.Context, userID string, wallet WalletKind, deltaCents int64, currency string) error {
-	docs, err := s.store.ListDocuments(ctx, PluginSlug, collectionWallets)
+	docs, err := s.store.ListDocuments(ctx, PluginSlug, CollectionWallets)
 	if err != nil {
 		return err
 	}
@@ -184,7 +184,7 @@ func (s *BalanceService) updateWalletBalance(ctx context.Context, userID string,
 			w.AvailableCents = w.BalanceCents - w.HoldCents
 			w.UpdatedAt = time.Now()
 			data, _ := json.Marshal(w)
-			return s.store.UpdateDocument(ctx, PluginSlug, collectionWallets, doc.ID, json.RawMessage(data))
+			return s.store.UpdateDocument(ctx, PluginSlug, CollectionWallets, doc.ID, json.RawMessage(data))
 		}
 	}
 
@@ -199,13 +199,13 @@ func (s *BalanceService) updateWalletBalance(ctx context.Context, userID string,
 		UpdatedAt:      time.Now(),
 	}
 	data, _ := json.Marshal(w)
-	_, err = s.store.InsertDocument(ctx, PluginSlug, collectionWallets, json.RawMessage(data))
+	_, err = s.store.InsertDocument(ctx, PluginSlug, CollectionWallets, json.RawMessage(data))
 	return err
 }
 
 // updateWalletHold adjusts the hold amount on a wallet.
 func (s *BalanceService) updateWalletHold(ctx context.Context, userID string, wallet WalletKind, deltaCents int64) error {
-	docs, err := s.store.ListDocuments(ctx, PluginSlug, collectionWallets)
+	docs, err := s.store.ListDocuments(ctx, PluginSlug, CollectionWallets)
 	if err != nil {
 		return err
 	}
@@ -220,7 +220,7 @@ func (s *BalanceService) updateWalletHold(ctx context.Context, userID string, wa
 			w.AvailableCents = w.BalanceCents - w.HoldCents
 			w.UpdatedAt = time.Now()
 			data, _ := json.Marshal(w)
-			return s.store.UpdateDocument(ctx, PluginSlug, collectionWallets, doc.ID, json.RawMessage(data))
+			return s.store.UpdateDocument(ctx, PluginSlug, CollectionWallets, doc.ID, json.RawMessage(data))
 		}
 	}
 
