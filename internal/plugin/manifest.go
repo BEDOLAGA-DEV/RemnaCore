@@ -40,15 +40,20 @@ var reservedRoutePathPrefixes = []string{
 // AllowedHookPrefixes defines the valid namespace prefixes for plugin hooks.
 // Every hook name declared in a manifest must start with one of these prefixes.
 var AllowedHookPrefixes = []string{
-	"checkout.",
-	"subscription.",
-	"pricing.",
-	"payment.",
-	"vpn.",
+	"ab.",
 	"binding.",
+	"checkout.",
+	"cohort.",
 	"invoice.",
-	"plugin.",
 	"notification.",
+	"payment.",
+	"plugin.",
+	"pricing.",
+	"promo.",
+	"subscription.",
+	"tariff.",
+	"user.",
+	"vpn.",
 }
 
 // validateHookName checks that a hook name starts with one of the allowed

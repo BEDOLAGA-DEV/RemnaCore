@@ -471,15 +471,20 @@ func TestValidateHookName(t *testing.T) {
 		wantErr bool
 	}{
 		// Allowed prefixes
-		{"checkout prefix", "checkout.started", false},
-		{"subscription prefix", "subscription.renewed", false},
-		{"pricing prefix", "pricing.calculated", false},
-		{"payment prefix", "payment.completed", false},
-		{"vpn prefix", "vpn.provisioned", false},
+		{"ab prefix", "ab.variant_assigned", false},
 		{"binding prefix", "binding.created", false},
+		{"checkout prefix", "checkout.started", false},
+		{"cohort prefix", "cohort.recalculated", false},
 		{"invoice prefix", "invoice.created", false},
-		{"plugin prefix", "plugin.installed", false},
 		{"notification prefix", "notification.sent", false},
+		{"payment prefix", "payment.completed", false},
+		{"plugin prefix", "plugin.installed", false},
+		{"pricing prefix", "pricing.calculated", false},
+		{"promo prefix", "promo.code_used", false},
+		{"subscription prefix", "subscription.renewed", false},
+		{"tariff prefix", "tariff.purchased", false},
+		{"user prefix", "user.resolve_groups", false},
+		{"vpn prefix", "vpn.provisioned", false},
 
 		// Rejected prefixes
 		{"admin prefix rejected", "admin.reset", true},
