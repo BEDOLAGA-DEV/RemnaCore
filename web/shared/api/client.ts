@@ -140,6 +140,17 @@ export async function apiPut<T>(
 }
 
 /**
+ * Typed JSON PATCH request.
+ */
+export async function apiPatch<T>(
+  endpoint: string,
+  body?: unknown,
+): Promise<T> {
+  const baseUrl = getBaseUrl();
+  return apiClient.patch(`${baseUrl}${endpoint}`, { json: body }).json<T>();
+}
+
+/**
  * Typed JSON DELETE request.
  */
 export async function apiDelete<T>(
