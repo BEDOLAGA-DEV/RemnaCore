@@ -21,7 +21,7 @@ func (c *Client) GetNodeMetadata(ctx context.Context, uuid string) (json.RawMess
 	if err := c.do(ctx, http.MethodGet, APIPathMetadata+metadataPathNode+uuid, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	return resp.Response, nil
 }
 
 // UpsertNodeMetadata creates or updates the metadata for a specific node.
@@ -35,7 +35,7 @@ func (c *Client) GetUserMetadata(ctx context.Context, uuid string) (json.RawMess
 	if err := c.do(ctx, http.MethodGet, APIPathMetadata+metadataPathUser+uuid, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	return resp.Response, nil
 }
 
 // UpsertUserMetadata creates or updates the metadata for a specific user.

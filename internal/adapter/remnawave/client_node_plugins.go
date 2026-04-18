@@ -19,7 +19,7 @@ func (c *Client) GetNodePlugins(ctx context.Context) ([]NodePlugin, error) {
 	if err := c.do(ctx, http.MethodGet, APIPathNodePlugins, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	return resp.Response, nil
 }
 
 // GetNodePluginByUUID returns a single node plugin by its UUID.
@@ -28,7 +28,7 @@ func (c *Client) GetNodePluginByUUID(ctx context.Context, uuid string) (*NodePlu
 	if err := c.do(ctx, http.MethodGet, APIPathNodePlugins+uuid, nil, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // CreateNodePlugin creates a new node plugin.
@@ -37,7 +37,7 @@ func (c *Client) CreateNodePlugin(ctx context.Context, req CreateNodePluginReque
 	if err := c.do(ctx, http.MethodPost, APIPathNodePlugins, req, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // UpdateNodePlugin modifies an existing node plugin.
@@ -46,7 +46,7 @@ func (c *Client) UpdateNodePlugin(ctx context.Context, req UpdateNodePluginReque
 	if err := c.do(ctx, http.MethodPatch, APIPathNodePlugins, req, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // DeleteNodePlugin removes a node plugin by its UUID.
@@ -66,5 +66,5 @@ func (c *Client) CloneNodePlugin(ctx context.Context, uuid string) (*NodePlugin,
 	if err := c.do(ctx, http.MethodPost, APIPathNodePlugins+nodePluginsPathClone+uuid, nil, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }

@@ -25,7 +25,7 @@ func (c *Client) GetSystemHealth(ctx context.Context) (*SystemHealth, error) {
 	if err := c.do(ctx, http.MethodGet, APIPathSystem+systemPathHealth, nil, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // GetSystemMetadata returns system-level metadata from Remnawave.
@@ -34,7 +34,7 @@ func (c *Client) GetSystemMetadata(ctx context.Context) (*SystemMetadata, error)
 	if err := c.do(ctx, http.MethodGet, APIPathSystem+systemPathMetadata, nil, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // GetSystemStats returns high-level system statistics.
@@ -43,7 +43,7 @@ func (c *Client) GetSystemStats(ctx context.Context) (*SystemStats, error) {
 	if err := c.do(ctx, http.MethodGet, APIPathSystem+systemPathStats, nil, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // GetBandwidthSystemStats returns bandwidth-specific system statistics.
@@ -52,7 +52,7 @@ func (c *Client) GetBandwidthSystemStats(ctx context.Context) (*BandwidthSystemS
 	if err := c.do(ctx, http.MethodGet, APIPathSystem+systemPathStatsBandwidth, nil, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // GetNodesSystemStats returns node-specific system statistics.
@@ -61,7 +61,7 @@ func (c *Client) GetNodesSystemStats(ctx context.Context) (*NodesSystemStats, er
 	if err := c.do(ctx, http.MethodGet, APIPathSystem+systemPathStatsNodes, nil, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // GetNodesMetrics returns detailed metrics for all nodes.
@@ -70,7 +70,7 @@ func (c *Client) GetNodesMetrics(ctx context.Context) ([]NodeMetrics, error) {
 	if err := c.do(ctx, http.MethodGet, APIPathSystem+systemPathNodesMetrics, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	return resp.Response, nil
 }
 
 // GetStatsRecap returns a recap/summary of system statistics.
@@ -79,5 +79,5 @@ func (c *Client) GetStatsRecap(ctx context.Context) (*StatsRecap, error) {
 	if err := c.do(ctx, http.MethodGet, APIPathSystem+systemPathStatsRecap, nil, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }

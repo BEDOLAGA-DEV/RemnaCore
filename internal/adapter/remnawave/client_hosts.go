@@ -23,7 +23,7 @@ func (c *Client) CreateHost(ctx context.Context, req CreateHostRequest) (*Remnaw
 	if err := c.do(ctx, http.MethodPost, APIPathHosts, req, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // UpdateHost modifies an existing host.
@@ -32,7 +32,7 @@ func (c *Client) UpdateHost(ctx context.Context, req UpdateHostRequest) (*Remnaw
 	if err := c.do(ctx, http.MethodPatch, APIPathHosts, req, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // GetAllHosts returns all hosts registered in Remnawave.
@@ -41,7 +41,7 @@ func (c *Client) GetAllHosts(ctx context.Context) ([]RemnawaveHost, error) {
 	if err := c.do(ctx, http.MethodGet, APIPathHosts, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	return resp.Response, nil
 }
 
 // GetHostByUUID retrieves a single host by its UUID.
@@ -50,7 +50,7 @@ func (c *Client) GetHostByUUID(ctx context.Context, uuid string) (*RemnawaveHost
 	if err := c.do(ctx, http.MethodGet, APIPathHosts+uuid, nil, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // DeleteHost removes a host from Remnawave.
@@ -69,7 +69,7 @@ func (c *Client) GetHostTags(ctx context.Context) ([]string, error) {
 	if err := c.do(ctx, http.MethodGet, APIPathHostsTags, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	return resp.Response, nil
 }
 
 // BulkEnableHosts enables the specified hosts.

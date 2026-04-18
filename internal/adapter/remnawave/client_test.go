@@ -35,8 +35,7 @@ func TestClient_CreateUser(t *testing.T) {
 		assert.Equal(t, "p_testuser_main_0", req.Username)
 
 		resp := APIResponse[RemnawaveUser]{
-			Success: true,
-			Data: RemnawaveUser{
+			Response: RemnawaveUser{
 				UUID:     "uuid-123",
 				Username: req.Username,
 				Status:   "active",
@@ -67,8 +66,7 @@ func TestClient_GetNodes(t *testing.T) {
 		assert.Equal(t, httpconst.BearerPrefix+"node-token", r.Header.Get(httpconst.HeaderAuthorization))
 
 		resp := APIResponse[[]RemnawaveNode]{
-			Success: true,
-			Data: []RemnawaveNode{
+			Response: []RemnawaveNode{
 				{UUID: "node-1", Name: "DE-1", Address: "1.2.3.4", Port: 443, IsConnected: true},
 				{UUID: "node-2", Name: "US-1", Address: "5.6.7.8", Port: 443, IsConnected: false},
 			},

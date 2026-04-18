@@ -165,7 +165,7 @@ func (c *Client) CreateUser(ctx context.Context, req CreateUserRequest) (*Remnaw
 	if err := c.do(ctx, http.MethodPost, APIPathUsers, req, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // GetUserByUUID retrieves a single VPN user with traffic stats.
@@ -174,7 +174,7 @@ func (c *Client) GetUserByUUID(ctx context.Context, uuid string) (*RemnawaveUser
 	if err := c.do(ctx, http.MethodGet, APIPathUsers+uuid, nil, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // UpdateUser modifies an existing VPN user in Remnawave.
@@ -183,7 +183,7 @@ func (c *Client) UpdateUser(ctx context.Context, req UpdateUserRequest) (*Remnaw
 	if err := c.do(ctx, http.MethodPut, APIPathUsers, req, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // DeleteUser removes a VPN user from Remnawave.
@@ -207,5 +207,5 @@ func (c *Client) GetNodes(ctx context.Context) ([]RemnawaveNode, error) {
 	if err := c.do(ctx, http.MethodGet, APIPathNodes, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	return resp.Response, nil
 }

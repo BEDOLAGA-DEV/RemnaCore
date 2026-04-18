@@ -22,7 +22,7 @@ func (c *Client) GetNodesBandwidthStats(ctx context.Context) ([]NodeBandwidthSta
 	if err := c.do(ctx, http.MethodGet, APIPathBandwidthStats+bandwidthPathNodes, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	return resp.Response, nil
 }
 
 // GetRealtimeNodeMetrics returns real-time bandwidth metrics for all nodes.
@@ -31,7 +31,7 @@ func (c *Client) GetRealtimeNodeMetrics(ctx context.Context) ([]RealtimeNodeMetr
 	if err := c.do(ctx, http.MethodGet, APIPathBandwidthStats+bandwidthPathRealtime, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	return resp.Response, nil
 }
 
 // GetNodeUsersBandwidth returns bandwidth statistics for all users on a specific node.
@@ -41,7 +41,7 @@ func (c *Client) GetNodeUsersBandwidth(ctx context.Context, nodeUUID string) ([]
 	if err := c.do(ctx, http.MethodGet, path, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	return resp.Response, nil
 }
 
 // GetUserBandwidthStats returns bandwidth statistics for a specific user.
@@ -50,5 +50,5 @@ func (c *Client) GetUserBandwidthStats(ctx context.Context, userUUID string) (*U
 	if err := c.do(ctx, http.MethodGet, APIPathBandwidthStats+bandwidthPathUsers+userUUID, nil, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }

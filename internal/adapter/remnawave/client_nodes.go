@@ -22,7 +22,7 @@ func (c *Client) CreateNode(ctx context.Context, req CreateNodeRequest) (*Remnaw
 	if err := c.do(ctx, http.MethodPost, APIPathNodes, req, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // GetNodeByUUID retrieves a single proxy node by its UUID.
@@ -31,7 +31,7 @@ func (c *Client) GetNodeByUUID(ctx context.Context, uuid string) (*RemnawaveNode
 	if err := c.do(ctx, http.MethodGet, APIPathNodes+uuid, nil, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // UpdateNode modifies an existing proxy node.
@@ -40,7 +40,7 @@ func (c *Client) UpdateNode(ctx context.Context, req UpdateNodeRequest) (*Remnaw
 	if err := c.do(ctx, http.MethodPatch, APIPathNodes, req, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // DeleteNode removes a proxy node from Remnawave.
@@ -84,5 +84,5 @@ func (c *Client) GetNodeTags(ctx context.Context) ([]string, error) {
 	if err := c.do(ctx, http.MethodGet, APIPathNodesTags, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	return resp.Response, nil
 }

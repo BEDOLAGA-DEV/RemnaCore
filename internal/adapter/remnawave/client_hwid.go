@@ -22,7 +22,7 @@ func (c *Client) GetAllHWIDDevices(ctx context.Context) ([]HWIDDevice, error) {
 	if err := c.do(ctx, http.MethodGet, APIPathHWID, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	return resp.Response, nil
 }
 
 // CreateHWIDDevice registers a new HWID device for a user.
@@ -31,7 +31,7 @@ func (c *Client) CreateHWIDDevice(ctx context.Context, req CreateHWIDDeviceReque
 	if err := c.do(ctx, http.MethodPost, APIPathHWID, req, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // GetUserHWIDDevices returns all HWID devices for a specific user.
@@ -40,7 +40,7 @@ func (c *Client) GetUserHWIDDevices(ctx context.Context, userUUID string) ([]HWI
 	if err := c.do(ctx, http.MethodGet, APIPathHWID+userUUID, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	return resp.Response, nil
 }
 
 // DeleteHWIDDevice removes a specific HWID device.
@@ -59,7 +59,7 @@ func (c *Client) GetHWIDStats(ctx context.Context) (*HWIDStats, error) {
 	if err := c.do(ctx, http.MethodGet, APIPathHWID+hwidPathStats, nil, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // GetTopHWIDUsers returns users with the most registered HWID devices.
@@ -68,5 +68,5 @@ func (c *Client) GetTopHWIDUsers(ctx context.Context) ([]TopHWIDUser, error) {
 	if err := c.do(ctx, http.MethodGet, APIPathHWID+hwidPathTopUsers, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	return resp.Response, nil
 }

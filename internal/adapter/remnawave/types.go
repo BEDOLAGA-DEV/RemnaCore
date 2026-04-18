@@ -32,10 +32,9 @@ type UpdateUserRequest struct {
 }
 
 // APIResponse is the generic envelope returned by Remnawave REST endpoints.
+// The Remnawave API wraps responses in a "response" field.
 type APIResponse[T any] struct {
-	Success bool   `json:"success"`
-	Message string `json:"message,omitempty"`
-	Data    T      `json:"data"`
+	Response T      `json:"response"`
 }
 
 // RemnawaveUser represents a VPN user as returned by Remnawave.

@@ -21,7 +21,7 @@ func (c *Client) GetAllSubscriptions(ctx context.Context) ([]RemnawaveSubscripti
 	if err := c.do(ctx, http.MethodGet, APIPathSubscriptions, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	return resp.Response, nil
 }
 
 // GetSubscriptionByUsername retrieves a subscription by its username.
@@ -30,7 +30,7 @@ func (c *Client) GetSubscriptionByUsername(ctx context.Context, username string)
 	if err := c.do(ctx, http.MethodGet, APIPathSubscriptions+subPathByUsername+username, nil, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // GetSubscriptionByUUID retrieves a subscription by its UUID.
@@ -39,7 +39,7 @@ func (c *Client) GetSubscriptionByUUID(ctx context.Context, uuid string) (*Remna
 	if err := c.do(ctx, http.MethodGet, APIPathSubscriptions+subPathByUUID+uuid, nil, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // GetSubscriptionByShortUUID retrieves a subscription by its short UUID.
@@ -48,5 +48,5 @@ func (c *Client) GetSubscriptionByShortUUID(ctx context.Context, shortUUID strin
 	if err := c.do(ctx, http.MethodGet, APIPathSubscriptions+subPathByShortUUID+shortUUID, nil, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }

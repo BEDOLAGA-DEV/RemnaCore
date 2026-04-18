@@ -29,7 +29,7 @@ func (c *Client) GetAllUsers(ctx context.Context, params GetAllUsersParams) (*Us
 	if err := c.doWithQuery(ctx, http.MethodGet, APIPathUsers, nil, query, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // GetUserByShortUUID retrieves a single VPN user by their short UUID.
@@ -38,7 +38,7 @@ func (c *Client) GetUserByShortUUID(ctx context.Context, shortUUID string) (*Rem
 	if err := c.do(ctx, http.MethodGet, APIPathUsersByShortUUID+shortUUID, nil, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // GetUserByUsername retrieves a single VPN user by their username.
@@ -47,7 +47,7 @@ func (c *Client) GetUserByUsername(ctx context.Context, username string) (*Remna
 	if err := c.do(ctx, http.MethodGet, APIPathUsersByUsername+username, nil, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // ResetUserTraffic resets the traffic counters for a single VPN user.
@@ -68,5 +68,5 @@ func (c *Client) GetUserTags(ctx context.Context) ([]string, error) {
 	if err := c.do(ctx, http.MethodGet, APIPathUsersTags, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	return resp.Response, nil
 }

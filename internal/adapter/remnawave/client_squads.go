@@ -37,7 +37,7 @@ func (c *Client) CreateInternalSquad(ctx context.Context, req CreateSquadRequest
 	if err := c.do(ctx, http.MethodPost, APIPathInternalSquads, req, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // UpdateInternalSquad modifies an existing internal squad in Remnawave.
@@ -46,7 +46,7 @@ func (c *Client) UpdateInternalSquad(ctx context.Context, req UpdateSquadRequest
 	if err := c.do(ctx, http.MethodPatch, APIPathInternalSquads, req, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // GetInternalSquadByUUID retrieves a single internal squad by UUID.
@@ -55,7 +55,7 @@ func (c *Client) GetInternalSquadByUUID(ctx context.Context, uuid string) (*Remn
 	if err := c.do(ctx, http.MethodGet, APIPathInternalSquads+uuid, nil, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // DeleteInternalSquad removes an internal squad from Remnawave.
@@ -69,7 +69,7 @@ func (c *Client) GetInternalSquadNodes(ctx context.Context, uuid string) ([]Remn
 	if err := c.do(ctx, http.MethodGet, APIPathInternalSquads+uuid+subPathAccessibleNodes, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	return resp.Response, nil
 }
 
 // AddUsersToInternalSquad adds users to an internal squad by their UUIDs.
@@ -109,7 +109,7 @@ func (c *Client) CreateExternalSquad(ctx context.Context, req CreateSquadRequest
 	if err := c.do(ctx, http.MethodPost, APIPathExternalSquads, req, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // UpdateExternalSquad modifies an existing external squad in Remnawave.
@@ -118,7 +118,7 @@ func (c *Client) UpdateExternalSquad(ctx context.Context, req UpdateSquadRequest
 	if err := c.do(ctx, http.MethodPatch, APIPathExternalSquads, req, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // GetExternalSquadByUUID retrieves a single external squad by UUID.
@@ -127,7 +127,7 @@ func (c *Client) GetExternalSquadByUUID(ctx context.Context, uuid string) (*Remn
 	if err := c.do(ctx, http.MethodGet, APIPathExternalSquads+uuid, nil, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // DeleteExternalSquad removes an external squad from Remnawave.
@@ -141,7 +141,7 @@ func (c *Client) GetExternalSquadNodes(ctx context.Context, uuid string) ([]Remn
 	if err := c.do(ctx, http.MethodGet, APIPathExternalSquads+uuid+subPathAccessibleNodes, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	return resp.Response, nil
 }
 
 // AddUsersToExternalSquad adds users to an external squad by their UUIDs.

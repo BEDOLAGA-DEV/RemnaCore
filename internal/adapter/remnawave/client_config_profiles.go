@@ -20,7 +20,7 @@ func (c *Client) GetConfigProfiles(ctx context.Context) ([]RemnawaveConfigProfil
 	if err := c.do(ctx, http.MethodGet, APIPathConfigProfiles, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	return resp.Response, nil
 }
 
 // CreateConfigProfile provisions a new config profile in Remnawave.
@@ -29,7 +29,7 @@ func (c *Client) CreateConfigProfile(ctx context.Context, req CreateConfigProfil
 	if err := c.do(ctx, http.MethodPost, APIPathConfigProfiles, req, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // UpdateConfigProfile modifies an existing config profile in Remnawave.
@@ -38,7 +38,7 @@ func (c *Client) UpdateConfigProfile(ctx context.Context, req UpdateConfigProfil
 	if err := c.do(ctx, http.MethodPatch, APIPathConfigProfiles, req, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // GetConfigProfileByUUID retrieves a single config profile by UUID.
@@ -47,7 +47,7 @@ func (c *Client) GetConfigProfileByUUID(ctx context.Context, uuid string) (*Remn
 	if err := c.do(ctx, http.MethodGet, APIPathConfigProfiles+uuid, nil, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Data, nil
+	return &resp.Response, nil
 }
 
 // DeleteConfigProfile removes a config profile from Remnawave.
@@ -61,7 +61,7 @@ func (c *Client) GetConfigProfileInbounds(ctx context.Context, uuid string) ([]R
 	if err := c.do(ctx, http.MethodGet, APIPathConfigProfiles+uuid+subPathInbounds, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	return resp.Response, nil
 }
 
 // GetAllInbounds returns all inbound proxy entries from Remnawave.
@@ -70,7 +70,7 @@ func (c *Client) GetAllInbounds(ctx context.Context) ([]RemnawaveInbound, error)
 	if err := c.do(ctx, http.MethodGet, APIPathConfigProfiles+subPathAllInbounds, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	return resp.Response, nil
 }
 
 // ReorderConfigProfiles sets the display order for config profiles.
