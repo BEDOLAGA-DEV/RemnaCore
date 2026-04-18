@@ -363,7 +363,6 @@ export function PluginPageView() {
 					</div>
 				);
 			},
-			),
 		},
 	];
 
