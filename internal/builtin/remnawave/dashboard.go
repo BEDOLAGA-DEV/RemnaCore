@@ -1,6 +1,7 @@
 package remnawave
 
 import (
+	"encoding/json"
 	"log/slog"
 	"net/http"
 )
@@ -69,16 +70,43 @@ func (h *Handler) GetDashboardRealtime(w http.ResponseWriter, r *http.Request) {
 
 	type panelRealtime struct {
 		PanelID string `json:"panel_id"`
+		Slug    string `json:"slug"`
+		Online  bool   `json:"online"`
 		Metrics any    `json:"metrics"`
+	}
+
+	// Load panel slugs from collection
+	slugMap := make(map[string]string)
+	if docs, err := h.collections.ListDocuments(r.Context(), PluginSlug, CollectionPanelConnections); err == nil {
+		for _, doc := range docs {
+			var p PanelConnectionInput
+			if json.Unmarshal(doc.Data, &p) == nil {
+				slugMap[doc.ID] = p.Slug
+			}
+		}
 	}
 
 	panels := make([]panelRealtime, 0)
 	for panelID, client := range clients {
-		metrics, err := client.GetRealtimeNodeMetrics(r.Context())
-		if err != nil {
-			continue
+		slug := slugMap[panelID]
+		if slug == "" {
+			slug = panelID
 		}
-		panels = append(panels, panelRealtime{PanelID: panelID, Metrics: metrics})
+
+		entry := panelRealtime{PanelID: panelID, Slug: slug, Online: true}
+
+		// Try realtime metrics (may not be supported by panel version)
+		metrics, err := client.GetRealtimeNodeMetrics(r.Context())
+		if err == nil {
+			entry.Metrics = metrics
+		}
+
+		// Verify panel is actually reachable
+		if _, healthErr := client.GetSystemHealth(r.Context()); healthErr != nil {
+			entry.Online = false
+		}
+
+		panels = append(panels, entry)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"panels": panels})

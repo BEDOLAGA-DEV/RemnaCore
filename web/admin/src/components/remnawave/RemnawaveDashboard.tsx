@@ -44,7 +44,9 @@ type OverviewResponse = {
 
 type PanelMetrics = {
   panel_id: string;
-  metrics: Record<string, unknown>;
+  slug?: string;
+  online?: boolean;
+  metrics: Record<string, unknown> | null;
 };
 
 type RealtimeResponse = {
@@ -234,7 +236,9 @@ export default function RemnawaveDashboard() {
           </div>
         ) : (
           <p className="py-4 text-center font-mono text-xs text-muted-foreground">
-            No panels configured
+            {stats.panels_total > 0
+              ? "Realtime metrics unavailable"
+              : "No panels configured"}
           </p>
         )}
 
@@ -310,14 +314,15 @@ type PanelRowProps = {
 };
 
 function PanelRow({ panel }: PanelRowProps) {
-  const isUp = panel.metrics.status === "up" || panel.metrics.online === true;
+  const isUp = panel.online !== false;
+  const label = panel.slug || panel.panel_id;
 
   return (
     <div className="flex items-center justify-between rounded-lg bg-secondary p-3">
       <div className="flex items-center gap-2.5">
         <StatusDot status={isUp ? "healthy" : "unhealthy"} />
         <span className="font-mono text-xs text-foreground">
-          {panel.panel_id}
+          {label}
         </span>
       </div>
       <span
