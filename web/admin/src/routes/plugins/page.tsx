@@ -198,6 +198,7 @@ const CUSTOM_PAGES: Record<string, React.LazyExoticComponent<React.ComponentType
 	"remnawave-provider/dashboard": lazy(() => import("../../components/remnawave/RemnawaveDashboard.js")),
 	"remnawave-provider/nodes": lazy(() => import("../../components/remnawave/RemnawaveNodes.js")),
 	"remnawave-provider/users": lazy(() => import("../../components/remnawave/RemnawaveUsers.js")),
+	"remnawave-provider/ip-management": lazy(() => import("../../components/remnawave/RemnawaveIPManagement.js")),
 };
 
 // ─── Main Component ───────────────────────────────────────────────────────────

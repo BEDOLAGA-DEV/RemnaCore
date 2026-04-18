@@ -384,6 +384,7 @@ func remnawavePages() []plugin.ManifestPage {
 		{Path: "dashboard", Title: "Dashboard", Icon: "LayoutDashboard", Menu: plugin.PageMenuAdmin, Collection: "_custom"},
 		{Path: "nodes", Title: "Nodes", Icon: "Network", Menu: plugin.PageMenuAdmin, Collection: "_custom"},
 		{Path: "users", Title: "VPN Users", Icon: "Users", Menu: plugin.PageMenuAdmin, Collection: "_custom"},
+		{Path: "ip-management", Title: "IP Management", Icon: "Globe", Menu: plugin.PageMenuAdmin, Collection: "_custom"},
 		{
 			Path:       "geo-routing",
 			Title:      "Geo Routing",
