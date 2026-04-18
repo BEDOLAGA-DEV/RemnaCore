@@ -237,7 +237,7 @@ export function PluginPageView() {
 	const handleTestConnection = useCallback(async (docId: string) => {
 		setTestResults((prev) => ({ ...prev, [docId]: { loading: true } }));
 		try {
-			const result = await apiPost<{ success: boolean; node_count?: number; error?: string }>(
+			const result = await apiPost<{ success: boolean; node_count?: number; version?: string; error?: string }>(
 				`/api/remnawave/panels/${docId}/test`,
 				{},
 			);
@@ -247,7 +247,7 @@ export function PluginPageView() {
 					loading: false,
 					success: result.success,
 					message: result.success
-						? `Connected (${result.node_count ?? 0} nodes)`
+						? `v${result.version ?? "?"} · ${result.node_count ?? 0} nodes`
 						: result.error ?? "Connection failed",
 				},
 			}));

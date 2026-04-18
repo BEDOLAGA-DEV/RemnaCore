@@ -184,11 +184,18 @@ func (h *Handler) TestPanel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	result := map[string]any{
 		"success":    true,
 		"panel_id":   panelID,
 		"node_count": len(nodes),
-	})
+	}
+
+	// Fetch panel version from system metadata
+	if meta, err := client.GetSystemMetadata(r.Context()); err == nil && meta != nil {
+		result["version"] = meta.Version
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 // SetPanelMaintenance puts a panel into maintenance mode.
