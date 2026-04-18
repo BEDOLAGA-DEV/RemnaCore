@@ -16,7 +16,9 @@ type SquadEntry = {
 
 type PanelEntry = {
 	id: string;
-	data: { slug: string; url: string; status: string };
+	slug: string;
+	url: string;
+	status: string;
 };
 
 type FormMode = "closed" | "create" | "edit";
@@ -36,8 +38,8 @@ export default function RemnawaveSquadsExternal() {
 	});
 
 	const { data: panelsRaw } = useQuery({
-		queryKey: ["plugins", "remnawave-provider", "collections", "panel_connections"],
-		queryFn: () => apiGet<PanelEntry[]>("/api/plugins/remnawave-provider/collections/panel_connections"),
+		queryKey: ["remnawave", "panels"],
+		queryFn: () => apiGet<PanelEntry[]>("/api/remnawave/panels"),
 	});
 	const panels = Array.isArray(panelsRaw) ? panelsRaw : [];
 
@@ -123,7 +125,7 @@ export default function RemnawaveSquadsExternal() {
 							<select value={panelID} onChange={(e) => setPanelID(e.target.value)} disabled={formMode === "edit"} className={inputCls}>
 								<option value="">Select panel...</option>
 								{panels.map((p) => (
-									<option key={p.id} value={p.id}>{p.data.slug || p.id} — {p.data.url}</option>
+									<option key={p.id} value={p.id}>{p.slug || p.id} — {p.url}</option>
 								))}
 							</select>
 						</div>
