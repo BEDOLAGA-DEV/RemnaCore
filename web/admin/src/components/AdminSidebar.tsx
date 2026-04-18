@@ -1,20 +1,35 @@
 import { cn, useAuthStore, usePluginPages } from "@remnacore/shared";
 import { Link } from "@tanstack/react-router";
 import {
+	ArrowUpCircle,
+	BarChart3,
+	Boxes,
 	Building2,
+	Calculator,
+	ChevronDown,
+	Clock,
 	CreditCard,
 	FileText,
 	Globe,
 	LayoutDashboard,
 	type LucideIcon,
+	Network,
 	Package,
+	Plus,
 	Puzzle,
 	Search,
 	Server,
 	Settings,
+	ShoppingCart,
+	Smartphone,
+	Tag,
+	TrendingUp,
 	Users,
+	Wallet,
+	BookOpen,
+	List,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 const NAV_ITEMS = [
@@ -45,20 +60,57 @@ const NAV_ITEMS = [
 ] as const;
 
 const ICON_MAP: Record<string, LucideIcon> = {
+	ArrowUpCircle,
+	BarChart3,
+	BookOpen,
+	Boxes,
+	Building2,
+	Calculator,
+	Clock,
 	CreditCard,
-	Package,
-	Users,
 	FileText,
 	Globe,
-	Puzzle,
-	Settings,
-	Server,
 	LayoutDashboard,
-	Building2,
+	List,
+	Network,
+	Package,
+	Plus,
+	Puzzle,
+	Search,
+	Server,
+	Settings,
+	ShoppingCart,
+	Smartphone,
+	Tag,
+	TrendingUp,
+	Users,
+	Wallet,
+};
+
+// Human-readable plugin names for sidebar groups.
+const PLUGIN_LABELS: Record<string, string> = {
+	"tariff-manager": "Tariffs",
+	"remnawave-provider": "Remnawave",
+	"user-balance": "Balance",
+	checkout: "Checkout",
+};
+
+// Primary icon per plugin group.
+const PLUGIN_ICONS: Record<string, LucideIcon> = {
+	"tariff-manager": CreditCard,
+	"remnawave-provider": Server,
+	"user-balance": Wallet,
+	checkout: ShoppingCart,
 };
 
 const NAV_LINK_CLASSES = cn(
 	"flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] text-muted-foreground transition-colors",
+	"hover:bg-secondary hover:text-foreground",
+	"[&.active]:bg-primary/20 [&.active]:font-medium [&.active]:text-primary",
+);
+
+const SUB_LINK_CLASSES = cn(
+	"flex items-center gap-2 rounded-lg py-[5px] pl-8 pr-2.5 text-[12px] text-muted-foreground transition-colors",
 	"hover:bg-secondary hover:text-foreground",
 	"[&.active]:bg-primary/20 [&.active]:font-medium [&.active]:text-primary",
 );
@@ -111,13 +163,49 @@ function getRoleLabel(role: string): string {
 	return ROLE_LABELS[role] ?? role;
 }
 
+type PluginGroup = {
+	slug: string;
+	label: string;
+	icon: LucideIcon;
+	pages: Array<{ path: string; title: string; icon: string }>;
+};
+
 export function AdminSidebar() {
 	const { t } = useTranslation();
 	const { user } = useAuthStore();
 	const [utcTime, setUtcTime] = useState(() => formatUtcTime(new Date()));
 	const { data: pluginPages } = usePluginPages();
+	const [expandedPlugins, setExpandedPlugins] = useState<
+		Record<string, boolean>
+	>({});
 
 	const adminPages = pluginPages?.filter((p) => p.menu === "admin") ?? [];
+
+	// Group pages by plugin_slug for collapsible sections.
+	const pluginGroups = useMemo<PluginGroup[]>(() => {
+		const groups = new Map<string, PluginGroup>();
+		for (const page of adminPages) {
+			if (!groups.has(page.plugin_slug)) {
+				groups.set(page.plugin_slug, {
+					slug: page.plugin_slug,
+					label:
+						PLUGIN_LABELS[page.plugin_slug] ?? page.plugin_slug,
+					icon: PLUGIN_ICONS[page.plugin_slug] ?? Puzzle,
+					pages: [],
+				});
+			}
+			groups.get(page.plugin_slug)!.pages.push({
+				path: page.path,
+				title: page.title,
+				icon: page.icon,
+			});
+		}
+		return Array.from(groups.values());
+	}, [adminPages]);
+
+	const togglePlugin = (slug: string) => {
+		setExpandedPlugins((prev) => ({ ...prev, [slug]: !prev[slug] }));
+	};
 
 	useEffect(() => {
 		const interval = setInterval(() => {
@@ -176,7 +264,7 @@ export function AdminSidebar() {
 			</div>
 
 			{/* Navigation */}
-			<nav className="flex flex-1 flex-col gap-0.5 px-2 pt-2">
+			<nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 pt-2">
 				{NAV_ITEMS.map((item) => (
 					<Link key={item.to} to={item.to} className={NAV_LINK_CLASSES}>
 						<item.icon size={16} className="shrink-0" />
@@ -184,26 +272,77 @@ export function AdminSidebar() {
 					</Link>
 				))}
 
-				{/* Dynamic plugin page links */}
-				{adminPages.length > 0 && (
-					<>
-						<div className="mx-2.5 my-2 border-t border-border-subtle" />
-						{adminPages.map((page) => (
+				{/* Plugin groups — collapsible sections */}
+				{pluginGroups.length > 0 && (
+					<div className="mx-2.5 my-2 border-t border-border-subtle" />
+				)}
+
+				{pluginGroups.map((group) => {
+					const isExpanded = expandedPlugins[group.slug] ?? false;
+					const GroupIcon = group.icon;
+
+					// Single-page plugin — render as direct link, no accordion.
+					if (group.pages.length === 1) {
+						const page = group.pages[0]!;
+						return (
 							<Link
-								key={`${page.plugin_slug}-${page.path}`}
+								key={group.slug}
 								to="/plugins/$slug/page/$pagePath"
-								params={{
-									slug: page.plugin_slug,
-									pagePath: page.path,
-								}}
+								params={{ slug: group.slug, pagePath: page.path }}
 								className={NAV_LINK_CLASSES}
 							>
-								<DynamicIcon name={page.icon} />
-								<span>{page.title}</span>
+								<GroupIcon size={16} className="shrink-0" />
+								<span>{group.label}</span>
 							</Link>
-						))}
-					</>
-				)}
+						);
+					}
+
+					return (
+						<div key={group.slug}>
+							{/* Group header — click to expand/collapse */}
+							<button
+								type="button"
+								onClick={() => togglePlugin(group.slug)}
+								className={cn(
+									NAV_LINK_CLASSES,
+									"w-full justify-between",
+								)}
+							>
+								<span className="flex items-center gap-2.5">
+									<GroupIcon size={16} className="shrink-0" />
+									<span>{group.label}</span>
+								</span>
+								<ChevronDown
+									size={14}
+									className={cn(
+										"shrink-0 text-muted-foreground transition-transform duration-200",
+										isExpanded && "rotate-180",
+									)}
+								/>
+							</button>
+
+							{/* Nested pages */}
+							{isExpanded && (
+								<div className="flex flex-col gap-0.5 pb-0.5">
+									{group.pages.map((page) => (
+										<Link
+											key={`${group.slug}-${page.path}`}
+											to="/plugins/$slug/page/$pagePath"
+											params={{
+												slug: group.slug,
+												pagePath: page.path,
+											}}
+											className={SUB_LINK_CLASSES}
+										>
+											<DynamicIcon name={page.icon} size={14} />
+											<span>{page.title}</span>
+										</Link>
+									))}
+								</div>
+							)}
+						</div>
+					);
+				})}
 			</nav>
 
 			{/* Bottom section */}
