@@ -1,11 +1,10 @@
 import { apiGet, apiPost, cn, LoadingSpinner } from "@remnacore/shared";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
 	AlertTriangle,
 	Globe,
 	Loader2,
 	MonitorX,
-	RefreshCw,
 	Search,
 	Unplug,
 	Wifi,
@@ -57,7 +56,6 @@ const POLL_INTERVAL_MS = 2000;
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export default function RemnawaveIPManagement() {
-	const queryClient = useQueryClient();
 	const [search, setSearch] = useState("");
 	const [debouncedSearch, setDebouncedSearch] = useState("");
 	const [activeJobs, setActiveJobs] = useState<ActiveJob[]>([]);

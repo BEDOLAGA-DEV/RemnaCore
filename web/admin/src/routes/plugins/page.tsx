@@ -202,18 +202,19 @@ const CUSTOM_PAGES: Record<string, React.LazyExoticComponent<React.ComponentType
 };
 
 // ─── Main Component ───────────────────────────────────────────────────────────
+// Split into two components to avoid React hooks rule violation:
+// PluginPageView handles the custom/generic routing decision WITHOUT hooks
+// that differ between paths. GenericPluginPage has all the CRUD hooks.
 
 export function PluginPageView() {
 	const { slug, pagePath } = useParams({ strict: false }) as {
 		slug: string;
 		pagePath: string;
 	};
-	const { t } = useTranslation();
-	const { data: pluginPages, isLoading: pagesLoading } = usePluginPages();
 
-	// Check for custom page component first.
 	const customKey = `${slug}/${pagePath}`;
 	const CustomComponent = CUSTOM_PAGES[customKey];
+
 	if (CustomComponent) {
 		return (
 			<Suspense fallback={<LoadingSpinner />}>
@@ -221,6 +222,13 @@ export function PluginPageView() {
 			</Suspense>
 		);
 	}
+
+	return <GenericPluginPage slug={slug} pagePath={pagePath} />;
+}
+
+function GenericPluginPage({ slug, pagePath }: { slug: string; pagePath: string }) {
+	const { t } = useTranslation();
+	const { data: pluginPages, isLoading: pagesLoading } = usePluginPages();
 
 	// Resolve page info to get collection name and form field schema.
 	// Try exact match first, then fallback to path-only match.
