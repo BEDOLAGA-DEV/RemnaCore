@@ -160,6 +160,7 @@ func RegisterRoutes(registry *gateway.BuiltinRouteRegistry, h *Handler) {
 	r("clone_node_plugin", h.CloneNodePlugin)
 
 	// Subscriptions
+	r("list_subscription_page_configs", h.ListSubscriptionPageConfigs)
 	r("list_subscriptions", h.ListSubscriptions)
 	r("get_subscription_by_uuid", h.GetSubscriptionByUUID)
 	r("get_subscription_by_short_uuid", h.GetSubscriptionByShortUUID)
@@ -320,6 +321,7 @@ func remnawaveRoutes() []plugin.ManifestRoute {
 		{Method: "POST", Path: "/api/remnawave/node-plugins/{panelID}/{pluginUUID}/clone", Function: "clone_node_plugin", Public: false},
 
 		// --- Subscriptions ---
+		{Method: "GET", Path: "/api/remnawave/subscription-page-configs", Function: "list_subscription_page_configs", Public: false},
 		{Method: "GET", Path: "/api/remnawave/subscriptions/{panelID}", Function: "list_subscriptions", Public: false},
 		{Method: "GET", Path: "/api/remnawave/subscriptions/{panelID}/by-uuid/{subUUID}", Function: "get_subscription_by_uuid", Public: false},
 		{Method: "GET", Path: "/api/remnawave/subscriptions/{panelID}/by-short-uuid/{shortUUID}", Function: "get_subscription_by_short_uuid", Public: false},
@@ -381,6 +383,8 @@ func remnawavePages() []plugin.ManifestPage {
 		{Path: "ip-management", Title: "IP Management", Icon: "Globe", Menu: plugin.PageMenuAdmin, Collection: "_custom"},
 		{Path: "squads-internal", Title: "Internal Squads", Icon: "Boxes", Menu: plugin.PageMenuAdmin, Collection: "_custom"},
 		{Path: "squads-external", Title: "External Squads", Icon: "Boxes", Menu: plugin.PageMenuAdmin, Collection: "_custom"},
+		{Path: "hosts", Title: "Hosts", Icon: "Server", Menu: plugin.PageMenuAdmin, Collection: "_custom"},
+		{Path: "subscription-configs", Title: "Sub Page Configs", Icon: "FileText", Menu: plugin.PageMenuAdmin, Collection: "_custom"},
 		{
 			Path:       "geo-routing",
 			Title:      "Geo Routing",

@@ -88,3 +88,30 @@ func (h *Handler) GetSubscriptionByUsername(w http.ResponseWriter, r *http.Reque
 
 	writeJSON(w, http.StatusOK, map[string]any{"panel_id": panelID, "subscription": sub})
 }
+
+// ListSubscriptionPageConfigs returns subscription page configs from all panels.
+func (h *Handler) ListSubscriptionPageConfigs(w http.ResponseWriter, r *http.Request) {
+	clients, err := h.getAllPanelClients(r.Context())
+	if err != nil || len(clients) == 0 {
+		writeJSON(w, http.StatusOK, []any{})
+		return
+	}
+
+	type configWithPanel struct {
+		PanelID string `json:"panel_id"`
+		Config  any    `json:"config"`
+	}
+
+	all := make([]configWithPanel, 0)
+	for panelID, client := range clients {
+		configs, err := client.GetSubscriptionPageConfigs(r.Context())
+		if err != nil {
+			continue
+		}
+		for _, c := range configs {
+			all = append(all, configWithPanel{PanelID: panelID, Config: c})
+		}
+	}
+
+	writeJSON(w, http.StatusOK, all)
+}

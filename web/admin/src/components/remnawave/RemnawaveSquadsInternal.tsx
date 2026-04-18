@@ -1,6 +1,6 @@
-import { apiGet, cn, LoadingSpinner } from "@remnacore/shared";
+import { apiGet, LoadingSpinner } from "@remnacore/shared";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Boxes, Server } from "lucide-react";
+import { AlertTriangle, Boxes } from "lucide-react";
 
 type SquadEntry = {
 	panel_id: string;

@@ -42,6 +42,15 @@ func (c *Client) GetSubscriptionByUUID(ctx context.Context, uuid string) (*Remna
 	return &resp.Response, nil
 }
 
+// GetSubscriptionPageConfigs returns all subscription page configurations.
+func (c *Client) GetSubscriptionPageConfigs(ctx context.Context) ([]map[string]any, error) {
+	var resp APIResponse[[]map[string]any]
+	if err := c.do(ctx, http.MethodGet, "/api/subscription-page-configs/", nil, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Response, nil
+}
+
 // GetSubscriptionByShortUUID retrieves a subscription by its short UUID.
 func (c *Client) GetSubscriptionByShortUUID(ctx context.Context, shortUUID string) (*RemnawaveSubscription, error) {
 	var resp APIResponse[RemnawaveSubscription]
