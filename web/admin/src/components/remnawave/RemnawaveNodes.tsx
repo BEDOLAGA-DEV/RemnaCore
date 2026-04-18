@@ -90,7 +90,9 @@ function RemnawaveNodes() {
 		);
 	}
 
-	const nodeList = nodes ?? [];
+	// API may return the array directly or inside a wrapper — handle both
+	const rawData = nodes as unknown;
+	const nodeList: RemnawaveNode[] = Array.isArray(rawData) ? rawData : [];
 
 	// ─── Render ──────────────────────────────────────────────────────────────
 
