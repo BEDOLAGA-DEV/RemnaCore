@@ -245,6 +245,16 @@ export function PluginPageView() {
 					: prettifyKey(key),
 				cell: ({ row }) => {
 					const value = row.original.data[key];
+					// Mask secret fields — show only last 4 chars
+					const fieldDef = pageFields?.find((f) => f.key === key);
+					if (fieldDef?.type === "secret" && typeof value === "string" && value.length > 0) {
+						const masked = value.length <= 4
+							? "••••"
+							: "••••••••" + value.slice(-4);
+						return (
+							<span className="font-mono text-[12px] text-muted-foreground">{masked}</span>
+						);
+					}
 					return (
 						<span className="text-[12px]">{formatCellValue(value, t)}</span>
 					);
@@ -573,6 +583,15 @@ function SchemaFormField({
 					error={error}
 				/>
 			);
+		case "secret":
+			return (
+				<SecretField
+					field={field}
+					fieldId={fieldId}
+					register={register}
+					error={error}
+				/>
+			);
 		default:
 			return (
 				<TextField
@@ -621,6 +640,34 @@ function TextField({ field, fieldId, register, error }: TextFieldProps) {
 				id={fieldId}
 				type="text"
 				{...register(field.key)}
+				className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground placeholder:text-muted-foreground/50 transition-colors focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/50"
+			/>
+			{error && (
+				<p className="mt-1 text-[11px] text-destructive">{String(error)}</p>
+			)}
+		</div>
+	);
+}
+
+// ─── Secret Field ───────────────────────────────────────────────────────────
+
+type SecretFieldProps = {
+	field: PluginPageField;
+	fieldId: string;
+	register: ReturnType<typeof useForm>["register"];
+	error: string | undefined;
+};
+
+function SecretField({ field, fieldId, register, error }: SecretFieldProps) {
+	return (
+		<div>
+			<FieldLabel field={field} fieldId={fieldId} />
+			<input
+				id={fieldId}
+				type="password"
+				autoComplete="off"
+				{...register(field.key)}
+				placeholder="••••••••"
 				className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground placeholder:text-muted-foreground/50 transition-colors focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/50"
 			/>
 			{error && (
