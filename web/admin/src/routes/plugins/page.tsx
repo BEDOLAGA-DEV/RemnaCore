@@ -2,6 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import {
 	LoadingSpinner,
 	apiGet,
+	apiPost,
 	cn,
 	formatDateTime,
 	usePluginCollection,
@@ -11,8 +12,8 @@ import type { PluginDocument, PluginPageField } from "@remnacore/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
-import { useState } from "react";
+import { Check, Loader2, Pencil, Plug, Plus, Trash2, X, XCircle } from "lucide-react";
+import { useCallback, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
@@ -227,6 +228,36 @@ export function PluginPageView() {
 		"closed",
 	);
 	const [editingDocId, setEditingDocId] = useState<string | null>(null);
+	const [testResults, setTestResults] = useState<Record<string, { loading: boolean; success?: boolean; message?: string }>>({});
+
+	// Determine if this page supports a "test connection" action.
+	// Currently: remnawave-provider panels page.
+	const supportsTestConnection = slug === "remnawave-provider" && collectionName === "panel_connections";
+
+	const handleTestConnection = useCallback(async (docId: string) => {
+		setTestResults((prev) => ({ ...prev, [docId]: { loading: true } }));
+		try {
+			const result = await apiPost<{ success: boolean; node_count?: number; error?: string }>(
+				`/api/remnawave/panels/${docId}/test`,
+				{},
+			);
+			setTestResults((prev) => ({
+				...prev,
+				[docId]: {
+					loading: false,
+					success: result.success,
+					message: result.success
+						? `Connected (${result.node_count ?? 0} nodes)`
+						: result.error ?? "Connection failed",
+				},
+			}));
+		} catch (err) {
+			setTestResults((prev) => ({
+				...prev,
+				[docId]: { loading: false, success: false, message: "Request failed" },
+			}));
+		}
+	}, []);
 
 	const documents = list.data ?? [];
 	const dataKeys = deriveDataKeys(documents);
@@ -273,23 +304,65 @@ export function PluginPageView() {
 		{
 			id: "actions",
 			header: "",
-			cell: ({ row }) => (
-				<div className="flex items-center justify-end gap-1">
-					<button
-						type="button"
-						onClick={() => handleEdit(row.original)}
-						className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-					>
-						<Pencil size={14} />
-					</button>
-					<button
-						type="button"
-						onClick={() => handleDelete(row.original.id)}
-						className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-					>
-						<Trash2 size={14} />
-					</button>
-				</div>
+			cell: ({ row }) => {
+				const docId = row.original.id;
+				const testState = testResults[docId];
+
+				return (
+					<div className="flex items-center justify-end gap-1">
+						{/* Test Connection button — only for supported pages */}
+						{supportsTestConnection && (
+							<button
+								type="button"
+								onClick={() => handleTestConnection(docId)}
+								disabled={testState?.loading}
+								title={testState?.message ?? "Test connection"}
+								className={cn(
+									"flex items-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-medium transition-colors",
+									testState?.loading
+										? "text-muted-foreground"
+										: testState?.success === true
+											? "bg-success/10 text-success"
+											: testState?.success === false
+												? "bg-destructive/10 text-destructive"
+												: "text-muted-foreground hover:bg-secondary hover:text-foreground",
+								)}
+							>
+								{testState?.loading ? (
+									<Loader2 size={14} className="animate-spin" />
+								) : testState?.success === true ? (
+									<Check size={14} />
+								) : testState?.success === false ? (
+									<XCircle size={14} />
+								) : (
+									<Plug size={14} />
+								)}
+								{testState?.loading
+									? "Testing..."
+									: testState?.message
+										? testState.message.length > 25
+											? testState.message.slice(0, 25) + "…"
+											: testState.message
+										: "Test"}
+							</button>
+						)}
+						<button
+							type="button"
+							onClick={() => handleEdit(row.original)}
+							className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+						>
+							<Pencil size={14} />
+						</button>
+						<button
+							type="button"
+							onClick={() => handleDelete(row.original.id)}
+							className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+						>
+							<Trash2 size={14} />
+						</button>
+					</div>
+				);
+			},
 			),
 		},
 	];
