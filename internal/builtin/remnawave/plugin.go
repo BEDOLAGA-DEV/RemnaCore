@@ -38,9 +38,6 @@ func RegisterRoutes(registry *gateway.BuiltinRouteRegistry, h *Handler) {
 		registry.Register(PluginSlug, fn, handler)
 	}
 
-	// Legacy
-	r("test_connection", h.TestConnection)
-
 	// Panels
 	r("list_panels", h.ListPanels)
 	r("create_panel", h.CreatePanel)
@@ -197,9 +194,6 @@ func RegisterRoutes(registry *gateway.BuiltinRouteRegistry, h *Handler) {
 // remnawaveRoutes returns all HTTP routes for the remnawave-provider plugin.
 func remnawaveRoutes() []plugin.ManifestRoute {
 	return []plugin.ManifestRoute{
-		// Legacy
-		{Method: "POST", Path: "/api/remnawave/test-connection", Function: "test_connection", Public: false},
-
 		// --- Panels ---
 		{Method: "GET", Path: "/api/remnawave/panels", Function: "list_panels", Public: false},
 		{Method: "POST", Path: "/api/remnawave/panels", Function: "create_panel", Public: false},
@@ -404,15 +398,7 @@ func remnawavePages() []plugin.ManifestPage {
 // remnawaveConfigFields returns the 23+ config fields for the plugin.
 func remnawaveConfigFields() map[string]plugin.ManifestConfigField {
 	return map[string]plugin.ManifestConfigField{
-		// --- Legacy (kept for backward compat) ---
-		plugin.RemnawaveConfigKeyURL: {
-			Type:  "string",
-			Label: "Panel URL (legacy — use Panels page)",
-		},
-		plugin.RemnawaveConfigKeyAPIToken: {
-			Type:  "secret",
-			Label: "API Token (legacy — use Panels page)",
-		},
+		// Webhook secret for verifying incoming panel webhooks.
 		plugin.RemnawaveConfigKeyWebhookSecret: {
 			Type:  "secret",
 			Label: "Webhook Signing Secret",

@@ -48,27 +48,12 @@ func remnawaveProvider() BuiltInPluginDef {
 		Description: builtInRemnawaveDescription,
 		Author:      builtInRemnawaveAuthor,
 		ConfigFields: map[string]ManifestConfigField{
-			RemnawaveConfigKeyURL: {
-				Type:     "string",
-				Label:    "Panel URL",
-				Required: true,
-				Default:  "",
-			},
-			RemnawaveConfigKeyAPIToken: {
-				Type:     configFieldTypeSecret,
-				Label:    "API Token",
-				Required: true,
-				Default:  "",
-			},
 			RemnawaveConfigKeyWebhookSecret: {
 				Type:     configFieldTypeSecret,
 				Label:    "Webhook Secret",
 				Required: false,
 				Default:  "",
 			},
-		},
-		Routes: []ManifestRoute{
-			{Method: "POST", Path: "/api/remnawave/test-connection", Function: "test_connection", Public: false},
 		},
 	}
 }
