@@ -57,20 +57,28 @@ func (c *Client) DeleteConfigProfile(ctx context.Context, uuid string) error {
 
 // GetConfigProfileInbounds returns the inbounds associated with a config profile.
 func (c *Client) GetConfigProfileInbounds(ctx context.Context, uuid string) ([]RemnawaveInbound, error) {
-	var resp APIResponse[[]RemnawaveInbound]
+	var resp inboundsListResponse
 	if err := c.do(ctx, http.MethodGet, APIPathConfigProfiles+uuid+subPathInbounds, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Response, nil
+	return resp.Response.Inbounds, nil
+}
+
+// inboundsListResponse matches the nested response: {"response": {"total": N, "inbounds": [...]}}
+type inboundsListResponse struct {
+	Response struct {
+		Total    int                `json:"total"`
+		Inbounds []RemnawaveInbound `json:"inbounds"`
+	} `json:"response"`
 }
 
 // GetAllInbounds returns all inbound proxy entries from Remnawave.
 func (c *Client) GetAllInbounds(ctx context.Context) ([]RemnawaveInbound, error) {
-	var resp APIResponse[[]RemnawaveInbound]
+	var resp inboundsListResponse
 	if err := c.do(ctx, http.MethodGet, APIPathConfigProfiles+subPathAllInbounds, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Response, nil
+	return resp.Response.Inbounds, nil
 }
 
 // ReorderConfigProfiles sets the display order for config profiles.
