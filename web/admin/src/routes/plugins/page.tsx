@@ -13,7 +13,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Check, Loader2, Pencil, Plug, Plus, Trash2, X, XCircle } from "lucide-react";
-import { useCallback, useState } from "react";
+import { Suspense, lazy, useCallback, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
@@ -190,6 +190,16 @@ function transformFormValues(
 	return result;
 }
 
+// ─── Custom Page Registry ────────────────────────────────────────────────────
+// Maps plugin_slug/pagePath → lazy-loaded custom React component.
+// When a match is found, the custom component is rendered instead of generic CRUD.
+
+const CUSTOM_PAGES: Record<string, React.LazyExoticComponent<React.ComponentType>> = {
+	"remnawave-provider/dashboard": lazy(() => import("../../components/remnawave/RemnawaveDashboard.js")),
+	"remnawave-provider/nodes": lazy(() => import("../../components/remnawave/RemnawaveNodes.js")),
+	"remnawave-provider/users": lazy(() => import("../../components/remnawave/RemnawaveUsers.js")),
+};
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function PluginPageView() {
@@ -199,6 +209,17 @@ export function PluginPageView() {
 	};
 	const { t } = useTranslation();
 	const { data: pluginPages, isLoading: pagesLoading } = usePluginPages();
+
+	// Check for custom page component first.
+	const customKey = `${slug}/${pagePath}`;
+	const CustomComponent = CUSTOM_PAGES[customKey];
+	if (CustomComponent) {
+		return (
+			<Suspense fallback={<LoadingSpinner />}>
+				<CustomComponent />
+			</Suspense>
+		);
+	}
 
 	// Resolve page info to get collection name and form field schema.
 	// Try exact match first, then fallback to path-only match.

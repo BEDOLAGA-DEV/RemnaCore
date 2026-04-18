@@ -377,6 +377,13 @@ func remnawavePages() []plugin.ManifestPage {
 				{Key: "tls_skip_verify", Label: "Skip TLS Verify", Type: "boolean", Default: "false"},
 			},
 		},
+		// Custom pages — rendered by dedicated React components, not generic CRUD.
+		// Collection is set to a dummy value to prevent empty JSON editors;
+		// the frontend detects these via the custom page registry and renders
+		// specialized components instead.
+		{Path: "dashboard", Title: "Dashboard", Icon: "LayoutDashboard", Menu: plugin.PageMenuAdmin, Collection: "_custom"},
+		{Path: "nodes", Title: "Nodes", Icon: "Network", Menu: plugin.PageMenuAdmin, Collection: "_custom"},
+		{Path: "users", Title: "VPN Users", Icon: "Users", Menu: plugin.PageMenuAdmin, Collection: "_custom"},
 		{
 			Path:       "geo-routing",
 			Title:      "Geo Routing",
