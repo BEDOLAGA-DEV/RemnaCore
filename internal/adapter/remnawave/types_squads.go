@@ -33,9 +33,11 @@ type externalSquadsResponse struct {
 }
 
 // CreateSquadRequest is the payload for creating an internal or external squad.
+// Inbounds is required for internal squads (array of inbound UUIDs).
 type CreateSquadRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	Inbounds    []string `json:"inbounds,omitempty"`
 }
 
 // UpdateSquadRequest is the payload for updating an internal or external squad.

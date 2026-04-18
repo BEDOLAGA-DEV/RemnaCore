@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -27,29 +28,21 @@ func (h *Handler) SearchUsers(w http.ResponseWriter, r *http.Request) {
 
 	allUsers := make([]userWithPanel, 0)
 	for panelID, client := range clients {
-		if query != "" {
-			// Try by username first
-			user, err := client.GetUserByUsername(r.Context(), query)
-			if err == nil && user != nil {
-				allUsers = append(allUsers, userWithPanel{PanelID: panelID, User: user})
-				continue
+		resp, err := client.GetAllUsers(r.Context(), rwclient.GetAllUsersParams{Size: 200})
+		if err != nil {
+			h.logger.Warn("failed to get users from panel", slog.String("panel_id", panelID), slog.Any("error", err))
+			continue
+		}
+		for _, u := range resp.Users {
+			// Client-side filter by query if provided
+			if query != "" {
+				match := strings.Contains(strings.ToLower(u.Username), strings.ToLower(query)) ||
+					strings.Contains(strings.ToLower(u.ShortUUID), strings.ToLower(query))
+				if !match {
+					continue
+				}
 			}
-			// Try by short UUID
-			user, err = client.GetUserByShortUUID(r.Context(), query)
-			if err == nil && user != nil {
-				allUsers = append(allUsers, userWithPanel{PanelID: panelID, User: user})
-				continue
-			}
-		} else {
-			// List all
-			resp, err := client.GetAllUsers(r.Context(), rwclient.GetAllUsersParams{Size: 100})
-			if err != nil {
-				h.logger.Warn("failed to get users from panel", slog.String("panel_id", panelID), slog.Any("error", err))
-				continue
-			}
-			for _, u := range resp.Users {
-				allUsers = append(allUsers, userWithPanel{PanelID: panelID, User: u})
-			}
+			allUsers = append(allUsers, userWithPanel{PanelID: panelID, User: u})
 		}
 	}
 
