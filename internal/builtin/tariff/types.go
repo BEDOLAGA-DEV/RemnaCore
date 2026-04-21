@@ -67,6 +67,12 @@ const (
 	OverageRoundingGB    = "gb"
 	OverageRoundingMB    = "mb"
 	OverageRounding100MB = "100mb"
+
+	TrafficResetNoReset      = "NO_RESET"
+	TrafficResetDay          = "DAY"
+	TrafficResetWeek         = "WEEK"
+	TrafficResetMonth        = "MONTH"
+	TrafficResetMonthRolling = "MONTH_ROLLING"
 )
 
 // EligibilityRules captures constraints that determine whether a user
@@ -97,9 +103,10 @@ type TariffInput struct {
 	TrafficLimitGB      float64  `json:"traffic_limit_gb"`
 	DeviceLimit         int      `json:"device_limit"`
 	MaxPurchasesPerUser int      `json:"max_purchases_per_user"`
-	VPNPanelID          string   `json:"vpn_panel_id,omitempty"`
-	InternalSquadUUIDs  []string `json:"internal_squad_uuids"`
-	ExternalSquadUUIDs  []string `json:"external_squad_uuids"`
+	VPNPanelID             string   `json:"vpn_panel_id,omitempty"`
+	TrafficResetStrategy   string   `json:"traffic_reset_strategy,omitempty"`
+	InternalSquadUUIDs     []string `json:"internal_squad_uuids"`
+	ExternalSquadUUIDs     []string `json:"external_squad_uuids"`
 	Features            []string `json:"features"`
 	IsActive            bool     `json:"is_active"`
 	SortOrder           int      `json:"sort_order"`
@@ -188,7 +195,8 @@ type TariffResponse struct {
 // get backward-compatible behaviour without setting every new field.
 func defaultTariffInput() TariffInput {
 	return TariffInput{
-		BillingModel:       string(BillingModelFixed),
+		BillingModel:         string(BillingModelFixed),
+		TrafficResetStrategy: TrafficResetMonth,
 		AudienceSegment:    AudienceAll,
 		UpgradePolicy:      UpgradePolicyNextPeriod,
 		DowngradePolicy:    DowngradePolicyNextPeriod,

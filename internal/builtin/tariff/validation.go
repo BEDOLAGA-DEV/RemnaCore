@@ -183,6 +183,15 @@ func validateCrossFields(input *TariffInput) error {
 			return fmt.Errorf("unsupported overage_rounding: %s", input.OverageRounding)
 		}
 	}
+	if input.TrafficResetStrategy != "" {
+		valid := map[string]bool{
+			TrafficResetNoReset: true, TrafficResetDay: true, TrafficResetWeek: true,
+			TrafficResetMonth: true, TrafficResetMonthRolling: true,
+		}
+		if !valid[input.TrafficResetStrategy] {
+			return fmt.Errorf("unsupported traffic_reset_strategy: %s", input.TrafficResetStrategy)
+		}
+	}
 
 	return nil
 }

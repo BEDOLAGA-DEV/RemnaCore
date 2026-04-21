@@ -58,8 +58,9 @@ func Plugin() plugin.BuiltInPluginDef {
 					{Key: "traffic_limit_gb", Label: "Traffic (GB, 0=unlimited)", Type: "number", Default: "0"},
 					{Key: "device_limit", Label: "Devices (0=unlimited)", Type: "number", Default: "0"},
 					{Key: "max_purchases_per_user", Label: "Max per user (0=unlimited)", Type: "number", Default: "0"},
-					// VPN Panel
+					// VPN Panel + Traffic strategy
 					{Key: "vpn_panel_id", Label: "VPN Panel", Type: "select", OptionsURL: "/api/tariffs/panels", OptionsValueKey: "id", OptionsLabelKey: "name"},
+					{Key: "traffic_reset_strategy", Label: "Traffic Reset", Type: "select", Default: "MONTH", Options: []string{"NO_RESET", "DAY", "WEEK", "MONTH", "MONTH_ROLLING"}},
 					// Squads (loaded from selected panel)
 					{Key: "internal_squad_uuids", Label: "Internal Squads", Type: "multiselect", OptionsURL: "/api/tariffs/internal-squads", OptionsValueKey: "uuid", OptionsLabelKey: "name"},
 					{Key: "external_squad_uuids", Label: "External Squads", Type: "multiselect", OptionsURL: "/api/tariffs/external-squads", OptionsValueKey: "uuid", OptionsLabelKey: "name"},
