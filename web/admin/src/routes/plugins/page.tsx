@@ -896,6 +896,16 @@ type SelectFieldProps = {
 function SelectField({ field, fieldId, register, error }: SelectFieldProps) {
 	const { t } = useTranslation();
 
+	// Support dynamic options from URL (e.g., vpn_panel_id)
+	const { data: remoteOptions } = useQuery({
+		queryKey: ["plugin-select-options", field.options_url],
+		queryFn: () => apiGet<Record<string, unknown>[]>(field.options_url as string),
+		enabled: !!field.options_url,
+	});
+
+	const valueKey = field.options_value_key ?? "value";
+	const labelKey = field.options_label_key ?? "label";
+
 	return (
 		<div>
 			<FieldLabel field={field} fieldId={fieldId} />
@@ -905,11 +915,16 @@ function SelectField({ field, fieldId, register, error }: SelectFieldProps) {
 				className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground transition-colors focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/50"
 			>
 				<option value="">{t("admin.pluginPage.selectPlaceholder")}</option>
-				{field.options?.map((opt) => (
-					<option key={opt} value={opt}>
-						{opt}
-					</option>
-				))}
+				{field.options_url && remoteOptions
+					? remoteOptions.map((opt) => {
+						const v = String(opt[valueKey] ?? "");
+						const l = String(opt[labelKey] ?? v);
+						return <option key={v} value={v}>{l}</option>;
+					})
+					: field.options?.map((opt) => (
+						<option key={opt} value={opt}>{opt}</option>
+					))
+				}
 			</select>
 			{error && (
 				<p className="mt-1 text-[11px] text-destructive">{String(error)}</p>
@@ -950,6 +965,7 @@ function MultiselectField({
 					setValue(field.key, next);
 				}}
 				error={error}
+				watch={watch}
 			/>
 		);
 	}
@@ -1001,6 +1017,7 @@ type DynamicMultiselectProps = {
 	selectedValues: string[];
 	onToggle: (value: string) => void;
 	error: string | undefined;
+	watch?: ReturnType<typeof useForm>["watch"];
 };
 
 function DynamicMultiselect({
@@ -1009,13 +1026,21 @@ function DynamicMultiselect({
 	selectedValues,
 	onToggle,
 	error,
+	watch: formWatch,
 }: DynamicMultiselectProps) {
 	const { t } = useTranslation();
 
+	// For squad fields, append ?panel_id= from the vpn_panel_id form field
+	let optionsUrl = field.options_url as string;
+	const panelId = formWatch?.("vpn_panel_id") as string | undefined;
+	if (panelId && (field.key === "internal_squad_uuids" || field.key === "external_squad_uuids")) {
+		optionsUrl = `${optionsUrl}?panel_id=${panelId}`;
+	}
+
 	const { data: remoteOptions, isLoading: optionsLoading } = useQuery({
-		queryKey: ["plugin-options", field.options_url],
+		queryKey: ["plugin-options", optionsUrl],
 		queryFn: () =>
-			apiGet<Record<string, unknown>[]>(field.options_url as string),
+			apiGet<Record<string, unknown>[]>(optionsUrl),
 		enabled: !!field.options_url,
 	});
 

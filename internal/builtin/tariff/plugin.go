@@ -58,7 +58,9 @@ func Plugin() plugin.BuiltInPluginDef {
 					{Key: "traffic_limit_gb", Label: "Traffic (GB, 0=unlimited)", Type: "number", Default: "0"},
 					{Key: "device_limit", Label: "Devices (0=unlimited)", Type: "number", Default: "0"},
 					{Key: "max_purchases_per_user", Label: "Max per user (0=unlimited)", Type: "number", Default: "0"},
-					// Squads
+					// VPN Panel
+					{Key: "vpn_panel_id", Label: "VPN Panel", Type: "select", OptionsURL: "/api/tariffs/panels", OptionsValueKey: "id", OptionsLabelKey: "name"},
+					// Squads (loaded from selected panel)
 					{Key: "internal_squad_uuids", Label: "Internal Squads", Type: "multiselect", OptionsURL: "/api/tariffs/internal-squads", OptionsValueKey: "uuid", OptionsLabelKey: "name"},
 					{Key: "external_squad_uuids", Label: "External Squads", Type: "multiselect", OptionsURL: "/api/tariffs/external-squads", OptionsValueKey: "uuid", OptionsLabelKey: "name"},
 					{Key: "features", Label: "Features (one per line)", Type: "textarea"},
@@ -175,7 +177,8 @@ func Plugin() plugin.BuiltInPluginDef {
 // Static paths MUST come before parameterized paths to avoid chi routing conflicts.
 func tariffRoutes() []plugin.ManifestRoute {
 	return []plugin.ManifestRoute{
-		// --- Remnawave lookups ---
+		// --- Remnawave lookups (accept ?panel_id= for multi-panel) ---
+		{Method: "GET", Path: "/api/tariffs/panels", Function: "list_panels_for_tariff", Public: false},
 		{Method: "GET", Path: "/api/tariffs/internal-squads", Function: "list_internal_squads", Public: false},
 		{Method: "GET", Path: "/api/tariffs/external-squads", Function: "list_external_squads", Public: false},
 		{Method: "GET", Path: "/api/tariffs/nodes", Function: "list_nodes", Public: false},
@@ -246,6 +249,7 @@ func RegisterRoutes(registry *gateway.BuiltinRouteRegistry, h *Handler) {
 	}
 
 	// Remnawave lookups
+	r("list_panels_for_tariff", h.ListPanelsForTariff)
 	r("list_internal_squads", h.ListInternalSquads)
 	r("list_external_squads", h.ListExternalSquads)
 	r("list_nodes", h.ListNodes)

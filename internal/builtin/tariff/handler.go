@@ -47,21 +47,38 @@ func NewHandler(collections pluginstore.Store, pluginRepo plugin.PluginRepositor
 	}
 }
 
-// remnawaveClient creates a temporary client from the remnawave-provider
-// plugin config stored in the database. Returns nil if the plugin is
-// not enabled — callers must check before use.
-func (h *Handler) remnawaveClient(ctx context.Context) *remnawave.Client {
-	p, err := h.pluginRepo.GetBySlug(ctx, plugin.BuiltInSlugRemnawaveProvider)
+// remnawaveClientForPanel builds a client from a specific panel in the
+// panel_connections collection. If panelID is empty, uses the first active panel.
+func (h *Handler) remnawaveClientForPanel(ctx context.Context, panelID string) *remnawave.Client {
+	const rwSlug = "remnawave-provider"
+	const rwCollection = "panel_connections"
+
+	docs, err := h.collections.ListDocuments(ctx, rwSlug, rwCollection)
 	if err != nil {
 		return nil
 	}
-	if p.Status != plugin.StatusEnabled {
-		return nil
+
+	for _, doc := range docs {
+		var panel struct {
+			URL      string `json:"url"`
+			APIToken string `json:"api_token"`
+			Status   string `json:"status"`
+		}
+		if json.Unmarshal(doc.Data, &panel) != nil {
+			continue
+		}
+		if panel.Status != "active" {
+			continue
+		}
+		// If specific panel requested, match by ID
+		if panelID != "" && doc.ID != panelID {
+			continue
+		}
+		if panel.URL != "" && panel.APIToken != "" {
+			return remnawave.NewClient(panel.URL, panel.APIToken)
+		}
 	}
-	return remnawave.NewClient(
-		p.Config[plugin.RemnawaveConfigKeyURL],
-		p.Config[plugin.RemnawaveConfigKeyAPIToken],
-	)
+	return nil
 }
 
 // =====================================================================
@@ -666,7 +683,8 @@ func (h *Handler) GetPromoCodeStats(w http.ResponseWriter, r *http.Request) {
 // =====================================================================
 
 func (h *Handler) ListInternalSquads(w http.ResponseWriter, r *http.Request) {
-	client := h.remnawaveClient(r.Context())
+	panelID := r.URL.Query().Get("panel_id")
+	client := h.remnawaveClientForPanel(r.Context(), panelID)
 	if client == nil {
 		writeJSON(w, http.StatusOK, []any{})
 		return
@@ -684,7 +702,8 @@ func (h *Handler) ListInternalSquads(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListExternalSquads(w http.ResponseWriter, r *http.Request) {
-	client := h.remnawaveClient(r.Context())
+	panelID := r.URL.Query().Get("panel_id")
+	client := h.remnawaveClientForPanel(r.Context(), panelID)
 	if client == nil {
 		writeJSON(w, http.StatusOK, []any{})
 		return
@@ -702,7 +721,8 @@ func (h *Handler) ListExternalSquads(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListNodes(w http.ResponseWriter, r *http.Request) {
-	client := h.remnawaveClient(r.Context())
+	panelID := r.URL.Query().Get("panel_id")
+	client := h.remnawaveClientForPanel(r.Context(), panelID)
 	if client == nil {
 		writeJSON(w, http.StatusOK, []any{})
 		return
@@ -717,6 +737,42 @@ func (h *Handler) ListNodes(w http.ResponseWriter, r *http.Request) {
 		nodes = []remnawave.RemnawaveNode{}
 	}
 	writeJSON(w, http.StatusOK, nodes)
+}
+
+// ListPanelsForTariff returns panel connections for tariff form dropdown.
+func (h *Handler) ListPanelsForTariff(w http.ResponseWriter, r *http.Request) {
+	const rwSlug = "remnawave-provider"
+	const rwCollection = "panel_connections"
+
+	docs, err := h.collections.ListDocuments(r.Context(), rwSlug, rwCollection)
+	if err != nil {
+		writeJSON(w, http.StatusOK, []any{})
+		return
+	}
+
+	type panelOption struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+
+	panels := make([]panelOption, 0)
+	for _, doc := range docs {
+		var p struct {
+			Slug   string `json:"slug"`
+			URL    string `json:"url"`
+			Status string `json:"status"`
+		}
+		if json.Unmarshal(doc.Data, &p) != nil || p.Status != "active" {
+			continue
+		}
+		label := p.Slug
+		if label == "" {
+			label = p.URL
+		}
+		panels = append(panels, panelOption{ID: doc.ID, Name: label})
+	}
+
+	writeJSON(w, http.StatusOK, panels)
 }
 
 // =====================================================================

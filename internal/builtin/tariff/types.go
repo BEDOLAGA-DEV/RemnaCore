@@ -97,6 +97,7 @@ type TariffInput struct {
 	TrafficLimitGB      float64  `json:"traffic_limit_gb"`
 	DeviceLimit         int      `json:"device_limit"`
 	MaxPurchasesPerUser int      `json:"max_purchases_per_user"`
+	VPNPanelID          string   `json:"vpn_panel_id,omitempty"`
 	InternalSquadUUIDs  []string `json:"internal_squad_uuids"`
 	ExternalSquadUUIDs  []string `json:"external_squad_uuids"`
 	Features            []string `json:"features"`
