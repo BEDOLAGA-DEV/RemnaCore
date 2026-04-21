@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	billingservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pluginstore"
@@ -20,23 +21,33 @@ const (
 	collectionSessions     = "sessions"
 	collectionSavedMethods = "saved_methods"
 
-	sessionTTL        = 30 * time.Minute
-	defaultCurrency   = "RUB"
-	defaultPriceCents int64 = 0
+	sessionTTL      = 30 * time.Minute
+	defaultCurrency = "RUB"
+
+	// tariff-manager plugin slug for reading tariffs
+	tariffPluginSlug     = "tariff-manager"
+	tariffCollectionName = "tariffs"
 )
 
 // Handler provides HTTP endpoints for the checkout built-in plugin.
 type Handler struct {
 	collections pluginstore.Store
 	pluginRepo  plugin.PluginRepository
+	checkout    *billingservice.CheckoutService
 	logger      *slog.Logger
 }
 
 // NewHandler creates a checkout Handler.
-func NewHandler(collections pluginstore.Store, pluginRepo plugin.PluginRepository, logger *slog.Logger) *Handler {
+func NewHandler(
+	collections pluginstore.Store,
+	pluginRepo plugin.PluginRepository,
+	checkout *billingservice.CheckoutService,
+	logger *slog.Logger,
+) *Handler {
 	return &Handler{
 		collections: collections,
 		pluginRepo:  pluginRepo,
+		checkout:    checkout,
 		logger:      logger,
 	}
 }
@@ -64,16 +75,46 @@ func (h *Handler) CreateSession(w http.ResponseWriter, r *http.Request) {
 
 	uid := r.Header.Get("X-User-ID")
 
+	// Load tariff from tariff-manager plugin to get real price
+	tariffDoc, err := h.collections.GetDocument(r.Context(), tariffPluginSlug, tariffCollectionName, req.TariffID)
+	if err != nil {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("tariff not found: "+req.TariffID))
+		return
+	}
+
+	var tariff struct {
+		Name           string           `json:"name"`
+		PriceAmount    int64            `json:"price_amount"`
+		PriceCurrency  string           `json:"price_currency"`
+		DurationDays   int              `json:"duration_days"`
+		IsActive       bool             `json:"is_active"`
+	}
+	if err := json.Unmarshal(tariffDoc.Data, &tariff); err != nil {
+		writeAPIError(w, apierror.Internal)
+		return
+	}
+	if !tariff.IsActive {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("tariff is not active"))
+		return
+	}
+
+	currency := tariff.PriceCurrency
+	if currency == "" {
+		currency = defaultCurrency
+	}
+	finalPrice := tariff.PriceAmount * int64(req.Quantity)
+
 	now := time.Now()
 	session := CheckoutSession{
 		ID:              uuid.NewString(),
 		UserID:          uid,
 		TariffID:        req.TariffID,
 		Quantity:        req.Quantity,
-		Currency:        defaultCurrency,
-		FinalPriceCents: defaultPriceCents,
+		Currency:        currency,
+		FinalPriceCents: finalPrice,
 		PaymentMode:     PaymentSingle,
 		Status:          SessionPending,
+		PriceBreakdown:  map[string]int64{"base": tariff.PriceAmount, "quantity": int64(req.Quantity), "total": finalPrice},
 		ExpiresAt:       now.Add(sessionTTL),
 		CreatedAt:       now,
 		UpdatedAt:       now,
@@ -279,52 +320,89 @@ func (h *Handler) ConfirmSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build sub-invoices from sources.
-	subInvoices := make([]SubInvoice, 0, len(req.Sources))
-	for _, src := range req.Sources {
-		subInvoices = append(subInvoices, SubInvoice{
-			SubInvoiceID: uuid.NewString(),
-			SourceKind:   src.Kind,
-			AmountCents:  src.AmountCents,
-			Status:       "pending",
-		})
-	}
-
 	// Determine payment mode.
 	mode := PaymentSingle
 	if len(req.Sources) > 1 {
 		mode = PaymentSplit
 	}
 
+	if req.PromoCode != "" {
+		session.PromoCode = req.PromoCode
+	}
+
+	// Determine primary payment method for CheckoutService.
+	// For balance-only payments, the balance plugin handles via payment.create_charge hook.
+	// For card payments, the payment plugin (stripe/yookassa) handles the redirect.
+	userEmail := r.Header.Get("X-User-Email")
+
+	// Call billing domain's CheckoutService — this creates Subscription + Invoice
+	// and initiates payment via the configured payment provider.
+	// PlanID = TariffID — the billing domain uses the same ID space.
+	checkoutResult, err := h.checkout.StartCheckout(r.Context(), billingservice.CheckoutRequest{
+		UserID:    session.UserID,
+		UserEmail: userEmail,
+		PlanID:    session.TariffID,
+		ReturnURL: fmt.Sprintf("/api/checkout/%s", sessionID),
+	})
+
+	if err != nil {
+		h.logger.Error("checkout failed", slog.Any("error", err))
+		session.Status = SessionFailed
+		session.UpdatedAt = time.Now()
+		_ = h.saveSession(w, r, sessionID, session)
+		writeAPIError(w, apierror.Internal)
+		return
+	}
+
+	// Build sub-invoices from the billing result.
+	subInvoices := []SubInvoice{{
+		SubInvoiceID: checkoutResult.InvoiceID,
+		InvoiceID:    checkoutResult.InvoiceID,
+		SourceKind:   req.Sources[0].Kind,
+		AmountCents:  session.FinalPriceCents,
+		Status:       "pending",
+		PaymentURL:   checkoutResult.CheckoutURL,
+	}}
+
 	now := time.Now()
 	session.Sources = req.Sources
 	session.SubInvoices = subInvoices
 	session.PaymentMode = mode
-	session.Status = SessionProcessing
 	session.UpdatedAt = now
 
-	if req.PromoCode != "" {
-		session.PromoCode = req.PromoCode
+	// If payment completed instantly (e.g. balance), mark as completed.
+	if checkoutResult.CheckoutURL == "" {
+		session.Status = SessionCompleted
+		session.CompletedAt = &now
+	} else {
+		session.Status = SessionProcessing
 	}
 
 	if err := h.saveSession(w, r, sessionID, session); err != nil {
 		return
 	}
 
-	// Determine next_action based on sources.
-	nextAction := "none"
-	for _, si := range subInvoices {
-		if si.SourceKind != "balance_money" && si.SourceKind != "balance_bonus" {
-			nextAction = "redirect"
-			break
+	// Determine next_action.
+	response := map[string]any{
+		"session":         session,
+		"subscription_id": checkoutResult.SubscriptionID,
+		"invoice_id":      checkoutResult.InvoiceID,
+		"sub_invoices":    subInvoices,
+	}
+
+	if checkoutResult.CheckoutURL != "" {
+		response["next_action"] = map[string]any{
+			"kind": "redirect",
+			"url":  checkoutResult.CheckoutURL,
+		}
+	} else {
+		response["next_action"] = map[string]any{
+			"kind":   "completed",
+			"status": "paid",
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"session":      session,
-		"sub_invoices": subInvoices,
-		"next_action":  nextAction,
-	})
+	writeJSON(w, http.StatusOK, response)
 }
 
 // CancelSession cancels a checkout session.
