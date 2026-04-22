@@ -7,10 +7,55 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	billingservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
 )
+
+// planResponse is the JSON-friendly representation of a Plan aggregate.
+// The frontend expects snake_case and flat price fields.
+type planResponse struct {
+	ID                   string   `json:"id"`
+	Name                 string   `json:"name"`
+	Description          string   `json:"description"`
+	BasePriceAmount      int64    `json:"base_price_amount"`
+	BasePriceCurrency    string   `json:"base_price_currency"`
+	BillingInterval      string   `json:"billing_interval"`
+	TrafficLimitBytes    int64    `json:"traffic_limit_bytes"`
+	DeviceLimit          int      `json:"device_limit"`
+	AllowedCountries     []string `json:"allowed_countries"`
+	AllowedProtocols     []string `json:"allowed_protocols"`
+	Tier                 string   `json:"tier"`
+	MaxRemnawaveBindings int      `json:"max_remnawave_bindings"`
+	FamilyEnabled        bool     `json:"family_enabled"`
+	MaxFamilyMembers     int      `json:"max_family_members"`
+	IsActive             bool     `json:"is_active"`
+	CreatedAt            string   `json:"created_at"`
+	UpdatedAt            string   `json:"updated_at"`
+}
+
+func toPlanResponse(p *aggregate.Plan) planResponse {
+	return planResponse{
+		ID:                   p.ID,
+		Name:                 p.Name,
+		Description:          p.Description,
+		BasePriceAmount:      p.BasePrice.Amount,
+		BasePriceCurrency:    string(p.BasePrice.Currency),
+		BillingInterval:      string(p.Interval),
+		TrafficLimitBytes:    p.TrafficLimitBytes,
+		DeviceLimit:          p.DeviceLimit,
+		AllowedCountries:     p.AllowedCountries,
+		AllowedProtocols:     p.AllowedProtocols,
+		Tier:                 string(p.Tier),
+		MaxRemnawaveBindings: p.MaxRemnawaveBindings,
+		FamilyEnabled:        p.FamilyEnabled,
+		MaxFamilyMembers:     p.MaxFamilyMembers,
+		IsActive:             p.IsActive,
+		CreatedAt:            p.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:            p.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+	}
+}
 
 // BillingHandler exposes HTTP endpoints for plans, subscriptions, and invoices.
 //
@@ -60,7 +105,11 @@ func (h *BillingHandler) GetPlans(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, plans)
+	resp := make([]planResponse, len(plans))
+	for i, p := range plans {
+		resp[i] = toPlanResponse(p)
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // GetPlan handles GET /api/plans/{planID} -- get a single plan by ID.
@@ -77,7 +126,7 @@ func (h *BillingHandler) GetPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, plan)
+	writeJSON(w, http.StatusOK, toPlanResponse(plan))
 }
 
 // CreateSubscription handles POST /api/subscriptions -- create a new subscription.
