@@ -601,26 +601,47 @@ func (h *Handler) ImportTariffs(w http.ResponseWriter, r *http.Request) {
 }
 
 // SyncAllTariffs forces a sync of all existing tariffs to billing Plans.
+// Returns detailed results including errors for debugging.
 func (h *Handler) SyncAllTariffs(w http.ResponseWriter, r *http.Request) {
-	docs, err := h.collections.ListDocuments(r.Context(), PluginSlug, CollectionName)
-	if err != nil {
-		writeAPIError(w, apierror.Internal)
+	if h.planRepo == nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"error": "planRepo is nil — PlanRepository not injected",
+		})
 		return
 	}
 
-	synced := 0
+	docs, err := h.collections.ListDocuments(r.Context(), PluginSlug, CollectionName)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"error": err.Error()})
+		return
+	}
+
+	type syncResult struct {
+		ID    string `json:"id"`
+		Name  string `json:"name"`
+		Error string `json:"error,omitempty"`
+		OK    bool   `json:"ok"`
+	}
+
+	results := make([]syncResult, 0, len(docs))
 	for _, doc := range docs {
 		var input TariffInput
-		if json.Unmarshal(doc.Data, &input) != nil {
+		if err := json.Unmarshal(doc.Data, &input); err != nil {
+			results = append(results, syncResult{ID: doc.ID, Error: "unmarshal: " + err.Error()})
 			continue
 		}
-		h.syncTariffToPlan(r.Context(), doc.ID, &input)
-		synced++
+
+		syncErr := h.syncTariffToPlanWithError(r.Context(), doc.ID, &input)
+		res := syncResult{ID: doc.ID, Name: input.Name, OK: syncErr == nil}
+		if syncErr != nil {
+			res.Error = syncErr.Error()
+		}
+		results = append(results, res)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"synced": synced,
-		"total":  len(docs),
+		"total":   len(docs),
+		"results": results,
 	})
 }
 
@@ -852,8 +873,14 @@ func documentToTariff(doc *pluginstore.Document) (*TariffResponse, error) {
 // This ensures tariffs created in the plugin are visible in the cabinet
 // via the standard usePlans() hook.
 func (h *Handler) syncTariffToPlan(ctx context.Context, docID string, input *TariffInput) {
+	if err := h.syncTariffToPlanWithError(ctx, docID, input); err != nil {
+		h.logger.Warn("tariff→plan sync failed", slog.String("tariff_id", docID), slog.Any("error", err))
+	}
+}
+
+func (h *Handler) syncTariffToPlanWithError(ctx context.Context, docID string, input *TariffInput) error {
 	if h.planRepo == nil {
-		return
+		return fmt.Errorf("planRepo is nil")
 	}
 
 	// Map duration_days to billing interval
@@ -884,8 +911,8 @@ func (h *Handler) syncTariffToPlan(ctx context.Context, docID string, input *Tar
 	now := time.Now()
 
 	// Try update first (existing plan)
-	existing, err := h.planRepo.GetByID(ctx, docID)
-	if err == nil && existing != nil {
+	existing, getErr := h.planRepo.GetByID(ctx, docID)
+	if getErr == nil && existing != nil {
 		existing.Name = input.Name
 		existing.Description = input.Description
 		existing.BasePrice = price
@@ -894,11 +921,7 @@ func (h *Handler) syncTariffToPlan(ctx context.Context, docID string, input *Tar
 		existing.DeviceLimit = input.DeviceLimit
 		existing.IsActive = input.IsActive
 		existing.UpdatedAt = now
-		if updateErr := h.planRepo.Update(ctx, existing); updateErr != nil {
-			h.logger.Warn("failed to update billing plan from tariff",
-				slog.String("tariff_id", docID), slog.Any("error", updateErr))
-		}
-		return
+		return h.planRepo.Update(ctx, existing)
 	}
 
 	// Create new plan with tariff document ID as plan ID
@@ -919,20 +942,16 @@ func (h *Handler) syncTariffToPlan(ctx context.Context, docID string, input *Tar
 		now,
 	)
 	if err != nil {
-		h.logger.Warn("failed to build billing plan from tariff",
-			slog.String("tariff_id", docID), slog.Any("error", err))
-		return
+		return fmt.Errorf("NewPlan: %w", err)
 	}
 
 	// Override auto-generated ID with tariff document ID for 1:1 mapping
 	plan.ID = docID
 
 	if createErr := h.planRepo.Create(ctx, plan); createErr != nil {
-		h.logger.Warn("failed to create billing plan from tariff",
-			slog.String("tariff_id", docID), slog.Any("error", createErr))
-	} else {
-		h.logger.Info("synced tariff to billing plan", slog.String("id", docID), slog.String("name", input.Name))
+		return fmt.Errorf("Create: %w", createErr)
 	}
+	return nil
 }
 
 // durationToInterval maps duration days to a billing interval.
