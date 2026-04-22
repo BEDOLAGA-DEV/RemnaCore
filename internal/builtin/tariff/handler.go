@@ -278,6 +278,9 @@ func (h *Handler) DeleteTariff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Propagate deactivation to linked billing plans.
+	h.syncTariffToPlan(r.Context(), tariffID, &input)
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -914,6 +917,15 @@ func (h *Handler) syncTariffToPlanWithError(ctx context.Context, docID string, i
 		}}
 	}
 
+	// Parse tariff UUID once for deterministic ID generation.
+	ns, parseErr := gouuid.Parse(docID)
+	if parseErr != nil {
+		return fmt.Errorf("invalid tariff UUID %s: %w", docID, parseErr)
+	}
+
+	// Track which plan IDs are active after this sync.
+	activePlanIDs := make(map[string]bool, len(periods))
+
 	// Sync each period as a separate billing Plan.
 	// Plan ID: deterministic UUID v5 from tariff ID + duration (valid PG UUID).
 	// For single-period tariffs without pricing_periods, use docID directly.
@@ -921,11 +933,6 @@ func (h *Handler) syncTariffToPlanWithError(ctx context.Context, docID string, i
 		planID := docID
 		planName := input.Name
 		if len(input.PricingPeriods) > 0 {
-			// Deterministic UUID v5: namespace = tariff UUID, name = duration string
-			ns, parseErr := gouuid.Parse(docID)
-			if parseErr != nil {
-				return fmt.Errorf("invalid tariff UUID %s: %w", docID, parseErr)
-			}
 			planID = gouuid.NewSHA1(ns, []byte(fmt.Sprintf("period_%d", period.DurationDays))).String()
 			if period.Label != "" {
 				planName = fmt.Sprintf("%s — %s", input.Name, period.Label)
@@ -933,13 +940,17 @@ func (h *Handler) syncTariffToPlanWithError(ctx context.Context, docID string, i
 				planName = fmt.Sprintf("%s — %dd", input.Name, period.DurationDays)
 			}
 		}
+		activePlanIDs[planID] = true
 
 		interval := durationToInterval(period.DurationDays)
 		price := vo.NewMoney(period.PriceAmount, currency)
 
-		// Try update first
+		// Try update first; distinguish "not found" from real errors.
 		existing, getErr := h.planRepo.GetByID(ctx, planID)
-		if getErr == nil && existing != nil {
+		if getErr != nil && !errors.Is(getErr, billing.ErrPlanNotFound) {
+			return fmt.Errorf("get plan %s: %w", planID, getErr)
+		}
+		if existing != nil {
 			existing.Name = planName
 			existing.Description = input.Description
 			existing.BasePrice = price
@@ -949,12 +960,12 @@ func (h *Handler) syncTariffToPlanWithError(ctx context.Context, docID string, i
 			existing.IsActive = input.IsActive
 			existing.UpdatedAt = now
 			if err := h.planRepo.Update(ctx, existing); err != nil {
-				return fmt.Errorf("Update plan %s: %w", planID, err)
+				return fmt.Errorf("update plan %s: %w", planID, err)
 			}
 			continue
 		}
 
-		// Create new plan
+		// Create new plan.
 		plan, err := aggregate.NewPlan(
 			planName,
 			input.Description,
@@ -977,10 +988,55 @@ func (h *Handler) syncTariffToPlanWithError(ctx context.Context, docID string, i
 
 		plan.ID = planID
 		if err := h.planRepo.Create(ctx, plan); err != nil {
-			return fmt.Errorf("Create plan %s: %w", planID, err)
+			return fmt.Errorf("create plan %s: %w", planID, err)
 		}
 	}
 
+	// Deactivate orphaned plans: plans previously synced for this tariff
+	// that are no longer in the current periods list.
+	if err := h.deactivateOrphanedPlans(ctx, ns, docID, input, activePlanIDs, now); err != nil {
+		slog.WarnContext(ctx, "deactivateOrphanedPlans", "tariff", docID, "error", err)
+	}
+
+	return nil
+}
+
+// deactivateOrphanedPlans finds and deactivates plans that were previously
+// created for this tariff but are no longer in the active periods set.
+func (h *Handler) deactivateOrphanedPlans(
+	ctx context.Context,
+	ns gouuid.UUID,
+	docID string,
+	input *TariffInput,
+	activePlanIDs map[string]bool,
+	now time.Time,
+) error {
+	// Build candidate IDs: the base docID plus UUID v5 for all reasonable durations.
+	// We check the base ID and common period durations (1-730 days).
+	candidates := []string{docID}
+	for _, days := range []int{1, 7, 14, 30, 60, 90, 120, 180, 270, 365, 730} {
+		candidates = append(candidates, gouuid.NewSHA1(ns, []byte(fmt.Sprintf("period_%d", days))).String())
+	}
+	// Also include any periods that were in the previous pricing_periods
+	// by checking existing plans from these candidates.
+
+	for _, candidateID := range candidates {
+		if activePlanIDs[candidateID] {
+			continue
+		}
+		existing, err := h.planRepo.GetByID(ctx, candidateID)
+		if err != nil || existing == nil {
+			continue
+		}
+		if !existing.IsActive {
+			continue
+		}
+		existing.IsActive = false
+		existing.UpdatedAt = now
+		if err := h.planRepo.Update(ctx, existing); err != nil {
+			return fmt.Errorf("deactivate orphaned plan %s: %w", candidateID, err)
+		}
+	}
 	return nil
 }
 

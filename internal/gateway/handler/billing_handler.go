@@ -39,9 +39,9 @@ type planResponse struct {
 
 func toPlanResponse(p *aggregate.Plan) planResponse {
 	// GroupID: plans from multi-period tariffs have names like "Plan — 1 month".
-	// Group by the base name (everything before " — ").
+	// Group by the base name (everything before the last " — ").
 	groupID := p.ID
-	if idx := strings.Index(p.Name, " — "); idx > 0 {
+	if idx := strings.LastIndex(p.Name, " — "); idx > 0 {
 		groupID = p.Name[:idx]
 	}
 

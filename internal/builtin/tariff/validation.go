@@ -194,6 +194,9 @@ func validateCrossFields(input *TariffInput) error {
 	}
 
 	// Pricing periods validation.
+	if len(input.PricingPeriods) > 10 {
+		return fmt.Errorf("pricing_periods: max 10 periods allowed")
+	}
 	if len(input.PricingPeriods) > 0 {
 		seen := make(map[int]bool)
 		for i, p := range input.PricingPeriods {
@@ -202,6 +205,9 @@ func validateCrossFields(input *TariffInput) error {
 			}
 			if p.PriceAmount <= 0 {
 				return fmt.Errorf("pricing_periods[%d].price_amount must be > 0", i)
+			}
+			if p.SavePercent < 0 || p.SavePercent > 100 {
+				return fmt.Errorf("pricing_periods[%d].save_percent must be 0-100", i)
 			}
 			if seen[p.DurationDays] {
 				return fmt.Errorf("pricing_periods[%d]: duplicate duration_days %d", i, p.DurationDays)
