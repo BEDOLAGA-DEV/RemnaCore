@@ -48,71 +48,81 @@ func Plugin() plugin.BuiltInPluginDef {
 				Menu:       plugin.PageMenuAdmin,
 				Collection: CollectionName,
 				Fields: []plugin.ManifestPageField{
-					// Basic
-					{Key: "name", Label: "Name", Type: "text", Required: true},
-					{Key: "description", Label: "Description", Type: "textarea"},
-					{Key: "billing_model", Label: "Billing Model", Type: "select", Required: true, Default: "fixed", Options: billingModels},
-					{Key: "price_amount", Label: "Price (cents)", Type: "number", Required: true, Default: "0"},
-					{Key: "price_currency", Label: "Currency", Type: "select", Required: true, Default: "USD", Options: currencies},
-					{Key: "duration_days", Label: "Duration (days)", Type: "number", Default: "30"},
-					{Key: "traffic_limit_gb", Label: "Traffic (GB, 0=unlimited)", Type: "number", Default: "0"},
-					{Key: "device_limit", Label: "Devices (0=unlimited)", Type: "number", Default: "0"},
-					{Key: "max_purchases_per_user", Label: "Max per user (0=unlimited)", Type: "number", Default: "0"},
-					// VPN Panel + Traffic strategy
-					{Key: "vpn_panel_id", Label: "VPN Panel", Type: "select", OptionsURL: "/api/tariffs/panels", OptionsValueKey: "id", OptionsLabelKey: "name"},
-					{Key: "traffic_reset_strategy", Label: "Traffic Reset", Type: "select", Default: "MONTH", Options: []string{"NO_RESET", "DAY", "WEEK", "MONTH", "MONTH_ROLLING"}},
-				// Pricing periods (JSON array of {duration_days, price_amount, label, save_percent, is_default})
-				{Key: "pricing_periods", Label: "Pricing Periods (JSON)", Type: "textarea"},
-					// Squads (loaded from selected panel)
-					{Key: "internal_squad_uuids", Label: "Internal Squads", Type: "multiselect", OptionsURL: "/api/tariffs/internal-squads", OptionsValueKey: "uuid", OptionsLabelKey: "name"},
-					{Key: "external_squad_uuids", Label: "External Squads", Type: "multiselect", OptionsURL: "/api/tariffs/external-squads", OptionsValueKey: "uuid", OptionsLabelKey: "name"},
-					{Key: "features", Label: "Features (one per line)", Type: "textarea"},
-					// Pricing
-					{Key: "pricing_rule_id", Label: "Pricing Rule", Type: "text"},
-					{Key: "price_charm_strategy", Label: "Charm Pricing", Type: "select", Default: "none", Options: []string{"none", "99", "95"}},
-					// Audience
-					{Key: "audience_segment", Label: "Audience", Type: "select", Default: "all", Options: audienceSegments},
-					{Key: "min_seats", Label: "Min Seats (B2B)", Type: "number", Default: "0"},
-					{Key: "max_seats", Label: "Max Seats (B2B)", Type: "number", Default: "0"},
-					{Key: "requires_kyc", Label: "Requires KYC", Type: "boolean", Default: "false"},
-					// Billing details
-					{Key: "auto_renewal", Label: "Auto Renewal", Type: "boolean", Default: "false"},
-					{Key: "renewal_grace_days", Label: "Grace Period (days)", Type: "number", Default: "0"},
-					{Key: "included_traffic_gb", Label: "Included Traffic GB (hybrid)", Type: "number", Default: "0"},
-					{Key: "overage_per_gb_cents", Label: "Overage per GB (cents)", Type: "number", Default: "0"},
-					{Key: "credit_cost_per_day", Label: "Credit Cost/Day (cents)", Type: "number", Default: "0"},
-					{Key: "credit_cost_per_gb", Label: "Credit Cost/GB (cents)", Type: "number", Default: "0"},
-					// Trial
-					{Key: "trial_days", Label: "Trial Days", Type: "number", Default: "0"},
-					{Key: "trial_requires_card", Label: "Trial Requires Card", Type: "boolean", Default: "false"},
-					{Key: "trial_to_plan_id", Label: "Trial Target Plan ID", Type: "text"},
-					// Lifecycle
-					{Key: "upgrade_policy", Label: "Upgrade Policy", Type: "select", Default: "next_period", Options: []string{"immediate", "next_period", "prorated"}},
-					{Key: "downgrade_policy", Label: "Downgrade Policy", Type: "select", Default: "next_period", Options: []string{"next_period", "immediate_refund"}},
-					{Key: "cancellation_policy", Label: "Cancellation Policy", Type: "select", Default: "end_of_period", Options: []string{"immediate", "end_of_period"}},
-					{Key: "refund_window_days", Label: "Refund Window (days)", Type: "number", Default: "0"},
-					// Stock & Visibility
-					{Key: "available_from", Label: "Available From (RFC3339)", Type: "text"},
-					{Key: "available_until", Label: "Available Until (RFC3339)", Type: "text"},
-					{Key: "stock_limit", Label: "Stock Limit (0=unlimited)", Type: "number", Default: "0"},
-					{Key: "stock_remaining", Label: "Stock Remaining", Type: "number", Default: "0"},
-					{Key: "requires_invite_code", Label: "Requires Invite Code", Type: "boolean", Default: "false"},
-					{Key: "visible_in_public", Label: "Visible in Public", Type: "boolean", Default: "true"},
-					{Key: "visible_in_telegram", Label: "Visible in Telegram", Type: "boolean", Default: "true"},
-					{Key: "visible_in_cabinet", Label: "Visible in Cabinet", Type: "boolean", Default: "true"},
-					{Key: "visible_in_reseller_portal", Label: "Visible in Reseller Portal", Type: "boolean", Default: "false"},
-					// Reseller
-					{Key: "reseller_markup_pct", Label: "Reseller Markup (bp)", Type: "number", Default: "0"},
-					{Key: "reseller_min_price", Label: "Reseller Min Price (cents)", Type: "number", Default: "0"},
-					{Key: "reseller_max_discount", Label: "Reseller Max Discount (bp)", Type: "number", Default: "0"},
-					// Tax
-					{Key: "tax_category", Label: "Tax Category", Type: "select", Default: "digital_service", Options: []string{"digital_service", "saas", "vpn"}},
-					{Key: "tax_inclusive", Label: "Tax Inclusive", Type: "boolean", Default: "false"},
-					// Metadata
-					{Key: "badge_text", Label: "Badge Text", Type: "text"},
-					{Key: "badge_color", Label: "Badge Color", Type: "text"},
-					{Key: "is_active", Label: "Active", Type: "boolean", Default: "true"},
-					{Key: "sort_order", Label: "Sort order", Type: "number", Default: "0"},
+					// ── Basic ──
+					{Key: "name", Label: "Name", Type: "text", Required: true, Group: "Basic"},
+					{Key: "description", Label: "Description", Type: "textarea", Group: "Basic", Span: 2},
+					{Key: "billing_model", Label: "Billing Model", Type: "select", Required: true, Default: "fixed", Options: billingModels, Group: "Basic"},
+					{Key: "price_amount", Label: "Price (cents)", Type: "number", Required: true, Default: "0", Group: "Basic"},
+					{Key: "price_currency", Label: "Currency", Type: "select", Required: true, Default: "USD", Options: currencies, Group: "Basic"},
+					{Key: "duration_days", Label: "Duration (days)", Type: "number", Default: "30", Group: "Basic"},
+					{Key: "is_active", Label: "Active", Type: "boolean", Default: "true", Group: "Basic"},
+					{Key: "sort_order", Label: "Sort order", Type: "number", Default: "0", Group: "Basic"},
+
+					// ── VPN & Traffic ──
+					{Key: "vpn_panel_id", Label: "VPN Panel", Type: "select", OptionsURL: "/api/tariffs/panels", OptionsValueKey: "id", OptionsLabelKey: "name", Group: "VPN & Traffic"},
+					{Key: "traffic_limit_gb", Label: "Traffic (GB, 0=unlimited)", Type: "number", Default: "0", Group: "VPN & Traffic"},
+					{Key: "traffic_reset_strategy", Label: "Traffic Reset", Type: "select", Default: "MONTH", Options: []string{"NO_RESET", "DAY", "WEEK", "MONTH", "MONTH_ROLLING"}, Group: "VPN & Traffic"},
+					{Key: "device_limit", Label: "Devices (0=unlimited)", Type: "number", Default: "0", Group: "VPN & Traffic"},
+					{Key: "internal_squad_uuids", Label: "Internal Squads", Type: "multiselect", OptionsURL: "/api/tariffs/internal-squads", OptionsValueKey: "uuid", OptionsLabelKey: "name", Group: "VPN & Traffic", Span: 2},
+					{Key: "external_squad_uuids", Label: "External Squads", Type: "multiselect", OptionsURL: "/api/tariffs/external-squads", OptionsValueKey: "uuid", OptionsLabelKey: "name", Group: "VPN & Traffic", Span: 2},
+
+					// ── Pricing Periods ──
+					{Key: "pricing_periods", Label: "Pricing Periods", Type: "pricing_periods", Group: "Pricing Periods", Span: 2},
+
+					// ── Pricing ──
+					{Key: "pricing_rule_id", Label: "Pricing Rule", Type: "text", Group: "Pricing"},
+					{Key: "price_charm_strategy", Label: "Charm Pricing", Type: "select", Default: "none", Options: []string{"none", "99", "95"}, Group: "Pricing"},
+					{Key: "max_purchases_per_user", Label: "Max per user (0=unlimited)", Type: "number", Default: "0", Group: "Pricing"},
+
+					// ── Audience ──
+					{Key: "audience_segment", Label: "Audience", Type: "select", Default: "all", Options: audienceSegments, Group: "Audience"},
+					{Key: "min_seats", Label: "Min Seats (B2B)", Type: "number", Default: "0", Group: "Audience"},
+					{Key: "max_seats", Label: "Max Seats (B2B)", Type: "number", Default: "0", Group: "Audience"},
+					{Key: "requires_kyc", Label: "Requires KYC", Type: "boolean", Default: "false", Group: "Audience"},
+
+					// ── Billing ──
+					{Key: "auto_renewal", Label: "Auto Renewal", Type: "boolean", Default: "false", Group: "Billing"},
+					{Key: "renewal_grace_days", Label: "Grace Period (days)", Type: "number", Default: "0", Group: "Billing"},
+					{Key: "included_traffic_gb", Label: "Included Traffic GB", Type: "number", Default: "0", Group: "Billing"},
+					{Key: "overage_per_gb_cents", Label: "Overage per GB (cents)", Type: "number", Default: "0", Group: "Billing"},
+					{Key: "credit_cost_per_day", Label: "Credit Cost/Day", Type: "number", Default: "0", Group: "Billing"},
+					{Key: "credit_cost_per_gb", Label: "Credit Cost/GB", Type: "number", Default: "0", Group: "Billing"},
+
+					// ── Trial ──
+					{Key: "trial_days", Label: "Trial Days", Type: "number", Default: "0", Group: "Trial"},
+					{Key: "trial_requires_card", Label: "Requires Card", Type: "boolean", Default: "false", Group: "Trial"},
+					{Key: "trial_to_plan_id", Label: "Target Plan ID", Type: "text", Group: "Trial"},
+
+					// ── Lifecycle ──
+					{Key: "upgrade_policy", Label: "Upgrade Policy", Type: "select", Default: "next_period", Options: []string{"immediate", "next_period", "prorated"}, Group: "Lifecycle"},
+					{Key: "downgrade_policy", Label: "Downgrade Policy", Type: "select", Default: "next_period", Options: []string{"next_period", "immediate_refund"}, Group: "Lifecycle"},
+					{Key: "cancellation_policy", Label: "Cancellation Policy", Type: "select", Default: "end_of_period", Options: []string{"immediate", "end_of_period"}, Group: "Lifecycle"},
+					{Key: "refund_window_days", Label: "Refund Window (days)", Type: "number", Default: "0", Group: "Lifecycle"},
+
+					// ── Visibility ──
+					{Key: "available_from", Label: "Available From", Type: "text", Group: "Visibility"},
+					{Key: "available_until", Label: "Available Until", Type: "text", Group: "Visibility"},
+					{Key: "stock_limit", Label: "Stock Limit (0=unlimited)", Type: "number", Default: "0", Group: "Visibility"},
+					{Key: "stock_remaining", Label: "Stock Remaining", Type: "number", Default: "0", Group: "Visibility"},
+					{Key: "requires_invite_code", Label: "Requires Invite", Type: "boolean", Default: "false", Group: "Visibility"},
+					{Key: "visible_in_public", Label: "Public", Type: "boolean", Default: "true", Group: "Visibility"},
+					{Key: "visible_in_telegram", Label: "Telegram", Type: "boolean", Default: "true", Group: "Visibility"},
+					{Key: "visible_in_cabinet", Label: "Cabinet", Type: "boolean", Default: "true", Group: "Visibility"},
+					{Key: "visible_in_reseller_portal", Label: "Reseller Portal", Type: "boolean", Default: "false", Group: "Visibility"},
+
+					// ── Reseller ──
+					{Key: "reseller_markup_pct", Label: "Markup (bp)", Type: "number", Default: "0", Group: "Reseller"},
+					{Key: "reseller_min_price", Label: "Min Price (cents)", Type: "number", Default: "0", Group: "Reseller"},
+					{Key: "reseller_max_discount", Label: "Max Discount (bp)", Type: "number", Default: "0", Group: "Reseller"},
+
+					// ── Tax ──
+					{Key: "tax_category", Label: "Tax Category", Type: "select", Default: "digital_service", Options: []string{"digital_service", "saas", "vpn"}, Group: "Tax"},
+					{Key: "tax_inclusive", Label: "Tax Inclusive", Type: "boolean", Default: "false", Group: "Tax"},
+
+					// ── Display ──
+					{Key: "features", Label: "Features (one per line)", Type: "textarea", Group: "Display", Span: 2},
+					{Key: "badge_text", Label: "Badge Text", Type: "text", Group: "Display"},
+					{Key: "badge_color", Label: "Badge Color", Type: "text", Group: "Display"},
 				},
 			},
 			// --- Page 2: Pricing Rules ---

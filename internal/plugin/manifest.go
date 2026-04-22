@@ -116,6 +116,8 @@ type ManifestPageField struct {
 	OptionsURL      string   `toml:"options_url"`       // Dynamic options from URL
 	OptionsValueKey string   `toml:"options_value_key"` // Key in response objects for option value
 	OptionsLabelKey string   `toml:"options_label_key"` // Key in response objects for option label
+	Group           string   `toml:"group"`             // Logical group for section-based layouts
+	Span            int      `toml:"span"`              // Grid column span (1 or 2, default 1)
 }
 
 // ManifestPlugin holds the top-level metadata about the plugin.

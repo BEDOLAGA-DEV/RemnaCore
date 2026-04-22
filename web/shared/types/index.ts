@@ -217,6 +217,8 @@ export type PluginPageField = {
   options_url?: string;
   options_value_key?: string;
   options_label_key?: string;
+  group?: string;  // Logical section group
+  span?: number;   // Grid column span (1 or 2)
 };
 
 export type PluginPage = {

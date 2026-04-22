@@ -12,7 +12,7 @@ import type { PluginDocument, PluginPageField } from "@remnacore/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Check, Loader2, Pencil, Plug, Plus, Trash2, X, XCircle } from "lucide-react";
+import { Check, ChevronDown, Loader2, Pencil, Plug, Plus, Trash2, X, XCircle } from "lucide-react";
 import { Suspense, lazy, useCallback, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
@@ -109,6 +109,9 @@ function buildZodSchemaFromFields(fields: PluginPageField[]) {
 			case "multiselect":
 				shape[field.key] = z.array(z.string());
 				break;
+			case "pricing_periods":
+				shape[field.key] = z.any().optional();
+				break;
 			case "textarea":
 				shape[field.key] = field.required
 					? z.string().min(1)
@@ -148,6 +151,9 @@ function buildDefaultValues(
 			case "multiselect":
 				values[field.key] = [];
 				break;
+			case "pricing_periods":
+				values[field.key] = [];
+				break;
 			default:
 				values[field.key] = field.default ?? "";
 		}
@@ -171,7 +177,16 @@ function transformFormValues(
 	for (const field of fields) {
 		const value = values[field.key];
 
-		if (
+		if (field.type === "pricing_periods") {
+			// Pass array as-is; filter out empty periods.
+			if (Array.isArray(value)) {
+				result[field.key] = (value as { duration_days: number; price_amount: number }[]).filter(
+					(p) => p.duration_days > 0 || p.price_amount > 0,
+				);
+			} else {
+				result[field.key] = [];
+			}
+		} else if (
 			field.type === "textarea" &&
 			typeof value === "string" &&
 			(field.key.endsWith("_uuids") || field.key.endsWith("features"))
@@ -582,18 +597,13 @@ function SchemaForm({
 			</div>
 
 			<form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
-				<div className="grid gap-4 sm:grid-cols-2">
-					{fields.map((field) => (
-						<SchemaFormField
-							key={field.key}
-							field={field}
-							register={register}
-							setValue={setValue}
-							watch={watch}
-							error={errors[field.key as keyof FormValues]?.message as string | undefined}
-						/>
-					))}
-				</div>
+				<GroupedFieldLayout
+					fields={fields}
+					register={register}
+					setValue={setValue}
+					watch={watch}
+					errors={errors}
+				/>
 
 				<div className="flex items-center gap-3 pt-2">
 					<button
@@ -623,6 +633,274 @@ function SchemaForm({
 	);
 }
 
+// ─── Grouped Field Layout ───────────────────────────────────────────────────
+// Groups fields by their `group` property into collapsible sections.
+// Fields without a group are rendered in a flat grid at the top.
+
+function GroupedFieldLayout({
+	fields,
+	register,
+	setValue,
+	watch,
+	errors,
+}: {
+	fields: PluginPageField[];
+	register: ReturnType<typeof useForm>["register"];
+	setValue: ReturnType<typeof useForm>["setValue"];
+	watch: ReturnType<typeof useForm>["watch"];
+	errors: Record<string, { message?: string } | undefined>;
+}) {
+	const hasGroups = fields.some((f) => f.group);
+
+	// No groups — flat 2-column grid (backward compat).
+	if (!hasGroups) {
+		return (
+			<div className="grid gap-4 sm:grid-cols-2">
+				{fields.map((field) => (
+					<SchemaFormField
+						key={field.key}
+						field={field}
+						register={register}
+						setValue={setValue}
+						watch={watch}
+						error={errors[field.key]?.message as string | undefined}
+					/>
+				))}
+			</div>
+		);
+	}
+
+	// Group fields preserving order.
+	const groups: { name: string; fields: PluginPageField[] }[] = [];
+	const seen = new Set<string>();
+	for (const field of fields) {
+		const g = field.group || "_ungrouped";
+		if (!seen.has(g)) {
+			seen.add(g);
+			groups.push({ name: g, fields: [] });
+		}
+		groups.find((x) => x.name === g)!.fields.push(field);
+	}
+
+	return (
+		<div className="space-y-3">
+			{groups.map((group) => (
+				<FieldSection
+					key={group.name}
+					title={group.name === "_ungrouped" ? undefined : group.name}
+					defaultOpen={group.name === "_ungrouped" || group.name === "Basic"}
+				>
+					<div className="grid gap-x-4 gap-y-3 sm:grid-cols-2">
+						{group.fields.map((field) => (
+							<SchemaFormField
+								key={field.key}
+								field={field}
+								register={register}
+								setValue={setValue}
+								watch={watch}
+								error={errors[field.key]?.message as string | undefined}
+							/>
+						))}
+					</div>
+				</FieldSection>
+			))}
+		</div>
+	);
+}
+
+function FieldSection({
+	title,
+	defaultOpen = false,
+	children,
+}: {
+	title?: string;
+	defaultOpen?: boolean;
+	children: React.ReactNode;
+}) {
+	const [open, setOpen] = useState(defaultOpen);
+
+	if (!title) {
+		return <>{children}</>;
+	}
+
+	return (
+		<div className="rounded-lg border border-border/50 bg-background/50">
+			<button
+				type="button"
+				onClick={() => setOpen((o) => !o)}
+				className="flex w-full items-center justify-between px-4 py-2.5 text-left"
+			>
+				<span className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">
+					{title}
+				</span>
+				<ChevronDown
+					size={14}
+					className={cn(
+						"text-muted-foreground transition-transform",
+						open && "rotate-180",
+					)}
+				/>
+			</button>
+			{open && <div className="px-4 pb-4">{children}</div>}
+		</div>
+	);
+}
+
+// ─── Pricing Periods Field ──────────────────────────────────────────────────
+// Custom UX for adding/removing pricing periods instead of raw JSON textarea.
+
+type PricingPeriod = {
+	duration_days: number;
+	price_amount: number;
+	label: string;
+	save_percent: number;
+	is_default: boolean;
+};
+
+function PricingPeriodsField({
+	watch,
+	setValue,
+}: {
+	watch: ReturnType<typeof useForm>["watch"];
+	setValue: ReturnType<typeof useForm>["setValue"];
+}) {
+	const rawValue = watch("pricing_periods");
+
+	// Parse from string (textarea legacy) or array.
+	const periods: PricingPeriod[] = (() => {
+		if (Array.isArray(rawValue)) return rawValue;
+		if (typeof rawValue === "string" && rawValue.trim()) {
+			try {
+				const parsed = JSON.parse(rawValue);
+				return Array.isArray(parsed) ? parsed : [];
+			} catch {
+				return [];
+			}
+		}
+		return [];
+	})();
+
+	const update = (next: PricingPeriod[]) => {
+		setValue("pricing_periods", next);
+	};
+
+	const addPeriod = () => {
+		update([
+			...periods,
+			{ duration_days: 30, price_amount: 0, label: "", save_percent: 0, is_default: false },
+		]);
+	};
+
+	const removePeriod = (index: number) => {
+		update(periods.filter((_, i) => i !== index));
+	};
+
+	const updatePeriod = (index: number, partial: Partial<PricingPeriod>) => {
+		update(periods.map((p, i) => (i === index ? { ...p, ...partial } : p)));
+	};
+
+	const inputCls =
+		"w-full rounded-lg border border-border bg-background px-2.5 py-1.5 font-mono text-[12px] text-foreground transition-colors focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/50";
+
+	return (
+		<div className="sm:col-span-2 space-y-3">
+			{periods.length > 0 && (
+				<div className="space-y-2">
+					{/* Header */}
+					<div className="hidden sm:grid sm:grid-cols-[1fr_1fr_1fr_80px_60px_40px] gap-2 px-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+						<span>Days</span>
+						<span>Price (cents)</span>
+						<span>Label</span>
+						<span>Discount %</span>
+						<span>Default</span>
+						<span />
+					</div>
+					{periods.map((period, i) => (
+						<div
+							key={`period-${i}`}
+							className="grid gap-2 grid-cols-2 sm:grid-cols-[1fr_1fr_1fr_80px_60px_40px] items-center rounded-lg border border-border/50 p-2 sm:p-0 sm:border-0"
+						>
+							<input
+								type="number"
+								value={period.duration_days}
+								onChange={(e) =>
+									updatePeriod(i, { duration_days: Number(e.target.value) })
+								}
+								placeholder="Days"
+								className={inputCls}
+							/>
+							<input
+								type="number"
+								value={period.price_amount}
+								onChange={(e) =>
+									updatePeriod(i, { price_amount: Number(e.target.value) })
+								}
+								placeholder="Price"
+								className={inputCls}
+							/>
+							<input
+								type="text"
+								value={period.label}
+								onChange={(e) => updatePeriod(i, { label: e.target.value })}
+								placeholder="e.g. 1 month"
+								className={cn(inputCls, "col-span-2 sm:col-span-1")}
+							/>
+							<input
+								type="number"
+								value={period.save_percent}
+								onChange={(e) =>
+									updatePeriod(i, { save_percent: Number(e.target.value) })
+								}
+								placeholder="%"
+								min={0}
+								max={100}
+								className={inputCls}
+							/>
+							<div className="flex items-center justify-center">
+								<button
+									type="button"
+									onClick={() => {
+										const next = periods.map((p, j) => ({
+											...p,
+											is_default: j === i,
+										}));
+										update(next);
+									}}
+									className={cn(
+										"h-5 w-5 rounded-full border-2 transition-colors",
+										period.is_default
+											? "border-primary bg-primary"
+											: "border-border hover:border-primary/50",
+									)}
+								>
+									{period.is_default && (
+										<Check size={12} className="mx-auto text-background" />
+									)}
+								</button>
+							</div>
+							<button
+								type="button"
+								onClick={() => removePeriod(i)}
+								className="flex items-center justify-center rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+							>
+								<Trash2 size={14} />
+							</button>
+						</div>
+					))}
+				</div>
+			)}
+			<button
+				type="button"
+				onClick={addPeriod}
+				className="flex items-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-1.5 text-[12px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+			>
+				<Plus size={13} />
+				Add period
+			</button>
+		</div>
+	);
+}
+
 // ─── Schema Form Field Renderer ──────────────────────────────────────────────
 
 type SchemaFormFieldProps = {
@@ -641,6 +919,7 @@ function SchemaFormField({
 	error,
 }: SchemaFormFieldProps) {
 	const fieldId = `schema_${field.key}`;
+	const spanClass = field.span === 2 ? "sm:col-span-2" : "";
 
 	switch (field.type) {
 		case "boolean":
@@ -680,14 +959,22 @@ function SchemaFormField({
 					error={error}
 				/>
 			);
+		case "pricing_periods":
+			return (
+				<div className="sm:col-span-2">
+					<PricingPeriodsField watch={watch} setValue={setValue} />
+				</div>
+			);
 		case "number":
 			return (
-				<NumberField
-					field={field}
-					fieldId={fieldId}
-					register={register}
-					error={error}
-				/>
+				<div className={spanClass}>
+					<NumberField
+						field={field}
+						fieldId={fieldId}
+						register={register}
+						error={error}
+					/>
+				</div>
 			);
 		case "secret":
 			return (
@@ -700,12 +987,14 @@ function SchemaFormField({
 			);
 		default:
 			return (
-				<TextField
-					field={field}
-					fieldId={fieldId}
-					register={register}
-					error={error}
-				/>
+				<div className={spanClass}>
+					<TextField
+						field={field}
+						fieldId={fieldId}
+						register={register}
+						error={error}
+					/>
+				</div>
 			);
 	}
 }
