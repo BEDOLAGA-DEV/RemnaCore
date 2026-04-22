@@ -95,12 +95,13 @@ type ManifestRoute struct {
 // register admin or cabinet pages that the frontend renders as dynamic menu
 // items.
 type ManifestPage struct {
-	Path       string              `toml:"path"`       // URL path segment, e.g. "tariffs"
-	Title      string              `toml:"title"`      // Display title, e.g. "Tariffs"
-	Icon       string              `toml:"icon"`       // Lucide icon name, e.g. "CreditCard"
-	Menu       string              `toml:"menu"`       // Where to show: "admin" or "cabinet"
-	Collection string              `toml:"collection"` // Which collection this page manages
-	Fields     []ManifestPageField `toml:"fields"`     // Form field definitions for the page
+	Path       string              `toml:"path"`         // URL path segment, e.g. "tariffs"
+	Title      string              `toml:"title"`        // Display title, e.g. "Tariffs"
+	Icon       string              `toml:"icon"`         // Lucide icon name, e.g. "CreditCard"
+	Menu       string              `toml:"menu"`         // Where to show: "admin" or "cabinet"
+	Collection string              `toml:"collection"`   // Which collection this page manages
+	Fields     []ManifestPageField `toml:"fields"`       // Form field definitions for the page
+	CrudURL    string              `toml:"crud_url"`     // Custom CRUD base URL (overrides generic collection API)
 }
 
 // ManifestPageField declares a single form field for a plugin page. The

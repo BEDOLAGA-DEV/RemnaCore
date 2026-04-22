@@ -47,6 +47,7 @@ func Plugin() plugin.BuiltInPluginDef {
 				Icon:       "CreditCard",
 				Menu:       plugin.PageMenuAdmin,
 				Collection: CollectionName,
+				CrudURL:    "/api/tariffs",
 				Fields: []plugin.ManifestPageField{
 					// ── Basic ──
 					{Key: "name", Label: "Name", Type: "text", Required: true, Group: "Basic"},

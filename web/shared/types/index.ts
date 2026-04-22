@@ -228,6 +228,7 @@ export type PluginPage = {
   menu: string;
   collection?: string;
   fields?: PluginPageField[];
+  crud_url?: string;
 };
 
 export type Plugin = {
@@ -260,6 +261,7 @@ export type AggregatedPluginPage = {
   menu: string;
   collection?: string;
   fields?: PluginPageField[];
+  crud_url?: string;
 };
 
 // ─── Tenants ────────────────────────────────────────────────────────────────

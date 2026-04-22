@@ -256,6 +256,7 @@ function GenericPluginPage({ slug, pagePath }: { slug: string; pagePath: string 
 			(p) => p.plugin_slug === slug && p.path === pagePath,
 		) ?? pluginPages?.find((p) => p.path === pagePath);
 	const collectionName = pageInfo?.collection || pagePath;
+	const crudUrl = pageInfo?.crud_url;
 	const pageFields =
 		pageInfo?.fields && pageInfo.fields.length > 0
 			? pageInfo.fields
@@ -271,7 +272,7 @@ function GenericPluginPage({ slug, pagePath }: { slug: string; pagePath: string 
 		});
 	}
 
-	const { list, create, update, remove } = usePluginCollection(slug, collectionName);
+	const { list, create, update, remove } = usePluginCollection(slug, collectionName, crudUrl);
 
 	const [formMode, setFormMode] = useState<"closed" | "create" | "edit">(
 		"closed",

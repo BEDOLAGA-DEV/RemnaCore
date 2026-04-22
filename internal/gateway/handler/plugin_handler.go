@@ -51,6 +51,8 @@ type pluginPageFieldResponse struct {
 	OptionsURL      string   `json:"options_url,omitempty"`
 	OptionsValueKey string   `json:"options_value_key,omitempty"`
 	OptionsLabelKey string   `json:"options_label_key,omitempty"`
+	Group           string   `json:"group,omitempty"`
+	Span            int      `json:"span,omitempty"`
 }
 
 // pluginPageResponse is the API representation of a single page declared by a
@@ -62,6 +64,7 @@ type pluginPageResponse struct {
 	Menu       string                    `json:"menu"`
 	Collection string                    `json:"collection,omitempty"`
 	Fields     []pluginPageFieldResponse `json:"fields,omitempty"`
+	CrudURL    string                    `json:"crud_url,omitempty"`
 }
 
 // pluginResponse is the admin API representation of a plugin. Secret config
@@ -117,6 +120,7 @@ func toPluginPageResponses(p *plugin.Plugin) []pluginPageResponse {
 			Menu:       pg.Menu,
 			Collection: pg.Collection,
 			Fields:     toPluginPageFieldResponses(pg.Fields),
+			CrudURL:    pg.CrudURL,
 		}
 	}
 	return pages
@@ -140,6 +144,8 @@ func toPluginPageFieldResponses(fields []plugin.ManifestPageField) []pluginPageF
 			OptionsURL:      f.OptionsURL,
 			OptionsValueKey: f.OptionsValueKey,
 			OptionsLabelKey: f.OptionsLabelKey,
+			Group:           f.Group,
+			Span:            f.Span,
 		}
 	}
 	return resp
@@ -331,6 +337,7 @@ type aggregatedPluginPageResponse struct {
 	Menu       string                    `json:"menu"`
 	Collection string                    `json:"collection,omitempty"`
 	Fields     []pluginPageFieldResponse `json:"fields,omitempty"`
+	CrudURL    string                    `json:"crud_url,omitempty"`
 }
 
 // ListPluginPages handles GET /api/admin/plugin-pages.
@@ -358,6 +365,7 @@ func (h *PluginHandler) ListPluginPages(w http.ResponseWriter, r *http.Request) 
 				Menu:       pg.Menu,
 				Collection: pg.Collection,
 				Fields:     toPluginPageFieldResponses(pg.Fields),
+				CrudURL:    pg.CrudURL,
 			})
 		}
 	}
