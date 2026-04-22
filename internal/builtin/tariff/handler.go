@@ -616,7 +616,8 @@ func (h *Handler) SyncAllTariffs(w http.ResponseWriter, r *http.Request) {
 
 	docs, err := h.collections.ListDocuments(r.Context(), PluginSlug, CollectionName)
 	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"error": err.Error()})
+		slog.ErrorContext(r.Context(), "SyncAllTariffs: ListDocuments failed", "error", err)
+		writeJSON(w, http.StatusOK, map[string]any{"error": "failed to list tariffs"})
 		return
 	}
 
@@ -631,14 +632,16 @@ func (h *Handler) SyncAllTariffs(w http.ResponseWriter, r *http.Request) {
 	for _, doc := range docs {
 		var input TariffInput
 		if err := json.Unmarshal(doc.Data, &input); err != nil {
-			results = append(results, syncResult{ID: doc.ID, Error: "unmarshal: " + err.Error()})
+			slog.ErrorContext(r.Context(), "SyncAllTariffs: unmarshal failed", "id", doc.ID, "error", err)
+			results = append(results, syncResult{ID: doc.ID, Error: "invalid tariff data"})
 			continue
 		}
 
 		syncErr := h.syncTariffToPlanWithError(r.Context(), doc.ID, &input)
 		res := syncResult{ID: doc.ID, Name: input.Name, OK: syncErr == nil}
 		if syncErr != nil {
-			res.Error = syncErr.Error()
+			slog.ErrorContext(r.Context(), "SyncAllTariffs: sync failed", "id", doc.ID, "error", syncErr)
+			res.Error = "sync_failed"
 		}
 		results = append(results, res)
 	}

@@ -32,6 +32,12 @@ func validateTariffInputV2(input *TariffInput) error {
 	if input.PriceAmount < 0 {
 		return fmt.Errorf("price_amount must be >= 0")
 	}
+	if input.PriceAmount > 10_000_000_00 { // $10M in cents
+		return fmt.Errorf("price_amount exceeds maximum")
+	}
+	if input.TrafficLimitGB > 1_000_000 { // 1 PB
+		return fmt.Errorf("traffic_limit_gb must be <= 1000000")
+	}
 	if len(input.PriceCurrency) != 3 {
 		return fmt.Errorf("price_currency must be 3 characters")
 	}
@@ -82,6 +88,9 @@ func validateByBillingModel(input *TariffInput) error {
 	case BillingModelFixed, BillingModelRecurring:
 		if input.DurationDays <= 0 {
 			return fmt.Errorf("duration_days required for %s", input.BillingModel)
+		}
+		if input.DurationDays > 3650 { // 10 years max
+			return fmt.Errorf("duration_days must be <= 3650")
 		}
 	case BillingModelLifetime:
 		if input.DurationDays != 0 {

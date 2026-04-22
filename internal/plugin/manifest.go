@@ -84,10 +84,11 @@ type Manifest struct {
 // registers these routes on startup and proxies incoming requests to the
 // plugin's RPC function.
 type ManifestRoute struct {
-	Method   string `toml:"method"`   // HTTP method: GET, POST, PUT, DELETE, PATCH
-	Path     string `toml:"path"`     // URL path, e.g. "/api/tariffs"
-	Function string `toml:"function"` // RPC function name to call
-	Public   bool   `toml:"public"`   // If true, no JWT auth required
+	Method    string `toml:"method"`     // HTTP method: GET, POST, PUT, DELETE, PATCH
+	Path      string `toml:"path"`       // URL path, e.g. "/api/tariffs"
+	Function  string `toml:"function"`   // RPC function name to call
+	Public    bool   `toml:"public"`     // If true, no JWT auth required
+	AdminOnly bool   `toml:"admin_only"` // If true, requires admin role (implies not Public)
 }
 
 // ManifestPage declares a UI page provided by the plugin. Plugins use this to

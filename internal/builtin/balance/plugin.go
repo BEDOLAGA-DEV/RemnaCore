@@ -63,17 +63,17 @@ func balanceRoutes() []plugin.ManifestRoute {
 		{Method: "POST", Path: "/api/balance/topups/{id}/cancel", Function: "cancel_topup", Public: false},
 
 		// Admin
-		{Method: "GET", Path: "/api/balance/admin/wallets", Function: "admin_list_wallets", Public: false},
-		{Method: "GET", Path: "/api/balance/admin/users/{userID}", Function: "admin_get_user_balance", Public: false},
-		{Method: "POST", Path: "/api/balance/admin/users/{userID}/adjust", Function: "admin_adjust", Public: false},
-		{Method: "POST", Path: "/api/balance/admin/users/{userID}/transfer", Function: "admin_transfer", Public: false},
-		{Method: "GET", Path: "/api/balance/admin/users/{userID}/ledger", Function: "admin_user_ledger", Public: false},
-		{Method: "GET", Path: "/api/balance/admin/ledger", Function: "admin_ledger", Public: false},
-		{Method: "GET", Path: "/api/balance/admin/topups", Function: "admin_list_topups", Public: false},
-		{Method: "POST", Path: "/api/balance/admin/topups/{id}/approve", Function: "admin_approve_topup", Public: false},
-		{Method: "POST", Path: "/api/balance/admin/topups/{id}/reject", Function: "admin_reject_topup", Public: false},
-		{Method: "GET", Path: "/api/balance/admin/analytics/overview", Function: "admin_analytics", Public: false},
-		{Method: "POST", Path: "/api/balance/admin/export", Function: "admin_export_csv", Public: false},
+		{Method: "GET", Path: "/api/balance/admin/wallets", Function: "admin_list_wallets", AdminOnly: true},
+		{Method: "GET", Path: "/api/balance/admin/users/{userID}", Function: "admin_get_user_balance", AdminOnly: true},
+		{Method: "POST", Path: "/api/balance/admin/users/{userID}/adjust", Function: "admin_adjust", AdminOnly: true},
+		{Method: "POST", Path: "/api/balance/admin/users/{userID}/transfer", Function: "admin_transfer", AdminOnly: true},
+		{Method: "GET", Path: "/api/balance/admin/users/{userID}/ledger", Function: "admin_user_ledger", AdminOnly: true},
+		{Method: "GET", Path: "/api/balance/admin/ledger", Function: "admin_ledger", AdminOnly: true},
+		{Method: "GET", Path: "/api/balance/admin/topups", Function: "admin_list_topups", AdminOnly: true},
+		{Method: "POST", Path: "/api/balance/admin/topups/{id}/approve", Function: "admin_approve_topup", AdminOnly: true},
+		{Method: "POST", Path: "/api/balance/admin/topups/{id}/reject", Function: "admin_reject_topup", AdminOnly: true},
+		{Method: "GET", Path: "/api/balance/admin/analytics/overview", Function: "admin_analytics", AdminOnly: true},
+		{Method: "POST", Path: "/api/balance/admin/export", Function: "admin_export_csv", AdminOnly: true},
 	}
 }
 

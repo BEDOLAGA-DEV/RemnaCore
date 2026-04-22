@@ -71,11 +71,11 @@ func checkoutRoutes() []plugin.ManifestRoute {
 		{Method: "DELETE", Path: "/api/checkout/saved-methods/{id}", Function: "delete_saved", Public: false},
 
 		// Admin
-		{Method: "GET", Path: "/api/checkout/admin/sessions", Function: "admin_list_sessions", Public: false},
-		{Method: "GET", Path: "/api/checkout/admin/sessions/{id}", Function: "admin_get_session", Public: false},
-		{Method: "GET", Path: "/api/checkout/admin/abandonment", Function: "admin_abandonment", Public: false},
-		{Method: "GET", Path: "/api/checkout/admin/analytics/funnel", Function: "admin_funnel", Public: false},
-		{Method: "GET", Path: "/api/checkout/admin/analytics/methods", Function: "admin_methods_breakdown", Public: false},
+		{Method: "GET", Path: "/api/checkout/admin/sessions", Function: "admin_list_sessions", AdminOnly: true},
+		{Method: "GET", Path: "/api/checkout/admin/sessions/{id}", Function: "admin_get_session", AdminOnly: true},
+		{Method: "GET", Path: "/api/checkout/admin/abandonment", Function: "admin_abandonment", AdminOnly: true},
+		{Method: "GET", Path: "/api/checkout/admin/analytics/funnel", Function: "admin_funnel", AdminOnly: true},
+		{Method: "GET", Path: "/api/checkout/admin/analytics/methods", Function: "admin_methods_breakdown", AdminOnly: true},
 	}
 }
 
