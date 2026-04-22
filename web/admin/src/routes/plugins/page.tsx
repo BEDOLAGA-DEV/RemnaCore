@@ -48,7 +48,11 @@ function formatCellValue(value: unknown, t: (key: string) => string): string {
 	if (typeof value === "boolean")
 		return value ? t("admin.pluginPage.true") : t("admin.pluginPage.false");
 	if (typeof value === "number") return String(value);
-	if (Array.isArray(value)) return value.join(", ");
+	if (Array.isArray(value)) {
+		if (value.length === 0) return "—";
+		if (typeof value[0] === "object") return `${value.length} items`;
+		return value.join(", ");
+	}
 	if (typeof value === "object") return JSON.stringify(value);
 	return String(value);
 }
@@ -312,8 +316,18 @@ function GenericPluginPage({ slug, pagePath }: { slug: string; pagePath: string 
 	const documents = list.data ?? [];
 	const dataKeys = deriveDataKeys(documents);
 
-	// When fields are declared, use field keys for columns; otherwise auto-detect
-	const columnKeys = pageFields ? pageFields.map((f) => f.key) : dataKeys;
+	// When fields are declared, use field keys for columns; otherwise auto-detect.
+	// If fields have groups, only show the first group's fields in the table
+	// to prevent horizontal overflow with many fields.
+	const columnKeys = (() => {
+		if (!pageFields) return dataKeys;
+		const hasGroups = pageFields.some((f) => f.group);
+		if (!hasGroups) return pageFields.map((f) => f.key);
+		const firstGroup = pageFields[0]?.group;
+		return pageFields
+			.filter((f) => f.group === firstGroup)
+			.map((f) => f.key);
+	})();
 
 	// ─── Table columns ───────────────────────────────────────────────────────
 

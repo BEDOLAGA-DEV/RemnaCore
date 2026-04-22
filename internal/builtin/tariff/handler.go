@@ -240,9 +240,7 @@ func (h *Handler) UpdateTariff(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, t)
 }
 
-// DeleteTariff soft-deletes a tariff by setting is_active=false.
-// Hard deletes are intentionally not supported — tariffs with purchase
-// history are audit objects (see plan §14).
+// DeleteTariff deletes a tariff document and deactivates linked billing plans.
 func (h *Handler) DeleteTariff(w http.ResponseWriter, r *http.Request) {
 	tariffID := chi.URLParam(r, "tariffID")
 	if tariffID == "" {
@@ -260,26 +258,17 @@ func (h *Handler) DeleteTariff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Parse tariff to deactivate linked plans before removal.
 	var input TariffInput
-	if err := json.Unmarshal(doc.Data, &input); err != nil {
+	if err := json.Unmarshal(doc.Data, &input); err == nil {
+		input.IsActive = false
+		h.syncTariffToPlan(r.Context(), tariffID, &input)
+	}
+
+	if err := h.collections.DeleteDocument(r.Context(), PluginSlug, CollectionName, tariffID); err != nil {
 		writeAPIError(w, apierror.Internal)
 		return
 	}
-	input.IsActive = false
-
-	data, err := json.Marshal(input)
-	if err != nil {
-		writeAPIError(w, apierror.Internal)
-		return
-	}
-
-	if err := h.collections.UpdateDocument(r.Context(), PluginSlug, CollectionName, tariffID, json.RawMessage(data)); err != nil {
-		writeAPIError(w, apierror.Internal)
-		return
-	}
-
-	// Propagate deactivation to linked billing plans.
-	h.syncTariffToPlan(r.Context(), tariffID, &input)
 
 	w.WriteHeader(http.StatusNoContent)
 }
