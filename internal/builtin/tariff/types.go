@@ -68,12 +68,29 @@ const (
 	OverageRoundingMB    = "mb"
 	OverageRounding100MB = "100mb"
 
+	// Predefined period labels
+	PeriodLabelMonth   = "1 month"
+	PeriodLabel3Months = "3 months"
+	PeriodLabel6Months = "6 months"
+	PeriodLabelYear    = "1 year"
+
 	TrafficResetNoReset      = "NO_RESET"
 	TrafficResetDay          = "DAY"
 	TrafficResetWeek         = "WEEK"
 	TrafficResetMonth        = "MONTH"
 	TrafficResetMonthRolling = "MONTH_ROLLING"
 )
+
+// PricingPeriod represents one subscription period option for a tariff.
+// A tariff can offer multiple periods (e.g., 1 month, 3 months, 1 year)
+// each with its own price and optional discount.
+type PricingPeriod struct {
+	DurationDays int    `json:"duration_days"`
+	PriceAmount  int64  `json:"price_amount"`  // in cents
+	Label        string `json:"label"`         // "1 month", "3 months", "1 year"
+	SavePercent  int    `json:"save_percent"`  // 0, 10, 17 — discount vs monthly
+	IsDefault    bool   `json:"is_default"`    // highlighted in UI
+}
 
 // EligibilityRules captures constraints that determine whether a user
 // is eligible to purchase a tariff.
@@ -110,6 +127,9 @@ type TariffInput struct {
 	Features            []string `json:"features"`
 	IsActive            bool     `json:"is_active"`
 	SortOrder           int      `json:"sort_order"`
+
+	// --- Subscription periods ---
+	PricingPeriods []PricingPeriod `json:"pricing_periods,omitempty"`
 
 	// --- Billing model ---
 	BillingModel     string `json:"billing_model"`

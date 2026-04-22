@@ -61,6 +61,8 @@ func Plugin() plugin.BuiltInPluginDef {
 					// VPN Panel + Traffic strategy
 					{Key: "vpn_panel_id", Label: "VPN Panel", Type: "select", OptionsURL: "/api/tariffs/panels", OptionsValueKey: "id", OptionsLabelKey: "name"},
 					{Key: "traffic_reset_strategy", Label: "Traffic Reset", Type: "select", Default: "MONTH", Options: []string{"NO_RESET", "DAY", "WEEK", "MONTH", "MONTH_ROLLING"}},
+				// Pricing periods (JSON array of {duration_days, price_amount, label, save_percent, is_default})
+				{Key: "pricing_periods", Label: "Pricing Periods (JSON)", Type: "textarea"},
 					// Squads (loaded from selected panel)
 					{Key: "internal_squad_uuids", Label: "Internal Squads", Type: "multiselect", OptionsURL: "/api/tariffs/internal-squads", OptionsValueKey: "uuid", OptionsLabelKey: "name"},
 					{Key: "external_squad_uuids", Label: "External Squads", Type: "multiselect", OptionsURL: "/api/tariffs/external-squads", OptionsValueKey: "uuid", OptionsLabelKey: "name"},

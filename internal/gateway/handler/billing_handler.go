@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -17,6 +18,7 @@ import (
 // The frontend expects snake_case and flat price fields.
 type planResponse struct {
 	ID                   string   `json:"id"`
+	GroupID              string   `json:"group_id"`
 	Name                 string   `json:"name"`
 	Description          string   `json:"description"`
 	BasePriceAmount      int64    `json:"base_price_amount"`
@@ -36,8 +38,27 @@ type planResponse struct {
 }
 
 func toPlanResponse(p *aggregate.Plan) planResponse {
+	// GroupID = plan ID without the _duration suffix.
+	// Plans synced from tariffs with pricing_periods have IDs like "uuid_30", "uuid_90".
+	groupID := p.ID
+	if idx := strings.LastIndex(p.ID, "_"); idx > 0 {
+		// Check if everything after _ is digits (duration)
+		suffix := p.ID[idx+1:]
+		isDigits := true
+		for _, c := range suffix {
+			if c < '0' || c > '9' {
+				isDigits = false
+				break
+			}
+		}
+		if isDigits {
+			groupID = p.ID[:idx]
+		}
+	}
+
 	return planResponse{
 		ID:                   p.ID,
+		GroupID:               groupID,
 		Name:                 p.Name,
 		Description:          p.Description,
 		BasePriceAmount:      p.BasePrice.Amount,

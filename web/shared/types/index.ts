@@ -58,6 +58,7 @@ export type PlanTier = (typeof PLAN_TIERS)[keyof typeof PLAN_TIERS];
 
 export type Plan = {
   id: string;
+  group_id?: string;
   name: string;
   description: string | null;
   base_price_amount: number;

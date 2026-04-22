@@ -883,74 +883,97 @@ func (h *Handler) syncTariffToPlanWithError(ctx context.Context, docID string, i
 		return fmt.Errorf("planRepo is nil")
 	}
 
-	// Map duration_days to billing interval
-	interval := durationToInterval(input.DurationDays)
-
-	// Map price
 	currency := vo.Currency(strings.ToLower(input.PriceCurrency))
 	if currency == "" {
 		currency = "usd"
 	}
-	price := vo.NewMoney(input.PriceAmount, currency)
 
-	// Map tier from audience/billing model
 	tier := aggregate.TierBasic
 	if input.AudienceSegment == AudienceB2B {
 		tier = aggregate.TierPremium
 	}
 
-	// Convert traffic GB to bytes
 	var trafficBytes int64
 	if input.TrafficLimitGB > 0 {
 		trafficBytes = int64(input.TrafficLimitGB * 1024 * 1024 * 1024)
 	}
 
-	// Default country to allow all
 	countries := []string{"ALL"}
-
 	now := time.Now()
 
-	// Try update first (existing plan)
-	existing, getErr := h.planRepo.GetByID(ctx, docID)
-	if getErr == nil && existing != nil {
-		existing.Name = input.Name
-		existing.Description = input.Description
-		existing.BasePrice = price
-		existing.Interval = interval
-		existing.TrafficLimitBytes = trafficBytes
-		existing.DeviceLimit = input.DeviceLimit
-		existing.IsActive = input.IsActive
-		existing.UpdatedAt = now
-		return h.planRepo.Update(ctx, existing)
+	// Build list of periods to sync.
+	// If no pricing_periods defined, use the single price_amount + duration_days.
+	periods := input.PricingPeriods
+	if len(periods) == 0 {
+		periods = []PricingPeriod{{
+			DurationDays: input.DurationDays,
+			PriceAmount:  input.PriceAmount,
+			Label:        "",
+			IsDefault:    true,
+		}}
 	}
 
-	// Create new plan with tariff document ID as plan ID
-	plan, err := aggregate.NewPlan(
-		input.Name,
-		input.Description,
-		price,
-		interval,
-		trafficBytes,
-		input.DeviceLimit,
-		countries,
-		[]string{}, // protocols
-		tier,
-		1,     // max remnawave bindings
-		false, // family
-		0,     // family members
-		nil,   // no addons
-		now,
-	)
-	if err != nil {
-		return fmt.Errorf("NewPlan: %w", err)
+	// Sync each period as a separate billing Plan.
+	// Plan ID = docID for the first/default period, docID + "_" + index for additional.
+	for i, period := range periods {
+		planID := docID
+		planName := input.Name
+		if i > 0 || len(input.PricingPeriods) > 1 {
+			planID = fmt.Sprintf("%s_%d", docID, period.DurationDays)
+			if period.Label != "" {
+				planName = fmt.Sprintf("%s — %s", input.Name, period.Label)
+			} else {
+				planName = fmt.Sprintf("%s — %dd", input.Name, period.DurationDays)
+			}
+		}
+
+		interval := durationToInterval(period.DurationDays)
+		price := vo.NewMoney(period.PriceAmount, currency)
+
+		// Try update first
+		existing, getErr := h.planRepo.GetByID(ctx, planID)
+		if getErr == nil && existing != nil {
+			existing.Name = planName
+			existing.Description = input.Description
+			existing.BasePrice = price
+			existing.Interval = interval
+			existing.TrafficLimitBytes = trafficBytes
+			existing.DeviceLimit = input.DeviceLimit
+			existing.IsActive = input.IsActive
+			existing.UpdatedAt = now
+			if err := h.planRepo.Update(ctx, existing); err != nil {
+				return fmt.Errorf("Update plan %s: %w", planID, err)
+			}
+			continue
+		}
+
+		// Create new plan
+		plan, err := aggregate.NewPlan(
+			planName,
+			input.Description,
+			price,
+			interval,
+			trafficBytes,
+			input.DeviceLimit,
+			countries,
+			[]string{},
+			tier,
+			1,
+			false,
+			0,
+			nil,
+			now,
+		)
+		if err != nil {
+			return fmt.Errorf("NewPlan %s: %w", planID, err)
+		}
+
+		plan.ID = planID
+		if err := h.planRepo.Create(ctx, plan); err != nil {
+			return fmt.Errorf("Create plan %s: %w", planID, err)
+		}
 	}
 
-	// Override auto-generated ID with tariff document ID for 1:1 mapping
-	plan.ID = docID
-
-	if createErr := h.planRepo.Create(ctx, plan); createErr != nil {
-		return fmt.Errorf("Create: %w", createErr)
-	}
 	return nil
 }
 
