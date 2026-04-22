@@ -188,6 +188,7 @@ func tariffRoutes() []plugin.ManifestRoute {
 		{Method: "GET", Path: "/api/tariffs/catalog", Function: "list_tariff_catalog", Public: true},
 		{Method: "GET", Path: "/api/tariffs/export", Function: "export_tariffs", Public: false},
 		{Method: "POST", Path: "/api/tariffs/import", Function: "import_tariffs", Public: false},
+		{Method: "POST", Path: "/api/tariffs/sync-plans", Function: "sync_all_tariffs", Public: false},
 		{Method: "GET", Path: "/api/tariffs", Function: "list_tariffs", Public: true},
 		{Method: "POST", Path: "/api/tariffs", Function: "create_tariff", Public: false},
 		{Method: "GET", Path: "/api/tariffs/{tariffID}/price", Function: "get_tariff_price", Public: true},
@@ -269,6 +270,7 @@ func RegisterRoutes(registry *gateway.BuiltinRouteRegistry, h *Handler) {
 	r("list_tariff_catalog", h.ListTariffCatalog)
 	r("export_tariffs", h.ExportTariffs)
 	r("import_tariffs", h.ImportTariffs)
+	r("sync_all_tariffs", h.SyncAllTariffs)
 
 	// Pricing rules
 	r("list_pricing_rules", h.ListPricingRules)

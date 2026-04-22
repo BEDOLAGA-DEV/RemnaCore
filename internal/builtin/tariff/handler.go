@@ -600,6 +600,30 @@ func (h *Handler) ImportTariffs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// SyncAllTariffs forces a sync of all existing tariffs to billing Plans.
+func (h *Handler) SyncAllTariffs(w http.ResponseWriter, r *http.Request) {
+	docs, err := h.collections.ListDocuments(r.Context(), PluginSlug, CollectionName)
+	if err != nil {
+		writeAPIError(w, apierror.Internal)
+		return
+	}
+
+	synced := 0
+	for _, doc := range docs {
+		var input TariffInput
+		if json.Unmarshal(doc.Data, &input) != nil {
+			continue
+		}
+		h.syncTariffToPlan(r.Context(), doc.ID, &input)
+		synced++
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"synced": synced,
+		"total":  len(docs),
+	})
+}
+
 // =====================================================================
 // Analytics endpoints (placeholders)
 // =====================================================================
