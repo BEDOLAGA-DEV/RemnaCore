@@ -77,7 +77,7 @@ export function ProfilePage() {
 
       {/* Profile form */}
       <div
-        className="animate-fade-up rounded-lg border border-border bg-card p-6"
+        className="animate-fade-up glass-card p-6"
         style={{ animationDelay: "50ms", animationFillMode: "backwards" }}
       >
         <form
@@ -110,7 +110,7 @@ export function ProfilePage() {
             <input
               id="display_name"
               {...registerProfile("display_name")}
-              className="w-full rounded-[10px] border border-input bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              className="w-full rounded-[10px] border border-border bg-[rgba(255,235,210,0.03)] px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/50"
             />
             {profileErrors.display_name && (
               <p className="mt-1 text-sm text-destructive">
@@ -142,7 +142,7 @@ export function ProfilePage() {
 
       {/* Telegram section */}
       <div
-        className="animate-fade-up rounded-lg border border-border bg-card p-6"
+        className="animate-fade-up glass-card p-6"
         style={{ animationDelay: "150ms", animationFillMode: "backwards" }}
       >
         <h2 className="mb-4 text-lg font-semibold tracking-tight text-foreground">
@@ -185,7 +185,7 @@ export function ProfilePage() {
                 id="telegram_id"
                 type="number"
                 {...registerTelegram("telegram_id")}
-                className="w-full rounded-[10px] border border-input bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                className="w-full rounded-[10px] border border-border bg-[rgba(255,235,210,0.03)] px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/50"
               />
               {telegramErrors.telegram_id && (
                 <p className="mt-1 text-sm text-destructive">
