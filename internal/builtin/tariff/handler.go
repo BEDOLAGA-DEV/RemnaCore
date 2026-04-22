@@ -17,6 +17,9 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/remnawave"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pluginstore"
@@ -35,14 +38,16 @@ const (
 type Handler struct {
 	collections pluginstore.Store
 	pluginRepo  plugin.PluginRepository
+	planRepo    billing.PlanRepository
 	logger      *slog.Logger
 }
 
 // NewHandler creates a tariff Handler.
-func NewHandler(collections pluginstore.Store, pluginRepo plugin.PluginRepository, logger *slog.Logger) *Handler {
+func NewHandler(collections pluginstore.Store, pluginRepo plugin.PluginRepository, planRepo billing.PlanRepository, logger *slog.Logger) *Handler {
 	return &Handler{
 		collections: collections,
 		pluginRepo:  pluginRepo,
+		planRepo:    planRepo,
 		logger:      logger,
 	}
 }
@@ -177,6 +182,9 @@ func (h *Handler) CreateTariff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Sync tariff → billing Plan for cabinet visibility
+	h.syncTariffToPlan(r.Context(), doc.ID, &input)
+
 	writeJSON(w, http.StatusCreated, t)
 }
 
@@ -224,6 +232,9 @@ func (h *Handler) UpdateTariff(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, apierror.Internal)
 		return
 	}
+
+	// Sync tariff → billing Plan
+	h.syncTariffToPlan(r.Context(), tariffID, &input)
 
 	writeJSON(w, http.StatusOK, t)
 }
@@ -811,4 +822,103 @@ func documentToTariff(doc *pluginstore.Document) (*TariffResponse, error) {
 	}
 
 	return &t, nil
+}
+
+// syncTariffToPlan creates or updates a billing Plan from a tariff document.
+// This ensures tariffs created in the plugin are visible in the cabinet
+// via the standard usePlans() hook.
+func (h *Handler) syncTariffToPlan(ctx context.Context, docID string, input *TariffInput) {
+	if h.planRepo == nil {
+		return
+	}
+
+	// Map duration_days to billing interval
+	interval := durationToInterval(input.DurationDays)
+
+	// Map price
+	currency := vo.Currency(strings.ToLower(input.PriceCurrency))
+	if currency == "" {
+		currency = "usd"
+	}
+	price := vo.NewMoney(input.PriceAmount, currency)
+
+	// Map tier from audience/billing model
+	tier := aggregate.TierBasic
+	if input.AudienceSegment == AudienceB2B {
+		tier = aggregate.TierPremium
+	}
+
+	// Convert traffic GB to bytes
+	var trafficBytes int64
+	if input.TrafficLimitGB > 0 {
+		trafficBytes = int64(input.TrafficLimitGB * 1024 * 1024 * 1024)
+	}
+
+	// Default country to allow all
+	countries := []string{"ALL"}
+
+	now := time.Now()
+
+	// Try update first (existing plan)
+	existing, err := h.planRepo.GetByID(ctx, docID)
+	if err == nil && existing != nil {
+		existing.Name = input.Name
+		existing.Description = input.Description
+		existing.BasePrice = price
+		existing.Interval = interval
+		existing.TrafficLimitBytes = trafficBytes
+		existing.DeviceLimit = input.DeviceLimit
+		existing.IsActive = input.IsActive
+		existing.UpdatedAt = now
+		if updateErr := h.planRepo.Update(ctx, existing); updateErr != nil {
+			h.logger.Warn("failed to update billing plan from tariff",
+				slog.String("tariff_id", docID), slog.Any("error", updateErr))
+		}
+		return
+	}
+
+	// Create new plan with tariff document ID as plan ID
+	plan, err := aggregate.NewPlan(
+		input.Name,
+		input.Description,
+		price,
+		interval,
+		trafficBytes,
+		input.DeviceLimit,
+		countries,
+		[]string{}, // protocols
+		tier,
+		1,     // max remnawave bindings
+		false, // family
+		0,     // family members
+		nil,   // no addons
+		now,
+	)
+	if err != nil {
+		h.logger.Warn("failed to build billing plan from tariff",
+			slog.String("tariff_id", docID), slog.Any("error", err))
+		return
+	}
+
+	// Override auto-generated ID with tariff document ID for 1:1 mapping
+	plan.ID = docID
+
+	if createErr := h.planRepo.Create(ctx, plan); createErr != nil {
+		h.logger.Warn("failed to create billing plan from tariff",
+			slog.String("tariff_id", docID), slog.Any("error", createErr))
+	} else {
+		h.logger.Info("synced tariff to billing plan", slog.String("id", docID), slog.String("name", input.Name))
+	}
+}
+
+// durationToInterval maps duration days to a billing interval.
+func durationToInterval(days int) vo.BillingInterval {
+	switch {
+	case days <= 31:
+		return vo.IntervalMonth
+	case days <= 92:
+		return vo.IntervalQuarter
+	default:
+		return vo.IntervalYear
+	}
 }
