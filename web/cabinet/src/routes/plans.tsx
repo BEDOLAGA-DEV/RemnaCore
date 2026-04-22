@@ -73,7 +73,12 @@ export function PlansPage() {
       }
       map.get(gid)!.plans.push(plan);
     }
-    return Array.from(map.values());
+    // Sort plans within each group by price (ascending) for correct tab order.
+    const result = Array.from(map.values());
+    for (const group of result) {
+      group.plans.sort((a, b) => a.base_price_amount - b.base_price_amount);
+    }
+    return result;
   }, [plans]);
 
   if (isLoading) return <LoadingSpinner />;

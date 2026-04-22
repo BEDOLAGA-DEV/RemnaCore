@@ -11,9 +11,9 @@ type PlanCardProps = {
 
 function intervalLabel(interval: BillingInterval, t: (key: string) => string): string {
   const labels: Record<BillingInterval, string> = {
-    monthly: t("plans.perMonth"),
-    quarterly: t("plans.perQuarter"),
-    yearly: t("plans.perYear"),
+    month: t("plans.perMonth"),
+    quarter: t("plans.perQuarter"),
+    year: t("plans.perYear"),
   };
   return labels[interval];
 }

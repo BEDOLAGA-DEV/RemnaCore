@@ -40,9 +40,9 @@ export type TokenPair = {
 // ─── Plans ──────────────────────────────────────────────────────────────────
 
 export const BILLING_INTERVALS = {
-  monthly: "monthly",
-  quarterly: "quarterly",
-  yearly: "yearly",
+  month: "month",
+  quarter: "quarter",
+  year: "year",
 } as const;
 
 export type BillingInterval =
