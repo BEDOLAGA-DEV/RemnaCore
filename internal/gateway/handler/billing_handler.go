@@ -38,22 +38,11 @@ type planResponse struct {
 }
 
 func toPlanResponse(p *aggregate.Plan) planResponse {
-	// GroupID = plan ID without the _duration suffix.
-	// Plans synced from tariffs with pricing_periods have IDs like "uuid_30", "uuid_90".
+	// GroupID: plans from multi-period tariffs have names like "Plan — 1 month".
+	// Group by the base name (everything before " — ").
 	groupID := p.ID
-	if idx := strings.LastIndex(p.ID, "_"); idx > 0 {
-		// Check if everything after _ is digits (duration)
-		suffix := p.ID[idx+1:]
-		isDigits := true
-		for _, c := range suffix {
-			if c < '0' || c > '9' {
-				isDigits = false
-				break
-			}
-		}
-		if isDigits {
-			groupID = p.ID[:idx]
-		}
+	if idx := strings.Index(p.Name, " — "); idx > 0 {
+		groupID = p.Name[:idx]
 	}
 
 	return planResponse{

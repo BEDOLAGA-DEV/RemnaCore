@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	gouuid "github.com/google/uuid"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/remnawave"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
@@ -914,12 +915,18 @@ func (h *Handler) syncTariffToPlanWithError(ctx context.Context, docID string, i
 	}
 
 	// Sync each period as a separate billing Plan.
-	// Plan ID = docID for the first/default period, docID + "_" + index for additional.
-	for i, period := range periods {
+	// Plan ID: deterministic UUID v5 from tariff ID + duration (valid PG UUID).
+	// For single-period tariffs without pricing_periods, use docID directly.
+	for _, period := range periods {
 		planID := docID
 		planName := input.Name
-		if i > 0 || len(input.PricingPeriods) > 1 {
-			planID = fmt.Sprintf("%s_%d", docID, period.DurationDays)
+		if len(input.PricingPeriods) > 0 {
+			// Deterministic UUID v5: namespace = tariff UUID, name = duration string
+			ns, parseErr := gouuid.Parse(docID)
+			if parseErr != nil {
+				return fmt.Errorf("invalid tariff UUID %s: %w", docID, parseErr)
+			}
+			planID = gouuid.NewSHA1(ns, []byte(fmt.Sprintf("period_%d", period.DurationDays))).String()
 			if period.Label != "" {
 				planName = fmt.Sprintf("%s — %s", input.Name, period.Label)
 			} else {
