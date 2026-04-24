@@ -316,17 +316,17 @@ function GenericPluginPage({ slug, pagePath }: { slug: string; pagePath: string 
 	const documents = list.data ?? [];
 	const dataKeys = deriveDataKeys(documents);
 
-	// When fields are declared, use field keys for columns; otherwise auto-detect.
-	// If fields have groups, only show the first group's fields in the table
-	// to prevent horizontal overflow with many fields.
+	// When fields are declared, show a compact subset of columns in the table.
+	// Priority: required fields first, then first few non-textarea/non-multiselect fields.
+	// Max 6 data columns to fit on screen.
 	const columnKeys = (() => {
-		if (!pageFields) return dataKeys;
-		const hasGroups = pageFields.some((f) => f.group);
-		if (!hasGroups) return pageFields.map((f) => f.key);
-		const firstGroup = pageFields[0]?.group;
-		return pageFields
-			.filter((f) => f.group === firstGroup)
-			.map((f) => f.key);
+		if (!pageFields) return dataKeys.slice(0, 6);
+		const compactTypes = new Set(["text", "number", "select", "boolean"]);
+		const candidates = pageFields.filter((f) => compactTypes.has(f.type));
+		const required = candidates.filter((f) => f.required);
+		const rest = candidates.filter((f) => !f.required);
+		const picked = [...required, ...rest].slice(0, 6);
+		return picked.map((f) => f.key);
 	})();
 
 	// ─── Table columns ───────────────────────────────────────────────────────
@@ -351,7 +351,7 @@ function GenericPluginPage({ slug, pagePath }: { slug: string; pagePath: string 
 						);
 					}
 					return (
-						<span className="text-[12px]">{formatCellValue(value, t)}</span>
+						<span className="block max-w-[200px] truncate text-[12px]">{formatCellValue(value, t)}</span>
 					);
 				},
 			}),
@@ -482,7 +482,7 @@ function GenericPluginPage({ slug, pagePath }: { slug: string; pagePath: string 
 	// ─── Render ───────────────────────────────────────────────────────────────
 
 	return (
-		<div className="space-y-6">
+		<div className="min-w-0 space-y-6 overflow-hidden">
 			{/* Header */}
 			<div className="flex items-center justify-between">
 				<div>
@@ -595,7 +595,7 @@ function SchemaForm({
 	};
 
 	return (
-		<div className="rounded-xl border border-border bg-card p-6">
+		<div className="min-w-0 overflow-hidden rounded-xl border border-border bg-card p-4 sm:p-6">
 			<div className="mb-4 flex items-center justify-between">
 				<h2 className="text-[15px] font-semibold text-foreground">
 					{mode === "create"
@@ -1469,7 +1469,7 @@ function PluginDocumentForm({
 	};
 
 	return (
-		<div className="rounded-xl border border-border bg-card p-6">
+		<div className="min-w-0 overflow-hidden rounded-xl border border-border bg-card p-4 sm:p-6">
 			<div className="mb-4 flex items-center justify-between">
 				<h2 className="text-[15px] font-semibold text-foreground">
 					{mode === "create"
