@@ -63,6 +63,7 @@ type RouterParams struct {
 	RoutingHandler        *handler.RoutingHandler
 	SettingsHandler       *handler.SettingsHandler
 	StatsHandler          *handler.StatsHandler
+	ActivityHandler       *handler.ActivityHandler
 	PluginRPCHandler      *handler.PluginRPCHandler
 	PluginRouteHandler    *handler.PluginRouteHandler
 	BuiltinRouteRegistry  *BuiltinRouteRegistry
@@ -244,7 +245,9 @@ func NewRouter(p RouterParams) http.Handler {
 
 				// Dashboard stats
 				admin.Get("/stats", p.StatsHandler.GetStats)
+				admin.Get("/metrics", p.StatsHandler.GetMetrics)
 				admin.Get("/sessions", p.StatsHandler.ListSessions)
+				admin.Get("/activity", p.ActivityHandler.ListActivity)
 
 				// Tenant management
 				admin.Post("/tenants", p.ResellerHandler.CreateTenant)

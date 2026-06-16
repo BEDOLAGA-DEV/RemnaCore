@@ -20,6 +20,65 @@ SELECT
     (SELECT coalesce(sum(total_amount), 0) FROM billing.invoices WHERE status = 'paid') AS total_revenue
 `
 
+// metricsSQL computes the derived business metrics in a single round-trip.
+// All monetary values are integer cents (pkg/money stores amounts as int64
+// cents). MRR normalizes each active subscription's plan price to a monthly
+// figure by billing interval (month=base, quarter=base/3, year=base/12). The
+// "today" boundary uses the 3-arg date_trunc(..., 'UTC') so it is independent
+// of the database session timezone. churn_30d is a cohort approximation, not
+// true retention churn: cancelled-in-last-30d over the base that existed 30d
+// ago (no full status history is available).
+const metricsSQL = `
+WITH active_subs AS (
+    SELECT s.id, s.plan_id
+    FROM billing.subscriptions s
+    WHERE s.status = 'active'
+),
+mrr AS (
+    SELECT coalesce(sum(
+        CASE p.billing_interval
+            WHEN 'month'   THEN p.base_price_amount
+            WHEN 'quarter' THEN p.base_price_amount / 3
+            WHEN 'year'    THEN p.base_price_amount / 12
+            ELSE p.base_price_amount
+        END
+    ), 0) AS mrr_cents
+    FROM active_subs a
+    JOIN billing.plans p ON p.id = a.plan_id
+),
+revenue AS (
+    SELECT coalesce(sum(total_amount), 0) AS total_revenue_cents,
+           count(DISTINCT user_id)        AS paying_users
+    FROM billing.invoices
+    WHERE status = 'paid'
+),
+churn AS (
+    SELECT
+        (SELECT count(*) FROM billing.subscriptions
+           WHERE status = 'cancelled'
+             AND cancelled_at IS NOT NULL
+             AND cancelled_at >= now() - interval '30 days') AS churned_30d,
+        (SELECT count(*) FROM billing.subscriptions
+           WHERE created_at <= now() - interval '30 days'
+             AND (cancelled_at IS NULL OR cancelled_at >= now() - interval '30 days')) AS base_30d_ago
+)
+SELECT
+    (SELECT mrr_cents FROM mrr)                                                          AS mrr_cents,
+    coalesce((SELECT total_revenue_cents FROM revenue)::float8
+             / NULLIF((SELECT paying_users FROM revenue), 0), 0)                         AS arpu_cents,
+    coalesce((SELECT churned_30d FROM churn)::float8
+             / NULLIF((SELECT base_30d_ago FROM churn), 0), 0)                           AS churn_30d,
+    (SELECT count(*) FROM billing.subscriptions
+        WHERE created_at >= date_trunc('day', now(), 'UTC'))                             AS subs_today,
+    (SELECT count(*) FROM billing.subscriptions WHERE status = 'active')                 AS active_subs,
+    (SELECT count(*) FROM billing.subscriptions WHERE status = 'cancelled')              AS cancelled_subs,
+    (SELECT count(*) FROM billing.subscriptions WHERE status = 'paused')                 AS paused_subs,
+    (SELECT count(*) FROM billing.subscriptions WHERE status = 'pending')                AS pending_subs,
+    (SELECT count(*) FROM billing.subscriptions)                                         AS total_subs,
+    (SELECT total_revenue_cents FROM revenue)                                            AS total_revenue_cents,
+    (SELECT paying_users FROM revenue)                                                   AS paying_users
+`
+
 // listActiveSessionsSQL returns active sessions joined with user email.
 const listActiveSessionsSQL = `
 SELECT s.id, s.user_id, u.email, s.ip_address, s.user_agent, s.expires_at, s.created_at
@@ -43,6 +102,24 @@ type DashboardStats struct {
 	PendingSubs    int64 `json:"pending_subs"`
 	TotalSubs      int64 `json:"total_subs"`
 	TotalRevenue   int64 `json:"total_revenue"`
+}
+
+// AdminMetrics is the response shape for GET /api/admin/metrics. Monetary
+// fields are integer cents, except ARPUCents which is a float (revenue/users
+// may be fractional). Churn30d is a ratio in [0,1]. These are global,
+// cross-tenant platform aggregates (same isolation model as GET /api/admin/stats).
+type AdminMetrics struct {
+	MRRCents          int64   `json:"mrr_cents"`
+	ARPUCents         float64 `json:"arpu_cents"`
+	Churn30d          float64 `json:"churn_30d"`
+	SubsToday         int64   `json:"subs_today"`
+	ActiveSubs        int64   `json:"active_subs"`
+	CancelledSubs     int64   `json:"cancelled_subs"`
+	PausedSubs        int64   `json:"paused_subs"`
+	PendingSubs       int64   `json:"pending_subs"`
+	TotalSubs         int64   `json:"total_subs"`
+	TotalRevenueCents int64   `json:"total_revenue_cents"`
+	PayingUsers       int64   `json:"paying_users"`
 }
 
 // SessionListResponse is the response shape for GET /api/admin/sessions.
@@ -91,6 +168,31 @@ func (h *StatsHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, s)
+}
+
+// GetMetrics handles GET /api/admin/metrics -- returns derived business metrics
+// (MRR, ARPU, churn-30d, subs-today) plus echoed subscription counts, computed
+// server-side in a single SQL query. Cross-tenant platform aggregate.
+func (h *StatsHandler) GetMetrics(w http.ResponseWriter, r *http.Request) {
+	var m AdminMetrics
+	if err := h.pool.QueryRow(r.Context(), metricsSQL).Scan(
+		&m.MRRCents,
+		&m.ARPUCents,
+		&m.Churn30d,
+		&m.SubsToday,
+		&m.ActiveSubs,
+		&m.CancelledSubs,
+		&m.PausedSubs,
+		&m.PendingSubs,
+		&m.TotalSubs,
+		&m.TotalRevenueCents,
+		&m.PayingUsers,
+	); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to compute metrics")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, m)
 }
 
 // ListSessions handles GET /api/admin/sessions -- returns a paginated list
