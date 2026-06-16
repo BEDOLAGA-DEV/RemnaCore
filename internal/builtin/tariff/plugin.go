@@ -2,8 +2,10 @@ package tariff
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/builtin"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/rbac"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
 )
@@ -190,7 +192,7 @@ func Plugin() plugin.BuiltInPluginDef {
 // tariffRoutes returns all HTTP routes for the tariff-manager plugin.
 // Static paths MUST come before parameterized paths to avoid chi routing conflicts.
 func tariffRoutes() []plugin.ManifestRoute {
-	return []plugin.ManifestRoute{
+	routes := []plugin.ManifestRoute{
 		// --- Remnawave lookups (accept ?panel_id= for multi-panel) ---
 		{Method: "GET", Path: "/api/tariffs/panels", Function: "list_panels_for_tariff", AdminOnly: true},
 		{Method: "GET", Path: "/api/tariffs/internal-squads", Function: "list_internal_squads", AdminOnly: true},
@@ -255,6 +257,36 @@ func tariffRoutes() []plugin.ManifestRoute {
 		{Method: "GET", Path: "/api/tariffs/reseller/catalog", Function: "get_reseller_catalog", AdminOnly: true},
 		{Method: "POST", Path: "/api/tariffs/reseller/customize", Function: "customize_reseller", AdminOnly: true},
 	}
+
+	// Assign RBAC permissions deterministically (Phase A re-gating):
+	//   - Remnawave topology lookups + analytics expose platform-wide data and
+	//     are platform-admin-only (infra.read). shop_owner must NOT see them.
+	//   - All other GET tariff routes -> tariffs.read; mutations -> tariffs.write.
+	// Public routes are unaffected (no permission needed).
+	for i := range routes {
+		if !routes[i].AdminOnly {
+			continue
+		}
+		switch {
+		case routes[i].Path == "/api/tariffs/reseller/catalog",
+			routes[i].Path == "/api/tariffs/reseller/customize":
+			// Both reseller routes map to tariffs.write per spec §11, even the GET
+			// catalog route — they expose/modify reseller-specific pricing config.
+			// MUST be matched before the generic GET case below.
+			routes[i].RequiredPermission = string(rbac.TariffsWrite)
+		case routes[i].Path == "/api/tariffs/panels",
+			routes[i].Path == "/api/tariffs/internal-squads",
+			routes[i].Path == "/api/tariffs/external-squads",
+			routes[i].Path == "/api/tariffs/nodes",
+			strings.HasPrefix(routes[i].Path, "/api/tariffs/analytics/"):
+			routes[i].RequiredPermission = string(rbac.InfraRead)
+		case routes[i].Method == http.MethodGet:
+			routes[i].RequiredPermission = string(rbac.TariffsRead)
+		default:
+			routes[i].RequiredPermission = string(rbac.TariffsWrite)
+		}
+	}
+	return routes
 }
 
 // RegisterRoutes maps the plugin's manifest route functions to native Go handlers.
