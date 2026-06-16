@@ -6,6 +6,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/builtin"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
+	rbac "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/rbac"
 )
 
 // PluginSlug is the canonical slug for the remnawave-provider plugin.
@@ -193,8 +194,13 @@ func RegisterRoutes(registry *gateway.BuiltinRouteRegistry, h *Handler) {
 }
 
 // remnawaveRoutes returns all HTTP routes for the remnawave-provider plugin.
+// Every AdminOnly route is post-processed to set RequiredPermission:
+//   - GET     → infra.read  (read-only topology / analytics inspection)
+//   - mutating (POST/PUT/DELETE/PATCH) → infra.manage
+//
+// Public routes are left untouched (no permission required).
 func remnawaveRoutes() []plugin.ManifestRoute {
-	return []plugin.ManifestRoute{
+	routes := []plugin.ManifestRoute{
 		// --- Panels ---
 		{Method: "GET", Path: "/api/remnawave/panels", Function: "list_panels", AdminOnly: true},
 		{Method: "POST", Path: "/api/remnawave/panels", Function: "create_panel", AdminOnly: true},
@@ -352,6 +358,21 @@ func remnawaveRoutes() []plugin.ManifestRoute {
 		{Method: "GET", Path: "/api/remnawave/metadata/{panelID}/node/{nodeUUID}", Function: "get_node_metadata", AdminOnly: true},
 		{Method: "PUT", Path: "/api/remnawave/metadata/{panelID}/node/{nodeUUID}", Function: "upsert_node_metadata", AdminOnly: true},
 	}
+
+	// Assign RBAC permissions deterministically (Phase A.1 §11 gap closure).
+	// All remnawave admin routes belong to the infra domain (platform-only VPN
+	// provider integration). Public routes are untouched (no permission needed).
+	for i := range routes {
+		if !routes[i].AdminOnly {
+			continue
+		}
+		if routes[i].Method == http.MethodGet {
+			routes[i].RequiredPermission = string(rbac.InfraRead)
+		} else {
+			routes[i].RequiredPermission = string(rbac.InfraManage)
+		}
+	}
+	return routes
 }
 
 // remnawavePages returns the 8 admin pages for the plugin.
