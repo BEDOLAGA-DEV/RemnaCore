@@ -85,7 +85,7 @@ func rowToSession(row gen.IdentitySession) *identity.Session {
 		ID:           pgutil.PgtypeToUUID(row.ID),
 		UserID:       pgutil.PgtypeToUUID(row.UserID),
 		RefreshToken: row.RefreshToken,
-		IPAddress:    row.IPAddress,
+		IPAddress:    row.IpAddress,
 		UserAgent:    row.UserAgent,
 		ExpiresAt:    pgutil.PgtypeToTime(row.ExpiresAt),
 		CreatedAt:    pgutil.PgtypeToTime(row.CreatedAt),
@@ -212,7 +212,7 @@ func (r *IdentityRepository) CreateSession(ctx context.Context, session *identit
 		ID:           pgutil.UUIDToPgtype(session.ID),
 		UserID:       pgutil.UUIDToPgtype(session.UserID),
 		RefreshToken: session.RefreshToken,
-		IPAddress:    session.IPAddress,
+		IpAddress:    session.IPAddress,
 		UserAgent:    session.UserAgent,
 		ExpiresAt:    pgutil.TimeToPgtype(session.ExpiresAt),
 		CreatedAt:    pgutil.TimeToPgtype(session.CreatedAt),
@@ -231,7 +231,15 @@ func (r *IdentityRepository) GetSessionByRefreshToken(ctx context.Context, token
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get session by refresh token", identity.ErrNotFound)
 	}
-	return rowToSession(row), nil
+	return &identity.Session{
+		ID:           pgutil.PgtypeToUUID(row.ID),
+		UserID:       pgutil.PgtypeToUUID(row.UserID),
+		RefreshToken: row.RefreshToken,
+		IPAddress:    row.IpAddress,
+		UserAgent:    row.UserAgent,
+		ExpiresAt:    pgutil.PgtypeToTime(row.ExpiresAt),
+		CreatedAt:    pgutil.PgtypeToTime(row.CreatedAt),
+	}, nil
 }
 
 func (r *IdentityRepository) DeleteSession(ctx context.Context, id string) error {
@@ -279,7 +287,7 @@ func (r *IdentityRepository) ListActiveSessions(ctx context.Context, limit, offs
 			ID:        pgutil.PgtypeToUUID(row.ID),
 			UserID:    pgutil.PgtypeToUUID(row.UserID),
 			UserEmail: row.UserEmail,
-			IPAddress: row.IPAddress,
+			IPAddress: row.IpAddress,
 			UserAgent: row.UserAgent,
 			ExpiresAt: pgutil.PgtypeToTime(row.ExpiresAt),
 			CreatedAt: pgutil.PgtypeToTime(row.CreatedAt),
