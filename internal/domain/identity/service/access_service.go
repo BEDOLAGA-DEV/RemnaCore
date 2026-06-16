@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -63,6 +64,10 @@ func (s *AccessService) Resolve(ctx context.Context, userID string, tenantID *st
 		s.mu.RUnlock()
 		return e.access, nil
 	}
+	// NOTE: releasing the read lock before the repo call means a concurrent
+	// goroutine resolving the same key may also miss the cache and make its own
+	// repo call. This is benign and idempotent; single-flight is not warranted
+	// for Phase A given the low expected concurrency and cheap repo reads.
 	s.mu.RUnlock()
 
 	bindings, err := s.repo.ListBindingsForUser(ctx, userID)
@@ -121,7 +126,7 @@ func (s *AccessService) Invalidate(userID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for k := range s.cache {
-		if len(k) >= len(userID)+1 && k[:len(userID)+1] == userID+"|" {
+		if strings.HasPrefix(k, userID+"|") {
 			delete(s.cache, k)
 		}
 	}
