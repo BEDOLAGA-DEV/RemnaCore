@@ -21,7 +21,10 @@ const telegramSchema = z.object({
   telegram_id: z.coerce.number().int().positive(),
 });
 
-type TelegramFormValues = z.infer<typeof telegramSchema>;
+// In Zod 4 `z.coerce.number()` has an `unknown` input type but a `number`
+// output type, so the form's raw values and submitted values differ.
+type TelegramFormInput = z.input<typeof telegramSchema>;
+type TelegramFormValues = z.output<typeof telegramSchema>;
 
 export function ProfilePage() {
   const { t } = useTranslation();
@@ -45,7 +48,7 @@ export function ProfilePage() {
     register: registerTelegram,
     handleSubmit: handleTelegramSubmit,
     formState: { errors: telegramErrors },
-  } = useForm<TelegramFormValues>({
+  } = useForm<TelegramFormInput, unknown, TelegramFormValues>({
     resolver: zodResolver(telegramSchema),
   });
 

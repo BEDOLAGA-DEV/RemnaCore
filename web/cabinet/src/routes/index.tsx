@@ -531,7 +531,7 @@ export function DashboardPage() {
             </p>
             <Link
               to="/plans"
-              className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-primary-foreground/20 px-4 py-2 text-xs font-semibold text-primary-foreground backdrop-blur-sm transition-colors hover:bg-primary-foreground/30"
+              className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-primary-foreground/20 px-4 py-2 text-xs font-semibold text-primary-foreground backdrop-blur-xs transition-colors hover:bg-primary-foreground/30"
             >
               {t("subscriptions.browsePlans")}
               <ArrowUpRight size={12} />

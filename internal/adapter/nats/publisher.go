@@ -28,7 +28,7 @@ func NewEventPublisher(conn *nc.Conn) (*EventPublisher, error) {
 			SubjectCalculator: wmnats.DefaultSubjectCalculator,
 			JetStream: wmnats.JetStreamConfig{
 				AutoProvision: false, // Streams are pre-created by EnsureStreams on startup.
-				TrackMsgId:    true,
+				TrackMsgID:    true,
 			},
 		},
 		watermill.NewStdLogger(false, false),
