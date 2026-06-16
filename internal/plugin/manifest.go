@@ -88,7 +88,11 @@ type ManifestRoute struct {
 	Path      string `toml:"path"`       // URL path, e.g. "/api/tariffs"
 	Function  string `toml:"function"`   // RPC function name to call
 	Public    bool   `toml:"public"`     // If true, no JWT auth required
-	AdminOnly bool   `toml:"admin_only"` // If true, requires admin role (implies not Public)
+	AdminOnly bool   `toml:"admin_only"` // If true, requires auth + a permission
+
+	// RequiredPermission is the rbac permission key gating this route when
+	// AdminOnly is true. Empty defaults to "plugins.manage" at registration.
+	RequiredPermission string `toml:"required_permission"`
 }
 
 // ManifestPage declares a UI page provided by the plugin. Plugins use this to

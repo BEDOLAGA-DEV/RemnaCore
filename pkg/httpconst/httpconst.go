@@ -50,6 +50,11 @@ const (
 	// should wait before retrying a rate-limited request.
 	HeaderRetryAfter = "Retry-After"
 
+	// HeaderShopID is the panel header selecting the active shop (tenant) for a
+	// JWT-authenticated request. Validated against the user's bindings before it
+	// drives RLS; never trusted on its own.
+	HeaderShopID = "X-Shop-Id"
+
 	// MaxWebhookBodySize is the maximum allowed size for incoming webhook
 	// request bodies (1 MiB).
 	MaxWebhookBodySize = 1 << 20

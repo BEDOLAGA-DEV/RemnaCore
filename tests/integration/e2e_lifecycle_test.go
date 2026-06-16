@@ -165,7 +165,6 @@ func lifecycleAccessToken(t *testing.T, jwtIssuer *authutil.JWTIssuer, userID st
 	token, err := jwtIssuer.Sign(authutil.UserClaims{
 		UserID: userID,
 		Email:  lifecycleTestEmail,
-		Role:   string(identity.RoleCustomer),
 	}, lifecycleAccessTTL)
 	require.NoError(t, err)
 	return token

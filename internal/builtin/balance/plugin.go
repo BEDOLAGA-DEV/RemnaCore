@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/builtin"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/rbac"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
 )
@@ -54,7 +55,7 @@ func RegisterRoutes(registry *gateway.BuiltinRouteRegistry, h *Handler) {
 }
 
 func balanceRoutes() []plugin.ManifestRoute {
-	return []plugin.ManifestRoute{
+	routes := []plugin.ManifestRoute{
 		// User-facing
 		{Method: "GET", Path: "/api/balance/me", Function: "get_my_balance", Public: false},
 		{Method: "GET", Path: "/api/balance/me/transactions", Function: "list_my_transactions", Public: false},
@@ -75,6 +76,21 @@ func balanceRoutes() []plugin.ManifestRoute {
 		{Method: "GET", Path: "/api/balance/admin/analytics/overview", Function: "admin_analytics", AdminOnly: true},
 		{Method: "POST", Path: "/api/balance/admin/export", Function: "admin_export_csv", AdminOnly: true},
 	}
+
+	// Assign RBAC permissions to all AdminOnly routes (Phase A §11 gap-close):
+	//   - GET routes expose financial read data → billing.read
+	//   - All mutations (POST) → billing.manage (platform-admin-only financial ops)
+	for i := range routes {
+		if !routes[i].AdminOnly {
+			continue
+		}
+		if routes[i].Method == http.MethodGet {
+			routes[i].RequiredPermission = string(rbac.BillingRead)
+		} else {
+			routes[i].RequiredPermission = string(rbac.BillingManage)
+		}
+	}
+	return routes
 }
 
 func balancePages() []plugin.ManifestPage {

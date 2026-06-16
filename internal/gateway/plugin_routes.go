@@ -7,6 +7,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/rbac"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/handler"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
@@ -28,6 +30,7 @@ func RegisterPluginRoutes(
 	routeHandler *handler.PluginRouteHandler,
 	builtinRegistry *BuiltinRouteRegistry,
 	jwtIssuer *authutil.JWTIssuer,
+	access *service.AccessService,
 	logger *slog.Logger,
 ) {
 	ctx := context.Background()
@@ -41,13 +44,14 @@ func RegisterPluginRoutes(
 	// This ensures chi resolves auth middleware correctly without route
 	// conflicts between public and protected paths.
 	type resolvedRoute struct {
-		method    string
-		path      string
-		handler   http.HandlerFunc
-		public    bool
-		adminOnly bool
-		slug      string
-		fn        string
+		method             string
+		path               string
+		handler            http.HandlerFunc
+		public             bool
+		adminOnly          bool
+		requiredPermission string
+		slug               string
+		fn                 string
 	}
 
 	var routes []resolvedRoute
@@ -73,13 +77,14 @@ func RegisterPluginRoutes(
 			}
 
 			routes = append(routes, resolvedRoute{
-				method:    route.Method,
-				path:      route.Path,
-				handler:   handlerFn,
-				public:    route.Public,
-				adminOnly: route.AdminOnly,
-				slug:      p.Slug,
-				fn:        route.Function,
+				method:             route.Method,
+				path:               route.Path,
+				handler:            handlerFn,
+				public:             route.Public,
+				adminOnly:          route.AdminOnly,
+				requiredPermission: route.RequiredPermission,
+				slug:               p.Slug,
+				fn:                 route.Function,
 			})
 		}
 	}
@@ -91,20 +96,29 @@ func RegisterPluginRoutes(
 		}
 	}
 
-	// Register admin-only routes with auth + admin role middleware.
+	// Admin-only routes: Auth -> ShopResolver -> per-route RequirePermission.
+	// ShopResolver runs at the group level so it is applied before any per-route
+	// RequirePermission reads the active tenant it sets.
 	r.Group(func(admin chi.Router) {
 		admin.Use(middleware.Auth(jwtIssuer))
-		admin.Use(middleware.RequireAdmin)
+		admin.Use(middleware.ShopResolver(access))
 		for _, rt := range routes {
 			if rt.adminOnly {
-				registerRoute(admin, rt.method, rt.path, rt.handler)
+				perm := rt.requiredPermission
+				if perm == "" {
+					perm = string(rbac.PluginsManage) // safe default
+				}
+				gated := admin.With(middleware.RequirePermission(access, rbac.Permission(perm)))
+				registerRoute(gated, rt.method, rt.path, rt.handler)
 			}
 		}
 	})
 
-	// Register regular protected routes with auth middleware only.
+	// Regular protected routes: Auth + ShopResolver (so handlers have an active
+	// tenant), no permission gate beyond authentication.
 	r.Group(func(protected chi.Router) {
 		protected.Use(middleware.Auth(jwtIssuer))
+		protected.Use(middleware.ShopResolver(access))
 		for _, rt := range routes {
 			if !rt.public && !rt.adminOnly {
 				registerRoute(protected, rt.method, rt.path, rt.handler)

@@ -12,6 +12,8 @@ import (
 	"go.uber.org/fx"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/rbac"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/handler"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
@@ -45,6 +47,7 @@ type RouterParams struct {
 
 	Config                *config.Config
 	JWT                   *authutil.JWTIssuer
+	AccessService         *service.AccessService
 	RateLimiter           middleware.RateLimiter
 	AuthRateLimiters      *middleware.AuthRateLimiters
 	IdentityHandler       *handler.IdentityHandler
@@ -96,6 +99,7 @@ func NewRouter(p RouterParams) http.Handler {
 			httpconst.HeaderContentType,
 			httpconst.HeaderRequestID,
 			httpconst.HeaderAPIKey,
+			httpconst.HeaderShopID,
 		},
 		ExposedHeaders:   []string{httpconst.HeaderRequestID},
 		AllowCredentials: true,
@@ -174,6 +178,7 @@ func NewRouter(p RouterParams) http.Handler {
 		// Protected endpoints — require valid JWT.
 		api.Group(func(protected chi.Router) {
 			protected.Use(middleware.Auth(p.JWT))
+			protected.Use(middleware.ShopResolver(p.AccessService))
 
 			// Identity / Profile
 			protected.Get("/me", p.IdentityHandler.Me)
@@ -218,43 +223,44 @@ func NewRouter(p RouterParams) http.Handler {
 				cr.Delete("/{docID}", p.PluginRPCHandler.DeleteDocument)
 			})
 
-			// Admin routes — require admin role (enforced by middleware).
+			// Admin routes — each gated per-route on a specific permission via
+			// RequirePermission (ShopResolver already ran at the protected-group
+			// level, so the active tenant is resolved before these run).
 			protected.Route("/admin", func(admin chi.Router) {
-				admin.Use(middleware.RequireAdmin)
-
-				// Plugin management
-				admin.Get("/plugins", p.PluginHandler.ListPlugins)
-				admin.Post("/plugins", p.PluginHandler.InstallPlugin)
-				admin.Get("/plugins/{pluginID}", p.PluginHandler.GetPlugin)
-				admin.Post("/plugins/{pluginID}/enable", p.PluginHandler.EnablePlugin)
-				admin.Post("/plugins/{pluginID}/disable", p.PluginHandler.DisablePlugin)
-				admin.Delete("/plugins/{pluginID}", p.PluginHandler.UninstallPlugin)
-				admin.Put("/plugins/{pluginID}/config", p.PluginHandler.UpdatePluginConfig)
-				admin.Put("/plugins/{pluginID}/reload", p.PluginHandler.HotReloadPlugin)
-				admin.Get("/plugin-pages", p.PluginHandler.ListPluginPages)
+				// Plugin management — install/enable/configure/remove require manage.
+				admin.With(perm(p.AccessService, rbac.PluginsManage)).Get("/plugins", p.PluginHandler.ListPlugins)
+				admin.With(perm(p.AccessService, rbac.PluginsManage)).Post("/plugins", p.PluginHandler.InstallPlugin)
+				admin.With(perm(p.AccessService, rbac.PluginsManage)).Get("/plugins/{pluginID}", p.PluginHandler.GetPlugin)
+				admin.With(perm(p.AccessService, rbac.PluginsManage)).Post("/plugins/{pluginID}/enable", p.PluginHandler.EnablePlugin)
+				admin.With(perm(p.AccessService, rbac.PluginsManage)).Post("/plugins/{pluginID}/disable", p.PluginHandler.DisablePlugin)
+				admin.With(perm(p.AccessService, rbac.PluginsManage)).Delete("/plugins/{pluginID}", p.PluginHandler.UninstallPlugin)
+				admin.With(perm(p.AccessService, rbac.PluginsManage)).Put("/plugins/{pluginID}/config", p.PluginHandler.UpdatePluginConfig)
+				admin.With(perm(p.AccessService, rbac.PluginsManage)).Put("/plugins/{pluginID}/reload", p.PluginHandler.HotReloadPlugin)
+				// Plugin-pages metadata: lighter read perm so shop roles can render pages.
+				admin.With(perm(p.AccessService, rbac.PluginsRead)).Get("/plugin-pages", p.PluginHandler.ListPluginPages)
 
 				// User / subscription / invoice management
-				admin.Get("/users", p.AdminHandler.ListUsers)
-				admin.Get("/users/{userID}", p.AdminHandler.GetUser)
-				admin.Get("/subscriptions", p.AdminHandler.ListSubscriptions)
-				admin.Get("/invoices", p.AdminHandler.ListInvoices)
+				admin.With(perm(p.AccessService, rbac.UsersRead)).Get("/users", p.AdminHandler.ListUsers)
+				admin.With(perm(p.AccessService, rbac.UsersRead)).Get("/users/{userID}", p.AdminHandler.GetUser)
+				admin.With(perm(p.AccessService, rbac.SubscriptionsRead)).Get("/subscriptions", p.AdminHandler.ListSubscriptions)
+				admin.With(perm(p.AccessService, rbac.BillingRead)).Get("/invoices", p.AdminHandler.ListInvoices)
 
 				// System settings
-				admin.Get("/settings", p.SettingsHandler.GetSettings)
-				admin.Put("/settings", p.SettingsHandler.UpdateSettings)
+				admin.With(perm(p.AccessService, rbac.SettingsManage)).Get("/settings", p.SettingsHandler.GetSettings)
+				admin.With(perm(p.AccessService, rbac.SettingsManage)).Put("/settings", p.SettingsHandler.UpdateSettings)
 
-				// Dashboard stats
-				admin.Get("/stats", p.StatsHandler.GetStats)
-				admin.Get("/metrics", p.StatsHandler.GetMetrics)
-				admin.Get("/metrics/history", p.StatsHandler.GetMetricsHistory)
-				admin.Get("/sessions", p.StatsHandler.ListSessions)
-				admin.Get("/activity", p.ActivityHandler.ListActivity)
+				// Dashboard stats / observability
+				admin.With(perm(p.AccessService, rbac.AnalyticsRead)).Get("/stats", p.StatsHandler.GetStats)
+				admin.With(perm(p.AccessService, rbac.AnalyticsRead)).Get("/metrics", p.StatsHandler.GetMetrics)
+				admin.With(perm(p.AccessService, rbac.AnalyticsRead)).Get("/metrics/history", p.StatsHandler.GetMetricsHistory)
+				admin.With(perm(p.AccessService, rbac.SessionsRead)).Get("/sessions", p.StatsHandler.ListSessions)
+				admin.With(perm(p.AccessService, rbac.SessionsRead)).Get("/activity", p.ActivityHandler.ListActivity)
 
-				// Tenant management
-				admin.Post("/tenants", p.ResellerHandler.CreateTenant)
-				admin.Get("/tenants", p.ResellerHandler.ListTenants)
-				admin.Get("/tenants/{tenantID}", p.ResellerHandler.GetTenant)
-				admin.Put("/tenants/{tenantID}/branding", p.ResellerHandler.UpdateBranding)
+				// Tenant (shop) management
+				admin.With(perm(p.AccessService, rbac.ShopsManage)).Post("/tenants", p.ResellerHandler.CreateTenant)
+				admin.With(perm(p.AccessService, rbac.ShopsRead)).Get("/tenants", p.ResellerHandler.ListTenants)
+				admin.With(perm(p.AccessService, rbac.ShopsRead)).Get("/tenants/{tenantID}", p.ResellerHandler.GetTenant)
+				admin.With(perm(p.AccessService, rbac.ShopsBranding)).Put("/tenants/{tenantID}/branding", p.ResellerHandler.UpdateBranding)
 
 				// Tariff management routes are registered dynamically by the
 				// tariff-manager built-in plugin via RegisterPluginRoutes.
@@ -263,19 +269,25 @@ func NewRouter(p RouterParams) http.Handler {
 			// Routing
 			protected.Post("/routing/select", p.RoutingHandler.SelectNode)
 
-			// Reseller self-service endpoints — require reseller or admin role.
+			// Reseller self-service endpoints — gated per-route on shop-scoped
+			// permissions (ShopResolver already applied at the protected-group
+			// level, so the active tenant from X-Shop-Id is present here).
 			protected.Route("/reseller", func(resellerRouter chi.Router) {
-				resellerRouter.Use(middleware.RequireReseller)
-				resellerRouter.Get("/dashboard", p.ResellerHandler.Dashboard)
-				resellerRouter.Get("/commissions", p.ResellerHandler.Commissions)
-				resellerRouter.Get("/customers", p.ResellerHandler.Customers)
+				resellerRouter.With(perm(p.AccessService, rbac.ShopsRead)).Get("/dashboard", p.ResellerHandler.Dashboard)
+				resellerRouter.With(perm(p.AccessService, rbac.BillingRead)).Get("/commissions", p.ResellerHandler.Commissions)
+				resellerRouter.With(perm(p.AccessService, rbac.CustomersRead)).Get("/customers", p.ResellerHandler.Customers)
 			})
 		})
 	})
 
 	// Dynamic plugin routes — registered from enabled plugin manifests.
 	logger := slog.Default()
-	RegisterPluginRoutes(r, p.PluginRepo, p.PluginRouteHandler, p.BuiltinRouteRegistry, p.JWT, logger)
+	RegisterPluginRoutes(r, p.PluginRepo, p.PluginRouteHandler, p.BuiltinRouteRegistry, p.JWT, p.AccessService, logger)
 
 	return r
+}
+
+// perm returns RequirePermission middleware bound to the given AccessService.
+func perm(access *service.AccessService, required rbac.Permission) func(http.Handler) http.Handler {
+	return middleware.RequirePermission(access, required)
 }

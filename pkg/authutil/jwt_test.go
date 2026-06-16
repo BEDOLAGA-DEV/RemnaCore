@@ -24,7 +24,6 @@ func TestJWT_SignAndVerify(t *testing.T) {
 	claims := UserClaims{
 		UserID: "user-123",
 		Email:  "user@example.com",
-		Role:   "admin",
 	}
 
 	token, err := issuer.Sign(claims, 5*time.Minute)
@@ -45,9 +44,6 @@ func TestJWT_SignAndVerify(t *testing.T) {
 	if got.Email != claims.Email {
 		t.Errorf("Email mismatch: got %q, want %q", got.Email, claims.Email)
 	}
-	if got.Role != claims.Role {
-		t.Errorf("Role mismatch: got %q, want %q", got.Role, claims.Role)
-	}
 }
 
 func TestJWT_Expired(t *testing.T) {
@@ -57,7 +53,6 @@ func TestJWT_Expired(t *testing.T) {
 	claims := UserClaims{
 		UserID: "user-456",
 		Email:  "expired@example.com",
-		Role:   "viewer",
 	}
 
 	token, err := issuer.Sign(claims, -1*time.Minute)
@@ -82,7 +77,6 @@ func TestJWT_InvalidSignature(t *testing.T) {
 	claims := UserClaims{
 		UserID: "user-789",
 		Email:  "wrong@example.com",
-		Role:   "editor",
 	}
 
 	token, err := issuer1.Sign(claims, 5*time.Minute)
@@ -103,7 +97,6 @@ func TestJWT_ClaimsFields(t *testing.T) {
 	claims := UserClaims{
 		UserID: "uid-abc-def",
 		Email:  "claims@test.io",
-		Role:   "superadmin",
 	}
 
 	token, err := issuer.Sign(claims, 10*time.Minute)
@@ -121,8 +114,5 @@ func TestJWT_ClaimsFields(t *testing.T) {
 	}
 	if got.Email != "claims@test.io" {
 		t.Errorf("Email: got %q, want %q", got.Email, "claims@test.io")
-	}
-	if got.Role != "superadmin" {
-		t.Errorf("Role: got %q, want %q", got.Role, "superadmin")
 	}
 }

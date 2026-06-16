@@ -134,12 +134,16 @@ func (h *ResellerHandler) UpdateBranding(w http.ResponseWriter, r *http.Request)
 
 // Dashboard handles GET /api/reseller/dashboard -- reseller's own dashboard.
 func (h *ResellerHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
-	tenant := middleware.GetTenant(r.Context())
-	if tenant == nil {
-		writeAPIError(w, apierror.Forbidden.WithDetails("tenant context required"))
+	tenantID := middleware.ActiveTenantID(r.Context())
+	if tenantID == "" {
+		writeAPIError(w, apierror.Forbidden.WithDetails("active shop required (X-Shop-Id)"))
 		return
 	}
-
+	tenant, err := h.service.GetTenant(r.Context(), tenantID)
+	if err != nil {
+		writeErrorFromDomain(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"tenant_id":   tenant.ID,
 		"tenant_name": tenant.Name,
@@ -159,15 +163,14 @@ func (h *ResellerHandler) Commissions(w http.ResponseWriter, r *http.Request) {
 
 // Customers handles GET /api/reseller/customers -- reseller's customers scoped by tenant.
 func (h *ResellerHandler) Customers(w http.ResponseWriter, r *http.Request) {
-	tenant := middleware.GetTenant(r.Context())
-	if tenant == nil {
-		writeAPIError(w, apierror.Forbidden.WithDetails("tenant context required"))
+	tenantID := middleware.ActiveTenantID(r.Context())
+	if tenantID == "" {
+		writeAPIError(w, apierror.Forbidden.WithDetails("active shop required (X-Shop-Id)"))
 		return
 	}
-
-	// Scoped customer list -- placeholder for Phase 6 iteration.
+	// Customer listing scoped to the shop lands in Phase C; return the shell.
 	writeJSON(w, http.StatusOK, map[string]any{
-		"tenant_id": tenant.ID,
+		"tenant_id": tenantID,
 		"customers": []any{},
 	})
 }

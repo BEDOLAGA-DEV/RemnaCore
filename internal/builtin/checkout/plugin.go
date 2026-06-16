@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/builtin"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/rbac"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
 )
@@ -55,7 +56,7 @@ func RegisterRoutes(registry *gateway.BuiltinRouteRegistry, h *Handler) {
 }
 
 func checkoutRoutes() []plugin.ManifestRoute {
-	return []plugin.ManifestRoute{
+	routes := []plugin.ManifestRoute{
 		// Session flow
 		{Method: "POST", Path: "/api/checkout/session", Function: "create_session", Public: false},
 		{Method: "GET", Path: "/api/checkout/saved-methods", Function: "list_saved", Public: false},
@@ -77,6 +78,23 @@ func checkoutRoutes() []plugin.ManifestRoute {
 		{Method: "GET", Path: "/api/checkout/admin/analytics/funnel", Function: "admin_funnel", AdminOnly: true},
 		{Method: "GET", Path: "/api/checkout/admin/analytics/methods", Function: "admin_methods_breakdown", AdminOnly: true},
 	}
+
+	// Assign RBAC permissions to all AdminOnly routes (Phase A §11 gap-close):
+	//   - All 5 admin routes are GET-only (read/analytics on checkout sessions and
+	//     payment methods) → billing.read is the correct gate.
+	//   - No mutation routes exist in the admin surface of this plugin, so
+	//     billing.manage is not assigned here.
+	for i := range routes {
+		if !routes[i].AdminOnly {
+			continue
+		}
+		if routes[i].Method == http.MethodGet {
+			routes[i].RequiredPermission = string(rbac.BillingRead)
+		} else {
+			routes[i].RequiredPermission = string(rbac.BillingManage)
+		}
+	}
+	return routes
 }
 
 func checkoutPages() []plugin.ManifestPage {

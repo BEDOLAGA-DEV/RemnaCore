@@ -185,7 +185,6 @@ func TestMe_Success(t *testing.T) {
 	ctx := context.WithValue(req.Context(), middleware.ClaimsContextKey, &authutil.UserClaims{
 		UserID: "user-1",
 		Email:  "alice@example.com",
-		Role:   "customer",
 	})
 	req = req.WithContext(ctx)
 	rec := httptest.NewRecorder()

@@ -231,7 +231,6 @@ func TestIdentityFlow(t *testing.T) {
 		token, err := h.jwt.Sign(authutil.UserClaims{
 			UserID: userID,
 			Email:  testEmail,
-			Role:   string(identity.RoleCustomer),
 		}, testAccessTTL)
 		require.NoError(t, err)
 
