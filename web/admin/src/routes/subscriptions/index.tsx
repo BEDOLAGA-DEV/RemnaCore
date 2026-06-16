@@ -1,101 +1,102 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "@tanstack/react-router";
-import { type ColumnDef } from "@tanstack/react-table";
-import { useAdminSubscriptions, formatDate, cn } from "@remnacore/shared";
+import { useNavigate } from "@tanstack/react-router";
+import { useAdminSubscriptions, formatDate } from "@remnacore/shared";
 import type { Subscription, SubscriptionStatus } from "@remnacore/shared";
-import { DataTable } from "../../components/DataTable.js";
+import {
+  PageHeader,
+  DataTable,
+  type Column,
+  StatusPill,
+  type Tone,
+  TermButton,
+} from "@/components/ui";
 
-function statusColor(status: SubscriptionStatus): string {
-  const colors: Record<SubscriptionStatus, string> = {
-    active: "bg-green-500/10 text-green-500",
-    pending: "bg-yellow-500/10 text-yellow-500",
-    cancelled: "bg-red-500/10 text-red-500",
-    expired: "bg-gray-500/10 text-gray-500",
-    paused: "bg-blue-500/10 text-blue-500",
+function statusTone(status: SubscriptionStatus): Tone {
+  const tones: Record<SubscriptionStatus, Tone> = {
+    active: "ok",
+    pending: "warn",
+    paused: "warn",
+    cancelled: "danger",
+    expired: "danger",
   };
-  return colors[status];
+  return tones[status];
 }
 
 export function AdminSubscriptionsPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [pagination, setPagination] = useState({ limit: 50, offset: 0 });
   const { data: subs, isLoading } = useAdminSubscriptions(pagination);
 
-  const columns: ColumnDef<Subscription, unknown>[] = [
+  const columns: Column<Subscription>[] = [
     {
-      accessorKey: "id",
+      key: "id",
       header: "ID",
-      cell: ({ row }) => (
-        <Link
-          to="/subscriptions/$id"
-          params={{ id: row.original.id }}
-          className="font-mono text-[11px] text-primary hover:text-primary/80"
-        >
-          {row.original.id.slice(0, 8)}...
-        </Link>
+      render: (s) => (
+        <span className="tabular-nums text-accent">{s.id.slice(0, 8)}</span>
       ),
     },
     {
-      accessorKey: "user_id",
+      key: "user",
       header: t("admin.subscriptions.userId"),
-      cell: ({ row }) => (
-        <Link
-          to="/users/$id"
-          params={{ id: row.original.user_id }}
-          className="font-mono text-[11px] text-primary hover:text-primary/80"
-        >
-          {row.original.user_id.slice(0, 8)}...
-        </Link>
+      render: (s) => (
+        <span className="tabular-nums text-t2">{s.user_id.slice(0, 8)}</span>
       ),
     },
     {
-      accessorKey: "status",
+      key: "plan",
+      header: t("admin.subscriptions.planId"),
+      render: (s) => (
+        <span className="tabular-nums tracking-[0.5px] text-t5">
+          {s.plan_id.slice(0, 8)}
+        </span>
+      ),
+    },
+    {
+      key: "status",
       header: t("common.status"),
-      cell: ({ row }) => (
-        <span
-          className={cn(
-            "rounded-full px-2 py-0.5 font-mono text-[11px] font-medium",
-            statusColor(row.original.status),
-          )}
-        >
-          {row.original.status}
-        </span>
+      render: (s) => (
+        <StatusPill label={s.status.toUpperCase()} tone={statusTone(s.status)} />
       ),
     },
     {
-      accessorKey: "period_end",
+      key: "renews",
       header: t("subscriptions.periodEnd"),
-      cell: ({ row }) => (
-        <span className="font-mono text-[11px] text-muted-foreground">
-          {formatDate(row.original.period_end)}
-        </span>
+      render: (s) => (
+        <span className="tabular-nums text-t5">{formatDate(s.period_end)}</span>
       ),
     },
     {
-      accessorKey: "created_at",
-      header: t("common.createdAt"),
-      cell: ({ row }) => (
-        <span className="font-mono text-[11px] text-muted-foreground">
-          {formatDate(row.original.created_at)}
-        </span>
-      ),
+      key: "actions",
+      header: "",
+      align: "right",
+      render: () => <span className="text-t7">⋯</span>,
     },
   ];
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-[15px] font-semibold text-foreground">
-          {t("admin.subscriptions.title")}
-        </h1>
-      </div>
+    <div className="space-y-3.5">
+      <PageHeader
+        title="SUBSCRIPTIONS"
+        breadcrumb="REMNAWAVE PROVIDER / BILLING / RECURRING"
+      />
 
-      <DataTable data={subs ?? []} columns={columns} isLoading={isLoading} />
+      <DataTable<Subscription>
+        columns={columns}
+        rows={isLoading ? [] : (subs ?? [])}
+        cols=".9fr 1.1fr 1.1fr 1fr 1.1fr 40px"
+        rowKey={(s) => s.id}
+        onRowClick={(s) =>
+          navigate({ to: "/subscriptions/$id", params: { id: s.id } })
+        }
+        empty={isLoading ? t("common.loading").toUpperCase() : "NO SUBSCRIPTIONS"}
+      />
 
       <div className="flex items-center justify-end gap-2">
-        <button
+        <TermButton
           type="button"
+          variant="ghost"
           onClick={() =>
             setPagination((p) => ({
               ...p,
@@ -103,20 +104,19 @@ export function AdminSubscriptionsPage() {
             }))
           }
           disabled={pagination.offset === 0}
-          className="rounded-lg border border-border bg-card px-3 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-40"
         >
           {t("common.back")}
-        </button>
-        <button
+        </TermButton>
+        <TermButton
           type="button"
+          variant="ghost"
           onClick={() =>
             setPagination((p) => ({ ...p, offset: p.offset + p.limit }))
           }
           disabled={(subs?.length ?? 0) < pagination.limit}
-          className="rounded-lg border border-border bg-card px-3 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-40"
         >
           {t("common.next")}
-        </button>
+        </TermButton>
       </div>
     </div>
   );

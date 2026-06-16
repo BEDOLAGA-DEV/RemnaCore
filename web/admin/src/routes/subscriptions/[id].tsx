@@ -1,18 +1,38 @@
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-import { useSubscription, LoadingSpinner, formatDate, cn } from "@remnacore/shared";
+import { useSubscription, LoadingSpinner, formatDate } from "@remnacore/shared";
 import type { SubscriptionStatus } from "@remnacore/shared";
+import {
+  PageHeader,
+  Panel,
+  PanelHeader,
+  StatusPill,
+  type Tone,
+  TermButton,
+} from "@/components/ui";
 
-function statusColor(status: SubscriptionStatus): string {
-  const colors: Record<SubscriptionStatus, string> = {
-    active: "bg-green-500/10 text-green-500",
-    pending: "bg-yellow-500/10 text-yellow-500",
-    cancelled: "bg-red-500/10 text-red-500",
-    expired: "bg-gray-500/10 text-gray-500",
-    paused: "bg-blue-500/10 text-blue-500",
+function statusTone(status: SubscriptionStatus): Tone {
+  const tones: Record<SubscriptionStatus, Tone> = {
+    active: "ok",
+    pending: "warn",
+    paused: "warn",
+    cancelled: "danger",
+    expired: "danger",
   };
-  return colors[status];
+  return tones[status];
+}
+
+function Row({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 border-b border-line px-4 py-3 last:border-b-0">
+      <span className="text-[9px] uppercase tracking-[1.5px] text-t7">
+        {label}
+      </span>
+      <span className="text-right text-[12px] text-t2">{children}</span>
+    </div>
+  );
 }
 
 export function AdminSubscriptionDetailPage() {
@@ -24,78 +44,86 @@ export function AdminSubscriptionDetailPage() {
 
   if (!sub) {
     return (
-      <div className="text-center py-12">
-        <p className="text-[12px] text-red-500">{t("common.error")}</p>
+      <div className="py-12 text-center text-[11px] uppercase tracking-[1px] text-danger">
+        {t("common.error")}
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <Link
-        to="/subscriptions"
-        className="text-[13px] text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-1.5"
-      >
-        <ArrowLeft size={14} />
-        {t("common.back")}
-      </Link>
+    <div className="space-y-3.5">
+      <PageHeader
+        title="SUBSCRIPTION"
+        breadcrumb="REMNAWAVE PROVIDER / BILLING / RECURRING / DETAIL"
+        right={
+          <Link to="/subscriptions">
+            <TermButton type="button" variant="ghost">
+              <ArrowLeft size={14} />
+              {t("common.back")}
+            </TermButton>
+          </Link>
+        }
+      />
 
-      <div className="rounded-xl border border-border bg-card p-6">
-        <div className="flex items-start justify-between">
+      <div className="grid gap-3.5 md:grid-cols-2">
+        <Panel>
+          <PanelHeader title={t("common.details")} />
           <div>
-            <h1 className="text-[18px] font-semibold text-foreground">
-              {t("admin.subscriptions.title")}
-            </h1>
-            <p className="mt-1 font-mono text-[12px] text-muted-foreground">
-              {sub.id}
-            </p>
+            <Row label={t("common.status")}>
+              <StatusPill
+                label={sub.status.toUpperCase()}
+                tone={statusTone(sub.status)}
+              />
+            </Row>
+            <Row label={t("admin.subscriptions.userId")}>
+              <Link
+                to="/users/$id"
+                params={{ id: sub.user_id }}
+                className="tabular-nums text-accent transition-colors hover:opacity-80"
+              >
+                {sub.user_id}
+              </Link>
+            </Row>
+            <Row label={t("admin.subscriptions.planId")}>
+              <span className="tabular-nums text-t2">{sub.plan_id}</span>
+            </Row>
+            <Row label="INTERVAL">
+              <span className="uppercase tracking-[0.5px] text-t4">
+                {sub.period_interval}
+              </span>
+            </Row>
+            <Row label="ADDONS">
+              <span className="tabular-nums text-t4">
+                {sub.addon_ids.length}
+              </span>
+            </Row>
           </div>
-          <span
-            className={cn(
-              "rounded-full px-2.5 py-0.5 font-mono text-[11px] font-medium",
-              statusColor(sub.status),
-            )}
-          >
-            {sub.status}
-          </span>
-        </div>
+        </Panel>
 
-        <div className="mt-6 grid gap-5 sm:grid-cols-2">
+        <Panel>
+          <PanelHeader title="METADATA" />
           <div>
-            <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
-              {t("admin.subscriptions.userId")}
-            </p>
-            <Link
-              to="/users/$id"
-              params={{ id: sub.user_id }}
-              className="font-mono text-[12px] text-primary hover:text-primary/80 transition-colors"
-            >
-              {sub.user_id}
-            </Link>
+            <Row label="ID">
+              <span className="font-mono text-[11px] tabular-nums text-t5">
+                {sub.id}
+              </span>
+            </Row>
+            <Row label="PERIOD START">
+              <span className="tabular-nums">
+                {formatDate(sub.period_start)}
+              </span>
+            </Row>
+            <Row label={t("subscriptions.periodEnd")}>
+              <span className="tabular-nums">{formatDate(sub.period_end)}</span>
+            </Row>
+            <Row label={t("common.createdAt")}>
+              <span className="tabular-nums">{formatDate(sub.created_at)}</span>
+            </Row>
+            <Row label={t("common.updatedAt")}>
+              <span className="tabular-nums">{formatDate(sub.updated_at)}</span>
+            </Row>
           </div>
-          <div>
-            <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
-              {t("admin.subscriptions.planId")}
-            </p>
-            <p className="font-mono text-[12px] text-foreground">{sub.plan_id}</p>
-          </div>
-          <div>
-            <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
-              {t("subscriptions.periodEnd")}
-            </p>
-            <p className="font-mono text-[13px] text-foreground">
-              {formatDate(sub.period_end)}
-            </p>
-          </div>
-          <div>
-            <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
-              {t("common.createdAt")}
-            </p>
-            <p className="font-mono text-[13px] text-foreground">
-              {formatDate(sub.created_at)}
-            </p>
-          </div>
-        </div>
+        </Panel>
       </div>
     </div>
   );

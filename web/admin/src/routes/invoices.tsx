@@ -1,18 +1,24 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { type ColumnDef } from "@tanstack/react-table";
-import { useAdminInvoices, formatDate, formatMoney, cn } from "@remnacore/shared";
+import { useAdminInvoices, formatDate, formatMoney } from "@remnacore/shared";
 import type { Invoice, InvoiceStatus } from "@remnacore/shared";
-import { DataTable } from "../components/DataTable.js";
+import {
+  PageHeader,
+  DataTable,
+  type Column,
+  StatusPill,
+  type Tone,
+  TermButton,
+} from "@/components/ui";
 
-function statusColor(status: InvoiceStatus): string {
-  const colors: Record<InvoiceStatus, string> = {
-    pending: "bg-yellow-500/10 text-yellow-500",
-    paid: "bg-green-500/10 text-green-500",
-    cancelled: "bg-gray-500/10 text-gray-500",
-    refunded: "bg-blue-500/10 text-blue-500",
+function statusTone(status: InvoiceStatus): Tone {
+  const tones: Record<InvoiceStatus, Tone> = {
+    paid: "ok",
+    pending: "warn",
+    cancelled: "danger",
+    refunded: "danger",
   };
-  return colors[status];
+  return tones[status];
 }
 
 export function AdminInvoicesPage() {
@@ -20,76 +26,80 @@ export function AdminInvoicesPage() {
   const [pagination, setPagination] = useState({ limit: 50, offset: 0 });
   const { data: invoices, isLoading } = useAdminInvoices(pagination);
 
-  const columns: ColumnDef<Invoice, unknown>[] = [
+  const columns: Column<Invoice>[] = [
     {
-      accessorKey: "id",
+      key: "id",
       header: "ID",
-      cell: ({ row }) => (
-        <span className="font-mono text-[11px] text-muted-foreground">
-          {row.original.id.slice(0, 8)}...
+      render: (inv) => (
+        <span className="tabular-nums text-accent">{inv.id.slice(0, 8)}</span>
+      ),
+    },
+    {
+      key: "user",
+      header: t("admin.subscriptions.userId"),
+      render: (inv) => (
+        <span className="tabular-nums text-t2">
+          {inv.user_id.slice(0, 8)}
         </span>
       ),
     },
     {
-      accessorKey: "total_amount",
+      key: "amount",
       header: t("invoices.amount"),
-      cell: ({ row }) => (
-        <span className="font-mono text-[13px] font-semibold text-foreground">
-          {formatMoney(row.original.total_amount, row.original.currency)}
+      align: "right",
+      render: (inv) => (
+        <span className="tabular-nums font-semibold text-t1">
+          {formatMoney(inv.total_amount, inv.currency)}
         </span>
       ),
     },
     {
-      accessorKey: "status",
+      key: "status",
       header: t("common.status"),
-      cell: ({ row }) => (
-        <span
-          className={cn(
-            "rounded-full px-2 py-0.5 font-mono text-[11px] font-medium",
-            statusColor(row.original.status),
-          )}
-        >
-          {row.original.status}
-        </span>
+      render: (inv) => (
+        <StatusPill
+          label={inv.status.toUpperCase()}
+          tone={statusTone(inv.status)}
+        />
       ),
     },
     {
-      accessorKey: "paid_at",
+      key: "paid",
       header: t("invoices.paidAt"),
-      cell: ({ row }) => (
-        <span className="font-mono text-[11px] text-muted-foreground">
-          {formatDate(row.original.paid_at)}
-        </span>
+      render: (inv) => (
+        <span className="tabular-nums text-t5">{formatDate(inv.paid_at)}</span>
       ),
     },
     {
-      accessorKey: "created_at",
+      key: "created",
       header: t("common.createdAt"),
-      cell: ({ row }) => (
-        <span className="font-mono text-[11px] text-muted-foreground">
-          {formatDate(row.original.created_at)}
+      render: (inv) => (
+        <span className="tabular-nums text-t5">
+          {formatDate(inv.created_at)}
         </span>
       ),
     },
   ];
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-[15px] font-semibold text-foreground">
-          {t("admin.invoices.title")}
-        </h1>
-      </div>
+    <div className="space-y-3.5">
+      <PageHeader
+        title="INVOICES"
+        breadcrumb="REMNAWAVE PROVIDER / BILLING / LEDGER"
+      />
 
-      <DataTable
-        data={invoices ?? []}
+      <DataTable<Invoice>
         columns={columns}
-        isLoading={isLoading}
+        rows={isLoading ? [] : (invoices ?? [])}
+        cols=".9fr 1.1fr .9fr 1fr 1.1fr 1.1fr"
+        rowKey={(inv) => inv.id}
+        empty={isLoading ? t("common.loading").toUpperCase() : "NO INVOICES"}
       />
 
       <div className="flex items-center justify-end gap-2">
-        <button
+        <TermButton
           type="button"
+          variant="ghost"
           onClick={() =>
             setPagination((p) => ({
               ...p,
@@ -97,20 +107,19 @@ export function AdminInvoicesPage() {
             }))
           }
           disabled={pagination.offset === 0}
-          className="rounded-lg border border-border bg-card px-3 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-40"
         >
           {t("common.back")}
-        </button>
-        <button
+        </TermButton>
+        <TermButton
           type="button"
+          variant="ghost"
           onClick={() =>
             setPagination((p) => ({ ...p, offset: p.offset + p.limit }))
           }
           disabled={(invoices?.length ?? 0) < pagination.limit}
-          className="rounded-lg border border-border bg-card px-3 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-40"
         >
           {t("common.next")}
-        </button>
+        </TermButton>
       </div>
     </div>
   );
