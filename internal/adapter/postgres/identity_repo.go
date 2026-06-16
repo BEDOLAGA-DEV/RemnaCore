@@ -79,19 +79,6 @@ func rowToUser(row gen.IdentityPlatformUser) *identity.PlatformUser {
 	}
 }
 
-// rowToSession converts the sqlc IdentitySession model to a domain Session.
-func rowToSession(row gen.IdentitySession) *identity.Session {
-	return &identity.Session{
-		ID:           pgutil.PgtypeToUUID(row.ID),
-		UserID:       pgutil.PgtypeToUUID(row.UserID),
-		RefreshToken: row.RefreshToken,
-		IPAddress:    row.IpAddress,
-		UserAgent:    row.UserAgent,
-		ExpiresAt:    pgutil.PgtypeToTime(row.ExpiresAt),
-		CreatedAt:    pgutil.PgtypeToTime(row.CreatedAt),
-	}
-}
-
 // rowToEmailVerification converts the sqlc IdentityEmailVerification model to
 // a domain EmailVerification.
 func rowToEmailVerification(row gen.IdentityEmailVerification) *identity.EmailVerification {
