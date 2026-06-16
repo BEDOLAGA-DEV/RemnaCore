@@ -205,6 +205,10 @@ func startMetricsCollector(lc fx.Lifecycle, collector *identityservice.MetricsCo
 
 // startRBACSync runs the idempotent RBAC catalog sync once at startup, before
 // the server accepts traffic, so permissions/roles exist for authorization.
+// This is a one-shot synchronous OnStart operation — it completes before the
+// server begins accepting traffic and requires no OnStop hook (unlike
+// startIdentityCleanup and startMetricsCollector, which spawn long-running
+// goroutines that must be cancelled on shutdown).
 func startRBACSync(lc fx.Lifecycle, sync *identityservice.RBACCatalogSync, logger *slog.Logger) {
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
