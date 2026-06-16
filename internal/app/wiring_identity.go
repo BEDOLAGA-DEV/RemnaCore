@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/fx"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres"
@@ -44,8 +45,14 @@ var identityWiring = fx.Options(
 		return identityservice.NewCleanupScheduler(repo, logger)
 	}),
 
+	// Metrics collector — periodic time-series snapshots into metrics.samples.
+	fx.Provide(func(pool *pgxpool.Pool, clk clock.Clock, logger *slog.Logger) *identityservice.MetricsCollector {
+		return identityservice.NewMetricsCollector(pool, clk, logger)
+	}),
+
 	// Lifecycle hooks
 	fx.Invoke(startIdentityCleanup),
+	fx.Invoke(startMetricsCollector),
 
 	// Bindings: interface -> implementation (identity)
 	fx.Provide(postgres.NewIdentityRepository),
@@ -147,6 +154,29 @@ func startIdentityCleanup(lc fx.Lifecycle, scheduler *identityservice.CleanupSch
 			lc.Append(fx.Hook{
 				OnStop: func(_ context.Context) error {
 					logger.Info("identity cleanup scheduler stopping")
+					cancel()
+					return nil
+				},
+			})
+			return nil
+		},
+	})
+}
+
+// startMetricsCollector spawns the metrics collector as a background goroutine
+// managed by the Fx lifecycle. It periodically snapshots platform metrics into
+// metrics.samples for dashboard time-series trends.
+func startMetricsCollector(lc fx.Lifecycle, collector *identityservice.MetricsCollector, logger *slog.Logger) {
+	lc.Append(fx.Hook{
+		OnStart: func(_ context.Context) error {
+			collectorCtx, cancel := context.WithCancel(context.Background())
+			go func() {
+				logger.Info("metrics collector started")
+				collector.Run(collectorCtx)
+			}()
+			lc.Append(fx.Hook{
+				OnStop: func(_ context.Context) error {
+					logger.Info("metrics collector stopping")
 					cancel()
 					return nil
 				},

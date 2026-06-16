@@ -246,6 +246,7 @@ func NewRouter(p RouterParams) http.Handler {
 				// Dashboard stats
 				admin.Get("/stats", p.StatsHandler.GetStats)
 				admin.Get("/metrics", p.StatsHandler.GetMetrics)
+				admin.Get("/metrics/history", p.StatsHandler.GetMetricsHistory)
 				admin.Get("/sessions", p.StatsHandler.ListSessions)
 				admin.Get("/activity", p.ActivityHandler.ListActivity)
 

@@ -2,10 +2,26 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// History window bounds for GET /api/admin/metrics/history.
+const (
+	defaultHistoryHours = 24
+	maxHistoryHours     = 168 // 7 days
+)
+
+// metricsHistorySQL returns collector-captured samples within the last $1
+// hours, oldest first so the frontend plots left-to-right.
+const metricsHistorySQL = `
+SELECT captured_at, active_users, active_subs, mrr_cents, total_subs
+FROM metrics.samples
+WHERE captured_at >= now() - make_interval(hours => $1)
+ORDER BY captured_at ASC
+`
 
 // statsSQL computes dashboard aggregates in a single round-trip.
 const statsSQL = `
@@ -122,6 +138,20 @@ type AdminMetrics struct {
 	PayingUsers       int64   `json:"paying_users"`
 }
 
+// MetricsSample is one collector-captured point in the metrics time series.
+type MetricsSample struct {
+	CapturedAt  time.Time `json:"captured_at"`
+	ActiveUsers int64     `json:"active_users"`
+	ActiveSubs  int64     `json:"active_subs"`
+	MRRCents    int64     `json:"mrr_cents"`
+	TotalSubs   int64     `json:"total_subs"`
+}
+
+// MetricsHistoryResponse is the response shape for GET /api/admin/metrics/history.
+type MetricsHistoryResponse struct {
+	Samples []MetricsSample `json:"samples"`
+}
+
 // SessionListResponse is the response shape for GET /api/admin/sessions.
 type SessionListResponse struct {
 	Sessions []SessionEntry `json:"sessions"`
@@ -193,6 +223,44 @@ func (h *StatsHandler) GetMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, m)
+}
+
+// GetMetricsHistory handles GET /api/admin/metrics/history?hours=N -- returns
+// the collector-captured metrics time series for the last N hours (default 24,
+// max 168), oldest first. Cross-tenant platform aggregate.
+func (h *StatsHandler) GetMetricsHistory(w http.ResponseWriter, r *http.Request) {
+	hours := defaultHistoryHours
+	if v := r.URL.Query().Get("hours"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			hours = n
+		}
+	}
+	if hours > maxHistoryHours {
+		hours = maxHistoryHours
+	}
+
+	rows, err := h.pool.Query(r.Context(), metricsHistorySQL, hours)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load metrics history")
+		return
+	}
+	defer rows.Close()
+
+	samples := make([]MetricsSample, 0)
+	for rows.Next() {
+		var s MetricsSample
+		if err := rows.Scan(&s.CapturedAt, &s.ActiveUsers, &s.ActiveSubs, &s.MRRCents, &s.TotalSubs); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to scan metrics sample")
+			return
+		}
+		samples = append(samples, s)
+	}
+	if err := rows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to iterate metrics history")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, MetricsHistoryResponse{Samples: samples})
 }
 
 // ListSessions handles GET /api/admin/sessions -- returns a paginated list
