@@ -320,3 +320,94 @@ export type PaginationParams = {
   limit?: number;
   offset?: number;
 };
+
+// ─── Admin Metrics & Activity ─────────────────────────────────────────────────
+
+export type AdminMetrics = {
+  mrr_cents: number;
+  arpu_cents: number;
+  churn_30d: number;
+  subs_today: number;
+  active_subs: number;
+  cancelled_subs: number;
+  paused_subs: number;
+  pending_subs: number;
+  total_subs: number;
+  total_revenue_cents: number;
+  paying_users: number;
+};
+
+export type ActivityLevel = "info" | "ok" | "warn";
+
+export type ActivityEntry = {
+  id: string;
+  timestamp: string;
+  event_type: string;
+  level: ActivityLevel;
+  message: string;
+};
+
+export type ActivityListResponse = {
+  activity: ActivityEntry[];
+};
+
+// ─── Remnawave ────────────────────────────────────────────────────────────────
+
+export type RemnawaveOverview = {
+  panels_up: number;
+  panels_total: number;
+  nodes_healthy: number;
+  nodes_total: number;
+  active_users: number;
+  bandwidth: {
+    upload: number;
+    download: number;
+    total: number;
+  };
+};
+
+export type RealtimeNodeMetrics = {
+  uuid: string;
+  name: string;
+  uploadSpeedBytes: number;
+  downloadSpeedBytes: number;
+  activeConnections: number;
+  collectedAt: string;
+};
+
+export type RemnawaveRealtime = {
+  panels: Array<{
+    panel_id: string;
+    slug: string;
+    online: boolean;
+    metrics: RealtimeNodeMetrics[] | null;
+  }>;
+};
+
+export type RemnawaveNodeRow = {
+  panel_id: string;
+  node: {
+    uuid: string;
+    name: string;
+    address: string;
+    port: number;
+    isConnected: boolean;
+    trafficUsedBytes: number;
+  };
+};
+
+export type NodeBandwidthStats = {
+  uuid: string;
+  name: string;
+  uploadBytes: number;
+  downloadBytes: number;
+  totalBytes: number;
+  date: string;
+};
+
+export type TrafficByNode = {
+  nodes: Array<{
+    panel_id: string;
+    stats: NodeBandwidthStats;
+  }>;
+};

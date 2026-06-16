@@ -8,6 +8,8 @@ import type {
   Invoice,
   Tenant,
   PaginationParams,
+  AdminMetrics,
+  ActivityListResponse,
 } from "../../types/index.js";
 
 export function useAdminUsers(params?: PaginationParams) {
@@ -121,6 +123,27 @@ export function useAdminStats() {
   return useQuery({
     queryKey: QUERY_KEYS.admin.stats,
     queryFn: () => apiGet<DashboardStats>(ENDPOINTS.admin.stats),
+    staleTime: STATS_STALE_TIME_MS,
+    refetchInterval: STATS_STALE_TIME_MS,
+  });
+}
+
+const DEFAULT_ACTIVITY_LIMIT = 40;
+
+export function useAdminMetrics() {
+  return useQuery({
+    queryKey: ["admin", "metrics"] as const,
+    queryFn: () => apiGet<AdminMetrics>(ENDPOINTS.admin.metrics),
+    staleTime: STATS_STALE_TIME_MS,
+    refetchInterval: STATS_STALE_TIME_MS,
+  });
+}
+
+export function useAdminActivity(limit = DEFAULT_ACTIVITY_LIMIT) {
+  return useQuery({
+    queryKey: ["admin", "activity", limit] as const,
+    queryFn: () =>
+      apiGet<ActivityListResponse>(ENDPOINTS.admin.activity, { limit }),
     staleTime: STATS_STALE_TIME_MS,
     refetchInterval: STATS_STALE_TIME_MS,
   });

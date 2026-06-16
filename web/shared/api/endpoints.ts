@@ -102,6 +102,16 @@ export const ENDPOINTS = {
     sessions: "/api/admin/sessions",
     settings: "/api/admin/settings",
     stats: "/api/admin/stats",
+    metrics: "/api/admin/metrics",
+    activity: "/api/admin/activity",
+  },
+
+  // ─── Remnawave Provider ────────────────────────────────────────────────
+  remnawave: {
+    overview: "/api/remnawave/dashboard/overview",
+    realtime: "/api/remnawave/dashboard/realtime",
+    nodes: "/api/remnawave/nodes",
+    trafficByNode: "/api/remnawave/analytics/traffic-by-node",
   },
 
   // ─── Plugin RPC & Collections ──────────────────────────────────────────
