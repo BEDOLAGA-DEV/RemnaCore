@@ -21,6 +21,7 @@
 // is not updated, the regression will be missed until this list is extended.
 // Keep in sync with:
 //   - router.go /admin re-gating (Task 11)
+//   - router.go /reseller re-gating (Task 11)
 //   - internal/builtin/tariff/plugin.go admin-only routes (Task 9)
 package gateway_test
 
@@ -148,6 +149,7 @@ func newScopedAdminRouter(
 //
 // Keep in sync with:
 //   - router.go /admin re-gating (Task 11)
+//   - router.go /reseller re-gating (Task 11)
 //   - internal/builtin/tariff/plugin.go admin-only routes (Task 9)
 func TestAdminRoutesArePermissionGated(t *testing.T) {
 	t.Log("Scoped sub-router fallback: testing the Auth→ShopResolver→RequirePermission chain " +
@@ -212,6 +214,11 @@ func TestAdminRoutesArePermissionGated(t *testing.T) {
 		// Reseller config → tariffs.write.
 		{http.MethodGet, "/api/tariffs/reseller/catalog", rbac.TariffsWrite},
 		{http.MethodPost, "/api/tariffs/reseller/customize", rbac.TariffsWrite},
+
+		// ── Reseller self-service routes (router.go /reseller re-gating) ────────
+		{http.MethodGet, "/api/reseller/dashboard", rbac.ShopsRead},
+		{http.MethodGet, "/api/reseller/commissions", rbac.BillingRead},
+		{http.MethodGet, "/api/reseller/customers", rbac.CustomersRead},
 	}
 
 	router, token := newScopedAdminRouter(t, routes)
