@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useInstallPlugin } from "@remnacore/shared";
+import { PageHeader, Panel, PanelHeader, TermButton } from "@/components/ui";
 
 const installSchema = z.object({
   manifest: z.string().min(1),
@@ -12,6 +13,9 @@ const installSchema = z.object({
 });
 
 type InstallFormValues = z.infer<typeof installSchema>;
+
+const textareaCls =
+  "w-full resize-none border bg-input px-3 py-3 font-mono text-[12px] tracking-[.5px] text-t1 outline-none placeholder:text-t7 focus:border-accent/45";
 
 export function InstallPluginPage() {
   const { t } = useTranslation();
@@ -35,37 +39,48 @@ export function InstallPluginPage() {
   };
 
   return (
-    <div className="mx-auto max-w-lg space-y-6">
-      <Link
-        to="/plugins"
-        className="text-[13px] text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-1.5"
-      >
-        <ArrowLeft size={14} />
-        {t("common.back")}
-      </Link>
+    <div className="space-y-3.5">
+      <PageHeader
+        title={t("admin.plugins.install").toUpperCase()}
+        breadcrumb="REMNAWAVE PROVIDER / EXTENSIONS / INSTALL"
+        right={
+          <Link to="/plugins">
+            <TermButton type="button" variant="ghost">
+              <ArrowLeft size={14} />
+              {t("common.back")}
+            </TermButton>
+          </Link>
+        }
+      />
 
-      <h1 className="text-[18px] font-semibold text-foreground">
-        {t("admin.plugins.install")}
-      </h1>
-
-      <div className="rounded-xl border border-border bg-card p-6">
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      <Panel className="mx-auto max-w-2xl">
+        <PanelHeader title="CREATE ITEM" />
+        <form
+          onSubmit={handleSubmit(onSubmit)}
+          className="space-y-4 px-4 py-5"
+        >
           <div>
             <label
               htmlFor="manifest"
-              className="mb-1.5 block text-[12px] font-medium text-foreground"
+              className="mb-2 block text-[9px] uppercase tracking-[1.5px] text-t6"
             >
-              {t("admin.plugins.manifest")}
+              {t("admin.plugins.manifest")}{" "}
+              <span className="text-accent">*</span>
             </label>
             <textarea
               id="manifest"
               rows={8}
-              placeholder="[plugin]&#10;slug = &quot;my-plugin&quot;&#10;name = &quot;My Plugin&quot;&#10;version = &quot;1.0.0&quot;"
+              placeholder='[plugin]&#10;slug = "my-plugin"&#10;name = "My Plugin"&#10;version = "1.0.0"'
               {...register("manifest")}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[12px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50 resize-none transition-colors"
+              className={textareaCls}
+              style={{
+                borderColor: errors.manifest
+                  ? "var(--danger)"
+                  : "var(--line-strong)",
+              }}
             />
             {errors.manifest && (
-              <p className="mt-1 text-[12px] text-red-500">
+              <p className="mt-1 text-[9px] uppercase tracking-[1px] text-danger">
                 {errors.manifest.message}
               </p>
             )}
@@ -74,46 +89,59 @@ export function InstallPluginPage() {
           <div>
             <label
               htmlFor="wasm"
-              className="mb-1.5 block text-[12px] font-medium text-foreground"
+              className="mb-2 block text-[9px] uppercase tracking-[1.5px] text-t6"
             >
-              {t("admin.plugins.wasmFile")} (base64)
+              {t("admin.plugins.wasmFile")} (BASE64){" "}
+              <span className="text-accent">*</span>
             </label>
             <textarea
               id="wasm"
               rows={4}
               placeholder="base64-encoded WASM bytes..."
               {...register("wasm")}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[12px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50 resize-none transition-colors"
+              className={textareaCls}
+              style={{
+                borderColor: errors.wasm
+                  ? "var(--danger)"
+                  : "var(--line-strong)",
+              }}
             />
             {errors.wasm && (
-              <p className="mt-1 text-[12px] text-red-500">
+              <p className="mt-1 text-[9px] uppercase tracking-[1px] text-danger">
                 {errors.wasm.message}
               </p>
             )}
           </div>
 
-          <button
-            type="submit"
-            disabled={installMutation.isPending}
-            className="w-full rounded-lg bg-primary px-4 py-2 text-[13px] font-medium text-background hover:bg-primary/90 transition-colors disabled:opacity-40"
-          >
-            {installMutation.isPending ? (
-              <span className="flex items-center justify-center gap-2">
-                <Loader2 size={16} className="animate-spin" />
-                {t("common.loading")}
-              </span>
-            ) : (
-              t("admin.plugins.install")
-            )}
-          </button>
+          <div className="flex items-center gap-2.5 pt-1">
+            <TermButton
+              type="submit"
+              variant="primary"
+              disabled={installMutation.isPending}
+            >
+              {installMutation.isPending ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" />
+                  {t("common.loading")}
+                </>
+              ) : (
+                t("admin.plugins.install")
+              )}
+            </TermButton>
+            <Link to="/plugins">
+              <TermButton type="button" variant="ghost">
+                {t("common.cancel")}
+              </TermButton>
+            </Link>
+          </div>
 
           {installMutation.isError && (
-            <p className="text-[12px] text-red-500 text-center">
+            <p className="text-[9px] uppercase tracking-[1px] text-danger">
               {t("common.error")}
             </p>
           )}
         </form>
-      </div>
+      </Panel>
     </div>
   );
 }

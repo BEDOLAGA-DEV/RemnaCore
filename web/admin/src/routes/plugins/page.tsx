@@ -18,6 +18,17 @@ import { useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { DataTable } from "../../components/DataTable.js";
+import { PageHeader, Panel, PanelHeader, TermButton } from "@/components/ui";
+
+// ─── Shared terminal field styles ───────────────────────────────────────────
+
+const FIELD_INPUT_CLS =
+	"w-full border border-[var(--line-strong)] bg-input px-3 py-3 font-mono text-[13px] tracking-[.5px] text-t1 outline-none placeholder:text-t7 focus:border-accent/45";
+const FIELD_TEXTAREA_CLS =
+	"w-full resize-none border border-[var(--line-strong)] bg-input px-3 py-3 font-mono text-[12px] tracking-[.5px] text-t1 outline-none placeholder:text-t7 focus:border-accent/45";
+const FIELD_LABEL_CLS =
+	"mb-2 block text-[9px] uppercase tracking-[1.5px] text-t6";
+const FIELD_ERROR_CLS = "mt-1 text-[9px] uppercase tracking-[1px] text-danger";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -347,11 +358,11 @@ function GenericPluginPage({ slug, pagePath }: { slug: string; pagePath: string 
 							? "••••"
 							: "••••••••" + value.slice(-4);
 						return (
-							<span className="font-mono text-[12px] text-muted-foreground">{masked}</span>
+							<span className="font-mono text-[12px] tabular-nums text-t6">{masked}</span>
 						);
 					}
 					return (
-						<span className="block max-w-[200px] truncate text-[12px]">{formatCellValue(value, t)}</span>
+						<span className="block max-w-[200px] truncate text-[12px] text-t2">{formatCellValue(value, t)}</span>
 					);
 				},
 			}),
@@ -360,7 +371,7 @@ function GenericPluginPage({ slug, pagePath }: { slug: string; pagePath: string 
 			id: "created_at",
 			header: t("admin.pluginPage.fieldCreatedAt"),
 			cell: ({ row }) => (
-				<span className="font-mono text-[11px] text-muted-foreground">
+				<span className="font-mono text-[11px] tabular-nums text-t5">
 					{formatDateTime(row.original.created_at)}
 				</span>
 			),
@@ -382,14 +393,14 @@ function GenericPluginPage({ slug, pagePath }: { slug: string; pagePath: string 
 								disabled={testState?.loading}
 								title={testState?.message ?? "Test connection"}
 								className={cn(
-									"flex items-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-medium transition-colors",
+									"flex items-center gap-1.5 border px-2.5 py-1.5 text-[10px] uppercase tracking-[1px] transition-colors",
 									testState?.loading
-										? "text-muted-foreground"
+										? "border-line text-t6"
 										: testState?.success === true
-											? "bg-success/10 text-success"
+											? "border-accent text-accent"
 											: testState?.success === false
-												? "bg-destructive/10 text-destructive"
-												: "text-muted-foreground hover:bg-secondary hover:text-foreground",
+												? "border-danger text-danger"
+												: "border-line text-t5 hover:text-t2",
 								)}
 							>
 								{testState?.loading ? (
@@ -413,14 +424,14 @@ function GenericPluginPage({ slug, pagePath }: { slug: string; pagePath: string 
 						<button
 							type="button"
 							onClick={() => handleEdit(row.original)}
-							className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+							className="p-1.5 text-t6 transition-colors hover:text-accent"
 						>
 							<Pencil size={14} />
 						</button>
 						<button
 							type="button"
 							onClick={() => handleDelete(row.original.id)}
-							className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+							className="p-1.5 text-t6 transition-colors hover:text-danger"
 						>
 							<Trash2 size={14} />
 						</button>
@@ -469,8 +480,8 @@ function GenericPluginPage({ slug, pagePath }: { slug: string; pagePath: string 
 
 	if (list.isError) {
 		return (
-			<div className="py-12 text-center">
-				<p className="text-destructive">{t("admin.pluginPage.errorLoading")}</p>
+			<div className="py-12 text-center text-[11px] uppercase tracking-[1px] text-danger">
+				{t("admin.pluginPage.errorLoading")}
 			</div>
 		);
 	}
@@ -482,28 +493,22 @@ function GenericPluginPage({ slug, pagePath }: { slug: string; pagePath: string 
 	// ─── Render ───────────────────────────────────────────────────────────────
 
 	return (
-		<div className="min-w-0 space-y-6 overflow-hidden">
+		<div className="min-w-0 space-y-3.5 overflow-hidden">
 			{/* Header */}
-			<div className="flex items-center justify-between">
-				<div>
-					<h1 className="text-[15px] font-semibold text-foreground">
-						{pageInfo?.title ?? t("admin.pluginPage.unknownPage")}
-					</h1>
-					{pageInfo && (
-						<p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-							{pageInfo.plugin_name} / {pageInfo.path}
-						</p>
-					)}
-				</div>
-				<button
-					type="button"
-					onClick={handleCreate}
-					className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-3 py-1.5 text-[12px] font-medium text-primary transition-colors hover:bg-primary/20"
-				>
-					<Plus size={14} />
-					{t("admin.pluginPage.createItem")}
-				</button>
-			</div>
+			<PageHeader
+				title={(pageInfo?.title ?? t("admin.pluginPage.unknownPage")).toUpperCase()}
+				breadcrumb={
+					pageInfo
+						? `${pageInfo.plugin_name} / ${pageInfo.path}`.toUpperCase()
+						: undefined
+				}
+				right={
+					<TermButton type="button" variant="primary" onClick={handleCreate}>
+						<Plus size={14} />
+						{t("admin.pluginPage.createItem")}
+					</TermButton>
+				}
+			/>
 
 			{/* Form (create/edit) */}
 			{formMode !== "closed" &&
@@ -536,10 +541,8 @@ function GenericPluginPage({ slug, pagePath }: { slug: string; pagePath: string 
 			{documents.length > 0 ? (
 				<DataTable data={documents} columns={columns} isLoading={false} />
 			) : (
-				<div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border p-12">
-					<p className="text-[13px] text-muted-foreground">
-						{t("admin.pluginPage.noDocuments")}
-					</p>
+				<div className="border border-line bg-surface px-4 py-10 text-center text-[11px] uppercase tracking-[2px] text-t7">
+					{t("admin.pluginPage.noDocuments")}
 				</div>
 			)}
 		</div>
@@ -595,23 +598,29 @@ function SchemaForm({
 	};
 
 	return (
-		<div className="min-w-0 overflow-hidden rounded-xl border border-border bg-card p-4 sm:p-6">
-			<div className="mb-4 flex items-center justify-between">
-				<h2 className="text-[15px] font-semibold text-foreground">
-					{mode === "create"
+		<Panel className="min-w-0">
+			<PanelHeader
+				title={
+					mode === "create"
 						? t("admin.pluginPage.createTitle")
-						: t("admin.pluginPage.editTitle")}
-				</h2>
-				<button
-					type="button"
-					onClick={onCancel}
-					className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-				>
-					<X size={16} />
-				</button>
-			</div>
+						: t("admin.pluginPage.editTitle")
+				}
+				right={
+					<button
+						type="button"
+						onClick={onCancel}
+						aria-label={t("common.cancel")}
+						className="p-1 text-t7 transition-colors hover:text-t2"
+					>
+						<X size={16} />
+					</button>
+				}
+			/>
 
-			<form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
+			<form
+				onSubmit={handleSubmit(handleFormSubmit)}
+				className="space-y-4 px-4 py-5 sm:px-5"
+			>
 				<GroupedFieldLayout
 					fields={fields}
 					register={register}
@@ -620,12 +629,8 @@ function SchemaForm({
 					errors={errors}
 				/>
 
-				<div className="flex items-center gap-3 pt-2">
-					<button
-						type="submit"
-						disabled={isPending}
-						className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-[13px] font-medium text-background transition-colors hover:bg-primary/90 disabled:opacity-40"
-					>
+				<div className="flex items-center gap-2.5 pt-1">
+					<TermButton type="submit" variant="primary" disabled={isPending}>
 						{isPending ? (
 							<>
 								<Loader2 size={14} className="animate-spin" />
@@ -634,17 +639,13 @@ function SchemaForm({
 						) : (
 							t("common.save")
 						)}
-					</button>
-					<button
-						type="button"
-						onClick={onCancel}
-						className="rounded-lg border border-border bg-card px-4 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-					>
+					</TermButton>
+					<TermButton type="button" variant="ghost" onClick={onCancel}>
 						{t("common.cancel")}
-					</button>
+					</TermButton>
 				</div>
 			</form>
-		</div>
+		</Panel>
 	);
 }
 
@@ -739,19 +740,19 @@ function FieldSection({
 	}
 
 	return (
-		<div className="rounded-lg border border-border/50 bg-background/50">
+		<div className="border border-line bg-input/40">
 			<button
 				type="button"
 				onClick={() => setOpen((o) => !o)}
 				className="flex w-full items-center justify-between px-4 py-2.5 text-left"
 			>
-				<span className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">
+				<span className="text-[10px] uppercase tracking-[1.5px] text-t6">
 					{title}
 				</span>
 				<ChevronDown
 					size={14}
 					className={cn(
-						"text-muted-foreground transition-transform",
+						"text-t6 transition-transform",
 						open && "rotate-180",
 					)}
 				/>
@@ -815,14 +816,14 @@ function PricingPeriodsField({
 	};
 
 	const inputCls =
-		"w-full rounded-lg border border-border bg-background px-2.5 py-1.5 font-mono text-[12px] text-foreground transition-colors focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/50";
+		"w-full border border-[var(--line-strong)] bg-input px-2.5 py-2 font-mono text-[12px] tabular-nums text-t1 outline-none transition-colors focus:border-accent/45";
 
 	return (
 		<div className="sm:col-span-2 space-y-3">
 			{periods.length > 0 && (
 				<div className="space-y-2">
 					{/* Header */}
-					<div className="hidden sm:grid sm:grid-cols-[1fr_1fr_1fr_80px_60px_40px] gap-2 px-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+					<div className="hidden sm:grid sm:grid-cols-[1fr_1fr_1fr_80px_60px_40px] gap-2 px-1 text-[9px] uppercase tracking-[1.5px] text-t7">
 						<span>Days</span>
 						<span>Price (cents)</span>
 						<span>Label</span>
@@ -833,7 +834,7 @@ function PricingPeriodsField({
 					{periods.map((period, i) => (
 						<div
 							key={`period-${i}`}
-							className="grid gap-2 grid-cols-2 sm:grid-cols-[1fr_1fr_1fr_80px_60px_40px] items-center rounded-lg border border-border/50 p-2 sm:p-0 sm:border-0"
+							className="grid gap-2 grid-cols-2 sm:grid-cols-[1fr_1fr_1fr_80px_60px_40px] items-center border border-line p-2 sm:p-0 sm:border-0"
 						>
 							<input
 								type="number"
@@ -884,19 +885,19 @@ function PricingPeriodsField({
 									className={cn(
 										"h-5 w-5 rounded-full border-2 transition-colors",
 										period.is_default
-											? "border-primary bg-primary"
-											: "border-border hover:border-primary/50",
+											? "border-accent bg-accent"
+											: "border-line hover:border-accent/50",
 									)}
 								>
 									{period.is_default && (
-										<Check size={12} className="mx-auto text-background" />
+										<Check size={12} className="mx-auto text-on-accent" />
 									)}
 								</button>
 							</div>
 							<button
 								type="button"
 								onClick={() => removePeriod(i)}
-								className="flex items-center justify-center rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+								className="flex items-center justify-center p-1.5 text-t6 transition-colors hover:text-danger"
 							>
 								<Trash2 size={14} />
 							</button>
@@ -907,7 +908,7 @@ function PricingPeriodsField({
 			<button
 				type="button"
 				onClick={addPeriod}
-				className="flex items-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-1.5 text-[12px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+				className="flex items-center gap-1.5 border border-dashed border-line px-3 py-2 text-[10px] uppercase tracking-[1px] text-t6 transition-colors hover:border-accent/50 hover:text-t2"
 			>
 				<Plus size={13} />
 				Add period
@@ -1023,12 +1024,9 @@ type FieldLabelProps = {
 
 function FieldLabel({ field, fieldId }: FieldLabelProps) {
 	return (
-		<label
-			htmlFor={fieldId}
-			className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
-		>
+		<label htmlFor={fieldId} className={FIELD_LABEL_CLS}>
 			{field.label}
-			{field.required && <span className="ml-0.5 text-destructive">*</span>}
+			{field.required && <span className="ml-0.5 text-accent">*</span>}
 		</label>
 	);
 }
@@ -1050,11 +1048,9 @@ function TextField({ field, fieldId, register, error }: TextFieldProps) {
 				id={fieldId}
 				type="text"
 				{...register(field.key)}
-				className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground placeholder:text-muted-foreground/50 transition-colors focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/50"
+				className={FIELD_INPUT_CLS}
 			/>
-			{error && (
-				<p className="mt-1 text-[11px] text-destructive">{String(error)}</p>
-			)}
+			{error && <p className={FIELD_ERROR_CLS}>{String(error)}</p>}
 		</div>
 	);
 }
@@ -1078,11 +1074,9 @@ function SecretField({ field, fieldId, register, error }: SecretFieldProps) {
 				autoComplete="off"
 				{...register(field.key)}
 				placeholder="••••••••"
-				className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground placeholder:text-muted-foreground/50 transition-colors focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/50"
+				className={FIELD_INPUT_CLS}
 			/>
-			{error && (
-				<p className="mt-1 text-[11px] text-destructive">{String(error)}</p>
-			)}
+			{error && <p className={FIELD_ERROR_CLS}>{String(error)}</p>}
 		</div>
 	);
 }
@@ -1105,11 +1099,9 @@ function NumberField({ field, fieldId, register, error }: NumberFieldProps) {
 				type="number"
 				step="any"
 				{...register(field.key, { valueAsNumber: true })}
-				className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground placeholder:text-muted-foreground/50 transition-colors focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/50"
+				className={cn(FIELD_INPUT_CLS, "tabular-nums")}
 			/>
-			{error && (
-				<p className="mt-1 text-[11px] text-destructive">{String(error)}</p>
-			)}
+			{error && <p className={FIELD_ERROR_CLS}>{String(error)}</p>}
 		</div>
 	);
 }
@@ -1136,11 +1128,9 @@ function TextareaField({
 				id={fieldId}
 				rows={4}
 				{...register(field.key)}
-				className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground placeholder:text-muted-foreground/50 transition-colors focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/50"
+				className={FIELD_TEXTAREA_CLS}
 			/>
-			{error && (
-				<p className="mt-1 text-[11px] text-destructive">{String(error)}</p>
-			)}
+			{error && <p className={FIELD_ERROR_CLS}>{String(error)}</p>}
 		</div>
 	);
 }
@@ -1167,22 +1157,20 @@ function BooleanField({ field, fieldId, watch, setValue }: BooleanFieldProps) {
 				aria-checked={!!currentValue}
 				onClick={() => setValue(field.key, !currentValue)}
 				className={cn(
-					"relative h-5 w-9 rounded-full transition-colors",
-					currentValue ? "bg-primary" : "bg-muted",
+					"relative h-5 w-9 transition-colors",
+					currentValue ? "bg-accent" : "bg-[var(--line-strong)]",
 				)}
 			>
 				<span
 					className={cn(
-						"absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-background transition-transform",
-						currentValue && "translate-x-4",
+						"absolute left-0.5 top-0.5 h-4 w-4 transition-transform",
+						currentValue ? "translate-x-4 bg-on-accent" : "bg-t6",
 					)}
 				/>
 			</button>
-			<span className="text-[13px] text-foreground">
+			<span className="text-[12px] text-t3">
 				{field.label}
-				{field.required && (
-					<span className="ml-0.5 text-destructive">*</span>
-				)}
+				{field.required && <span className="ml-0.5 text-accent">*</span>}
 			</span>
 		</div>
 	);
@@ -1216,7 +1204,7 @@ function SelectField({ field, fieldId, register, error }: SelectFieldProps) {
 			<select
 				id={fieldId}
 				{...register(field.key)}
-				className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground transition-colors focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/50"
+				className={FIELD_INPUT_CLS}
 			>
 				<option value="">{t("admin.pluginPage.selectPlaceholder")}</option>
 				{field.options_url && remoteOptions
@@ -1230,9 +1218,7 @@ function SelectField({ field, fieldId, register, error }: SelectFieldProps) {
 					))
 				}
 			</select>
-			{error && (
-				<p className="mt-1 text-[11px] text-destructive">{String(error)}</p>
-			)}
+			{error && <p className={FIELD_ERROR_CLS}>{String(error)}</p>}
 		</div>
 	);
 }
@@ -1284,10 +1270,10 @@ function MultiselectField({
 						<label
 							key={opt}
 							className={cn(
-								"flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-[13px] transition-colors",
+								"flex cursor-pointer items-center gap-2 border px-3 py-2 text-[12px] transition-colors",
 								isChecked
-									? "border-primary/30 bg-primary/5 text-foreground"
-									: "border-border bg-background text-muted-foreground hover:border-border/80",
+									? "border-accent/40 bg-accent/5 text-t2"
+									: "border-line bg-input text-t5 hover:border-[var(--line-strong)]",
 							)}
 						>
 							<input
@@ -1299,16 +1285,14 @@ function MultiselectField({
 										: [...selectedValues, opt];
 									setValue(field.key, next);
 								}}
-								className="h-3.5 w-3.5 rounded border-border accent-primary"
+								className="h-3.5 w-3.5 accent-[var(--accent)]"
 							/>
 							<span className="font-mono text-[12px]">{opt}</span>
 						</label>
 					);
 				})}
 			</div>
-			{error && (
-				<p className="mt-1 text-[11px] text-destructive">{String(error)}</p>
-			)}
+			{error && <p className={FIELD_ERROR_CLS}>{String(error)}</p>}
 		</div>
 	);
 }
@@ -1355,11 +1339,11 @@ function DynamicMultiselect({
 		<div className="sm:col-span-2">
 			<FieldLabel field={field} fieldId={fieldId} />
 			{optionsLoading ? (
-				<p className="text-[12px] text-muted-foreground">
+				<p className="text-[10px] uppercase tracking-[1px] text-t6">
 					{t("admin.pluginPage.loadingOptions")}
 				</p>
 			) : !remoteOptions || remoteOptions.length === 0 ? (
-				<p className="text-[12px] text-muted-foreground">
+				<p className="text-[10px] uppercase tracking-[1px] text-t6">
 					{t("admin.pluginPage.noOptions")}
 				</p>
 			) : (
@@ -1372,17 +1356,17 @@ function DynamicMultiselect({
 							<label
 								key={optValue}
 								className={cn(
-									"flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-[13px] transition-colors",
+									"flex cursor-pointer items-center gap-2 border px-3 py-2 text-[12px] transition-colors",
 									isChecked
-										? "border-primary/30 bg-primary/5 text-foreground"
-										: "border-border bg-background text-muted-foreground hover:border-border/80",
+										? "border-accent/40 bg-accent/5 text-t2"
+										: "border-line bg-input text-t5 hover:border-[var(--line-strong)]",
 								)}
 							>
 								<input
 									type="checkbox"
 									checked={isChecked}
 									onChange={() => onToggle(optValue)}
-									className="h-3.5 w-3.5 rounded border-border accent-primary"
+									className="h-3.5 w-3.5 accent-[var(--accent)]"
 								/>
 								<span className="font-mono text-[12px]">{optLabel}</span>
 							</label>
@@ -1390,9 +1374,7 @@ function DynamicMultiselect({
 					})}
 				</div>
 			)}
-			{error && (
-				<p className="mt-1 text-[11px] text-destructive">{String(error)}</p>
-			)}
+			{error && <p className={FIELD_ERROR_CLS}>{String(error)}</p>}
 		</div>
 	);
 }
@@ -1469,29 +1451,29 @@ function PluginDocumentForm({
 	};
 
 	return (
-		<div className="min-w-0 overflow-hidden rounded-xl border border-border bg-card p-4 sm:p-6">
-			<div className="mb-4 flex items-center justify-between">
-				<h2 className="text-[15px] font-semibold text-foreground">
-					{mode === "create"
+		<Panel className="min-w-0">
+			<PanelHeader
+				title={
+					mode === "create"
 						? t("admin.pluginPage.createTitle")
-						: t("admin.pluginPage.editTitle")}
-				</h2>
-				<button
-					type="button"
-					onClick={onClose}
-					className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-				>
-					<X size={16} />
-				</button>
-			</div>
+						: t("admin.pluginPage.editTitle")
+				}
+				right={
+					<button
+						type="button"
+						onClick={onClose}
+						aria-label={t("common.cancel")}
+						className="p-1 text-t7 transition-colors hover:text-t2"
+					>
+						<X size={16} />
+					</button>
+				}
+			/>
 
 			{useRawJsonMode ? (
-				<div className="space-y-4">
+				<div className="space-y-4 px-4 py-5 sm:px-5">
 					<div>
-						<label
-							htmlFor="raw_json"
-							className="mb-1.5 block text-[12px] font-medium text-muted-foreground"
-						>
+						<label htmlFor="raw_json" className={FIELD_LABEL_CLS}>
 							{t("admin.pluginPage.documentJson")}
 						</label>
 						<textarea
@@ -1499,19 +1481,19 @@ function PluginDocumentForm({
 							rows={6}
 							value={rawJson}
 							onChange={(e) => setRawJson(e.target.value)}
-							className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[12px] text-foreground placeholder:text-muted-foreground/50 transition-colors focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/50"
+							className={FIELD_TEXTAREA_CLS}
 							placeholder='{"name": "value", "price": 100}'
 						/>
 						{rawJsonError && (
-							<p className="mt-1 text-[11px] text-destructive">{rawJsonError}</p>
+							<p className={FIELD_ERROR_CLS}>{rawJsonError}</p>
 						)}
 					</div>
-					<div className="flex items-center gap-3 pt-2">
-						<button
+					<div className="flex items-center gap-2.5 pt-1">
+						<TermButton
 							type="button"
+							variant="primary"
 							onClick={handleRawJsonSubmit}
 							disabled={isPending}
-							className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-[13px] font-medium text-background transition-colors hover:bg-primary/90 disabled:opacity-40"
 						>
 							{isPending ? (
 								<>
@@ -1521,18 +1503,17 @@ function PluginDocumentForm({
 							) : (
 								t("common.save")
 							)}
-						</button>
-						<button
-							type="button"
-							onClick={onClose}
-							className="rounded-lg border border-border bg-card px-4 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-						>
+						</TermButton>
+						<TermButton type="button" variant="ghost" onClick={onClose}>
 							{t("common.cancel")}
-						</button>
+						</TermButton>
 					</div>
 				</div>
 			) : (
-				<form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
+				<form
+					onSubmit={handleSubmit(handleFormSubmit)}
+					className="space-y-4 px-4 py-5 sm:px-5"
+				>
 					<div className="grid gap-4 sm:grid-cols-2">
 						{dataKeys.map((key) => {
 							const sampleValue = sampleDoc?.data[key];
@@ -1554,18 +1535,20 @@ function PluginDocumentForm({
 												)
 											}
 											className={cn(
-												"relative h-5 w-9 rounded-full transition-colors",
-												currentValue ? "bg-primary" : "bg-muted",
+												"relative h-5 w-9 transition-colors",
+												currentValue ? "bg-accent" : "bg-[var(--line-strong)]",
 											)}
 										>
 											<span
 												className={cn(
-													"absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-background transition-transform",
-													!!currentValue && "translate-x-4",
+													"absolute left-0.5 top-0.5 h-4 w-4 transition-transform",
+													currentValue
+														? "translate-x-4 bg-on-accent"
+														: "bg-t6",
 												)}
 											/>
 										</button>
-										<span className="text-[13px] text-foreground">
+										<span className="text-[12px] text-t3">
 											{prettifyKey(key)}
 										</span>
 									</div>
@@ -1574,10 +1557,7 @@ function PluginDocumentForm({
 
 							return (
 								<div key={key}>
-									<label
-										htmlFor={`field_${key}`}
-										className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
-									>
+									<label htmlFor={`field_${key}`} className={FIELD_LABEL_CLS}>
 										{prettifyKey(key)}
 									</label>
 									<input
@@ -1587,10 +1567,13 @@ function PluginDocumentForm({
 										{...register(key as keyof FormValues, {
 											valueAsNumber: fieldType === "number",
 										})}
-										className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground placeholder:text-muted-foreground/50 transition-colors focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/50"
+										className={cn(
+											FIELD_INPUT_CLS,
+											fieldType === "number" && "tabular-nums",
+										)}
 									/>
 									{errors[key as keyof FormValues] && (
-										<p className="mt-1 text-[11px] text-destructive">
+										<p className={FIELD_ERROR_CLS}>
 											{String(errors[key as keyof FormValues]?.message)}
 										</p>
 									)}
@@ -1599,12 +1582,8 @@ function PluginDocumentForm({
 						})}
 					</div>
 
-					<div className="flex items-center gap-3 pt-2">
-						<button
-							type="submit"
-							disabled={isPending}
-							className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-[13px] font-medium text-background transition-colors hover:bg-primary/90 disabled:opacity-40"
-						>
+					<div className="flex items-center gap-2.5 pt-1">
+						<TermButton type="submit" variant="primary" disabled={isPending}>
 							{isPending ? (
 								<>
 									<Loader2 size={14} className="animate-spin" />
@@ -1613,17 +1592,13 @@ function PluginDocumentForm({
 							) : (
 								t("common.save")
 							)}
-						</button>
-						<button
-							type="button"
-							onClick={onClose}
-							className="rounded-lg border border-border bg-card px-4 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-						>
+						</TermButton>
+						<TermButton type="button" variant="ghost" onClick={onClose}>
 							{t("common.cancel")}
-						</button>
+						</TermButton>
 					</div>
 				</form>
 			)}
-		</div>
+		</Panel>
 	);
 }
