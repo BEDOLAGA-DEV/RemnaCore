@@ -48,6 +48,7 @@ type RouterParams struct {
 	RateLimiter           middleware.RateLimiter
 	AuthRateLimiters      *middleware.AuthRateLimiters
 	IdentityHandler       *handler.IdentityHandler
+	SetupHandler          *handler.SetupHandler
 	HealthHandler         *handler.HealthHandler
 	WebhookHandler        http.Handler `name:"remnawave_webhook"`
 	BillingHandler        *handler.BillingHandler
@@ -131,11 +132,22 @@ func NewRouter(p RouterParams) http.Handler {
 		p.AuthRateLimiters.ForgotPwdCfg,
 		"forgot_password",
 	)
+	// First-run admin setup reuses the login rate limiter (same sensitivity);
+	// the endpoint self-locks once the first admin exists.
+	setupRL := middleware.AuthRateLimit(
+		p.AuthRateLimiters.Login,
+		p.AuthRateLimiters.LoginCfg,
+		"setup",
+	)
 
 	// API routes — tenant middleware scoped to API only (not health/metrics).
 	r.Route("/api", func(api chi.Router) {
 		api.Use(middleware.TenantResolver(p.ResellerService))
 		api.Use(middleware.TenantRLS)
+		// First-run admin setup (public; self-locks after the first admin).
+		api.Get("/setup/status", p.SetupHandler.Status)
+		api.With(setupRL).Post("/setup/admin", p.SetupHandler.CreateAdmin)
+
 		// Public auth endpoints.
 		api.Post("/auth/register", p.IdentityHandler.Register)
 		api.With(loginRL).Post("/auth/login", p.IdentityHandler.Login)
