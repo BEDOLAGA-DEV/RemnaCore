@@ -1,89 +1,128 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "@tanstack/react-router";
-import { type ColumnDef } from "@tanstack/react-table";
-import { useAdminUsers, formatDate, cn, USER_ROLES } from "@remnacore/shared";
-import type { User } from "@remnacore/shared";
-import { DataTable } from "../../components/DataTable.js";
+import { useNavigate } from "@tanstack/react-router";
+import { useAdminUsers, formatDate, USER_ROLES } from "@remnacore/shared";
+import type { User, UserRole } from "@remnacore/shared";
+import {
+  PageHeader,
+  DataTable,
+  type Column,
+  StatusPill,
+  Segmented,
+  TermInput,
+  TermButton,
+} from "@/components/ui";
+
+type RoleFilter = "all" | UserRole;
 
 export function UsersPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [pagination, setPagination] = useState({ limit: 50, offset: 0 });
+  const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
+  const [search, setSearch] = useState("");
   const { data: users, isLoading } = useAdminUsers(pagination);
 
-  const columns: ColumnDef<User, unknown>[] = [
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return (users ?? []).filter((u) => {
+      if (roleFilter !== "all" && u.role !== roleFilter) return false;
+      if (term && !u.email.toLowerCase().includes(term)) return false;
+      return true;
+    });
+  }, [users, roleFilter, search]);
+
+  const roleOptions: { value: RoleFilter; label: string }[] = [
+    { value: "all", label: "ALL" },
+    { value: USER_ROLES.customer, label: USER_ROLES.customer.toUpperCase() },
+    { value: USER_ROLES.reseller, label: USER_ROLES.reseller.toUpperCase() },
+    { value: USER_ROLES.admin, label: USER_ROLES.admin.toUpperCase() },
+  ];
+
+  const columns: Column<User>[] = [
     {
-      accessorKey: "email",
+      key: "user",
       header: t("common.email"),
-      cell: ({ row }) => (
-        <Link
-          to="/users/$id"
-          params={{ id: row.original.id }}
-          className="font-medium text-primary hover:text-primary/80"
-        >
-          {row.original.email}
-        </Link>
+      render: (u) => (
+        <span className="flex items-center gap-2.5">
+          <span className="flex h-[26px] w-[26px] items-center justify-center border border-line bg-input text-[11px] uppercase text-accent">
+            {u.email.charAt(0)}
+          </span>
+          <span className="text-t2">{u.email}</span>
+        </span>
       ),
     },
     {
-      accessorKey: "role",
+      key: "role",
       header: t("admin.users.role"),
-      cell: ({ row }) => (
-        <span
-          className={cn(
-            "rounded-full px-2 py-0.5 font-mono text-[11px] font-medium",
-            row.original.role === USER_ROLES.admin
-              ? "bg-purple-500/10 text-purple-500"
-              : row.original.role === USER_ROLES.reseller
-                ? "bg-blue-500/10 text-blue-500"
-                : "bg-muted text-muted-foreground",
-          )}
-        >
-          {row.original.role}
-        </span>
+      render: (u) => (
+        <span className="uppercase tracking-[0.5px] text-t5">{u.role}</span>
       ),
     },
     {
-      accessorKey: "email_verified",
-      header: t("admin.users.emailVerified"),
-      cell: ({ row }) => (
-        <span
-          className={cn(
-            "font-mono text-[11px]",
-            row.original.email_verified
-              ? "text-green-500"
-              : "text-muted-foreground",
-          )}
-        >
-          {row.original.email_verified ? t("common.yes") : t("common.no")}
-        </span>
-      ),
+      key: "status",
+      header: t("common.status"),
+      render: (u) =>
+        u.email_verified ? (
+          <StatusPill label="VERIFIED" tone="ok" />
+        ) : (
+          <StatusPill label="UNVERIFIED" tone="muted" />
+        ),
     },
     {
-      accessorKey: "created_at",
+      key: "created",
       header: t("common.createdAt"),
-      cell: ({ row }) => (
-        <span className="font-mono text-[11px] text-muted-foreground">
-          {formatDate(row.original.created_at)}
+      render: (u) => (
+        <span className="tabular-nums text-t5">
+          {formatDate(u.created_at)}
         </span>
       ),
+    },
+    {
+      key: "actions",
+      header: "",
+      align: "right",
+      render: () => <span className="text-t7">⋯</span>,
     },
   ];
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-[15px] font-semibold text-foreground">
-          {t("admin.users.title")}
-        </h1>
+    <div className="space-y-3.5">
+      <PageHeader
+        title="USERS"
+        breadcrumb="REMNAWAVE PROVIDER / CUSTOMERS"
+      />
+
+      <div className="flex flex-wrap items-center gap-2.5">
+        <Segmented
+          value={roleFilter}
+          options={roleOptions}
+          onChange={setRoleFilter}
+        />
+        <div className="flex-1" />
+        <div className="min-w-[240px]">
+          <TermInput
+            type="search"
+            placeholder={t("common.search").toUpperCase()}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
       </div>
 
-      <DataTable data={users ?? []} columns={columns} isLoading={isLoading} />
+      <DataTable<User>
+        columns={columns}
+        rows={isLoading ? [] : filtered}
+        cols="1.6fr .8fr .9fr 1fr 40px"
+        rowKey={(u) => u.id}
+        onRowClick={(u) => navigate({ to: "/users/$id", params: { id: u.id } })}
+        empty={isLoading ? t("common.loading").toUpperCase() : "NO USERS"}
+      />
 
-      {/* Simple pagination */}
       <div className="flex items-center justify-end gap-2">
-        <button
+        <TermButton
           type="button"
+          variant="ghost"
           onClick={() =>
             setPagination((p) => ({
               ...p,
@@ -91,20 +130,19 @@ export function UsersPage() {
             }))
           }
           disabled={pagination.offset === 0}
-          className="rounded-lg border border-border bg-card px-3 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-40"
         >
           {t("common.back")}
-        </button>
-        <button
+        </TermButton>
+        <TermButton
           type="button"
+          variant="ghost"
           onClick={() =>
             setPagination((p) => ({ ...p, offset: p.offset + p.limit }))
           }
           disabled={(users?.length ?? 0) < pagination.limit}
-          className="rounded-lg border border-border bg-card px-3 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-40"
         >
           {t("common.next")}
-        </button>
+        </TermButton>
       </div>
     </div>
   );

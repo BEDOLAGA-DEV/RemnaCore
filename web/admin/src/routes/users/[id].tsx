@@ -1,7 +1,26 @@
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "@tanstack/react-router";
-import { ArrowLeft, Mail, Shield, Calendar, User } from "lucide-react";
-import { useAdminUser, LoadingSpinner, formatDate, cn } from "@remnacore/shared";
+import { ArrowLeft } from "lucide-react";
+import { useAdminUser, LoadingSpinner, formatDate } from "@remnacore/shared";
+import {
+  PageHeader,
+  Panel,
+  PanelHeader,
+  StatusPill,
+  TermButton,
+} from "@/components/ui";
+
+function Row({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 border-b border-line px-4 py-3 last:border-b-0">
+      <span className="text-[9px] uppercase tracking-[1.5px] text-t7">
+        {label}
+      </span>
+      <span className="text-right text-[12px] text-t2">{children}</span>
+    </div>
+  );
+}
 
 export function UserDetailPage() {
   const { t } = useTranslation();
@@ -12,92 +31,73 @@ export function UserDetailPage() {
 
   if (!user) {
     return (
-      <div className="text-center py-12">
-        <p className="text-[12px] text-red-500">{t("common.error")}</p>
+      <div className="py-12 text-center text-[11px] uppercase tracking-[1px] text-danger">
+        {t("common.error")}
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <Link
-        to="/users"
-        className="text-[13px] text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-1.5"
-      >
-        <ArrowLeft size={14} />
-        {t("common.back")}
-      </Link>
+    <div className="space-y-3.5">
+      <PageHeader
+        title={user.email}
+        breadcrumb="REMNAWAVE PROVIDER / CUSTOMERS / DETAIL"
+        right={
+          <Link to="/users">
+            <TermButton type="button" variant="ghost">
+              <ArrowLeft size={14} />
+              {t("common.back")}
+            </TermButton>
+          </Link>
+        }
+      />
 
-      <div className="rounded-xl border border-border bg-card p-6">
-        <h1 className="text-[18px] font-semibold text-foreground">
-          {user.email}
-        </h1>
-
-        <div className="mt-6 grid gap-5 sm:grid-cols-2">
-          <div className="flex items-center gap-3">
-            <Mail size={16} className="shrink-0 text-muted-foreground" />
-            <div>
-              <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
-                {t("admin.users.emailVerified")}
-              </p>
-              <p
-                className={cn(
-                  "font-mono text-[13px] font-medium",
-                  user.email_verified ? "text-green-500" : "text-red-500",
-                )}
-              >
-                {user.email_verified ? t("common.yes") : t("common.no")}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Shield size={16} className="shrink-0 text-muted-foreground" />
-            <div>
-              <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
-                {t("admin.users.role")}
-              </p>
-              <p className="font-mono text-[13px] text-foreground">
+      <div className="grid gap-3.5 md:grid-cols-2">
+        <Panel>
+          <PanelHeader title={t("common.details")} />
+          <div>
+            <Row label={t("common.email")}>
+              <span className="text-t2">{user.email}</span>
+            </Row>
+            <Row label={t("admin.users.emailVerified")}>
+              {user.email_verified ? (
+                <StatusPill label="VERIFIED" tone="ok" />
+              ) : (
+                <StatusPill label="UNVERIFIED" tone="muted" />
+              )}
+            </Row>
+            <Row label={t("admin.users.role")}>
+              <span className="uppercase tracking-[0.5px] text-t4">
                 {user.role}
-              </p>
-            </div>
+              </span>
+            </Row>
+            <Row label={t("profile.displayName")}>
+              {user.display_name ?? "—"}
+            </Row>
+            {user.telegram_id != null && (
+              <Row label="TELEGRAM ID">
+                <span className="tabular-nums">{user.telegram_id}</span>
+              </Row>
+            )}
           </div>
+        </Panel>
 
-          <div className="flex items-center gap-3">
-            <Calendar size={16} className="shrink-0 text-muted-foreground" />
-            <div>
-              <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
-                {t("common.createdAt")}
-              </p>
-              <p className="font-mono text-[13px] text-foreground">
-                {formatDate(user.created_at)}
-              </p>
-            </div>
+        <Panel>
+          <PanelHeader title="METADATA" />
+          <div>
+            <Row label="ID">
+              <span className="font-mono text-[11px] tabular-nums text-t5">
+                {user.id}
+              </span>
+            </Row>
+            <Row label={t("common.createdAt")}>
+              <span className="tabular-nums">{formatDate(user.created_at)}</span>
+            </Row>
+            <Row label={t("common.updatedAt")}>
+              <span className="tabular-nums">{formatDate(user.updated_at)}</span>
+            </Row>
           </div>
-
-          {user.display_name && (
-            <div className="flex items-center gap-3">
-              <User size={16} className="shrink-0 text-muted-foreground" />
-              <div>
-                <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
-                  {t("profile.displayName")}
-                </p>
-                <p className="text-[13px] text-foreground">
-                  {user.display_name}
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="mt-6 rounded-lg bg-secondary p-3">
-          <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
-            ID
-          </p>
-          <p className="mt-1 font-mono text-[12px] text-muted-foreground">
-            {user.id}
-          </p>
-        </div>
+        </Panel>
       </div>
     </div>
   );
