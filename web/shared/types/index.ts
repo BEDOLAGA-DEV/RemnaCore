@@ -351,6 +351,18 @@ export type ActivityListResponse = {
   activity: ActivityEntry[];
 };
 
+export type MetricsSample = {
+  captured_at: string; // ISO timestamp
+  active_users: number;
+  active_subs: number;
+  mrr_cents: number;
+  total_subs: number;
+};
+
+export type MetricsHistoryResponse = {
+  samples: MetricsSample[];
+};
+
 // ─── Remnawave ────────────────────────────────────────────────────────────────
 
 export type RemnawaveOverview = {

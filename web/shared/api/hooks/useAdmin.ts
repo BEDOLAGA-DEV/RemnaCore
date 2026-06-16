@@ -10,6 +10,7 @@ import type {
   PaginationParams,
   AdminMetrics,
   ActivityListResponse,
+  MetricsHistoryResponse,
 } from "../../types/index.js";
 
 export function useAdminUsers(params?: PaginationParams) {
@@ -144,6 +145,18 @@ export function useAdminActivity(limit = DEFAULT_ACTIVITY_LIMIT) {
     queryKey: ["admin", "activity", limit] as const,
     queryFn: () =>
       apiGet<ActivityListResponse>(ENDPOINTS.admin.activity, { limit }),
+    staleTime: STATS_STALE_TIME_MS,
+    refetchInterval: STATS_STALE_TIME_MS,
+  });
+}
+
+const DEFAULT_HISTORY_HOURS = 24;
+
+export function useMetricsHistory(hours = DEFAULT_HISTORY_HOURS) {
+  return useQuery({
+    queryKey: ["admin", "metrics", "history", hours] as const,
+    queryFn: () =>
+      apiGet<MetricsHistoryResponse>(ENDPOINTS.admin.history, { hours }),
     staleTime: STATS_STALE_TIME_MS,
     refetchInterval: STATS_STALE_TIME_MS,
   });

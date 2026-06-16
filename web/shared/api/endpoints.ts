@@ -103,6 +103,7 @@ export const ENDPOINTS = {
     settings: "/api/admin/settings",
     stats: "/api/admin/stats",
     metrics: "/api/admin/metrics",
+    history: "/api/admin/metrics/history",
     activity: "/api/admin/activity",
   },
 

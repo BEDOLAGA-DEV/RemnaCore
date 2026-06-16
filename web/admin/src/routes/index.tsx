@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import {
   useAdminStats,
   useAdminMetrics,
+  useMetricsHistory,
   useAdminActivity,
   useAdminSubscriptions,
   useRemnawaveOverview,
@@ -30,6 +31,8 @@ import {
   Bar,
   PulseDot,
   DataTable,
+  Sparkline,
+  AreaChart,
 } from "../components/ui/index.js";
 import type { Tone, Column } from "../components/ui/index.js";
 
@@ -110,6 +113,15 @@ export function AdminDashboardPage() {
 
   const { data: serverStats, isLoading: statsLoading } = useAdminStats();
   const { data: metrics, isLoading: metricsLoading } = useAdminMetrics();
+  const { data: history } = useMetricsHistory(24);
+  // Per-metric number[] series (ascending time) for sparklines + trend chart.
+  const series = useMemo(
+    () => ({
+      mrr: history?.samples.map((s) => s.mrr_cents) ?? [],
+      activeSubs: history?.samples.map((s) => s.active_subs) ?? [],
+    }),
+    [history],
+  );
   const { data: activity } = useAdminActivity();
   const { data: subs, isLoading: subsLoading } = useAdminSubscriptions({
     limit: PAGINATION_DEFAULTS.maxLimit,
@@ -280,6 +292,11 @@ export function AdminDashboardPage() {
           label="MRR"
           value={formatMoney(metrics?.mrr_cents ?? 0)}
           dot="var(--accent)"
+          foot={
+            series.mrr.length >= 2 ? (
+              <Sparkline data={series.mrr} color="var(--accent)" />
+            ) : undefined
+          }
         />
         <StatCell
           label="ARPU"
@@ -294,8 +311,34 @@ export function AdminDashboardPage() {
         <StatCell
           label="SUBS TODAY"
           value={(metrics?.subs_today ?? 0).toLocaleString()}
+          foot={
+            series.activeSubs.length >= 2 ? (
+              <Sparkline data={series.activeSubs} color="var(--accent)" />
+            ) : undefined
+          }
         />
       </KpiGrid>
+
+      {/* MRR trend — fills forward as the collector accumulates hourly samples */}
+      <Panel scanline>
+        <PanelHeader
+          title="MRR TREND"
+          right={
+            <span className="text-[9px] uppercase tracking-[1px] text-t7">
+              LAST 24H
+            </span>
+          }
+        />
+        <div className="px-4 py-5">
+          {series.mrr.length >= 2 ? (
+            <AreaChart data={series.mrr} />
+          ) : (
+            <div className="py-8 text-center text-[11px] uppercase tracking-[2px] text-t7">
+              NO DATA YET — COLLECTING HOURLY
+            </div>
+          )}
+        </div>
+      </Panel>
 
       {/* Remnawave widget cluster — gated on plugin enabled + data present */}
       {showRemnawaveCluster && (

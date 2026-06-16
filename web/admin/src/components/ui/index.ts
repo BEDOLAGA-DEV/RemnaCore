@@ -9,3 +9,4 @@ export * from "./TermInput.js";
 export * from "./DataTable.js";
 export * from "./Kpi.js";
 export * from "./Sparkline.js";
+export * from "./AreaChart.js";
