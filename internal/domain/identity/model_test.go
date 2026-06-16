@@ -156,9 +156,9 @@ func TestPlatformUser_ChangePassword(t *testing.T) {
 
 func TestPlatformUser_LinkTelegram(t *testing.T) {
 	tests := []struct {
-		name       string
-		existing   *int64
-		wantErr    error
+		name     string
+		existing *int64
+		wantErr  error
 	}{
 		{
 			name:     "link when none linked",

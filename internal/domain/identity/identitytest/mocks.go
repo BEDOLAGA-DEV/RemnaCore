@@ -3,9 +3,9 @@ package identitytest
 import (
 	"context"
 
-	"github.com/stretchr/testify/mock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent/domaineventtest"
+	"github.com/stretchr/testify/mock"
 )
 
 // MockPublisher is an alias for the shared domaineventtest.MockPublisher.
@@ -155,4 +155,3 @@ func (m *MockRepository) DeleteExpiredPasswordResets(ctx context.Context) (int64
 	args := m.Called(ctx)
 	return args.Get(0).(int64), args.Error(1)
 }
-

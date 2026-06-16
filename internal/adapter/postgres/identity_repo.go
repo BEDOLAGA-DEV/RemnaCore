@@ -105,7 +105,6 @@ func rowToEmailVerification(row gen.IdentityEmailVerification) *identity.EmailVe
 	}
 }
 
-
 // ---------------------------------------------------------------------------
 // Repository interface implementation
 // ---------------------------------------------------------------------------

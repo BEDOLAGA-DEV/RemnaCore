@@ -72,10 +72,10 @@ var NewService = service.NewService
 // --- Event factory aliases (backward compatibility) ---
 
 var (
-	NewUserLoggedInEvent          = service.NewUserLoggedInEvent
-	NewTokenRefreshedEvent        = service.NewTokenRefreshedEvent
+	NewUserLoggedInEvent           = service.NewUserLoggedInEvent
+	NewTokenRefreshedEvent         = service.NewTokenRefreshedEvent
 	NewPasswordResetRequestedEvent = service.NewPasswordResetRequestedEvent
-	NewPasswordResetEvent         = service.NewPasswordResetEvent
+	NewPasswordResetEvent          = service.NewPasswordResetEvent
 )
 
 // EventPublisher is an alias for the shared domainevent.Publisher so that
