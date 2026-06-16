@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/fx"
@@ -18,6 +19,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/rbac"
 	identityservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
@@ -50,9 +52,24 @@ var identityWiring = fx.Options(
 		return identityservice.NewMetricsCollector(pool, clk, logger)
 	}),
 
+	// RBAC repository (interface + impl)
+	fx.Provide(postgres.NewRBACRepository),
+	fx.Provide(func(repo *postgres.RBACRepository) rbac.Repository { return repo }),
+
+	// Access service — per-request permission resolution + cache.
+	fx.Provide(func(repo rbac.Repository) *identityservice.AccessService {
+		return identityservice.NewAccessService(repo, time.Now, identityservice.AccessCacheTTL)
+	}),
+
+	// RBAC catalog boot sync — idempotent upsert + legacy-role backfill.
+	fx.Provide(func(repo rbac.Repository, txRunner txmanager.Runner) *identityservice.RBACCatalogSync {
+		return identityservice.NewRBACCatalogSync(repo, txRunner)
+	}),
+
 	// Lifecycle hooks
 	fx.Invoke(startIdentityCleanup),
 	fx.Invoke(startMetricsCollector),
+	fx.Invoke(startRBACSync),
 
 	// Bindings: interface -> implementation (identity)
 	fx.Provide(postgres.NewIdentityRepository),
@@ -182,6 +199,17 @@ func startMetricsCollector(lc fx.Lifecycle, collector *identityservice.MetricsCo
 				},
 			})
 			return nil
+		},
+	})
+}
+
+// startRBACSync runs the idempotent RBAC catalog sync once at startup, before
+// the server accepts traffic, so permissions/roles exist for authorization.
+func startRBACSync(lc fx.Lifecycle, sync *identityservice.RBACCatalogSync, logger *slog.Logger) {
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			logger.Info("running RBAC catalog sync")
+			return sync.Run(ctx)
 		},
 	})
 }
