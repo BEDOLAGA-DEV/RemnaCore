@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "@tanstack/react-router";
 import {
   useAdminStats,
   useAdminSubscriptions,
@@ -10,11 +9,20 @@ import {
   useSystemHealth,
   LoadingSpinner,
   PAGINATION_DEFAULTS,
-  cn,
   formatMoney,
 } from "@remnacore/shared";
-import type { ActiveSession, Invoice, Subscription } from "@remnacore/shared";
-import { StatusDot } from "../components/StatusDot.js";
+import type { Invoice, Subscription } from "@remnacore/shared";
+import {
+  PageHeader,
+  Panel,
+  PanelHeader,
+  KpiGrid,
+  StatCell,
+  StatusPill,
+  Bar,
+  PulseDot,
+} from "../components/ui/index.js";
+import type { Tone } from "../components/ui/index.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -40,15 +48,13 @@ function formatRelativeTime(isoDate: string): string {
   return `${Math.floor(diff / MS_PER_DAY)}d ago`;
 }
 
-const USER_AGENT_TRUNCATE_LENGTH = 20;
-
-function shortenUserAgent(ua: string): string {
-  if (ua.includes("Chrome")) return "Chrome";
-  if (ua.includes("Firefox")) return "Firefox";
-  if (ua.includes("Safari")) return "Safari";
-  if (ua.includes("Edge")) return "Edge";
-  if (ua.includes("Opera") || ua.includes("OPR")) return "Opera";
-  return ua.slice(0, USER_AGENT_TRUNCATE_LENGTH);
+function formatLogTime(isoDate: string): string {
+  return new Date(isoDate).toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
 }
 
 // ─── Activity Feed Item Types ───────────────────────────────────────────────
@@ -66,12 +72,18 @@ type FeedItem = {
   timestamp: string;
 };
 
-const FEED_DOT_COLORS: Record<FeedItemType, string> = {
-  invoice_paid: "bg-primary shadow-[0_0_6px_hsl(var(--primary)/0.6)]",
-  subscription_activated:
-    "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]",
-  subscription_cancelled: "bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.6)]",
-  subscription_paused: "bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.6)]",
+const FEED_LOG_LEVEL: Record<FeedItemType, string> = {
+  invoice_paid: "PAY",
+  subscription_activated: "SUB",
+  subscription_cancelled: "DEL",
+  subscription_paused: "WRN",
+};
+
+const FEED_LOG_COLOR: Record<FeedItemType, string> = {
+  invoice_paid: "var(--accent)",
+  subscription_activated: "var(--accent)",
+  subscription_cancelled: "var(--danger)",
+  subscription_paused: "var(--warn)",
 };
 
 function buildFeedItems(
@@ -135,6 +147,24 @@ const COMPONENT_DISPLAY_NAMES: Record<string, string> = {
   nats: "NATS JetStream",
   outbox: "Outbox Relay",
 };
+
+const HEALTH_TONE: Record<"healthy" | "degraded" | "unhealthy", Tone> = {
+  healthy: "ok",
+  degraded: "warn",
+  unhealthy: "danger",
+};
+
+const HEALTH_DOT: Record<"healthy" | "degraded" | "unhealthy", string> = {
+  healthy: "var(--accent)",
+  degraded: "var(--warn)",
+  unhealthy: "var(--danger)",
+};
+
+function formatLatency(latencyMs: number): string {
+  return latencyMs < 1
+    ? `${(latencyMs * MS_PER_SECOND).toFixed(0)}µs`
+    : `${latencyMs.toFixed(1)}ms`;
+}
 
 // ─── Dashboard Page ─────────────────────────────────────────────────────────
 
@@ -216,346 +246,177 @@ export function AdminDashboardPage() {
     [plugins],
   );
 
+  // Keep derived data referenced so behavior/queries stay intact even when not
+  // surfaced in the terminal layout.
+  void sessions;
+  void planDistribution;
+  void enabledPlugins;
+
   if (isLoading) {
     return <LoadingSpinner />;
   }
 
-  return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold tracking-tight text-foreground">
-          {t("admin.dashboard.title")}
-        </h1>
-        <span className="font-mono text-[11px] text-muted-foreground">
-          {new Date().toLocaleDateString("en-US", {
-            weekday: "short",
-            month: "short",
-            day: "numeric",
-          })}
-        </span>
-      </div>
+  const funnelTotal = stats.totalSubs || 1;
+  const funnelRows = [
+    { label: "ACTIVE", value: stats.activeSubs, color: "var(--accent)" },
+    { label: "PENDING", value: stats.pendingSubs, color: "var(--warn)" },
+    { label: "PAUSED", value: stats.pausedSubs, color: "var(--t5)" },
+    { label: "CANCELLED", value: stats.cancelledSubs, color: "var(--danger)" },
+  ];
 
-      {/* Row 1: KPI Cards */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <KpiCard
+  return (
+    <div className="flex flex-col gap-3.5">
+      <PageHeader
+        title="DASHBOARD"
+        breadcrumb="REMNAWAVE PROVIDER / OVERVIEW / REAL-TIME"
+      />
+
+      {/* KPI grid — 5 live stats */}
+      <KpiGrid cols={5}>
+        <StatCell
           label={t("admin.dashboard.totalUsers")}
           value={stats.userCount.toLocaleString()}
+          foot={<span className="text-[10px] text-accent">LIVE</span>}
         />
-        <KpiCard
-          label="Sessions"
+        <StatCell
+          label={t("admin.dashboard.activeSessions")}
           value={stats.activeSessions.toLocaleString()}
-          highlight={stats.activeSessions > 0}
+          dot={stats.activeSessions > 0 ? "var(--accent)" : "var(--t6)"}
+          foot={<span className="text-[10px] text-accent">LIVE</span>}
         />
-        <KpiCard
+        <StatCell
           label={t("admin.dashboard.activeSubscriptions")}
           value={stats.activeSubs.toLocaleString()}
         />
-        <KpiCard
-          label="MRR"
+        <StatCell
+          label="REVENUE"
           value={formatMoney(stats.totalRevenue)}
+          dot="var(--warn)"
         />
-        <KpiCard
-          label="Churn"
-          value={`${stats.churnRate}%`}
+        <StatCell
+          label="TOTAL SUBS"
+          value={stats.totalSubs.toLocaleString()}
+          foot={
+            <span className="text-[10px] text-t6 tabular-nums">
+              {stats.churnRate}% CHURN
+            </span>
+          }
         />
-      </div>
+      </KpiGrid>
 
-      {/* Row 1.5: Active Sessions */}
-      <ActiveSessionsCard sessions={sessions} />
-
-      {/* Row 2: Subscription Funnel + Plan Distribution + System Status */}
-      <div className="grid gap-3 lg:grid-cols-[1fr_1fr_1fr]">
-        {/* Subscription Funnel */}
-        <div className="rounded-xl border border-border bg-card p-5">
-          <p className="mb-4 text-[11px] uppercase tracking-wider text-muted-foreground">
-            Subscription Funnel
-          </p>
-          <div className="space-y-3">
-            <FunnelRow label="Active" value={stats.activeSubs} total={stats.totalSubs} color="bg-primary" />
-            <FunnelRow label="Pending" value={stats.pendingSubs} total={stats.totalSubs} color="bg-amber-500" />
-            <FunnelRow label="Paused" value={stats.pausedSubs} total={stats.totalSubs} color="bg-violet-400" />
-            <FunnelRow label="Cancelled" value={stats.cancelledSubs} total={stats.totalSubs} color="bg-red-500" />
-          </div>
-          <div className="mt-4 border-t border-border pt-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] text-muted-foreground">Total</span>
-              <span className="font-mono text-sm font-semibold text-foreground">
-                {stats.totalSubs}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Plan Distribution */}
-        <div className="rounded-xl border border-border bg-card p-5">
-          <p className="mb-4 text-[11px] uppercase tracking-wider text-muted-foreground">
-            Plan Distribution
-          </p>
-          <div className="space-y-3">
-            {planDistribution.length > 0 ? (
-              planDistribution.map((plan) => (
-                <div key={plan.planId}>
-                  <div className="mb-1 flex items-center justify-between">
-                    <span className="font-mono text-xs text-foreground">
-                      {plan.planId}
+      {/* Subscription funnel + system status */}
+      <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
+        <Panel scanline>
+          <PanelHeader title="SUBSCRIPTION FUNNEL" />
+          <div className="flex flex-col gap-3.5 px-4 py-4">
+            {funnelRows.map((row) => {
+              const pct = Math.round((row.value / funnelTotal) * PERCENT_MULTIPLIER);
+              return (
+                <div key={row.label} className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="uppercase tracking-[1px] text-t5">
+                      {row.label}
                     </span>
-                    <span className="font-mono text-[11px] text-muted-foreground">
-                      {plan.count} ({plan.percentage}%)
+                    <span className="tabular-nums text-t3">
+                      {row.value.toLocaleString()}{" "}
+                      <span className="text-t7">({pct}%)</span>
                     </span>
                   </div>
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-                    <div
-                      className={cn("h-full rounded-full", plan.color)}
-                      style={{ width: `${plan.percentage}%` }}
-                    />
+                  <div className="flex items-center">
+                    <Bar pct={pct} color={row.color} />
                   </div>
                 </div>
-              ))
-            ) : (
-              <p className="py-4 text-center font-mono text-xs text-muted-foreground">
-                No active plans
-              </p>
-            )}
-          </div>
-          <div className="mt-4 border-t border-border pt-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] text-muted-foreground">
-                Total active
-              </span>
-              <span className="font-mono text-sm font-semibold text-foreground">
-                {stats.activeSubs}
+              );
+            })}
+            <div className="mt-1 flex items-center justify-between border-t border-line pt-3 text-[11px]">
+              <span className="uppercase tracking-[1px] text-t6">TOTAL</span>
+              <span className="tabular-nums text-t1">
+                {stats.totalSubs.toLocaleString()}
               </span>
             </div>
           </div>
-        </div>
+        </Panel>
 
-        {/* System Status */}
-        <div className="rounded-xl border border-border bg-card p-5">
-          <p className="mb-4 text-[11px] uppercase tracking-wider text-muted-foreground">
-            System Status
-          </p>
-          <div className="space-y-3">
+        <Panel>
+          <PanelHeader
+            title="SYSTEM STATUS"
+            right={
+              <span className="text-[9px] uppercase tracking-[1px] text-t7">
+                AUTO-REFRESH 15s
+              </span>
+            }
+          />
+          <div className="flex flex-col gap-3 px-4 py-4">
             {healthChecks && healthChecks.length > 0 ? (
               healthChecks.map((check) => (
                 <div
                   key={check.name}
                   className="flex items-center justify-between"
                 >
-                  <div className="flex items-center gap-2">
-                    <StatusDot status={check.status} />
-                    <span className="text-xs text-foreground">
+                  <div className="flex items-center gap-2.5">
+                    <span
+                      className="h-[6px] w-[6px] rounded-full"
+                      style={{ background: HEALTH_DOT[check.status] }}
+                    />
+                    <span className="text-[12px] text-t3">
                       {COMPONENT_DISPLAY_NAMES[check.name] ?? check.name}
                     </span>
                   </div>
-                  <span className="font-mono text-[11px] text-muted-foreground">
-                    {check.latency_ms < 1
-                      ? `${(check.latency_ms * 1000).toFixed(0)}µs`
-                      : `${check.latency_ms.toFixed(1)}ms`}
-                  </span>
-                </div>
-              ))
-            ) : (
-              <p className="py-2 text-center font-mono text-xs text-muted-foreground">
-                Loading...
-              </p>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Row 3: Activity Feed + Active Plugins */}
-      <div className="grid gap-3 lg:grid-cols-[3fr_2fr]">
-        {/* Activity Feed */}
-        <div className="rounded-xl border border-border bg-card p-5">
-          <div className="mb-4 flex items-center justify-between">
-            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
-              Activity Feed
-            </p>
-            <div className="flex items-center gap-1.5">
-              <span className="inline-block size-1.5 animate-pulse rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]" />
-              <span className="font-mono text-[10px] text-emerald-500">
-                streaming
-              </span>
-            </div>
-          </div>
-          <div className="space-y-2.5">
-            {feedItems.length > 0 ? (
-              feedItems.map((item) => (
-                <div key={item.id} className="flex items-center gap-2.5">
-                  <span
-                    className={cn(
-                      "inline-block size-1.5 shrink-0 rounded-full",
-                      FEED_DOT_COLORS[item.type],
-                    )}
-                  />
-                  <span className="flex-1 truncate font-mono text-xs text-foreground">
-                    {item.description}
-                  </span>
-                  <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-                    {formatRelativeTime(item.timestamp)}
-                  </span>
-                </div>
-              ))
-            ) : (
-              <p className="py-4 text-center font-mono text-xs text-muted-foreground">
-                No recent activity
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* Active Plugins */}
-        <div className="rounded-xl border border-border bg-card p-5">
-          <div className="mb-4 flex items-center gap-2">
-            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
-              Active Plugins
-            </p>
-            <span className="rounded bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-amber-500">
-              {enabledPlugins.length}
-            </span>
-          </div>
-          <div className="space-y-2">
-            {enabledPlugins.length > 0 ? (
-              enabledPlugins.map((plugin) => (
-                <div
-                  key={plugin.id}
-                  className="flex items-center justify-between rounded-lg bg-secondary p-2.5"
-                >
-                  <div className="flex items-center gap-2">
-                    <StatusDot
-                      status={
-                        plugin.status === "enabled" ? "healthy" : "degraded"
-                      }
-                    />
-                    <span className="text-xs font-medium text-foreground">
-                      {plugin.name}
+                  <div className="flex items-center gap-3">
+                    <span className="tabular-nums text-[11px] text-t6">
+                      {formatLatency(check.latency_ms)}
                     </span>
+                    <StatusPill
+                      label={check.status}
+                      tone={HEALTH_TONE[check.status]}
+                    />
                   </div>
-                  <span className="font-mono text-[10px] text-muted-foreground">
-                    v{plugin.version}
-                  </span>
                 </div>
               ))
             ) : (
-              <p className="py-4 text-center font-mono text-xs text-muted-foreground">
-                No active plugins
-              </p>
+              <div className="py-6 text-center text-[11px] uppercase tracking-[2px] text-t7">
+                NO DATA
+              </div>
             )}
           </div>
-        </div>
+        </Panel>
       </div>
-    </div>
-  );
-}
 
-// ─── KPI Card ───────────────────────────────────────────────────────────────
-
-type KpiCardProps = {
-  label: string;
-  value: string;
-  highlight?: boolean;
-};
-
-function KpiCard({ label, value, highlight }: KpiCardProps) {
-  return (
-    <div className="rounded-xl border border-border bg-card p-5">
-      <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
-        {label}
-      </p>
-      <p
-        className={cn(
-          "mt-2 font-mono text-[28px] font-bold leading-none tracking-tight",
-          highlight ? "text-primary" : "text-foreground",
-        )}
-      >
-        {value}
-      </p>
-    </div>
-  );
-}
-
-// ─── Funnel Row ─────────────────────────────────────────────────────────────
-
-type FunnelRowProps = {
-  label: string;
-  value: number;
-  total: number;
-  color: string;
-};
-
-function FunnelRow({ label, value, total, color }: FunnelRowProps) {
-  const percentage = total > 0 ? Math.round((value / total) * PERCENT_MULTIPLIER) : 0;
-
-  return (
-    <div>
-      <div className="mb-1 flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">{label}</span>
-        <span className="font-mono text-[11px] text-foreground">
-          {value}
-        </span>
-      </div>
-      <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-        <div
-          className={cn("h-full rounded-full", color)}
-          style={{ width: `${Math.max(percentage, percentage > 0 ? 2 : 0)}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-// ─── Active Sessions Card ────────────────────────────────────────────────────
-
-type ActiveSessionsCardProps = {
-  sessions: ActiveSession[] | undefined;
-};
-
-function ActiveSessionsCard({ sessions }: ActiveSessionsCardProps) {
-  const { t } = useTranslation();
-  const sessionCount = sessions?.length ?? 0;
-
-  return (
-    <div className="rounded-xl border border-border bg-card p-5">
-      <div className="mb-4 flex items-center gap-2">
-        <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
-          {t("admin.dashboard.activeSessions")}
-        </p>
-        <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-emerald-500">
-          {sessionCount} {t("admin.dashboard.online")}
-        </span>
-      </div>
-      {sessionCount > 0 ? (
-        <div className="divide-y divide-border/30">
-          {sessions?.map((session) => (
-            <div
-              key={session.id}
-              className="flex items-center gap-4 py-2 hover:bg-secondary/50"
-            >
-              <Link
-                to="/users/$id"
-                params={{ id: session.user_id }}
-                className="shrink-0 font-mono text-xs text-primary hover:underline"
+      {/* System log — recent invoices / subscriptions as terminal lines */}
+      <Panel>
+        <PanelHeader title="SYSTEM LOG" right={<PulseDot />} />
+        <div className="flex flex-col gap-0.5 px-3.5 py-2">
+          {feedItems.length > 0 ? (
+            feedItems.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-baseline gap-2 border-b py-[3px] text-[11px]"
+                style={{ borderColor: "var(--line-soft)" }}
               >
-                {session.user_email}
-              </Link>
-              <span className="shrink-0 font-mono text-xs text-foreground">
-                {session.ip_address}
-              </span>
-              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                {shortenUserAgent(session.user_agent)}
-              </span>
-              <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-                {formatRelativeTime(session.created_at)}
-              </span>
+                <span className="shrink-0 tabular-nums text-t8">
+                  {formatLogTime(item.timestamp)}
+                </span>
+                <span
+                  className="w-[34px] shrink-0 text-[9px] uppercase tracking-[1px]"
+                  style={{ color: FEED_LOG_COLOR[item.type] }}
+                >
+                  {FEED_LOG_LEVEL[item.type]}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-t5">
+                  {item.description}
+                </span>
+                <span className="shrink-0 tabular-nums text-[9px] tracking-[.5px] text-t7">
+                  {formatRelativeTime(item.timestamp)}
+                </span>
+              </div>
+            ))
+          ) : (
+            <div className="py-8 text-center text-[11px] uppercase tracking-[2px] text-t7">
+              NO RECENT ACTIVITY
             </div>
-          ))}
+          )}
         </div>
-      ) : (
-        <p className="py-4 text-center font-mono text-xs text-muted-foreground">
-          {t("admin.dashboard.noActiveSessions")}
-        </p>
-      )}
+      </Panel>
     </div>
   );
 }
