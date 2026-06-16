@@ -25,7 +25,7 @@ set -euo pipefail
 MIGRATIONS_DIR="${MIGRATIONS_DIR:-internal/adapter/postgres/migrations}"
 # Highest migration that shipped before the ledger was introduced. One-time
 # adoption marker — irrelevant once the ledger is populated.
-BASELINE_THROUGH="${BASELINE_THROUGH:-036}"
+BASELINE_THROUGH="${BASELINE_THROUGH:-037}"
 PSQL="${PSQL:-psql ${DATABASE_URL:?set DATABASE_URL or PSQL} -v ON_ERROR_STOP=1}"
 
 q() { $PSQL -tAqc "$1" | tr -d '[:space:]'; }
