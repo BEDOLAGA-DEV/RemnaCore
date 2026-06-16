@@ -1,7 +1,6 @@
 import type { Config } from "tailwindcss";
 
 export default {
-  darkMode: "class",
   content: [
     "./index.html",
     "./src/**/*.{ts,tsx}",
@@ -10,54 +9,53 @@ export default {
   theme: {
     extend: {
       colors: {
-        border: "hsl(var(--border))",
-        input: "hsl(var(--input))",
-        ring: "hsl(var(--ring))",
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
-        primary: {
-          DEFAULT: "hsl(var(--primary))",
-          foreground: "hsl(var(--primary-foreground))",
-        },
-        secondary: {
-          DEFAULT: "hsl(var(--secondary))",
-          foreground: "hsl(var(--secondary-foreground))",
-        },
-        destructive: {
-          DEFAULT: "hsl(var(--destructive))",
-          foreground: "hsl(var(--destructive-foreground))",
-        },
-        muted: {
-          DEFAULT: "hsl(var(--muted))",
-          foreground: "hsl(var(--muted-foreground))",
-        },
-        accent: {
-          DEFAULT: "hsl(var(--accent))",
-          foreground: "hsl(var(--accent-foreground))",
-        },
-        card: {
-          DEFAULT: "hsl(var(--card))",
-          foreground: "hsl(var(--card-foreground))",
-        },
-        success: {
-          DEFAULT: "hsl(var(--success))",
-          foreground: "hsl(var(--success-foreground))",
-        },
-        warning: {
-          DEFAULT: "hsl(var(--warning))",
-          foreground: "hsl(var(--warning-foreground))",
-        },
-        dim: "hsl(var(--dim))",
-        "border-subtle": "hsl(var(--border-subtle))",
+        bg: "var(--bg)",
+        surface: "var(--surface)",
+        raised: "var(--raised)",
+        input: "var(--input)",
+        line: "var(--line)",
+        accent: "var(--accent)",
+        "on-accent": "var(--on-accent)",
+        warn: "var(--warn)",
+        danger: "var(--danger)",
+        // text ramp
+        t1: "var(--t1)",
+        t2: "var(--t2)",
+        t3: "var(--t3)",
+        t4: "var(--t4)",
+        t5: "var(--t5)",
+        t6: "var(--t6)",
+        t7: "var(--t7)",
+        t8: "var(--t8)",
+        // back-compat aliases so un-migrated classes still resolve to the theme
+        background: "var(--bg)",
+        foreground: "var(--t1)",
+        card: "var(--surface)",
+        "card-foreground": "var(--t1)",
+        border: "var(--line)",
+        ring: "var(--accent)",
+        primary: { DEFAULT: "var(--accent)", foreground: "var(--on-accent)" },
+        secondary: { DEFAULT: "var(--surface)", foreground: "var(--t1)" },
+        muted: { DEFAULT: "var(--surface)", foreground: "var(--t4)" },
+        "muted-foreground": "var(--t4)",
+        accentwarn: { DEFAULT: "var(--warn)", foreground: "var(--on-accent)" },
+        destructive: { DEFAULT: "var(--danger)", foreground: "var(--t1)" },
+        success: { DEFAULT: "var(--accent)", foreground: "var(--on-accent)" },
+        warning: { DEFAULT: "var(--warn)", foreground: "var(--on-accent)" },
+        dim: "var(--t7)",
+        "border-subtle": "var(--line-soft)",
       },
       borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        lg: "0px",
+        md: "0px",
+        sm: "0px",
+        DEFAULT: "0px",
+        full: "9999px",
       },
       fontFamily: {
-        sans: ["DM Sans", "-apple-system", "sans-serif"],
-        mono: ["JetBrains Mono", "monospace"],
+        mono: ["JetBrains Mono", "ui-monospace", "monospace"],
+        sans: ["JetBrains Mono", "ui-monospace", "monospace"],
+        display: ["Space Grotesk", "JetBrains Mono", "sans-serif"],
       },
     },
   },
