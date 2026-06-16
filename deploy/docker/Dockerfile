@@ -1,5 +1,5 @@
 # -- Builder ---------------------------------------------------------------
-FROM golang:1.26-alpine AS builder
+FROM golang:1.26.4-alpine AS builder
 
 WORKDIR /src
 
@@ -11,7 +11,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/remnacore ./cmd/remnacore
 
 # -- Runtime ---------------------------------------------------------------
-FROM alpine:3.21
+FROM alpine:3.24
 
 RUN apk add --no-cache ca-certificates tzdata \
     && addgroup -g 10001 -S app && adduser -u 10001 -S app -G app

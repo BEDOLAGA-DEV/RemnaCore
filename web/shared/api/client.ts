@@ -1,4 +1,4 @@
-import ky, { type KyInstance, type NormalizedOptions } from "ky";
+import ky, { type KyInstance } from "ky";
 import { useAuthStore } from "../stores/authStore.js";
 import { ENDPOINTS } from "./endpoints.js";
 
@@ -50,10 +50,10 @@ async function refreshAccessToken(): Promise<boolean> {
  * - afterResponse: on 401, attempts one refresh rotation then retries
  */
 export const apiClient: KyInstance = ky.create({
-  prefixUrl: "",
+  prefix: "",
   hooks: {
     beforeRequest: [
-      (request: Request) => {
+      ({ request }) => {
         // 1. Set auth header (always, regardless of URL rewrite)
         const { accessToken } = useAuthStore.getState();
         if (accessToken) {
@@ -62,11 +62,7 @@ export const apiClient: KyInstance = ky.create({
       },
     ],
     afterResponse: [
-      async (
-        request: Request,
-        _options: NormalizedOptions,
-        response: Response,
-      ) => {
+      async ({ request, response }) => {
         if (response.status !== 401) return response;
 
         // Don't retry refresh or login endpoints

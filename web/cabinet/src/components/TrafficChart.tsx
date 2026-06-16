@@ -54,7 +54,7 @@ export function TrafficChart({ bindings }: TrafficChartProps) {
             tick={{ fill: "var(--muted-foreground)" }}
           />
           <Tooltip
-            formatter={(value: number) => [formatBytes(value), t("traffic.used")]}
+            formatter={(value) => [formatBytes(Number(value)), t("traffic.used")]}
             contentStyle={{
               backgroundColor: "var(--card)",
               border: "1px solid var(--border)",

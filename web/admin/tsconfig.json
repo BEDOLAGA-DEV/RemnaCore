@@ -11,11 +11,11 @@
     "noUnusedParameters": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
+    "noUncheckedSideEffectImports": false,
     "paths": {
       "@/*": ["./src/*"],
       "@shared/*": ["../shared/*"]
     },
-    "baseUrl": ".",
     "outDir": "./dist",
     "noEmit": true
   },

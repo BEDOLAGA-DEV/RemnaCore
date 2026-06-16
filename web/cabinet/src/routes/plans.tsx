@@ -195,7 +195,7 @@ function PlanGroupCard({
               className={cn(
                 "flex-1 rounded-lg px-2 py-1.5 text-xs font-medium transition-all",
                 idx === selectedIdx
-                  ? "bg-primary text-primary-foreground shadow-sm"
+                  ? "bg-primary text-primary-foreground shadow-xs"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >

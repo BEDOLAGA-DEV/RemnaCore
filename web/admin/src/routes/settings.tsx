@@ -185,7 +185,7 @@ function ToggleSwitch({
 			>
 				<span
 					className={cn(
-						"pointer-events-none inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform duration-200",
+						"pointer-events-none inline-block h-3.5 w-3.5 rounded-full bg-white shadow-xs transition-transform duration-200",
 						checked ? "translate-x-[18px]" : "translate-x-[3px]",
 					)}
 				/>
