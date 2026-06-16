@@ -10,7 +10,6 @@ import {
 import {
 	Activity,
 	Check,
-	ChevronDown,
 	CircleDot,
 	Database,
 	Flag,
@@ -31,6 +30,14 @@ import {
 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
+import {
+	PageHeader,
+	Panel,
+	PanelHeader,
+	StatusPill,
+	TermButton,
+	TermInput,
+} from "../components/ui/index.js";
 
 // ─── Editable Section Keys ──────────────────────────────────────────────────
 
@@ -46,12 +53,10 @@ type EditableSectionKey =
 
 // ─── Common Styles ──────────────────────────────────────────────────────────
 
-const INPUT_CLASS =
-	"w-20 rounded-lg border border-border bg-background px-2 py-1 font-mono text-[13px] text-foreground text-right focus:outline-none focus:ring-1 focus:ring-primary/50";
-const FLOAT_INPUT_CLASS =
-	"w-24 rounded-lg border border-border bg-background px-2 py-1 font-mono text-[13px] text-foreground text-right focus:outline-none focus:ring-1 focus:ring-primary/50";
+const NUM_INPUT_CLASS = "w-24 text-right tabular-nums";
 const TEXTAREA_CLASS =
-	"w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[13px] text-foreground leading-relaxed focus:outline-none focus:ring-1 focus:ring-primary/50 resize-y min-h-[80px]";
+	"w-full border bg-input px-3 py-2 text-[13px] tracking-[.5px] text-t1 leading-relaxed outline-none placeholder:text-t7 focus:border-accent/45 resize-y min-h-[88px]";
+const TEXTAREA_STYLE = { borderColor: "var(--line-strong)" } as const;
 
 // ─── Setting Row Components ──────────────────────────────────────────────────
 
@@ -66,11 +71,11 @@ function SettingRow({ label, value, masked = false }: SettingRowProps) {
 
 	return (
 		<div className="flex items-start justify-between gap-4 py-2">
-			<span className="shrink-0 text-[13px] text-foreground">{label}</span>
+			<span className="shrink-0 text-[13px] text-t2">{label}</span>
 			<span
 				className={cn(
-					"text-right font-mono text-[13px]",
-					masked ? "italic text-muted-foreground/50" : "text-muted-foreground",
+					"text-right text-[13px] tabular-nums",
+					masked ? "italic text-t7" : "text-t4",
 				)}
 			>
 				{displayValue}
@@ -87,17 +92,11 @@ type SettingBoolProps = {
 function SettingBool({ label, value }: SettingBoolProps) {
 	return (
 		<div className="flex items-center justify-between gap-4 py-2">
-			<span className="shrink-0 text-[13px] text-foreground">{label}</span>
-			<span
-				className={cn(
-					"rounded-full px-2.5 py-0.5 font-mono text-[11px] font-medium",
-					value
-						? "bg-emerald-500/10 text-emerald-500"
-						: "bg-red-500/10 text-red-500",
-				)}
-			>
-				{value ? "enabled" : "disabled"}
-			</span>
+			<span className="shrink-0 text-[13px] text-t2">{label}</span>
+			<StatusPill
+				label={value ? "ENABLED" : "DISABLED"}
+				tone={value ? "ok" : "danger"}
+			/>
 		</div>
 	);
 }
@@ -110,10 +109,10 @@ type SettingArrayProps = {
 function SettingArray({ label, values }: SettingArrayProps) {
 	return (
 		<div className="flex items-start justify-between gap-4 py-2">
-			<span className="shrink-0 text-[13px] text-foreground">{label}</span>
+			<span className="shrink-0 text-[13px] text-t2">{label}</span>
 			<div className="flex flex-col items-end gap-0.5">
 				{values.map((v) => (
-					<span key={v} className="font-mono text-[13px] text-muted-foreground">
+					<span key={v} className="text-[13px] text-t4">
 						{v}
 					</span>
 				))}
@@ -129,25 +128,18 @@ type EditableRowProps = {
 	value: number;
 	onChange: (v: number) => void;
 	step?: string;
-	inputClass?: string;
 };
 
-function EditableRow({
-	label,
-	value,
-	onChange,
-	step,
-	inputClass = INPUT_CLASS,
-}: EditableRowProps) {
+function EditableRow({ label, value, onChange, step }: EditableRowProps) {
 	return (
 		<div className="flex items-center justify-between gap-4 py-2">
-			<span className="shrink-0 text-[13px] text-foreground">{label}</span>
-			<input
+			<span className="shrink-0 text-[13px] text-t2">{label}</span>
+			<TermInput
 				type="number"
 				value={value}
 				step={step}
 				onChange={(e) => onChange(Number(e.target.value))}
-				className={inputClass}
+				className={NUM_INPUT_CLASS}
 			/>
 		</div>
 	);
@@ -170,7 +162,7 @@ function ToggleSwitch({
 }: ToggleSwitchProps) {
 	return (
 		<div className="flex items-center justify-between gap-4 py-2">
-			<span className="shrink-0 text-[13px] text-foreground">{label}</span>
+			<span className="shrink-0 text-[13px] text-t2">{label}</span>
 			<button
 				type="button"
 				role="switch"
@@ -178,15 +170,17 @@ function ToggleSwitch({
 				disabled={disabled}
 				onClick={() => onChange(!checked)}
 				className={cn(
-					"relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-1 focus:ring-primary/50",
-					checked ? "bg-emerald-500" : "bg-muted-foreground/30",
+					"relative inline-flex h-[23px] w-[42px] shrink-0 cursor-pointer items-center border transition-colors focus:outline-none",
+					checked
+						? "border-accent bg-accent/20"
+						: "border-line bg-input hover:border-accent/40",
 					disabled && "cursor-not-allowed opacity-50",
 				)}
 			>
 				<span
 					className={cn(
-						"pointer-events-none inline-block h-3.5 w-3.5 rounded-full bg-white shadow-xs transition-transform duration-200",
-						checked ? "translate-x-[18px]" : "translate-x-[3px]",
+						"pointer-events-none absolute top-[2px] h-[17px] w-[17px] transition-[left] duration-150",
+						checked ? "left-[22px] bg-accent" : "left-[2px] bg-t5",
 					)}
 				/>
 			</button>
@@ -194,7 +188,7 @@ function ToggleSwitch({
 	);
 }
 
-// ─── Section Header Buttons ─────────────────────────────────────────────────
+// ─── Section Header Actions ─────────────────────────────────────────────────
 
 type SectionActionsProps = {
 	editing: boolean;
@@ -215,9 +209,9 @@ function SectionActions({
 }: SectionActionsProps) {
 	if (showSuccess) {
 		return (
-			<span className="flex items-center gap-1 text-[11px] font-mono text-emerald-500">
+			<span className="flex items-center gap-1 text-[10px] uppercase tracking-[1px] text-accent">
 				<Check size={12} />
-				saved
+				SAVED
 			</span>
 		);
 	}
@@ -225,50 +219,52 @@ function SectionActions({
 	if (editing) {
 		return (
 			<div className="flex items-center gap-1.5">
-				<button
+				<TermButton
 					type="button"
+					variant="ghost"
 					onClick={onCancel}
 					disabled={isPending}
-					className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+					className="px-2.5 py-1"
 				>
 					<X size={11} />
-					Cancel
-				</button>
-				<button
+					CANCEL
+				</TermButton>
+				<TermButton
 					type="button"
+					variant="primary"
 					onClick={onSave}
 					disabled={isPending}
-					className="flex items-center gap-1 rounded-lg bg-primary px-3 py-1 text-[11px] font-medium text-background transition-colors hover:bg-primary/90 disabled:opacity-50"
+					className="px-3 py-1"
 				>
 					{isPending ? <Loader2 size={11} className="animate-spin" /> : null}
-					Save
-				</button>
+					SAVE
+				</TermButton>
 			</div>
 		);
 	}
 
 	return (
-		<button
+		<TermButton
 			type="button"
+			variant="ghost"
 			onClick={(e) => {
 				e.stopPropagation();
 				onEdit();
 			}}
-			className="flex items-center gap-1 text-[11px] font-mono text-primary transition-colors hover:text-primary/80"
+			className="px-2.5 py-1"
 		>
 			<Pencil size={10} />
-			Edit
-		</button>
+			EDIT
+		</TermButton>
 	);
 }
 
-// ─── Collapsible Section ─────────────────────────────────────────────────────
+// ─── Settings Section (Panel) ─────────────────────────────────────────────────
 
 type SettingsSectionProps = {
 	title: string;
 	icon: LucideIcon;
 	children: React.ReactNode;
-	defaultOpen?: boolean;
 	actions?: React.ReactNode;
 };
 
@@ -276,39 +272,36 @@ function SettingsSection({
 	title,
 	icon: Icon,
 	children,
-	defaultOpen = true,
 	actions,
 }: SettingsSectionProps) {
-	const [open, setOpen] = useState(defaultOpen);
-
 	return (
-		<div className="rounded-xl border border-border bg-card">
-			<div className="flex w-full items-center gap-3 px-5 py-4">
-				<button
-					type="button"
-					onClick={() => setOpen((prev) => !prev)}
-					className="flex flex-1 items-center gap-3 text-left transition-colors hover:opacity-80"
-				>
-					<Icon size={16} className="shrink-0 text-primary" />
-					<span className="flex-1 text-[13px] font-semibold text-foreground">
-						{title}
-					</span>
-					<ChevronDown
-						size={14}
-						className={cn(
-							"shrink-0 text-muted-foreground transition-transform duration-200",
-							open && "rotate-180",
-						)}
-					/>
-				</button>
-				{actions ? <div className="shrink-0 pl-2">{actions}</div> : null}
+		<Panel>
+			<PanelHeader
+				title={title}
+				right={
+					<div className="flex items-center gap-3">
+						<Icon size={14} className="shrink-0 text-accent" />
+						{actions}
+					</div>
+				}
+			/>
+			<div className="px-4 py-3">
+				<div className="divide-y divide-[var(--line-soft)]">{children}</div>
 			</div>
-			{open ? (
-				<div className="border-t border-border px-5 pb-4 pt-2">
-					<div className="divide-y divide-border/50">{children}</div>
-				</div>
-			) : null}
-		</div>
+		</Panel>
+	);
+}
+
+// ─── Mutation Error ───────────────────────────────────────────────────────────
+
+function MutationError({ message }: { message: string | null }) {
+	if (!message) {
+		return null;
+	}
+	return (
+		<p className="py-1.5 text-[11px] uppercase tracking-[.5px] text-danger">
+			{message}
+		</p>
 	);
 }
 
@@ -322,7 +315,7 @@ type CircuitBreakerBlockProps = {
 function CircuitBreakerBlock({ name, config }: CircuitBreakerBlockProps) {
 	return (
 		<div className="py-2">
-			<p className="mb-1 text-[12px] font-medium uppercase tracking-wider text-muted-foreground">
+			<p className="mb-1 text-[10px] uppercase tracking-[1.5px] text-t6">
 				{name}
 			</p>
 			<div className="grid grid-cols-2 gap-x-6 gap-y-0.5 pl-3">
@@ -355,7 +348,7 @@ function CircuitBreakerEditBlock({
 
 	return (
 		<div className="py-2">
-			<p className="mb-1 text-[12px] font-medium uppercase tracking-wider text-muted-foreground">
+			<p className="mb-1 text-[10px] uppercase tracking-[1.5px] text-t6">
 				{name}
 			</p>
 			<div className="grid grid-cols-2 gap-x-6 gap-y-0.5 pl-3">
@@ -365,12 +358,12 @@ function CircuitBreakerEditBlock({
 					onChange={(v) => update("max_failures", v)}
 				/>
 				<div className="flex items-center justify-between gap-4 py-2">
-					<span className="shrink-0 text-[13px] text-foreground">Timeout</span>
-					<input
+					<span className="shrink-0 text-[13px] text-t2">Timeout</span>
+					<TermInput
 						type="text"
 						value={config.timeout}
 						onChange={(e) => update("timeout", e.target.value)}
-						className={cn(INPUT_CLASS, "w-24 text-left")}
+						className={NUM_INPUT_CLASS}
 					/>
 				</div>
 				<EditableRow
@@ -379,12 +372,12 @@ function CircuitBreakerEditBlock({
 					onChange={(v) => update("max_requests", v)}
 				/>
 				<div className="flex items-center justify-between gap-4 py-2">
-					<span className="shrink-0 text-[13px] text-foreground">Interval</span>
-					<input
+					<span className="shrink-0 text-[13px] text-t2">Interval</span>
+					<TermInput
 						type="text"
 						value={config.interval}
 						onChange={(e) => update("interval", e.target.value)}
-						className={cn(INPUT_CLASS, "w-24 text-left")}
+						className={NUM_INPUT_CLASS}
 					/>
 				</div>
 			</div>
@@ -560,9 +553,9 @@ function SettingsContent({ settings }: SettingsContentProps) {
 	);
 
 	return (
-		<div className="space-y-3">
+		<div className="flex flex-col gap-3.5">
 			{/* Application (read-only) */}
-			<SettingsSection title="Application" icon={Server}>
+			<SettingsSection title="APPLICATION" icon={Server}>
 				<SettingRow label="Port" value={settings.app.port} />
 				<SettingRow label="Version" value={settings.app.version} />
 				<SettingRow label="Log Level" value={settings.app.log_level} />
@@ -570,7 +563,7 @@ function SettingsContent({ settings }: SettingsContentProps) {
 			</SettingsSection>
 
 			{/* Database (read-only) */}
-			<SettingsSection title="Database" icon={Database}>
+			<SettingsSection title="DATABASE" icon={Database}>
 				<SettingRow label="URL" value={settings.database.url} masked />
 				<SettingRow
 					label="Max Connections"
@@ -595,17 +588,17 @@ function SettingsContent({ settings }: SettingsContentProps) {
 			</SettingsSection>
 
 			{/* Cache (read-only) */}
-			<SettingsSection title="Cache (Valkey)" icon={Database}>
+			<SettingsSection title="CACHE (VALKEY)" icon={Database}>
 				<SettingRow label="URL" value={settings.cache.url} masked />
 			</SettingsSection>
 
 			{/* Message Queue (read-only) */}
-			<SettingsSection title="Message Queue (NATS)" icon={Inbox}>
+			<SettingsSection title="MESSAGE QUEUE (NATS)" icon={Inbox}>
 				<SettingRow label="URL" value={settings.message_queue.url} masked />
 			</SettingsSection>
 
 			{/* JWT (read-only) */}
-			<SettingsSection title="JWT Authentication" icon={Key}>
+			<SettingsSection title="JWT AUTHENTICATION" icon={Key}>
 				<SettingRow
 					label="Private Key Path"
 					value={settings.jwt.private_key_path}
@@ -625,7 +618,7 @@ function SettingsContent({ settings }: SettingsContentProps) {
 			</SettingsSection>
 
 			{/* Telegram (read-only) */}
-			<SettingsSection title="Telegram" icon={MessageSquare}>
+			<SettingsSection title="TELEGRAM" icon={MessageSquare}>
 				<SettingRow
 					label="Bot Token"
 					value={settings.telegram.bot_token}
@@ -637,7 +630,7 @@ function SettingsContent({ settings }: SettingsContentProps) {
 
 			{/* Plugins (editable) */}
 			<SettingsSection
-				title="Plugins"
+				title="PLUGINS"
 				icon={Puzzle}
 				actions={makeActions("plugins")}
 			>
@@ -661,11 +654,7 @@ function SettingsContent({ settings }: SettingsContentProps) {
 								setPluginsForm((prev) => ({ ...prev, enable_hot_reload: v }))
 							}
 						/>
-						{mutationError ? (
-							<p className="py-1 text-[12px] text-destructive">
-								{mutationError}
-							</p>
-						) : null}
+						<MutationError message={mutationError} />
 					</>
 				) : (
 					<>
@@ -686,7 +675,7 @@ function SettingsContent({ settings }: SettingsContentProps) {
 			</SettingsSection>
 
 			{/* Infrastructure (read-only) */}
-			<SettingsSection title="Infrastructure" icon={Activity}>
+			<SettingsSection title="INFRASTRUCTURE" icon={Activity}>
 				<SettingRow
 					label="Health Check Interval"
 					value={settings.infrastructure.health_check_interval}
@@ -707,7 +696,7 @@ function SettingsContent({ settings }: SettingsContentProps) {
 
 			{/* Speed Test (editable) */}
 			<SettingsSection
-				title="Speed Test"
+				title="SPEED TEST"
 				icon={Gauge}
 				actions={makeActions("speed_test")}
 			>
@@ -734,11 +723,7 @@ function SettingsContent({ settings }: SettingsContentProps) {
 								setSpeedTestForm((prev) => ({ ...prev, max_upload_bytes: v }))
 							}
 						/>
-						{mutationError ? (
-							<p className="py-1 text-[12px] text-destructive">
-								{mutationError}
-							</p>
-						) : null}
+						<MutationError message={mutationError} />
 					</>
 				) : (
 					<>
@@ -760,7 +745,7 @@ function SettingsContent({ settings }: SettingsContentProps) {
 
 			{/* Rate Limiting (editable) */}
 			<SettingsSection
-				title="Rate Limiting"
+				title="RATE LIMITING"
 				icon={Shield}
 				actions={makeActions("rate_limit")}
 			>
@@ -826,11 +811,7 @@ function SettingsContent({ settings }: SettingsContentProps) {
 								}))
 							}
 						/>
-						{mutationError ? (
-							<p className="py-1 text-[12px] text-destructive">
-								{mutationError}
-							</p>
-						) : null}
+						<MutationError message={mutationError} />
 					</>
 				) : (
 					<>
@@ -864,7 +845,7 @@ function SettingsContent({ settings }: SettingsContentProps) {
 
 			{/* Outbox (editable) */}
 			<SettingsSection
-				title="Outbox Relay"
+				title="OUTBOX RELAY"
 				icon={Inbox}
 				actions={makeActions("outbox")}
 			>
@@ -891,11 +872,7 @@ function SettingsContent({ settings }: SettingsContentProps) {
 								setOutboxForm((prev) => ({ ...prev, retention_days: v }))
 							}
 						/>
-						{mutationError ? (
-							<p className="py-1 text-[12px] text-destructive">
-								{mutationError}
-							</p>
-						) : null}
+						<MutationError message={mutationError} />
 					</>
 				) : (
 					<>
@@ -917,13 +894,13 @@ function SettingsContent({ settings }: SettingsContentProps) {
 
 			{/* Smart Router (editable) */}
 			<SettingsSection
-				title="Smart Router"
+				title="SMART ROUTER"
 				icon={Navigation}
 				actions={makeActions("smart_router")}
 			>
 				{editingSection === "smart_router" ? (
 					<>
-						<p className="pb-1 pt-2 text-[12px] font-medium uppercase tracking-wider text-muted-foreground">
+						<p className="pb-1 pt-2 text-[10px] uppercase tracking-[1.5px] text-t6">
 							Default Weights
 						</p>
 						<EditableRow
@@ -933,7 +910,6 @@ function SettingsContent({ settings }: SettingsContentProps) {
 								setSmartRouterForm((prev) => ({ ...prev, weight_geo: v }))
 							}
 							step="0.01"
-							inputClass={FLOAT_INPUT_CLASS}
 						/>
 						<EditableRow
 							label="Latency"
@@ -942,7 +918,6 @@ function SettingsContent({ settings }: SettingsContentProps) {
 								setSmartRouterForm((prev) => ({ ...prev, weight_latency: v }))
 							}
 							step="0.01"
-							inputClass={FLOAT_INPUT_CLASS}
 						/>
 						<EditableRow
 							label="Load"
@@ -951,10 +926,9 @@ function SettingsContent({ settings }: SettingsContentProps) {
 								setSmartRouterForm((prev) => ({ ...prev, weight_load: v }))
 							}
 							step="0.01"
-							inputClass={FLOAT_INPUT_CLASS}
 						/>
 
-						<p className="pb-1 pt-3 text-[12px] font-medium uppercase tracking-wider text-muted-foreground">
+						<p className="pb-1 pt-3 text-[10px] uppercase tracking-[1.5px] text-t6">
 							Gaming Weights
 						</p>
 						<EditableRow
@@ -967,7 +941,6 @@ function SettingsContent({ settings }: SettingsContentProps) {
 								}))
 							}
 							step="0.01"
-							inputClass={FLOAT_INPUT_CLASS}
 						/>
 						<EditableRow
 							label="Latency"
@@ -979,7 +952,6 @@ function SettingsContent({ settings }: SettingsContentProps) {
 								}))
 							}
 							step="0.01"
-							inputClass={FLOAT_INPUT_CLASS}
 						/>
 						<EditableRow
 							label="Load"
@@ -991,10 +963,9 @@ function SettingsContent({ settings }: SettingsContentProps) {
 								}))
 							}
 							step="0.01"
-							inputClass={FLOAT_INPUT_CLASS}
 						/>
 
-						<p className="pb-1 pt-3 text-[12px] font-medium uppercase tracking-wider text-muted-foreground">
+						<p className="pb-1 pt-3 text-[10px] uppercase tracking-[1.5px] text-t6">
 							Streaming Weights
 						</p>
 						<EditableRow
@@ -1007,7 +978,6 @@ function SettingsContent({ settings }: SettingsContentProps) {
 								}))
 							}
 							step="0.01"
-							inputClass={FLOAT_INPUT_CLASS}
 						/>
 						<EditableRow
 							label="Latency"
@@ -1019,7 +989,6 @@ function SettingsContent({ settings }: SettingsContentProps) {
 								}))
 							}
 							step="0.01"
-							inputClass={FLOAT_INPUT_CLASS}
 						/>
 						<EditableRow
 							label="Load"
@@ -1031,17 +1000,12 @@ function SettingsContent({ settings }: SettingsContentProps) {
 								}))
 							}
 							step="0.01"
-							inputClass={FLOAT_INPUT_CLASS}
 						/>
-						{mutationError ? (
-							<p className="py-1 text-[12px] text-destructive">
-								{mutationError}
-							</p>
-						) : null}
+						<MutationError message={mutationError} />
 					</>
 				) : (
 					<>
-						<p className="pb-1 pt-2 text-[12px] font-medium uppercase tracking-wider text-muted-foreground">
+						<p className="pb-1 pt-2 text-[10px] uppercase tracking-[1.5px] text-t6">
 							Default Weights
 						</p>
 						<SettingRow label="Geo" value={settings.smart_router.weight_geo} />
@@ -1053,7 +1017,7 @@ function SettingsContent({ settings }: SettingsContentProps) {
 							label="Load"
 							value={settings.smart_router.weight_load}
 						/>
-						<p className="pb-1 pt-3 text-[12px] font-medium uppercase tracking-wider text-muted-foreground">
+						<p className="pb-1 pt-3 text-[10px] uppercase tracking-[1.5px] text-t6">
 							Gaming Weights
 						</p>
 						<SettingRow
@@ -1068,7 +1032,7 @@ function SettingsContent({ settings }: SettingsContentProps) {
 							label="Load"
 							value={settings.smart_router.weight_gaming_load}
 						/>
-						<p className="pb-1 pt-3 text-[12px] font-medium uppercase tracking-wider text-muted-foreground">
+						<p className="pb-1 pt-3 text-[10px] uppercase tracking-[1.5px] text-t6">
 							Streaming Weights
 						</p>
 						<SettingRow
@@ -1089,16 +1053,16 @@ function SettingsContent({ settings }: SettingsContentProps) {
 
 			{/* Feature Flags (editable — instant toggle) */}
 			<SettingsSection
-				title="Feature Flags"
+				title="FEATURE FLAGS"
 				icon={Flag}
 				actions={
 					successSection === "feature_flags" ? (
-						<span className="flex items-center gap-1 text-[11px] font-mono text-emerald-500">
+						<span className="flex items-center gap-1 text-[10px] uppercase tracking-[1px] text-accent">
 							<Check size={12} />
-							saved
+							SAVED
 						</span>
 					) : updateMutation.isPending && editingSection === null ? (
-						<Loader2 size={12} className="animate-spin text-muted-foreground" />
+						<Loader2 size={12} className="animate-spin text-t6" />
 					) : null
 				}
 			>
@@ -1128,7 +1092,7 @@ function SettingsContent({ settings }: SettingsContentProps) {
 
 			{/* Circuit Breakers (editable) */}
 			<SettingsSection
-				title="Circuit Breakers"
+				title="CIRCUIT BREAKERS"
 				icon={CircleDot}
 				actions={makeActions("circuit_breaker")}
 			>
@@ -1158,11 +1122,7 @@ function SettingsContent({ settings }: SettingsContentProps) {
 								setCbForm((prev) => ({ ...prev, vpn_provider: c }))
 							}
 						/>
-						{mutationError ? (
-							<p className="py-1 text-[12px] text-destructive">
-								{mutationError}
-							</p>
-						) : null}
+						<MutationError message={mutationError} />
 					</>
 				) : (
 					<>
@@ -1191,25 +1151,20 @@ function SettingsContent({ settings }: SettingsContentProps) {
 				{editingSection === "cors" ? (
 					<>
 						<div className="py-2">
-							<p className="mb-2 text-[13px] text-foreground">
-								Allowed Origins
-							</p>
+							<p className="mb-2 text-[13px] text-t2">Allowed Origins</p>
 							<textarea
 								value={corsForm}
 								onChange={(e) => setCorsForm(e.target.value)}
 								placeholder="https://example.com"
 								className={TEXTAREA_CLASS}
+								style={TEXTAREA_STYLE}
 								rows={4}
 							/>
-							<p className="mt-1 text-[11px] text-muted-foreground">
+							<p className="mt-1 text-[10px] uppercase tracking-[1px] text-t6">
 								One origin per line
 							</p>
 						</div>
-						{mutationError ? (
-							<p className="py-1 text-[12px] text-destructive">
-								{mutationError}
-							</p>
-						) : null}
+						<MutationError message={mutationError} />
 					</>
 				) : (
 					<SettingArray
@@ -1220,7 +1175,7 @@ function SettingsContent({ settings }: SettingsContentProps) {
 			</SettingsSection>
 
 			{/* Tracing (read-only) */}
-			<SettingsSection title="Tracing" icon={Signal}>
+			<SettingsSection title="TRACING" icon={Signal}>
 				<SettingRow label="Endpoint" value={settings.tracing.endpoint} />
 			</SettingsSection>
 		</div>
@@ -1239,12 +1194,14 @@ export function SettingsPage() {
 
 	if (isError) {
 		return (
-			<div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border p-12">
-				<p className="text-[13px] text-destructive">
-					{t("common.errorLoading")}:{" "}
-					{error instanceof Error ? error.message : t("common.unknownError")}
-				</p>
-			</div>
+			<Panel className="border-danger">
+				<div className="flex flex-col items-center justify-center p-12">
+					<p className="text-[12px] uppercase tracking-[1px] text-danger">
+						{t("common.errorLoading")}:{" "}
+						{error instanceof Error ? error.message : t("common.unknownError")}
+					</p>
+				</div>
+			</Panel>
 		);
 	}
 
@@ -1253,21 +1210,17 @@ export function SettingsPage() {
 	}
 
 	return (
-		<div className="space-y-6">
-			{/* Header */}
-			<div className="flex items-center justify-between">
-				<h1 className="text-[15px] font-semibold text-foreground">
-					System Settings
-				</h1>
-				<div className="flex items-center gap-2">
-					<span className="rounded-full bg-primary/10 px-2.5 py-0.5 font-mono text-[11px] font-medium text-primary">
-						v{settings.app.version}
-					</span>
-					<span className="rounded-full bg-secondary px-2.5 py-0.5 font-mono text-[11px] font-medium text-muted-foreground">
-						:{settings.app.port}
-					</span>
-				</div>
-			</div>
+		<div className="flex flex-col gap-3.5">
+			<PageHeader
+				title="SETTINGS"
+				breadcrumb="REMNAWAVE PROVIDER / SYSTEM / GLOBAL CONFIGURATION"
+				right={
+					<div className="flex items-center gap-2">
+						<StatusPill label={`v${settings.app.version}`} tone="ok" />
+						<StatusPill label={`:${settings.app.port}`} tone="muted" />
+					</div>
+				}
+			/>
 
 			<SettingsContent settings={settings} />
 		</div>
