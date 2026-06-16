@@ -78,6 +78,13 @@ func TestAllBuiltinAdminRoutes_ExplicitPermissions(t *testing.T) {
 	// Surface the total count so it is visible in verbose test output.
 	t.Logf("total AdminOnly routes asserted across %d built-in plugins: %d",
 		len(plugins), totalAdminRoutes)
+
+	// Guard against a vacuous pass: if every route's AdminOnly flag were ever
+	// removed in a refactor the loop above would run zero assertions and the
+	// test would pass silently. Require at least one AdminOnly route to exist.
+	assert.Greater(t, totalAdminRoutes, 0,
+		"no AdminOnly routes found across %d plugins — was AdminOnly removed from the route definitions?",
+		len(plugins))
 }
 
 // TestAllBuiltinAdminRoutes_PluginCoverage asserts that all four known
