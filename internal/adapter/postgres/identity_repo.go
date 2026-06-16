@@ -32,6 +32,33 @@ func (r *IdentityRepository) q(ctx context.Context) *gen.Queries {
 	return gen.New(DBFromContext(ctx, r.pool))
 }
 
+// bootstrapAdvisoryLockKey is a fixed key for the first-admin advisory lock. It
+// only needs to be unique among advisory locks used by the application.
+const bootstrapAdvisoryLockKey int64 = 911002
+
+// CountAdmins returns the number of users with role 'admin'.
+func (r *IdentityRepository) CountAdmins(ctx context.Context) (int64, error) {
+	var n int64
+	err := DBFromContext(ctx, r.pool).
+		QueryRow(ctx, `SELECT count(*) FROM identity.platform_users WHERE role = 'admin'`).
+		Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("counting admins: %w", err)
+	}
+	return n, nil
+}
+
+// AcquireBootstrapLock takes a transaction-scoped advisory lock so concurrent
+// first-admin creations serialize. The lock releases automatically when the
+// surrounding transaction ends. Must be called inside RunInTx.
+func (r *IdentityRepository) AcquireBootstrapLock(ctx context.Context) error {
+	if _, err := DBFromContext(ctx, r.pool).
+		Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, bootstrapAdvisoryLockKey); err != nil {
+		return fmt.Errorf("acquiring bootstrap lock: %w", err)
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Row converter
 // ---------------------------------------------------------------------------

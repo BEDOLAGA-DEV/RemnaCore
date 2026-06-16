@@ -50,6 +50,7 @@ const (
 
 var (
 	NewPlatformUser      = aggregate.NewPlatformUser
+	NewAdminUser         = aggregate.NewAdminUser
 	NewEmailVerification = aggregate.NewEmailVerification
 	NewPasswordReset     = aggregate.NewPasswordReset
 )

@@ -92,6 +92,39 @@ func NewPlatformUser(email, password string, now time.Time) (*PlatformUser, erro
 	return user, nil
 }
 
+// NewAdminUser builds the bootstrap administrator: role=admin with a
+// pre-verified email (the first admin has no email-verification flow). It
+// reuses the same email/password validation and hashing as NewPlatformUser.
+func NewAdminUser(email, password string, now time.Time) (*PlatformUser, error) {
+	if _, err := mail.ParseAddress(email); err != nil {
+		return nil, fmt.Errorf("invalid email: %w", err)
+	}
+
+	if err := ValidatePassword(password); err != nil {
+		return nil, err
+	}
+
+	hash, err := authutil.HashPassword(password)
+	if err != nil {
+		return nil, fmt.Errorf("hashing password: %w", err)
+	}
+
+	user := &PlatformUser{
+		ID:            uuid.Must(uuid.NewV7()).String(),
+		Email:         email,
+		PasswordHash:  hash,
+		EmailVerified: true,
+		Role:          vo.RoleAdmin,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	user.RecordEvent(domainevent.NewTyped(UserRegisteredPayload{
+		UserID: user.ID,
+		Email:  user.Email,
+	}, now, user.ID))
+	return user, nil
+}
+
 // VerifyEmail marks the user's email as verified and updates the timestamp.
 func (u *PlatformUser) VerifyEmail(now time.Time) {
 	u.EmailVerified = true

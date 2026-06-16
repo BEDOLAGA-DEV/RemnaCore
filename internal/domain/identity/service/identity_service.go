@@ -34,6 +34,12 @@ type Repository interface {
 	UpdateUser(ctx context.Context, user *aggregate.PlatformUser) error
 	ListUsers(ctx context.Context, limit, offset int) ([]*aggregate.PlatformUser, error)
 
+	// CountAdmins returns the number of users with role 'admin'.
+	CountAdmins(ctx context.Context) (int64, error)
+	// AcquireBootstrapLock takes a transaction-scoped advisory lock that
+	// serializes concurrent first-admin creation. Must be called inside RunInTx.
+	AcquireBootstrapLock(ctx context.Context) error
+
 	CreateSession(ctx context.Context, session *aggregate.Session) error
 	GetSessionByRefreshToken(ctx context.Context, token string) (*aggregate.Session, error)
 	DeleteSession(ctx context.Context, id string) error

@@ -22,6 +22,30 @@ func TestNewPlatformUser_Valid(t *testing.T) {
 	assert.False(t, user.UpdatedAt.IsZero())
 }
 
+func TestNewAdminUser(t *testing.T) {
+	t.Run("creates admin with verified email", func(t *testing.T) {
+		user, err := NewAdminUser("admin@example.com", "StrongP4ss", time.Now())
+		require.NoError(t, err)
+		assert.NotEmpty(t, user.ID)
+		assert.Equal(t, "admin@example.com", user.Email)
+		assert.Equal(t, RoleAdmin, user.Role)
+		assert.True(t, user.EmailVerified)
+		assert.NotEmpty(t, user.PasswordHash)
+		assert.NotEqual(t, "StrongP4ss", user.PasswordHash)
+	})
+
+	t.Run("rejects invalid email", func(t *testing.T) {
+		_, err := NewAdminUser("not-an-email", "StrongP4ss", time.Now())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "email")
+	})
+
+	t.Run("rejects weak password", func(t *testing.T) {
+		_, err := NewAdminUser("admin@example.com", "weak", time.Now())
+		require.Error(t, err)
+	})
+}
+
 func TestNewPlatformUser_InvalidEmail(t *testing.T) {
 	_, err := NewPlatformUser("not-an-email", "StrongP4ss", time.Now())
 	require.Error(t, err)
