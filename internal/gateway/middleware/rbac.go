@@ -27,6 +27,9 @@ func ShopResolver(access *service.AccessService) func(http.Handler) http.Handler
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			shopID := r.Header.Get(httpconst.HeaderShopID)
 			claims := GetClaims(r.Context())
+			// Passthrough: no shop in scope, or no authenticated user. The Auth
+			// middleware is assumed to have already rejected unauthenticated requests
+			// before ShopResolver runs, so a nil-claims pass-through here is safe.
 			if shopID == "" || claims == nil {
 				next.ServeHTTP(w, r)
 				return
