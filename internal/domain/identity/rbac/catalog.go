@@ -46,7 +46,9 @@ const (
 	AnalyticsRead       Permission = "analytics.read"
 	SessionsRead        Permission = "sessions.read"
 	SettingsManage      Permission = "settings.manage"
-	InfraRead           Permission = "infra.read" // remnawave topology (platform-only)
+	InfraRead           Permission = "infra.read"    // remnawave topology (platform-only)
+	InfraManage         Permission = "infra.manage"  // remnawave mutations (platform-only)
+	BillingManage       Permission = "billing.manage" // balance/financial ops (platform-only)
 )
 
 // Definition is catalog metadata for one permission.
@@ -85,6 +87,8 @@ func Catalog() []Definition {
 		{SessionsRead, "View active sessions and the activity feed"},
 		{SettingsManage, "Change platform settings"},
 		{InfraRead, "View Remnawave nodes, panels, and squads"},
+		{InfraManage, "Manage Remnawave nodes, panels, and squads (mutations)"},
+		{BillingManage, "Manage balances and financial operations (adjust, transfer, export)"},
 	}
 }
 

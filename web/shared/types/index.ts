@@ -36,6 +36,8 @@ export const PERMISSIONS = {
   sessionsRead: "sessions.read",
   settingsManage: "settings.manage",
   infraRead: "infra.read",
+  infraManage: "infra.manage",
+  billingManage: "billing.manage",
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
