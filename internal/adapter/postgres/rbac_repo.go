@@ -74,6 +74,8 @@ func legacyRoleForSystemRole(key string) string {
 	}
 }
 
+// SyncCatalog implements rbac.Repository. Callers MUST provide a transaction via
+// context; see rbac.Repository.SyncCatalog for the full transactional contract.
 func (r *RBACRepository) SyncCatalog(ctx context.Context, perms []rbac.Definition, roles []rbac.SystemRole) error {
 	q := r.q(ctx)
 	for _, d := range perms {

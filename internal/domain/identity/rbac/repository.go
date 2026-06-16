@@ -25,5 +25,12 @@ type Repository interface {
 	PermissionsForRoles(ctx context.Context, roleIDs []string) (map[string][]Permission, error)
 	// SyncCatalog idempotently upserts permissions, system roles, and their
 	// permission rows, then backfills global assignments from legacy roles.
+	//
+	// Transactional contract: callers MUST invoke SyncCatalog within a
+	// transaction. For each role the method deletes all existing permission rows
+	// (ReplaceRolePermissions) and then re-inserts them (AddRolePermission). A
+	// non-transactional call that fails between the delete and the inserts will
+	// leave that role with no permissions. RBACCatalogSync.Run satisfies this
+	// requirement by wrapping the call in RunInTx.
 	SyncCatalog(ctx context.Context, perms []Definition, roles []SystemRole) error
 }
