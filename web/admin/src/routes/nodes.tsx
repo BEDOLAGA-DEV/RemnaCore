@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { Server } from "lucide-react";
-import { NodeHealthBadge } from "../components/NodeHealthBadge.js";
+import { PageHeader, Panel } from "@/components/ui";
 
 /**
  * Nodes page displays Remnawave node health from smart router data.
@@ -11,51 +11,24 @@ import { NodeHealthBadge } from "../components/NodeHealthBadge.js";
 export function NodesPage() {
   const { t } = useTranslation();
 
-  // Placeholder data -- replace with a query hook when the endpoint exists
-  const nodes: {
-    id: string;
-    name: string;
-    address: string;
-    health: "healthy" | "degraded" | "down";
-  }[] = [];
-
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-[15px] font-semibold text-foreground">
-          {t("admin.nodes.title")}
-        </h1>
-      </div>
+    <div className="space-y-3.5">
+      <PageHeader
+        title="NODES"
+        breadcrumb="REMNAWAVE PROVIDER / INFRASTRUCTURE"
+      />
 
-      {nodes.length > 0 ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {nodes.map((node) => (
-            <div
-              key={node.id}
-              className="rounded-xl border border-border bg-card p-5"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Server size={18} className="text-muted-foreground" />
-                  <div>
-                    <p className="font-medium text-foreground">{node.name}</p>
-                    <p className="font-mono text-xs text-muted-foreground">
-                      {node.address}
-                    </p>
-                  </div>
-                </div>
-                <NodeHealthBadge health={node.health} />
-              </div>
-            </div>
-          ))}
+      <Panel scanline className="flex flex-col items-center justify-center gap-4 px-4 py-16 text-center">
+        <span className="flex h-12 w-12 items-center justify-center border border-line bg-input text-t6">
+          <Server size={20} />
+        </span>
+        <div className="text-[13px] uppercase tracking-[2px] text-t4">
+          NO NODE ENDPOINT
         </div>
-      ) : (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border p-12">
-          <p className="text-[13px] text-muted-foreground">
-            {t("admin.nodes.noNodes")}
-          </p>
-        </div>
-      )}
+        <p className="max-w-md text-[11px] uppercase tracking-[1px] text-t7">
+          {t("admin.nodes.noNodes")}
+        </p>
+      </Panel>
     </div>
   );
 }
