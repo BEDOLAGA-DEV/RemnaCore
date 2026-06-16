@@ -15,7 +15,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
 	multisubaggregate "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/multisubtest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/handler"
@@ -70,7 +69,6 @@ func provisionAccessToken(t *testing.T, jwtIssuer *authutil.JWTIssuer) string {
 	token, err := jwtIssuer.Sign(authutil.UserClaims{
 		UserID: provisionTestUserID,
 		Email:  provisionTestEmail,
-		Role:   string(identity.RoleCustomer),
 	}, testAccessTTL)
 	require.NoError(t, err)
 	return token

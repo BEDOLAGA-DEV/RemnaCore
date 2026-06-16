@@ -21,7 +21,6 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/billingtest"
 	billingservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/handler"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
@@ -114,7 +113,6 @@ func billingAccessToken(t *testing.T, jwtIssuer *authutil.JWTIssuer) string {
 	token, err := jwtIssuer.Sign(authutil.UserClaims{
 		UserID: billingTestUserID,
 		Email:  billingTestEmail,
-		Role:   string(identity.RoleCustomer),
 	}, testAccessTTL)
 	require.NoError(t, err)
 	return token

@@ -21,10 +21,12 @@ const (
 )
 
 // UserClaims carries the application-level identity embedded in each JWT.
+// Authorization is resolved per-request by AccessService (which reads the
+// user's current RBAC bindings from the database); no authz decision may
+// read role from the token.
 type UserClaims struct {
 	UserID string `json:"user_id"`
 	Email  string `json:"email"`
-	Role   string `json:"role"`
 }
 
 // jwtCustomClaims combines UserClaims with the standard registered claims.

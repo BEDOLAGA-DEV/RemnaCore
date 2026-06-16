@@ -29,7 +29,6 @@ func TestAuthMiddleware_ValidToken(t *testing.T) {
 	claims := authutil.UserClaims{
 		UserID: "user-123",
 		Email:  "test@example.com",
-		Role:   "customer",
 	}
 	token, err := issuer.Sign(claims, 5*time.Minute)
 	require.NoError(t, err)
@@ -52,7 +51,6 @@ func TestAuthMiddleware_ValidToken(t *testing.T) {
 	require.NotNil(t, gotClaims)
 	assert.Equal(t, "user-123", gotClaims.UserID)
 	assert.Equal(t, "test@example.com", gotClaims.Email)
-	assert.Equal(t, "customer", gotClaims.Role)
 }
 
 func TestAuthMiddleware_MissingToken(t *testing.T) {
@@ -101,7 +99,6 @@ func TestAuthMiddleware_ExpiredToken(t *testing.T) {
 	claims := authutil.UserClaims{
 		UserID: "user-456",
 		Email:  "expired@example.com",
-		Role:   "customer",
 	}
 	// Sign with negative TTL to produce an already-expired token.
 	token, err := issuer.Sign(claims, -1*time.Minute)

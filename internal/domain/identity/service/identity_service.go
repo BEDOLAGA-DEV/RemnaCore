@@ -241,7 +241,6 @@ func (s *Service) issueSession(txCtx context.Context, user *aggregate.PlatformUs
 	accessToken, err := s.jwt.Sign(authutil.UserClaims{
 		UserID: user.ID,
 		Email:  user.Email,
-		Role:   string(user.Role),
 	}, s.accessTTL)
 	if err != nil {
 		return nil, fmt.Errorf("signing access token: %w", err)
@@ -326,7 +325,6 @@ func (s *Service) RefreshToken(ctx context.Context, refreshToken string) (*Login
 	accessToken, err := s.jwt.Sign(authutil.UserClaims{
 		UserID: user.ID,
 		Email:  user.Email,
-		Role:   string(user.Role),
 	}, s.accessTTL)
 	if err != nil {
 		return nil, fmt.Errorf("signing access token: %w", err)
