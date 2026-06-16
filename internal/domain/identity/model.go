@@ -58,11 +58,12 @@ var (
 // --- Service type aliases (backward compatibility) ---
 
 type (
-	Service        = service.Service
-	RegisterInput  = service.RegisterInput
-	RegisterResult = service.RegisterResult
-	LoginInput     = service.LoginInput
-	LoginResult    = service.LoginResult
+	Service               = service.Service
+	RegisterInput         = service.RegisterInput
+	RegisterResult        = service.RegisterResult
+	LoginInput            = service.LoginInput
+	LoginResult           = service.LoginResult
+	CreateFirstAdminInput = service.CreateFirstAdminInput
 )
 
 // NewService is a convenience re-export from the service subpackage.

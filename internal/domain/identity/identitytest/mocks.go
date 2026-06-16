@@ -67,6 +67,16 @@ func (m *MockRepository) ListUsers(ctx context.Context, limit, offset int) ([]*i
 	return args.Get(0).([]*identity.PlatformUser), args.Error(1)
 }
 
+func (m *MockRepository) CountAdmins(ctx context.Context) (int64, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+func (m *MockRepository) AcquireBootstrapLock(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
 func (m *MockRepository) CreateSession(ctx context.Context, session *identity.Session) error {
 	args := m.Called(ctx, session)
 	return args.Error(0)

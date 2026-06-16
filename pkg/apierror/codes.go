@@ -5,6 +5,7 @@ import "net/http"
 // Identity error codes.
 var (
 	IdentityAlreadyExists    = New("IDENTITY.ALREADY_EXISTS", "identity record already exists", http.StatusConflict)
+	IdentitySetupCompleted   = New("IDENTITY.SETUP_ALREADY_COMPLETED", "admin setup already completed", http.StatusConflict)
 	IdentityEmailTaken       = New("IDENTITY.EMAIL_TAKEN", "email already registered", http.StatusConflict)
 	IdentityInvalidCreds     = New("IDENTITY.INVALID_CREDENTIALS", "invalid email or password", http.StatusUnauthorized)
 	IdentityTokenExpired     = New("IDENTITY.TOKEN_EXPIRED", "token has expired", http.StatusGone)

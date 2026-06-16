@@ -12,6 +12,8 @@ func MapToAPIError(err error) *apierror.Error {
 	switch {
 	case errors.Is(err, ErrAlreadyExists):
 		return apierror.IdentityAlreadyExists
+	case errors.Is(err, ErrSetupAlreadyCompleted):
+		return apierror.IdentitySetupCompleted
 	case errors.Is(err, ErrEmailTaken):
 		return apierror.IdentityEmailTaken
 	case errors.Is(err, ErrInvalidCredentials):

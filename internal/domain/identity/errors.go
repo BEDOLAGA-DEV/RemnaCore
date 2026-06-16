@@ -16,6 +16,7 @@ var (
 	ErrSessionExpired        = service.ErrSessionExpired
 	ErrPasswordResetExpired  = service.ErrPasswordResetExpired
 	ErrPasswordResetNotFound = service.ErrPasswordResetNotFound
+	ErrSetupAlreadyCompleted = service.ErrSetupAlreadyCompleted
 )
 
 // Aggregate-level error aliases re-exported for backward compatibility.

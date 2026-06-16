@@ -150,6 +150,76 @@ func TestService_Login_UserNotFound(t *testing.T) {
 	assert.ErrorIs(t, err, identity.ErrInvalidCredentials)
 }
 
+func TestService_SetupNeeded(t *testing.T) {
+	svc, repo, _ := newTestService(t)
+	ctx := context.Background()
+
+	repo.On("CountAdmins", ctx).Return(int64(0), nil).Once()
+	need, err := svc.SetupNeeded(ctx)
+	require.NoError(t, err)
+	assert.True(t, need)
+
+	repo.On("CountAdmins", ctx).Return(int64(1), nil).Once()
+	need, err = svc.SetupNeeded(ctx)
+	require.NoError(t, err)
+	assert.False(t, need)
+	repo.AssertExpectations(t)
+}
+
+func TestService_CreateFirstAdmin_Success(t *testing.T) {
+	svc, repo, pub := newTestService(t)
+	ctx := context.Background()
+
+	repo.On("AcquireBootstrapLock", mock.Anything).Return(nil)
+	repo.On("CountAdmins", mock.Anything).Return(int64(0), nil)
+	repo.On("CreateUser", mock.Anything, mock.AnythingOfType("*aggregate.PlatformUser")).Return(nil)
+	repo.On("CreateSession", mock.Anything, mock.AnythingOfType("*aggregate.Session")).Return(nil)
+	pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
+
+	result, err := svc.CreateFirstAdmin(ctx, identity.CreateFirstAdminInput{
+		Email:    "admin@example.com",
+		Password: "StrongP4ss",
+	})
+
+	require.NoError(t, err)
+	assert.NotEmpty(t, result.AccessToken)
+	assert.NotEmpty(t, result.RefreshToken)
+	assert.Equal(t, identity.RoleAdmin, result.User.Role)
+	assert.Equal(t, "admin@example.com", result.User.Email)
+	repo.AssertExpectations(t)
+	pub.AssertExpectations(t)
+}
+
+func TestService_CreateFirstAdmin_AlreadyCompleted(t *testing.T) {
+	svc, repo, _ := newTestService(t)
+	ctx := context.Background()
+
+	// An admin already exists: the count guard rejects the second bootstrap.
+	repo.On("AcquireBootstrapLock", mock.Anything).Return(nil)
+	repo.On("CountAdmins", mock.Anything).Return(int64(1), nil)
+
+	_, err := svc.CreateFirstAdmin(ctx, identity.CreateFirstAdminInput{
+		Email:    "admin2@example.com",
+		Password: "StrongP4ss",
+	})
+
+	assert.ErrorIs(t, err, identity.ErrSetupAlreadyCompleted)
+	// CreateUser must never be reached when setup is already completed.
+	repo.AssertNotCalled(t, "CreateUser", mock.Anything, mock.Anything)
+}
+
+func TestService_CreateFirstAdmin_WeakPassword(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	ctx := context.Background()
+
+	_, err := svc.CreateFirstAdmin(ctx, identity.CreateFirstAdminInput{
+		Email:    "admin@example.com",
+		Password: "weak",
+	})
+
+	require.Error(t, err)
+}
+
 func TestService_VerifyEmail_Success(t *testing.T) {
 	svc, repo, pub := newTestService(t)
 	ctx := context.Background()

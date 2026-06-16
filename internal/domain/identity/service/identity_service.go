@@ -146,6 +146,14 @@ type LoginResult struct {
 	User         *aggregate.PlatformUser
 }
 
+// CreateFirstAdminInput holds the data to bootstrap the first administrator.
+type CreateFirstAdminInput struct {
+	Email     string
+	Password  string
+	IPAddress string
+	UserAgent string
+}
+
 // Register creates a new user, generates an email verification token, and
 // publishes a UserRegistered event.
 func (s *Service) Register(ctx context.Context, input RegisterInput) (*RegisterResult, error) {
@@ -210,6 +218,26 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (*LoginResult, er
 		return nil, ErrInvalidCredentials
 	}
 
+	now := s.clock.Now()
+	var result *LoginResult
+	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		r, err := s.issueSession(txCtx, user, input.IPAddress, input.UserAgent, now)
+		if err != nil {
+			return err
+		}
+		result = r
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+// issueSession signs an access token, persists a new session, and publishes a
+// login event within the provided transaction context. Shared by Login and
+// CreateFirstAdmin so token/session issuance lives in exactly one place.
+func (s *Service) issueSession(txCtx context.Context, user *aggregate.PlatformUser, ip, userAgent string, now time.Time) (*LoginResult, error) {
 	accessToken, err := s.jwt.Sign(authutil.UserClaims{
 		UserID: user.ID,
 		Email:  user.Email,
@@ -224,27 +252,21 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (*LoginResult, er
 		return nil, fmt.Errorf("generating refresh token: %w", err)
 	}
 
-	now := s.clock.Now()
 	session := &aggregate.Session{
 		ID:           uuid.Must(uuid.NewV7()).String(),
 		UserID:       user.ID,
 		RefreshToken: refreshToken,
-		IPAddress:    input.IPAddress,
-		UserAgent:    input.UserAgent,
+		IPAddress:    ip,
+		UserAgent:    userAgent,
 		ExpiresAt:    now.Add(s.refreshTTL),
 		CreatedAt:    now,
 	}
 
-	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
-		if err := s.repo.CreateSession(txCtx, session); err != nil {
-			return fmt.Errorf("persisting session: %w", err)
-		}
-		if err := s.publisher.Publish(txCtx, NewUserLoggedInEvent(user.ID, now)); err != nil {
-			return fmt.Errorf("publishing %s: %w", aggregate.EventUserLoggedIn, err)
-		}
-		return nil
-	}); err != nil {
-		return nil, err
+	if err := s.repo.CreateSession(txCtx, session); err != nil {
+		return nil, fmt.Errorf("persisting session: %w", err)
+	}
+	if err := s.publisher.Publish(txCtx, NewUserLoggedInEvent(user.ID, now)); err != nil {
+		return nil, fmt.Errorf("publishing %s: %w", aggregate.EventUserLoggedIn, err)
 	}
 
 	return &LoginResult{
@@ -315,6 +337,58 @@ func (s *Service) RefreshToken(ctx context.Context, refreshToken string) (*Login
 		RefreshToken: newRefreshToken,
 		User:         user,
 	}, nil
+}
+
+// SetupNeeded reports whether the platform has no administrator yet, i.e. the
+// first-run admin setup wizard should be shown.
+func (s *Service) SetupNeeded(ctx context.Context) (bool, error) {
+	n, err := s.repo.CountAdmins(ctx)
+	if err != nil {
+		return false, fmt.Errorf("counting admins: %w", err)
+	}
+	return n == 0, nil
+}
+
+// CreateFirstAdmin bootstraps the first administrator and logs them in. It is a
+// no-op once any admin exists, returning ErrSetupAlreadyCompleted. Concurrent
+// calls serialize via a transaction-scoped advisory lock, guaranteeing that
+// exactly one admin is ever created through this path.
+func (s *Service) CreateFirstAdmin(ctx context.Context, in CreateFirstAdminInput) (*LoginResult, error) {
+	now := s.clock.Now()
+	user, err := aggregate.NewAdminUser(in.Email, in.Password, now)
+	if err != nil {
+		return nil, fmt.Errorf("creating admin user: %w", err)
+	}
+
+	var result *LoginResult
+	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		if err := s.repo.AcquireBootstrapLock(txCtx); err != nil {
+			return err
+		}
+		n, err := s.repo.CountAdmins(txCtx)
+		if err != nil {
+			return fmt.Errorf("counting admins: %w", err)
+		}
+		if n > 0 {
+			return ErrSetupAlreadyCompleted
+		}
+		if err := s.repo.CreateUser(txCtx, user); err != nil {
+			return fmt.Errorf("persisting admin: %w", err)
+		}
+		if err := domainevent.PublishAll(txCtx, s.publisher, user); err != nil {
+			return err
+		}
+		r, err := s.issueSession(txCtx, user, in.IPAddress, in.UserAgent, now)
+		if err != nil {
+			return err
+		}
+		result = r
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
 // generateRefreshToken produces a cryptographically random hex string.
