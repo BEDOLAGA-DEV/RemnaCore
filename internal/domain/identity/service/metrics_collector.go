@@ -69,8 +69,13 @@ func NewMetricsCollector(pool *pgxpool.Pool, clk clock.Clock, logger *slog.Logge
 	}
 }
 
-// Run starts the snapshot loop. It blocks until the context is cancelled.
+// Run captures one sample immediately, then snapshots on each tick. It blocks
+// until the context is cancelled. The eager initial snapshot means the
+// time-series has a t0 point right after startup instead of staying empty for
+// the first interval.
 func (s *MetricsCollector) Run(ctx context.Context) {
+	s.snapshot(ctx)
+
 	ticker := time.NewTicker(s.interval)
 	defer ticker.Stop()
 
