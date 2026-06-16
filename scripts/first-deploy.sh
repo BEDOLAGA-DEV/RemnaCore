@@ -114,25 +114,14 @@ done
 ok "Infrastructure services started"
 
 # ── Step 5: Apply migrations ───────────────────────────────────────────────
-# Idempotency check: skip if the last migration's artifact exists.
-MIGRATION_CHECK=$(docker compose exec -T platform-db psql \
-    -U platform -d remnacore -tAc \
-    "SELECT 1 FROM information_schema.tables WHERE table_schema='multisub' AND table_name='saga_instances'" 2>/dev/null || true)
-
-if [ "$MIGRATION_CHECK" = "1" ]; then
-    warn "Migrations already applied, skipping"
-else
-    echo "Applying migrations..."
-    # Source .env for DB credentials in the psql connection.
-    for migration in internal/adapter/postgres/migrations/*.sql; do
-        echo "  Applying $(basename "$migration")..."
-        docker compose exec -T platform-db psql -U platform -d remnacore < "$migration" > /dev/null 2>&1
-        if [ $? -ne 0 ]; then
-            fail "Migration $(basename "$migration") failed"
-        fi
-    done
-    ok "Migrations applied ($(ls -1 internal/adapter/postgres/migrations/*.sql | wc -l | tr -d ' ') files)"
-fi
+# Idempotent, ledger-tracked (public.schema_migrations). Applies only migrations
+# not yet recorded, so new NNN_*.sql files are picked up on every (re)deploy.
+# Existing databases are baselined automatically via the saga_instances sentinel.
+echo "Applying migrations..."
+PSQL="docker compose exec -T platform-db psql -U platform -d remnacore -v ON_ERROR_STOP=1" \
+    MIGRATIONS_DIR="internal/adapter/postgres/migrations" \
+    bash scripts/migrate.sh || fail "Migrations failed"
+ok "Migrations applied"
 
 # ── Step 6: Start application services ─────────────────────────────────────
 echo "Starting application services..."

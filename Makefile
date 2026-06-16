@@ -63,8 +63,10 @@ gen: ## Generate sqlc Go code from SQL queries
 # ─── Database Migrations ─────────────────────────────────────────────────────
 
 .PHONY: migrate
-migrate: ## Apply all pending migrations
-	atlas migrate apply --env local
+migrate: ## Apply all pending migrations (idempotent, ledger-tracked)
+	@PSQL="psql $${DATABASE_URL:-postgres://platform:secret@localhost:5432/remnacore?sslmode=disable} -v ON_ERROR_STOP=1" \
+		MIGRATIONS_DIR="internal/adapter/postgres/migrations" \
+		bash scripts/migrate.sh
 
 .PHONY: migrate-new
 migrate-new: ## Create a new migration (usage: make migrate-new name=<migration_name>)
