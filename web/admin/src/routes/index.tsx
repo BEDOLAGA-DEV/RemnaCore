@@ -4,7 +4,6 @@ import {
   useAdminStats,
   useAdminSubscriptions,
   useAdminInvoices,
-  useAdminSessions,
   usePlugins,
   useSystemHealth,
   LoadingSpinner,
@@ -181,11 +180,10 @@ export function AdminDashboardPage() {
     offset: 0,
   });
   const { data: plugins, isLoading: pluginsLoading } = usePlugins();
-  const { data: sessions, isLoading: sessionsLoading } = useAdminSessions();
   const { data: healthChecks } = useSystemHealth();
 
   const isLoading =
-    statsLoading || subsLoading || invoicesLoading || pluginsLoading || sessionsLoading;
+    statsLoading || subsLoading || invoicesLoading || pluginsLoading;
 
   const stats = useMemo(() => {
     const s = serverStats;
@@ -245,12 +243,6 @@ export function AdminDashboardPage() {
     () => plugins?.filter((p) => p.status === "enabled") ?? [],
     [plugins],
   );
-
-  // Keep derived data referenced so behavior/queries stay intact even when not
-  // surfaced in the terminal layout.
-  void sessions;
-  void planDistribution;
-  void enabledPlugins;
 
   if (isLoading) {
     return <LoadingSpinner />;
@@ -342,7 +334,7 @@ export function AdminDashboardPage() {
             title="SYSTEM STATUS"
             right={
               <span className="text-[9px] uppercase tracking-[1px] text-t7">
-                AUTO-REFRESH 15s
+                {enabledPlugins.length} PLUGINS · AUTO-REFRESH 15s
               </span>
             }
           />
@@ -382,9 +374,35 @@ export function AdminDashboardPage() {
         </Panel>
       </div>
 
-      {/* System log — recent invoices / subscriptions as terminal lines */}
-      <Panel>
-        <PanelHeader title="SYSTEM LOG" right={<PulseDot />} />
+      {/* Subscriptions by plan + system log */}
+      <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[320px_1fr]">
+        <Panel>
+          <PanelHeader title="SUBSCRIPTIONS BY PLAN" />
+          <div className="flex flex-col gap-3 px-4 py-4">
+            {planDistribution.length > 0 ? (
+              planDistribution.map((p) => (
+                <div key={p.planId} className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="tracking-[1px] text-t3">{p.planId}</span>
+                    <span className="tabular-nums text-t6">
+                      {p.count} ({p.percentage}%)
+                    </span>
+                  </div>
+                  <div className="flex items-center">
+                    <Bar pct={p.percentage} />
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="py-6 text-center text-[11px] uppercase tracking-[2px] text-t7">
+                NO ACTIVE SUBSCRIPTIONS
+              </div>
+            )}
+          </div>
+        </Panel>
+
+        <Panel>
+          <PanelHeader title="SYSTEM LOG" right={<PulseDot />} />
         <div className="flex flex-col gap-0.5 px-3.5 py-2">
           {feedItems.length > 0 ? (
             feedItems.map((item) => (
@@ -416,7 +434,8 @@ export function AdminDashboardPage() {
             </div>
           )}
         </div>
-      </Panel>
+        </Panel>
+      </div>
     </div>
   );
 }
