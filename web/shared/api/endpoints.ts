@@ -3,6 +3,12 @@
  * Frontend code MUST import paths from here — never hardcode URLs.
  */
 export const ENDPOINTS = {
+  // ─── First-run setup (Public) ──────────────────────────────────────────
+  setup: {
+    status: "/api/setup/status",
+    admin: "/api/setup/admin",
+  },
+
   // ─── Auth (Public) ──────────────────────────────────────────────────────
   auth: {
     register: "/api/auth/register",

@@ -8,6 +8,7 @@ export type * from "./api/types.js";
 
 // Hooks - API
 export * from "./api/hooks/useAuth.js";
+export * from "./api/hooks/useSetup.js";
 export * from "./api/hooks/usePlans.js";
 export * from "./api/hooks/useSubscriptions.js";
 export * from "./api/hooks/useInvoices.js";

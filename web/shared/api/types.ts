@@ -14,6 +14,11 @@ export type RegisterRequest = {
   password: string;
 };
 
+export type CreateAdminRequest = {
+  email: string;
+  password: string;
+};
+
 export type VerifyEmailRequest = {
   token: string;
 };

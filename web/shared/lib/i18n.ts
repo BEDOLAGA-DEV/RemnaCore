@@ -76,6 +76,19 @@ const en = {
     registrationFailed: "Registration failed. Please try again.",
     loginFailed: "Login failed. Please try again.",
   },
+  setup: {
+    title: "Create administrator",
+    subtitle: "initial setup",
+    description:
+      "No administrator exists yet. Create the first admin account to continue.",
+    emailLabel: "Login (email)",
+    passwordLabel: "Password",
+    confirmLabel: "Confirm password",
+    submit: "Create administrator",
+    creating: "Creating…",
+    passwordMismatch: "Passwords do not match",
+    failed: "Could not create administrator. Please try again.",
+  },
   validation: {
     passwordMinLength: "Password must be at least 8 characters.",
     passwordUppercase: "Password must contain at least one uppercase letter.",
@@ -365,6 +378,19 @@ const ru: typeof en = {
     accessDeniedAdmin: "Доступ запрещён. Требуется аккаунт администратора.",
     registrationFailed: "Ошибка регистрации. Попробуйте ещё раз.",
     loginFailed: "Ошибка входа. Попробуйте ещё раз.",
+  },
+  setup: {
+    title: "Создание администратора",
+    subtitle: "первичная настройка",
+    description:
+      "Администратор ещё не создан. Создайте первую учётную запись администратора, чтобы продолжить.",
+    emailLabel: "Логин (email)",
+    passwordLabel: "Пароль",
+    confirmLabel: "Повтор пароля",
+    submit: "Создать администратора",
+    creating: "Создание…",
+    passwordMismatch: "Пароли не совпадают",
+    failed: "Не удалось создать администратора. Попробуйте ещё раз.",
   },
   validation: {
     passwordMinLength: "Пароль должен содержать не менее 8 символов.",

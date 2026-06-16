@@ -32,6 +32,10 @@ export type RegisterResponse = {
   verification_token: string;
 };
 
+export type SetupStatusResponse = {
+  needs_setup: boolean;
+};
+
 export type TokenPair = {
   access_token: string;
   refresh_token: string;

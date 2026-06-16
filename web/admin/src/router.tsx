@@ -10,6 +10,7 @@ import { AdminLayout } from "./routes/_layout.js";
 import { AdminDashboardPage } from "./routes/index.js";
 import { AdminInvoicesPage } from "./routes/invoices.js";
 import { AdminLoginPage } from "./routes/login.js";
+import { AdminSetupPage } from "./routes/setup.js";
 import { NodesPage } from "./routes/nodes.js";
 import { PluginDetailPage } from "./routes/plugins/[id].js";
 import { PluginsPage } from "./routes/plugins/index.js";
@@ -22,12 +23,16 @@ import { TenantDetailPage } from "./routes/tenants/[id].js";
 import { TenantsPage } from "./routes/tenants/index.js";
 import { UserDetailPage } from "./routes/users/[id].js";
 import { UsersPage } from "./routes/users/index.js";
+import { checkSetupNeeded } from "./lib/setupGate.js";
 
 const rootRoute = createRootRoute({
 	component: Outlet,
 });
 
-function requireAdmin() {
+async function requireAdmin() {
+	if (await checkSetupNeeded()) {
+		throw redirect({ to: "/setup" });
+	}
 	const { isAuthenticated, user } = useAuthStore.getState();
 	if (!isAuthenticated) {
 		throw redirect({ to: "/login" });
@@ -37,14 +42,31 @@ function requireAdmin() {
 	}
 }
 
-function requireGuest() {
+async function requireGuest() {
+	if (await checkSetupNeeded()) {
+		throw redirect({ to: "/setup" });
+	}
 	const { isAuthenticated, user } = useAuthStore.getState();
 	if (isAuthenticated && user?.role === USER_ROLES.admin) {
 		throw redirect({ to: "/" });
 	}
 }
 
+// Setup is reachable only while no admin exists; afterwards it bounces to login.
+async function requireSetup() {
+	if (!(await checkSetupNeeded())) {
+		throw redirect({ to: "/login" });
+	}
+}
+
 // ─── Public ─────────────────────────────────────────────────────────────────
+
+const setupRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/setup",
+	beforeLoad: requireSetup,
+	component: AdminSetupPage,
+});
 
 const loginRoute = createRoute({
 	getParentRoute: () => rootRoute,
@@ -149,6 +171,7 @@ const settingsRoute = createRoute({
 // ─── Tree ───────────────────────────────────────────────────────────────────
 
 const routeTree = rootRoute.addChildren([
+	setupRoute,
 	loginRoute,
 	layoutRoute.addChildren([
 		dashboardRoute,
