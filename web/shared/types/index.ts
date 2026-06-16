@@ -8,6 +8,47 @@ export const USER_ROLES = {
 
 export type UserRole = (typeof USER_ROLES)[keyof typeof USER_ROLES];
 
+// ─── RBAC: Permissions + System Roles ───────────────────────────────────────
+// Mirror of internal/domain/identity/rbac/catalog.go — keep in sync.
+// Source of truth: the Go catalog. This mirror satisfies the no-hardcoded-
+// strings rule for the UI. A codegen step (Phase D) will automate sync.
+
+export const PERMISSIONS = {
+  usersRead: "users.read",
+  usersInvite: "users.invite",
+  usersAssignRole: "users.assign_role",
+  rolesRead: "roles.read",
+  rolesManage: "roles.manage",
+  shopsRead: "shops.read",
+  shopsManage: "shops.manage",
+  shopsBranding: "shops.branding",
+  tariffsRead: "tariffs.read",
+  tariffsWrite: "tariffs.write",
+  customersRead: "customers.read",
+  customersManage: "customers.manage",
+  subscriptionsRead: "subscriptions.read",
+  subscriptionsManage: "subscriptions.manage",
+  billingRead: "billing.read",
+  billingRefund: "billing.refund",
+  pluginsRead: "plugins.read",
+  pluginsManage: "plugins.manage",
+  analyticsRead: "analytics.read",
+  sessionsRead: "sessions.read",
+  settingsManage: "settings.manage",
+  infraRead: "infra.read",
+} as const;
+
+export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
+
+export const SYSTEM_ROLES = {
+  platformAdmin: "platform_admin",
+  shopOwner: "shop_owner",
+  shopStaff: "shop_staff",
+  customer: "customer",
+} as const;
+
+export type SystemRoleKey = (typeof SYSTEM_ROLES)[keyof typeof SYSTEM_ROLES];
+
 export type User = {
   id: string;
   email: string;
