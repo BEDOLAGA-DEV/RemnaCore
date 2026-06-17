@@ -18,6 +18,8 @@ var (
 	ErrInvitationExpired  = errors.New("invitation expired")
 	ErrInvitationNotFound = errors.New("invitation not found")
 	ErrEmailAlreadyUser   = errors.New("email already belongs to an existing user")
+	// ErrBindingNotFound is returned by RevokeRole when no matching binding exists.
+	ErrBindingNotFound = errors.New("role binding not found")
 )
 
 // MapIAMError maps IdentityAdminService errors to API error codes.
@@ -37,6 +39,8 @@ func MapIAMError(err error) *apierror.Error {
 		return apierror.IAMInvitationNotFound
 	case errors.Is(err, ErrEmailAlreadyUser):
 		return apierror.IAMEmailAlreadyUser
+	case errors.Is(err, ErrBindingNotFound):
+		return apierror.IAMBindingNotFound
 	default:
 		return nil
 	}

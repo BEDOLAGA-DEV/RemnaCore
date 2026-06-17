@@ -290,6 +290,11 @@ func (s *IdentityAdminService) AssignRole(
 // RevokeRole removes roleKey (scoped to tenantID) from targetUserID. The actor
 // must hold grant rights for the role. A last-admin guard prevents revoking the
 // final global platform_admin binding.
+//
+// NOTE: The last-admin check runs inside the transaction under READ COMMITTED
+// isolation, which closes the TOCTOU window compared to checking outside the tx.
+// A fully race-proof version would require a row-level lock or SERIALIZABLE
+// isolation — acceptable for Phase B.
 func (s *IdentityAdminService) RevokeRole(
 	ctx context.Context,
 	actorUserID, targetUserID, roleKey string,
@@ -300,21 +305,26 @@ func (s *IdentityAdminService) RevokeRole(
 		return err
 	}
 
-	// Last-admin guard: refuse to revoke the only global platform_admin.
-	if roleKey == rbac.RolePlatformAdmin && tenantID == nil {
-		count, err := s.rbacRepo.CountPlatformAdmins(ctx)
-		if err != nil {
-			return fmt.Errorf("counting platform admins: %w", err)
-		}
-		if count <= 1 {
-			return ErrLastAdmin
-		}
-	}
-
 	now := s.clock.Now()
 	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
-		if _, err := s.rbacRepo.RevokeRole(txCtx, targetUserID, role.ID, tenantID); err != nil {
+		// Last-admin guard is inside the tx so concurrent revoke calls cannot both
+		// pass the <=1 check and remove the last global platform_admin binding.
+		if roleKey == rbac.RolePlatformAdmin && tenantID == nil {
+			count, err := s.rbacRepo.CountPlatformAdmins(txCtx)
+			if err != nil {
+				return fmt.Errorf("counting platform admins: %w", err)
+			}
+			if count <= 1 {
+				return ErrLastAdmin
+			}
+		}
+
+		n, err := s.rbacRepo.RevokeRole(txCtx, targetUserID, role.ID, tenantID)
+		if err != nil {
 			return fmt.Errorf("revoking role: %w", err)
+		}
+		if n == 0 {
+			return ErrBindingNotFound
 		}
 		if err := s.publisher.Publish(txCtx, NewRoleRevokedEvent(targetUserID, roleKey, tenantID, now)); err != nil {
 			return fmt.Errorf("publishing %s: %w", aggregate.EventRoleRevoked, err)
@@ -398,8 +408,11 @@ func (s *IdentityAdminService) ListInvitations(
 	return s.repo.ListInvitations(ctx, tenants, false)
 }
 
-// RevokeInvitation deletes a pending invitation. The actor must be a platform
-// admin or a member of the tenant the invitation was scoped to.
+// RevokeInvitation deletes a pending invitation. The actor must hold the same
+// grant right required to create the invitation (i.e. the right to grant the
+// invitation's role in its tenant). This makes create/revoke symmetric: a
+// tenant member without the grant right for the role cannot cancel invitations
+// for roles they could not have issued.
 func (s *IdentityAdminService) RevokeInvitation(
 	ctx context.Context,
 	actorUserID, invitationID string,
@@ -412,27 +425,18 @@ func (s *IdentityAdminService) RevokeInvitation(
 		return fmt.Errorf("getting invitation: %w", err)
 	}
 
-	acc, err := s.access.Resolve(ctx, actorUserID, inv.TenantID)
-	if err != nil {
-		return fmt.Errorf("resolving actor access: %w", err)
-	}
-
-	allowed := acc.IsPlatformAdmin
-	if !allowed && inv.TenantID != nil {
-		_, allowed = acc.AllowedTenants[*inv.TenantID]
-	}
-	if !allowed {
-		return ErrGrantNotAllowed
+	// Require the same grant right as creating the invitation.
+	if _, err := s.authorizeGrant(ctx, actorUserID, inv.RoleKey, inv.TenantID); err != nil {
+		return err
 	}
 
 	return s.repo.DeleteInvitation(ctx, inv.ID)
 }
 
-// ListUserRoles returns all role bindings for targetUserID. The actor must be
-// a platform admin or hold at least one tenant membership. Fine-grained
-// per-tenant scoping is intentionally omitted here — the route is already
-// gated on rbac.UsersRead, so callers without that permission are rejected at
-// the HTTP layer before reaching this method.
+// ListUserRoles returns role bindings for targetUserID visible to the actor.
+// Platform admins see all bindings. Non-admins see only bindings scoped to
+// tenants they belong to; global and out-of-scope bindings are filtered out to
+// prevent cross-tenant disclosure.
 func (s *IdentityAdminService) ListUserRoles(
 	ctx context.Context,
 	actorUserID, targetUserID string,
@@ -446,5 +450,25 @@ func (s *IdentityAdminService) ListUserRoles(
 		return nil, ErrGrantNotAllowed
 	}
 
-	return s.rbacRepo.ListBindingsForUser(ctx, targetUserID)
+	bindings, err := s.rbacRepo.ListBindingsForUser(ctx, targetUserID)
+	if err != nil {
+		return nil, fmt.Errorf("listing bindings: %w", err)
+	}
+
+	// Platform admins see all bindings unchanged.
+	if acc.IsPlatformAdmin {
+		return bindings, nil
+	}
+
+	// Non-admins: filter to only bindings within their own tenants.
+	// Global bindings and bindings in tenants the actor does not belong to are dropped.
+	filtered := make([]rbac.Binding, 0, len(bindings))
+	for _, b := range bindings {
+		if b.TenantID != nil {
+			if _, ok := acc.AllowedTenants[*b.TenantID]; ok {
+				filtered = append(filtered, b)
+			}
+		}
+	}
+	return filtered, nil
 }

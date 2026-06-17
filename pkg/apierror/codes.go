@@ -162,6 +162,7 @@ var (
 	IAMInvitationExpired  = New("IAM.INVITATION_EXPIRED", "invitation has expired", http.StatusGone)
 	IAMInvitationNotFound = New("IAM.INVITATION_NOT_FOUND", "invitation not found", http.StatusNotFound)
 	IAMEmailAlreadyUser   = New("IAM.EMAIL_ALREADY_USER", "email already belongs to a user", http.StatusConflict)
+	IAMBindingNotFound    = New("IAM.BINDING_NOT_FOUND", "role binding not found", http.StatusNotFound)
 )
 
 // Routing error codes.

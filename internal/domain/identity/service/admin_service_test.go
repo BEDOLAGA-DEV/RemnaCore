@@ -166,7 +166,8 @@ type adminStubRBACRepo struct {
 	bindings           map[string][]rbac.Binding // keyed by userID
 	assignedRoles      []assignedRoleRecord
 	revokedRoles       []revokedRoleRecord
-	platformAdminCount int // controlled per-test; defaults to 1
+	platformAdminCount int   // controlled per-test; defaults to 1
+	revokeRowsAffected int64 // rows returned by RevokeRole; defaults to 1
 }
 
 type assignedRoleRecord struct {
@@ -187,6 +188,7 @@ func newAdminStubRBACRepo() *adminStubRBACRepo {
 		roles:              map[string]rbac.Role{},
 		bindings:           map[string][]rbac.Binding{},
 		platformAdminCount: 1, // safe default: there is at least one admin
+		revokeRowsAffected: 1, // default: binding exists and is removed
 	}
 }
 
@@ -225,7 +227,7 @@ func (r *adminStubRBACRepo) AssignRole(_ context.Context, userID, roleID string,
 
 func (r *adminStubRBACRepo) RevokeRole(_ context.Context, userID, roleID string, tenantID *string) (int64, error) {
 	r.revokedRoles = append(r.revokedRoles, revokedRoleRecord{UserID: userID, RoleID: roleID, TenantID: tenantID})
-	return 1, nil
+	return r.revokeRowsAffected, nil
 }
 
 func (r *adminStubRBACRepo) GetRole(_ context.Context, key string) (rbac.Role, error) {
@@ -992,4 +994,221 @@ func TestRevokeInvitation_ScopeReject(t *testing.T) {
 	assert.ErrorIs(t, err, service.ErrGrantNotAllowed)
 	// Invitation must NOT be deleted.
 	assert.Empty(t, repo.deletedInvitations)
+}
+
+// ============================================================
+// Tests: ListUserRoles — cross-tenant scoping (security fix)
+// ============================================================
+
+// TestListUserRoles_NonAdminFiltered verifies that a shop_owner of shopA who
+// requests a target user's bindings only sees the shopA binding; shopB and
+// global bindings are filtered out to prevent cross-tenant disclosure.
+func TestListUserRoles_NonAdminFiltered(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "owner-user-id"
+	targetID := "target-user-id"
+	shopA := "11111111-1111-1111-1111-111111111111"
+	shopB := "22222222-2222-2222-2222-222222222222"
+
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	// Actor is only a shop_owner of shopA.
+	rbacRepo.bindings = shopOwnerBindings(actorID, shopA)
+	rbacRepo.addRole(rbac.Role{ID: "role-owner-id", Key: rbac.RoleShopOwner, ScopeKind: rbac.ScopeShop})
+	rbacRepo.addRole(rbac.Role{ID: "role-staff-id", Key: rbac.RoleShopStaff, ScopeKind: rbac.ScopeShop})
+	rbacRepo.addRole(rbac.Role{ID: "role-admin-id", Key: rbac.RolePlatformAdmin, ScopeKind: rbac.ScopeGlobal})
+
+	// Target has three bindings: shopA, shopB, and a global (platform_admin).
+	rbacRepo.bindings[targetID] = []rbac.Binding{
+		{RoleID: "role-staff-id", RoleKey: rbac.RoleShopStaff, ScopeKind: rbac.ScopeShop, TenantID: &shopA},
+		{RoleID: "role-staff-id", RoleKey: rbac.RoleShopStaff, ScopeKind: rbac.ScopeShop, TenantID: &shopB},
+		{RoleID: "role-admin-id", RoleKey: rbac.RolePlatformAdmin, ScopeKind: rbac.ScopeGlobal, TenantID: nil},
+	}
+
+	shops := &adminStubShops{}
+	pub := &noopPublisher{}
+
+	svc := buildAdminSvc(t, repo, rbacRepo, shops, pub, now)
+
+	bindings, err := svc.ListUserRoles(context.Background(), actorID, targetID)
+
+	require.NoError(t, err)
+	require.Len(t, bindings, 1, "non-admin must see only bindings in their own tenant(s)")
+	assert.Equal(t, &shopA, bindings[0].TenantID)
+}
+
+// TestListUserRoles_AdminSeesAll verifies that a platform admin sees all bindings
+// for a target user — no filtering applied.
+func TestListUserRoles_AdminSeesAll(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "admin-user-id"
+	targetID := "target-user-id"
+	shopA := "11111111-1111-1111-1111-111111111111"
+	shopB := "22222222-2222-2222-2222-222222222222"
+
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	rbacRepo.bindings = platformAdminBindings(actorID)
+	rbacRepo.addRole(rbac.Role{ID: "role-admin-id", Key: rbac.RolePlatformAdmin, ScopeKind: rbac.ScopeGlobal})
+	rbacRepo.addRole(rbac.Role{ID: "role-staff-id", Key: rbac.RoleShopStaff, ScopeKind: rbac.ScopeShop})
+
+	// Target has bindings in shopA, shopB, and a global binding.
+	rbacRepo.bindings[targetID] = []rbac.Binding{
+		{RoleID: "role-staff-id", RoleKey: rbac.RoleShopStaff, ScopeKind: rbac.ScopeShop, TenantID: &shopA},
+		{RoleID: "role-staff-id", RoleKey: rbac.RoleShopStaff, ScopeKind: rbac.ScopeShop, TenantID: &shopB},
+		{RoleID: "role-admin-id", RoleKey: rbac.RolePlatformAdmin, ScopeKind: rbac.ScopeGlobal, TenantID: nil},
+	}
+
+	shops := &adminStubShops{}
+	pub := &noopPublisher{}
+
+	svc := buildAdminSvc(t, repo, rbacRepo, shops, pub, now)
+
+	bindings, err := svc.ListUserRoles(context.Background(), actorID, targetID)
+
+	require.NoError(t, err)
+	assert.Len(t, bindings, 3, "platform admin must see all three bindings")
+}
+
+// ============================================================
+// Tests: RevokeRole — no-op binding guard (security fix)
+// ============================================================
+
+// TestRevokeRole_NoBinding verifies that RevokeRole returns ErrBindingNotFound
+// when the binding does not exist (RevokeRole stub returns 0 rows affected), and
+// that no RoleRevoked event is published.
+func TestRevokeRole_NoBinding(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "admin-user-id"
+	targetID := "target-user-id"
+	shopID := "11111111-1111-1111-1111-111111111111"
+
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	rbacRepo.bindings = platformAdminBindings(actorID)
+	rbacRepo.addRole(rbac.Role{
+		ID:        "role-staff-id",
+		Key:       rbac.RoleShopStaff,
+		ScopeKind: rbac.ScopeShop,
+	})
+	// Simulate missing binding: RevokeRole returns 0 rows affected.
+	rbacRepo.revokeRowsAffected = 0
+
+	shops := &adminStubShops{}
+	pub := &noopPublisher{}
+
+	svc := buildAdminSvc(t, repo, rbacRepo, shops, pub, now)
+
+	err := svc.RevokeRole(context.Background(), actorID, targetID, rbac.RoleShopStaff, &shopID)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, service.ErrBindingNotFound)
+
+	// No RoleRevoked event must be published when nothing was removed.
+	for _, e := range pub.events {
+		assert.NotEqual(t, aggregate.EventRoleRevoked, e.Type,
+			"RoleRevoked event must NOT be published when binding was not found")
+	}
+}
+
+// ============================================================
+// Tests: RevokeInvitation — symmetric grant-right check (security fix)
+// ============================================================
+
+// TestRevokeInvitation_RequiresGrantRight verifies that a shop_owner of shopA
+// cannot revoke a shop_owner-role invitation (a role they cannot grant) even
+// when it is scoped to shopA. The error must be ErrGrantNotAllowed.
+func TestRevokeInvitation_RequiresGrantRight(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "owner-user-id"
+	shopA := "11111111-1111-1111-1111-111111111111"
+
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	// Actor is a shop_owner of shopA.
+	rbacRepo.bindings = shopOwnerBindings(actorID, shopA)
+	rbacRepo.addRole(rbac.Role{ID: "role-owner-id", Key: rbac.RoleShopOwner, ScopeKind: rbac.ScopeShop})
+
+	// Invitation is for shop_owner in shopA — a role that cannot be granted by
+	// a non-platform-admin per CanGrant.
+	inv, err := aggregate.NewInvitation("newowner@example.com", rbac.RoleShopOwner, &shopA, nil, "admin-id", now)
+	require.NoError(t, err)
+	repo.invitations[inv.Token] = inv
+
+	shops := &adminStubShops{}
+	pub := &noopPublisher{}
+
+	svc := buildAdminSvc(t, repo, rbacRepo, shops, pub, now)
+
+	err = svc.RevokeInvitation(context.Background(), actorID, inv.ID)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, service.ErrGrantNotAllowed)
+	// Invitation must NOT be deleted.
+	assert.Empty(t, repo.deletedInvitations)
+}
+
+// TestRevokeInvitation_AdminHappyPath verifies that a platform admin can revoke
+// any invitation, including one for shop_owner.
+func TestRevokeInvitation_AdminHappyPath(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "admin-user-id"
+	shopA := "11111111-1111-1111-1111-111111111111"
+
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	rbacRepo.bindings = platformAdminBindings(actorID)
+	rbacRepo.addRole(rbac.Role{ID: "role-admin-id", Key: rbac.RolePlatformAdmin, ScopeKind: rbac.ScopeGlobal})
+	rbacRepo.addRole(rbac.Role{ID: "role-owner-id", Key: rbac.RoleShopOwner, ScopeKind: rbac.ScopeShop})
+
+	inv, err := aggregate.NewInvitation("newowner@example.com", rbac.RoleShopOwner, &shopA, nil, actorID, now)
+	require.NoError(t, err)
+	repo.invitations[inv.Token] = inv
+
+	shops := &adminStubShops{}
+	pub := &noopPublisher{}
+
+	svc := buildAdminSvc(t, repo, rbacRepo, shops, pub, now)
+
+	err = svc.RevokeInvitation(context.Background(), actorID, inv.ID)
+
+	require.NoError(t, err)
+	require.Len(t, repo.deletedInvitations, 1)
+	assert.Equal(t, inv.ID, repo.deletedInvitations[0])
+}
+
+// ============================================================
+// Tests: ListInvitations — global invitation hidden from non-admin
+// ============================================================
+
+// TestListInvitations_GlobalHiddenFromNonAdmin verifies that a shop_owner does
+// not see a NULL-tenant (global) invitation when listing. ListInvitations passes
+// tenant scoping to the repo, and the repo stub filters out nil-tenant entries.
+func TestListInvitations_GlobalHiddenFromNonAdmin(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "owner-user-id"
+	shopA := "11111111-1111-1111-1111-111111111111"
+
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	rbacRepo.bindings = shopOwnerBindings(actorID, shopA)
+
+	// One invitation scoped to shopA, one global (nil tenant).
+	invA, err := aggregate.NewInvitation("a@example.com", rbac.RoleShopStaff, &shopA, nil, actorID, now)
+	require.NoError(t, err)
+	invGlobal, err := aggregate.NewInvitation("g@example.com", rbac.RolePlatformAdmin, nil, nil, "superadmin", now)
+	require.NoError(t, err)
+	repo.invitations[invA.Token] = invA
+	repo.invitations[invGlobal.Token] = invGlobal
+
+	shops := &adminStubShops{}
+	pub := &noopPublisher{}
+
+	svc := buildAdminSvc(t, repo, rbacRepo, shops, pub, now)
+
+	invites, err := svc.ListInvitations(context.Background(), actorID)
+
+	require.NoError(t, err)
+	require.Len(t, invites, 1, "non-admin must not see global (nil-tenant) invitations")
+	assert.Equal(t, &shopA, invites[0].TenantID)
 }
