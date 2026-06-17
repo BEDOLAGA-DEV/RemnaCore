@@ -173,6 +173,9 @@ func (r *RBACRepository) RevokeRole(ctx context.Context, userID, roleID string, 
 
 // GetRole returns the role identified by key. Returns rbac.ErrRoleNotFound when missing.
 func (r *RBACRepository) GetRole(ctx context.Context, key string) (rbac.Role, error) {
+	if key == "" {
+		return rbac.Role{}, rbac.ErrRoleNotFound
+	}
 	row, err := r.q(ctx).GetRoleByKey(ctx, pgutil.StrPtrOrNil(key))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

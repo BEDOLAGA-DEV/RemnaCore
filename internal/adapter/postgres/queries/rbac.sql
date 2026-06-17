@@ -36,10 +36,11 @@ WHERE u.role = sqlc.arg(legacy_role)
     SELECT 1 FROM identity.role_assignments ra
     WHERE ra.user_id = u.id AND ra.tenant_id IS NULL
   )
--- The (user_id, role_id) target matches the partial unique index
--- idx_role_assignments_global (WHERE tenant_id IS NULL); "ON CONFLICT DO NOTHING"
--- with no target is invalid Postgres and must name the index columns.
-ON CONFLICT (user_id, role_id) DO NOTHING;
+-- The WHERE predicate is REQUIRED: Postgres cannot infer a partial unique index
+-- from a bare arbiter. The conflict target MUST restate the index predicate
+-- (idx_role_assignments_global WHERE tenant_id IS NULL) or the statement raises
+-- "there is no unique or exclusion constraint matching the ON CONFLICT specification".
+ON CONFLICT (user_id, role_id) WHERE tenant_id IS NULL DO NOTHING;
 
 -- name: ListAssignmentsForUser :many
 SELECT ra.role_id, ra.tenant_id, r.key, r.scope_kind
@@ -69,7 +70,7 @@ VALUES (
     sqlc.arg(role_id)::uuid,
     sqlc.arg(granted_by)::uuid
 )
-ON CONFLICT (user_id, role_id) DO NOTHING;
+ON CONFLICT (user_id, role_id) WHERE tenant_id IS NULL DO NOTHING;
 
 -- name: DeleteShopRoleAssignment :execrows
 DELETE FROM identity.role_assignments
@@ -89,7 +90,7 @@ FROM identity.roles
 WHERE key = sqlc.arg(key);
 
 -- name: CountPlatformAdmins :one
-SELECT COUNT(*) FROM identity.role_assignments ra
+SELECT COUNT(DISTINCT ra.user_id) FROM identity.role_assignments ra
 JOIN identity.roles r ON r.id = ra.role_id
 WHERE r.key = 'platform_admin'
   AND ra.tenant_id IS NULL;

@@ -36,7 +36,7 @@ WHERE u.role = $2
     SELECT 1 FROM identity.role_assignments ra
     WHERE ra.user_id = u.id AND ra.tenant_id IS NULL
   )
-ON CONFLICT (user_id, role_id) DO NOTHING
+ON CONFLICT (user_id, role_id) WHERE tenant_id IS NULL DO NOTHING
 `
 
 type BackfillGlobalAssignmentParams struct {
@@ -48,16 +48,17 @@ type BackfillGlobalAssignmentParams struct {
 // platform_users.role maps to roleKey and who has no global binding yet.
 // Positional params are aliased with sqlc.arg() so the generated struct fields
 // are deterministic (RoleID, LegacyRole) instead of fragile Column1/Role.
-// The (user_id, role_id) target matches the partial unique index
-// idx_role_assignments_global (WHERE tenant_id IS NULL); "ON CONFLICT DO NOTHING"
-// with no target is invalid Postgres and must name the index columns.
+// The WHERE predicate is REQUIRED: Postgres cannot infer a partial unique index
+// from a bare arbiter. The conflict target MUST restate the index predicate
+// (idx_role_assignments_global WHERE tenant_id IS NULL) or the statement raises
+// "there is no unique or exclusion constraint matching the ON CONFLICT specification".
 func (q *Queries) BackfillGlobalAssignment(ctx context.Context, arg BackfillGlobalAssignmentParams) error {
 	_, err := q.db.Exec(ctx, backfillGlobalAssignment, arg.RoleID, arg.LegacyRole)
 	return err
 }
 
 const countPlatformAdmins = `-- name: CountPlatformAdmins :one
-SELECT COUNT(*) FROM identity.role_assignments ra
+SELECT COUNT(DISTINCT ra.user_id) FROM identity.role_assignments ra
 JOIN identity.roles r ON r.id = ra.role_id
 WHERE r.key = 'platform_admin'
   AND ra.tenant_id IS NULL
@@ -154,7 +155,7 @@ VALUES (
     $2::uuid,
     $3::uuid
 )
-ON CONFLICT (user_id, role_id) DO NOTHING
+ON CONFLICT (user_id, role_id) WHERE tenant_id IS NULL DO NOTHING
 `
 
 type InsertGlobalRoleAssignmentParams struct {
