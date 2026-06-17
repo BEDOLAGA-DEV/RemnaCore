@@ -46,4 +46,14 @@ type Repository interface {
 	DeleteExpiredSessions(ctx context.Context) (int64, error)
 	DeleteExpiredVerifications(ctx context.Context) (int64, error)
 	DeleteExpiredPasswordResets(ctx context.Context) (int64, error)
+
+	// Invitation operations.
+	CreateInvitation(ctx context.Context, inv *aggregate.Invitation) error
+	GetInvitationByToken(ctx context.Context, token string) (*aggregate.Invitation, error)
+	GetInvitationByID(ctx context.Context, id string) (*aggregate.Invitation, error)
+	DeleteInvitation(ctx context.Context, id string) error
+	// ListInvitations returns all invitations. If all is true, all invitations are
+	// returned; otherwise only those scoped to the given tenantIDs.
+	ListInvitations(ctx context.Context, tenantIDs []string, all bool) ([]*aggregate.Invitation, error)
+	DeleteExpiredInvitations(ctx context.Context) (int64, error)
 }

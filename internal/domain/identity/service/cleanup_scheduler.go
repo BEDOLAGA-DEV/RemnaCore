@@ -19,6 +19,7 @@ type CleanupRepository interface {
 	DeleteExpiredSessions(ctx context.Context) (int64, error)
 	DeleteExpiredVerifications(ctx context.Context) (int64, error)
 	DeleteExpiredPasswordResets(ctx context.Context) (int64, error)
+	DeleteExpiredInvitations(ctx context.Context) (int64, error)
 }
 
 // CleanupScheduler periodically removes expired sessions, email verifications,
@@ -85,6 +86,16 @@ func (s *CleanupScheduler) cleanup(ctx context.Context) {
 		)
 	} else if n > 0 {
 		s.logger.Info("identity cleanup: removed expired password resets",
+			slog.Int64("count", n),
+		)
+	}
+
+	if n, err := s.repo.DeleteExpiredInvitations(ctx); err != nil {
+		s.logger.Warn("identity cleanup: expired invitations failed",
+			slog.Any("error", err),
+		)
+	} else if n > 0 {
+		s.logger.Info("identity cleanup: removed expired invitations",
 			slog.Int64("count", n),
 		)
 	}

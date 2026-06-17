@@ -21,6 +21,7 @@ type (
 	Session           = aggregate.Session
 	EmailVerification = aggregate.EmailVerification
 	PasswordReset     = aggregate.PasswordReset
+	Invitation        = aggregate.Invitation
 )
 
 // --- Value object aliases (backward compatibility) ---

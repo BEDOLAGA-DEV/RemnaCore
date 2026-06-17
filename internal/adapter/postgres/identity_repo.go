@@ -66,16 +66,17 @@ func (r *IdentityRepository) AcquireBootstrapLock(ctx context.Context) error {
 // rowToUser converts the sqlc IdentityPlatformUser model to a domain PlatformUser.
 func rowToUser(row gen.IdentityPlatformUser) *identity.PlatformUser {
 	return &identity.PlatformUser{
-		ID:            pgutil.PgtypeToUUID(row.ID),
-		Email:         row.Email,
-		PasswordHash:  row.PasswordHash,
-		DisplayName:   pgutil.DerefStr(row.DisplayName),
-		EmailVerified: row.EmailVerified,
-		TelegramID:    row.TelegramID,
-		Role:          identity.Role(row.Role),
-		TenantID:      pgutil.PgtypeUUIDToOptStr(row.TenantID),
-		CreatedAt:     pgutil.PgtypeToTime(row.CreatedAt),
-		UpdatedAt:     pgutil.PgtypeToTime(row.UpdatedAt),
+		ID:                 pgutil.PgtypeToUUID(row.ID),
+		Email:              row.Email,
+		PasswordHash:       row.PasswordHash,
+		DisplayName:        pgutil.DerefStr(row.DisplayName),
+		EmailVerified:      row.EmailVerified,
+		TelegramID:         row.TelegramID,
+		Role:               identity.Role(row.Role),
+		TenantID:           pgutil.PgtypeUUIDToOptStr(row.TenantID),
+		MustChangePassword: row.MustChangePassword,
+		CreatedAt:          pgutil.PgtypeToTime(row.CreatedAt),
+		UpdatedAt:          pgutil.PgtypeToTime(row.UpdatedAt),
 	}
 }
 
@@ -98,16 +99,17 @@ func rowToEmailVerification(row gen.IdentityEmailVerification) *identity.EmailVe
 
 func (r *IdentityRepository) CreateUser(ctx context.Context, user *identity.PlatformUser) error {
 	err := r.q(ctx).CreateUser(ctx, gen.CreateUserParams{
-		ID:            pgutil.UUIDToPgtype(user.ID),
-		Email:         user.Email,
-		PasswordHash:  user.PasswordHash,
-		DisplayName:   pgutil.StrPtrOrNil(user.DisplayName),
-		EmailVerified: user.EmailVerified,
-		TelegramID:    user.TelegramID,
-		Role:          string(user.Role),
-		TenantID:      pgutil.OptStrToPgtypeUUID(user.TenantID),
-		CreatedAt:     pgutil.TimeToPgtype(user.CreatedAt),
-		UpdatedAt:     pgutil.TimeToPgtype(user.UpdatedAt),
+		ID:                 pgutil.UUIDToPgtype(user.ID),
+		Email:              user.Email,
+		PasswordHash:       user.PasswordHash,
+		DisplayName:        pgutil.StrPtrOrNil(user.DisplayName),
+		EmailVerified:      user.EmailVerified,
+		TelegramID:         user.TelegramID,
+		Role:               string(user.Role),
+		TenantID:           pgutil.OptStrToPgtypeUUID(user.TenantID),
+		CreatedAt:          pgutil.TimeToPgtype(user.CreatedAt),
+		UpdatedAt:          pgutil.TimeToPgtype(user.UpdatedAt),
+		MustChangePassword: user.MustChangePassword,
 	})
 	if err != nil {
 		if pgutil.IsUniqueViolation(err) {
@@ -129,7 +131,7 @@ func (r *IdentityRepository) GetUserByID(ctx context.Context, id string) (*ident
 // getUserByIDForUpdateSQL is identical to GetUserByID but acquires a FOR UPDATE
 // row lock. Must be called within a transaction.
 const getUserByIDForUpdateSQL = `
-SELECT id, email, password_hash, display_name, email_verified, telegram_id, role, tenant_id, created_at, updated_at
+SELECT id, email, password_hash, display_name, email_verified, telegram_id, role, tenant_id, created_at, updated_at, must_change_password
 FROM identity.platform_users WHERE id = $1 FOR UPDATE
 `
 
@@ -141,7 +143,7 @@ func (r *IdentityRepository) GetUserByIDForUpdate(ctx context.Context, id string
 	err := row.Scan(
 		&rawRow.ID, &rawRow.Email, &rawRow.PasswordHash, &rawRow.DisplayName,
 		&rawRow.EmailVerified, &rawRow.TelegramID, &rawRow.Role, &rawRow.TenantID,
-		&rawRow.CreatedAt, &rawRow.UpdatedAt,
+		&rawRow.CreatedAt, &rawRow.UpdatedAt, &rawRow.MustChangePassword,
 	)
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get user by id for update", identity.ErrNotFound)
@@ -182,14 +184,15 @@ func (r *IdentityRepository) ListUsers(ctx context.Context, limit, offset int) (
 
 func (r *IdentityRepository) UpdateUser(ctx context.Context, user *identity.PlatformUser) error {
 	err := r.q(ctx).UpdateUser(ctx, gen.UpdateUserParams{
-		ID:            pgutil.UUIDToPgtype(user.ID),
-		Email:         user.Email,
-		PasswordHash:  user.PasswordHash,
-		DisplayName:   pgutil.StrPtrOrNil(user.DisplayName),
-		EmailVerified: user.EmailVerified,
-		TelegramID:    user.TelegramID,
-		Role:          string(user.Role),
-		TenantID:      pgutil.OptStrToPgtypeUUID(user.TenantID),
+		ID:                 pgutil.UUIDToPgtype(user.ID),
+		Email:              user.Email,
+		PasswordHash:       user.PasswordHash,
+		DisplayName:        pgutil.StrPtrOrNil(user.DisplayName),
+		EmailVerified:      user.EmailVerified,
+		TelegramID:         user.TelegramID,
+		Role:               string(user.Role),
+		TenantID:           pgutil.OptStrToPgtypeUUID(user.TenantID),
+		MustChangePassword: user.MustChangePassword,
 	})
 	return pgutil.MapErr(err, "update user", identity.ErrNotFound)
 }
@@ -391,6 +394,109 @@ func (r *IdentityRepository) DeleteExpiredPasswordResets(ctx context.Context) (i
 	n, err := r.q(ctx).DeleteExpiredPasswordResets(ctx)
 	if err != nil {
 		return 0, pgutil.MapErr(err, "delete expired password resets", identity.ErrNotFound)
+	}
+	return n, nil
+}
+
+// ---------------------------------------------------------------------------
+// Invitation operations
+// ---------------------------------------------------------------------------
+
+// rowToInvitation converts the sqlc IdentityInvitation model to a domain Invitation.
+func rowToInvitation(row gen.IdentityInvitation) *identity.Invitation {
+	var commissionRate *int
+	if row.CommissionRate != nil {
+		v := int(*row.CommissionRate)
+		commissionRate = &v
+	}
+	return &identity.Invitation{
+		ID:             pgutil.PgtypeToUUID(row.ID),
+		Email:          row.Email,
+		Token:          row.Token,
+		RoleKey:        row.RoleKey,
+		TenantID:       pgutil.PgtypeUUIDToOptStr(row.TenantID),
+		CommissionRate: commissionRate,
+		InvitedBy:      pgutil.PgtypeToUUID(row.InvitedBy),
+		ExpiresAt:      pgutil.PgtypeToTime(row.ExpiresAt),
+		CreatedAt:      pgutil.PgtypeToTime(row.CreatedAt),
+	}
+}
+
+func (r *IdentityRepository) CreateInvitation(ctx context.Context, inv *identity.Invitation) error {
+	var commissionRate *int32
+	if inv.CommissionRate != nil {
+		v := int32(*inv.CommissionRate)
+		commissionRate = &v
+	}
+	err := r.q(ctx).CreateInvitation(ctx, gen.CreateInvitationParams{
+		ID:             pgutil.UUIDToPgtype(inv.ID),
+		Email:          inv.Email,
+		Token:          inv.Token,
+		RoleKey:        inv.RoleKey,
+		TenantID:       pgutil.OptStrToPgtypeUUID(inv.TenantID),
+		CommissionRate: commissionRate,
+		InvitedBy:      pgutil.UUIDToPgtype(inv.InvitedBy),
+		ExpiresAt:      pgutil.TimeToPgtype(inv.ExpiresAt),
+		CreatedAt:      pgutil.TimeToPgtype(inv.CreatedAt),
+	})
+	if err != nil {
+		if pgutil.IsUniqueViolation(err) {
+			return fmt.Errorf("create invitation: %w", identity.ErrAlreadyExists)
+		}
+		return fmt.Errorf("create invitation: %w", err)
+	}
+	return nil
+}
+
+func (r *IdentityRepository) GetInvitationByToken(ctx context.Context, token string) (*identity.Invitation, error) {
+	row, err := r.q(ctx).GetInvitationByToken(ctx, token)
+	if err != nil {
+		return nil, pgutil.MapErr(err, "get invitation by token", identity.ErrNotFound)
+	}
+	return rowToInvitation(row), nil
+}
+
+func (r *IdentityRepository) GetInvitationByID(ctx context.Context, id string) (*identity.Invitation, error) {
+	row, err := r.q(ctx).GetInvitationByID(ctx, pgutil.UUIDToPgtype(id))
+	if err != nil {
+		return nil, pgutil.MapErr(err, "get invitation by id", identity.ErrNotFound)
+	}
+	return rowToInvitation(row), nil
+}
+
+func (r *IdentityRepository) DeleteInvitation(ctx context.Context, id string) error {
+	err := r.q(ctx).DeleteInvitation(ctx, pgutil.UUIDToPgtype(id))
+	return pgutil.MapErr(err, "delete invitation", identity.ErrNotFound)
+}
+
+func (r *IdentityRepository) ListInvitations(ctx context.Context, tenantIDs []string, all bool) ([]*identity.Invitation, error) {
+	if all {
+		rows, err := r.q(ctx).ListAllInvitations(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list all invitations: %w", err)
+		}
+		invitations := make([]*identity.Invitation, 0, len(rows))
+		for _, row := range rows {
+			invitations = append(invitations, rowToInvitation(row))
+		}
+		return invitations, nil
+	}
+	pgIDs := pgutil.StringsToPgtypeUUIDs(tenantIDs)
+	rows, err := r.q(ctx).ListInvitationsByTenants(ctx, pgIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list invitations by tenants: %w", err)
+	}
+	invitations := make([]*identity.Invitation, 0, len(rows))
+	for _, row := range rows {
+		invitations = append(invitations, rowToInvitation(row))
+	}
+	return invitations, nil
+}
+
+func (r *IdentityRepository) DeleteExpiredInvitations(ctx context.Context) (int64, error) {
+	n, err := r.q(ctx).DeleteExpiredInvitations(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("delete expired invitations: %w", err)
 	}
 	return n, nil
 }
