@@ -155,3 +155,42 @@ func (m *MockRepository) DeleteExpiredPasswordResets(ctx context.Context) (int64
 	args := m.Called(ctx)
 	return args.Get(0).(int64), args.Error(1)
 }
+
+func (m *MockRepository) CreateInvitation(ctx context.Context, inv *identity.Invitation) error {
+	args := m.Called(ctx, inv)
+	return args.Error(0)
+}
+
+func (m *MockRepository) GetInvitationByToken(ctx context.Context, token string) (*identity.Invitation, error) {
+	args := m.Called(ctx, token)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*identity.Invitation), args.Error(1)
+}
+
+func (m *MockRepository) GetInvitationByID(ctx context.Context, id string) (*identity.Invitation, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*identity.Invitation), args.Error(1)
+}
+
+func (m *MockRepository) DeleteInvitation(ctx context.Context, id string) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
+func (m *MockRepository) ListInvitations(ctx context.Context, tenantIDs []string, all bool) ([]*identity.Invitation, error) {
+	args := m.Called(ctx, tenantIDs, all)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*identity.Invitation), args.Error(1)
+}
+
+func (m *MockRepository) DeleteExpiredInvitations(ctx context.Context) (int64, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(int64), args.Error(1)
+}

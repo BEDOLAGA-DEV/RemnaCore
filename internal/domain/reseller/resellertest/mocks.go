@@ -2,6 +2,7 @@ package resellertest
 
 import (
 	"context"
+	"time"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller"
@@ -65,6 +66,11 @@ func (m *MockTenantRepository) ListTenants(ctx context.Context, limit, offset in
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]*reseller.Tenant), args.Error(1)
+}
+
+func (m *MockTenantRepository) SetTenantOwnerUserID(ctx context.Context, tenantID, userID string, now time.Time) error {
+	args := m.Called(ctx, tenantID, userID, now)
+	return args.Error(0)
 }
 
 // Ensure MockTenantRepository satisfies reseller.TenantRepository at compile time.

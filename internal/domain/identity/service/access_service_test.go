@@ -43,6 +43,16 @@ func (f *fakeRBACRepo) PermissionsForRoles(_ context.Context, roleIDs []string) 
 func (f *fakeRBACRepo) SyncCatalog(context.Context, []rbac.Definition, []rbac.SystemRole) error {
 	return nil
 }
+func (f *fakeRBACRepo) AssignRole(_ context.Context, _, _ string, _ *string, _ string) error {
+	return nil
+}
+func (f *fakeRBACRepo) RevokeRole(_ context.Context, _, _ string, _ *string) (int64, error) {
+	return 0, nil
+}
+func (f *fakeRBACRepo) GetRole(_ context.Context, _ string) (rbac.Role, error) {
+	return rbac.Role{}, nil
+}
+func (f *fakeRBACRepo) CountPlatformAdmins(_ context.Context) (int, error) { return 0, nil }
 
 func clk() func() time.Time { return func() time.Time { return time.Unix(1_700_000_000, 0) } }
 

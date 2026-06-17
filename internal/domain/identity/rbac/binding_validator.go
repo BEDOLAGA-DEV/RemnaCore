@@ -9,6 +9,8 @@ var ErrInvalidBindingScope = errors.New("rbac: invalid binding scope/tenant comb
 // Role is the minimal role shape the validator needs: its scope kind and, for a
 // shop-local custom role, the tenant it is pinned to (nil for system/global roles).
 type Role struct {
+	ID        string
+	Key       string
 	ScopeKind string  // ScopeGlobal | ScopeShop
 	TenantID  *string // non-nil only for shop-local custom roles
 }

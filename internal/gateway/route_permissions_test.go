@@ -73,6 +73,16 @@ func (denyAllRepo) PermissionsForRoles(_ context.Context, _ []string) (map[strin
 func (denyAllRepo) SyncCatalog(context.Context, []rbac.Definition, []rbac.SystemRole) error {
 	return nil
 }
+func (denyAllRepo) AssignRole(_ context.Context, _, _ string, _ *string, _ string) error {
+	return nil
+}
+func (denyAllRepo) RevokeRole(_ context.Context, _, _ string, _ *string) (int64, error) {
+	return 0, nil
+}
+func (denyAllRepo) GetRole(_ context.Context, _ string) (rbac.Role, error) {
+	return rbac.Role{}, nil
+}
+func (denyAllRepo) CountPlatformAdmins(_ context.Context) (int, error) { return 0, nil }
 
 // ─── test helper ─────────────────────────────────────────────────────────────
 
@@ -173,7 +183,6 @@ func TestAdminRoutesArePermissionGated(t *testing.T) {
 		// ── User / subscription / invoice (users.read, subscriptions.read, billing.read) ──
 		{http.MethodGet, "/api/admin/users", rbac.UsersRead},
 		{http.MethodGet, "/api/admin/users/{userID}", rbac.UsersRead},
-		// Phase B routes (users.assign_role, roles.*) are excluded here — not yet registered.
 		{http.MethodGet, "/api/admin/subscriptions", rbac.SubscriptionsRead},
 		{http.MethodGet, "/api/admin/invoices", rbac.BillingRead},
 
@@ -187,6 +196,18 @@ func TestAdminRoutesArePermissionGated(t *testing.T) {
 		{http.MethodGet, "/api/admin/metrics/history", rbac.AnalyticsRead},
 		{http.MethodGet, "/api/admin/sessions", rbac.SessionsRead},
 		{http.MethodGet, "/api/admin/activity", rbac.SessionsRead},
+
+		// ── IAM: invitations + direct-create + role assignment (Phase B) ───
+		// /api/auth/accept-invitation is intentionally excluded: it is a public
+		// route (no Auth middleware) so it must NOT be in this gated set.
+		{http.MethodGet, "/api/users/invitations", rbac.UsersInvite},
+		{http.MethodPost, "/api/users/invitations", rbac.UsersInvite},
+		{http.MethodPost, "/api/users", rbac.UsersInvite},
+		{http.MethodDelete, "/api/users/invitations/{id}", rbac.UsersInvite},
+		{http.MethodPost, "/api/users/{userID}/roles", rbac.UsersAssignRole},
+		{http.MethodDelete, "/api/users/{userID}/roles", rbac.UsersAssignRole},
+		{http.MethodGet, "/api/users/{userID}/roles", rbac.UsersRead},
+		{http.MethodPost, "/api/admin/shops", rbac.ShopsManage},
 
 		// ── Tenant / shop management (shops.*) ──────────────────────────────
 		{http.MethodPost, "/api/admin/tenants", rbac.ShopsManage},

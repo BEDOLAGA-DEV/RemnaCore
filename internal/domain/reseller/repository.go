@@ -2,6 +2,7 @@ package reseller
 
 import (
 	"context"
+	"time"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/aggregate"
 )
@@ -18,6 +19,9 @@ type TenantRepository interface {
 	GetTenantByAPIKeyHash(ctx context.Context, keyHash string) (*aggregate.Tenant, error)
 	UpdateTenant(ctx context.Context, tenant *aggregate.Tenant) error
 	ListTenants(ctx context.Context, limit, offset int) ([]*aggregate.Tenant, error)
+	// SetTenantOwnerUserID persists an owner assignment on a pending-owner tenant.
+	// Must be called within a RunInTx transaction.
+	SetTenantOwnerUserID(ctx context.Context, tenantID, userID string, now time.Time) error
 }
 
 // CommissionRepository defines the persistence operations for reseller accounts

@@ -34,8 +34,10 @@ const (
 	DefaultSubscriptionMaxPerDay  = 5
 	DefaultLoginMaxPerWindow      = 20
 	DefaultLoginWindowMinutes     = 15
-	DefaultForgotPwdMaxPerWindow  = 3
-	DefaultForgotPwdWindowMinutes = 60
+	DefaultForgotPwdMaxPerWindow         = 3
+	DefaultForgotPwdWindowMinutes        = 60
+	DefaultAcceptInvitationMaxPerWindow  = 3
+	DefaultAcceptInvitationWindowMinutes = 60
 	DefaultOutboxRelayWorkers        = 1
 	DefaultOutboxPartitionLookahead = 2
 	DefaultOutboxRetentionDays      = 90
@@ -158,12 +160,14 @@ type TracingConfig struct {
 
 // RateLimitConfig holds domain-level rate limit thresholds.
 type RateLimitConfig struct {
-	CheckoutMaxPerHour    int `koanf:"checkout_max_per_hour"`
-	SubscriptionMaxPerDay int `koanf:"subscription_max_per_day"`
-	LoginMaxPerWindow     int `koanf:"login_max_per_window"`
-	LoginWindowMinutes    int `koanf:"login_window_minutes"`
-	ForgotPwdMaxPerWindow  int `koanf:"forgot_pwd_max_per_window"`
-	ForgotPwdWindowMinutes int `koanf:"forgot_pwd_window_minutes"`
+	CheckoutMaxPerHour          int `koanf:"checkout_max_per_hour"`
+	SubscriptionMaxPerDay       int `koanf:"subscription_max_per_day"`
+	LoginMaxPerWindow           int `koanf:"login_max_per_window"`
+	LoginWindowMinutes          int `koanf:"login_window_minutes"`
+	ForgotPwdMaxPerWindow       int `koanf:"forgot_pwd_max_per_window"`
+	ForgotPwdWindowMinutes      int `koanf:"forgot_pwd_window_minutes"`
+	AcceptInvitationMaxPerWindow  int `koanf:"accept_invitation_max_per_window"`
+	AcceptInvitationWindowMinutes int `koanf:"accept_invitation_window_minutes"`
 }
 
 // OutboxConfig holds settings for the transactional outbox relay and
@@ -266,8 +270,10 @@ func Load() (*Config, error) {
 		"ratelimit.subscription_max_per_day":   DefaultSubscriptionMaxPerDay,
 		"ratelimit.login_max_per_window":       DefaultLoginMaxPerWindow,
 		"ratelimit.login_window_minutes":       DefaultLoginWindowMinutes,
-		"ratelimit.forgot_pwd_max_per_window":  DefaultForgotPwdMaxPerWindow,
-		"ratelimit.forgot_pwd_window_minutes":  DefaultForgotPwdWindowMinutes,
+		"ratelimit.forgot_pwd_max_per_window":          DefaultForgotPwdMaxPerWindow,
+		"ratelimit.forgot_pwd_window_minutes":          DefaultForgotPwdWindowMinutes,
+		"ratelimit.accept_invitation_max_per_window":   DefaultAcceptInvitationMaxPerWindow,
+		"ratelimit.accept_invitation_window_minutes":   DefaultAcceptInvitationWindowMinutes,
 		"outbox.relay_workers":               DefaultOutboxRelayWorkers,
 		"outbox.partition_lookahead":         DefaultOutboxPartitionLookahead,
 		"outbox.retention_days":              DefaultOutboxRetentionDays,

@@ -2,11 +2,13 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres/gen"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/rbac"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pgutil"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -119,6 +121,83 @@ func (r *RBACRepository) SyncCatalog(ctx context.Context, perms []rbac.Definitio
 		}
 	}
 	return nil
+}
+
+// AssignRole grants roleID to userID scoped to tenantID (nil = global). Idempotent.
+func (r *RBACRepository) AssignRole(ctx context.Context, userID, roleID string, tenantID *string, grantedBy string) error {
+	if tenantID == nil {
+		err := r.q(ctx).InsertGlobalRoleAssignment(ctx, gen.InsertGlobalRoleAssignmentParams{
+			UserID:    pgutil.UUIDToPgtype(userID),
+			RoleID:    pgutil.UUIDToPgtype(roleID),
+			GrantedBy: pgutil.UUIDToPgtype(grantedBy),
+		})
+		if err != nil {
+			return fmt.Errorf("assign global role: %w", err)
+		}
+		return nil
+	}
+	err := r.q(ctx).InsertShopRoleAssignment(ctx, gen.InsertShopRoleAssignmentParams{
+		UserID:    pgutil.UUIDToPgtype(userID),
+		RoleID:    pgutil.UUIDToPgtype(roleID),
+		TenantID:  pgutil.UUIDToPgtype(*tenantID),
+		GrantedBy: pgutil.UUIDToPgtype(grantedBy),
+	})
+	if err != nil {
+		return fmt.Errorf("assign shop role: %w", err)
+	}
+	return nil
+}
+
+// RevokeRole removes the (userID, roleID, tenantID) binding. Returns count removed.
+func (r *RBACRepository) RevokeRole(ctx context.Context, userID, roleID string, tenantID *string) (int64, error) {
+	if tenantID == nil {
+		n, err := r.q(ctx).DeleteGlobalRoleAssignment(ctx, gen.DeleteGlobalRoleAssignmentParams{
+			UserID: pgutil.UUIDToPgtype(userID),
+			RoleID: pgutil.UUIDToPgtype(roleID),
+		})
+		if err != nil {
+			return 0, fmt.Errorf("revoke global role: %w", err)
+		}
+		return n, nil
+	}
+	n, err := r.q(ctx).DeleteShopRoleAssignment(ctx, gen.DeleteShopRoleAssignmentParams{
+		UserID:   pgutil.UUIDToPgtype(userID),
+		RoleID:   pgutil.UUIDToPgtype(roleID),
+		TenantID: pgutil.UUIDToPgtype(*tenantID),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("revoke shop role: %w", err)
+	}
+	return n, nil
+}
+
+// GetRole returns the role identified by key. Returns rbac.ErrRoleNotFound when missing.
+func (r *RBACRepository) GetRole(ctx context.Context, key string) (rbac.Role, error) {
+	if key == "" {
+		return rbac.Role{}, rbac.ErrRoleNotFound
+	}
+	row, err := r.q(ctx).GetRoleByKey(ctx, pgutil.StrPtrOrNil(key))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return rbac.Role{}, fmt.Errorf("get role %q: %w", key, rbac.ErrRoleNotFound)
+		}
+		return rbac.Role{}, fmt.Errorf("get role %q: %w", key, err)
+	}
+	return rbac.Role{
+		ID:        pgutil.PgtypeToUUID(row.ID),
+		Key:       pgutil.DerefStr(row.Key),
+		ScopeKind: row.ScopeKind,
+		TenantID:  pgutil.PgtypeUUIDToOptStr(row.TenantID),
+	}, nil
+}
+
+// CountPlatformAdmins returns the number of distinct global platform_admin holders.
+func (r *RBACRepository) CountPlatformAdmins(ctx context.Context) (int, error) {
+	count, err := r.q(ctx).CountPlatformAdmins(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("count platform admins: %w", err)
+	}
+	return int(count), nil
 }
 
 // Compile-time check that the adapter satisfies the port.

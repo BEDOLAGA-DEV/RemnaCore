@@ -466,3 +466,77 @@ export type TrafficByNode = {
     stats: NodeBandwidthStats;
   }>;
 };
+
+// ─── IAM: Invitations + Roles (Phase B) ──────────────────────────────────────
+// Mirror of internal/gateway/handler/iam_handler.go response shapes.
+
+export type Invitation = {
+  invitation_id: string;
+  email: string;
+  role_key: string;
+  tenant_id: string | null;
+  expires_at: string;
+  created_at: string;
+};
+
+/** Response body for POST /api/users/invitations — includes the one-time token. */
+export type CreateInvitationResponse = Invitation & {
+  token: string;
+  accept_path: string;
+};
+
+export type InvitationsListResponse = {
+  invitations: Invitation[];
+};
+
+/** Request body for POST /api/auth/accept-invitation (public). */
+export type AcceptInvitationRequest = {
+  token: string;
+  password: string;
+};
+
+/** Request body for POST /api/users (direct create). */
+export type CreateUserDirectRequest = {
+  email: string;
+  password: string;
+  role_key: string;
+  tenant_id?: string | null;
+};
+
+export type CreateUserDirectResponse = {
+  user_id: string;
+  email: string;
+};
+
+/** Request body for POST /api/users/:id/roles and DELETE /api/users/:id/roles. */
+export type RoleAssignmentRequest = {
+  role_key: string;
+  tenant_id?: string | null;
+};
+
+export type RoleBinding = {
+  role_id: string;
+  role_key: string;
+  scope_kind: string;
+  tenant_id: string | null;
+};
+
+export type UserRolesResponse = {
+  roles: RoleBinding[];
+};
+
+/** Request body for POST /api/admin/shops. */
+export type CreateShopRequest = {
+  name: string;
+  domain: string;
+  owner_user_id?: string;
+  invite_email?: string;
+  commission_rate: number;
+};
+
+export type CreateShopResponse = {
+  tenant_id: string;
+  api_key: string;
+  owner_user_id?: string | null;
+  invitation_token?: string;
+};

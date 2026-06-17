@@ -83,9 +83,10 @@ func newLifecycleHarness(t *testing.T) *lifecycleHarness {
 	// Identity wiring.
 	identityRepo := new(identitytest.MockRepository)
 	identityPub := new(identitytest.MockPublisher)
+	identitySessions := identity.NewSessionIssuer(identityRepo, identityPub, jwtIssuer, lifecycleAccessTTL, lifecycleRefreshTTL)
 	identitySvc := identity.NewService(
 		identityRepo, identityPub, txmanagertest.NoopTxRunner{},
-		jwtIssuer, clock.NewReal(), lifecycleAccessTTL, lifecycleRefreshTTL,
+		jwtIssuer, clock.NewReal(), lifecycleAccessTTL, lifecycleRefreshTTL, identitySessions,
 	)
 	identityHandler := handler.NewIdentityHandler(identitySvc)
 

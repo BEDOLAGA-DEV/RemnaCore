@@ -25,10 +25,12 @@ type AuthRateLimitConfig struct {
 // AuthRateLimiters groups the per-endpoint rate limiters and their
 // configurations for auth endpoints. It is provided to the router via Fx.
 type AuthRateLimiters struct {
-	Login         RateLimiter
-	LoginCfg      AuthRateLimitConfig
-	ForgotPwd     RateLimiter
-	ForgotPwdCfg  AuthRateLimitConfig
+	Login                RateLimiter
+	LoginCfg             AuthRateLimitConfig
+	ForgotPwd            RateLimiter
+	ForgotPwdCfg         AuthRateLimitConfig
+	AcceptInvitation     RateLimiter
+	AcceptInvitationCfg  AuthRateLimitConfig
 }
 
 // AuthRateLimit returns middleware that rate-limits auth endpoints by client IP

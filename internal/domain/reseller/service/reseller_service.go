@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/vo"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pgutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
@@ -23,6 +25,8 @@ type TenantRepository interface {
 	GetTenantByAPIKeyHash(ctx context.Context, keyHash string) (*aggregate.Tenant, error)
 	UpdateTenant(ctx context.Context, tenant *aggregate.Tenant) error
 	ListTenants(ctx context.Context, limit, offset int) ([]*aggregate.Tenant, error)
+	// SetTenantOwnerUserID persists an owner assignment on a pending-owner tenant.
+	SetTenantOwnerUserID(ctx context.Context, tenantID, userID string, now time.Time) error
 }
 
 // Deprecated: CommissionRepository is kept for backward compatibility. The
@@ -106,7 +110,8 @@ func NewResellerService(
 
 // CreateTenant creates a new tenant, generates an API key, and returns both the
 // persisted tenant and the plain-text API key (shown only once).
-func (s *ResellerService) CreateTenant(ctx context.Context, name, domain, ownerUserID string) (*aggregate.Tenant, string, error) {
+// ownerUserID is optional (nil for pending-owner shops created before the owner exists).
+func (s *ResellerService) CreateTenant(ctx context.Context, name, domain string, ownerUserID *string) (*aggregate.Tenant, string, error) {
 	now := s.clock.Now()
 	tenant := aggregate.NewTenant(name, domain, ownerUserID, now)
 
@@ -130,10 +135,24 @@ func (s *ResellerService) CreateTenant(ctx context.Context, name, domain, ownerU
 	s.logger.Info("tenant created",
 		slog.String("tenant_id", tenant.ID),
 		slog.String("name", name),
-		slog.String("owner_user_id", ownerUserID),
+		slog.String("owner_user_id", pgutil.DerefStr(ownerUserID)),
 	)
 
 	return tenant, plainKey, nil
+}
+
+// SetTenantOwner assigns an owner to a pending-owner tenant. Used when an
+// invited shop owner accepts their invitation and the tenant already exists.
+func (s *ResellerService) SetTenantOwner(ctx context.Context, tenantID, userID string) error {
+	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		t, err := s.tenants.GetTenantByIDForUpdate(txCtx, tenantID)
+		if err != nil {
+			return fmt.Errorf("finding tenant: %w", err)
+		}
+		now := s.clock.Now()
+		t.SetOwner(userID, now)
+		return s.tenants.SetTenantOwnerUserID(txCtx, t.ID, userID, now)
+	})
 }
 
 // GetTenant retrieves a tenant by ID.

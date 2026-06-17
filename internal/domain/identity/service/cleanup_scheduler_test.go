@@ -31,6 +31,11 @@ func (m *mockCleanupRepo) DeleteExpiredPasswordResets(ctx context.Context) (int6
 	return args.Get(0).(int64), args.Error(1)
 }
 
+func (m *mockCleanupRepo) DeleteExpiredInvitations(ctx context.Context) (int64, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(int64), args.Error(1)
+}
+
 func TestCleanupScheduler_Run_CancelsOnContext(t *testing.T) {
 	repo := new(mockCleanupRepo)
 	logger := slog.Default()

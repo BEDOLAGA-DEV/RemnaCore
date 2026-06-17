@@ -37,6 +37,10 @@ func (s stubRBAC) PermissionsForRoles(_ context.Context, ids []string) (map[stri
 	return out, nil
 }
 func (s stubRBAC) SyncCatalog(context.Context, []rbac.Definition, []rbac.SystemRole) error { return nil }
+func (s stubRBAC) AssignRole(_ context.Context, _, _ string, _ *string, _ string) error  { return nil }
+func (s stubRBAC) RevokeRole(_ context.Context, _, _ string, _ *string) (int64, error)   { return 0, nil }
+func (s stubRBAC) GetRole(_ context.Context, _ string) (rbac.Role, error)                 { return rbac.Role{}, nil }
+func (s stubRBAC) CountPlatformAdmins(_ context.Context) (int, error)                    { return 0, nil }
 
 func newAccess(b map[string][]rbac.Binding, p map[string][]rbac.Permission) *service.AccessService {
 	return service.NewAccessService(stubRBAC{bindings: b, perms: p}, time.Now, time.Minute)

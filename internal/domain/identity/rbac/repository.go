@@ -1,6 +1,12 @@
 package rbac
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrRoleNotFound is returned when a role lookup by key yields no result.
+var ErrRoleNotFound = errors.New("rbac: role not found")
 
 // Binding is one resolved role assignment for a user.
 //
@@ -33,4 +39,13 @@ type Repository interface {
 	// leave that role with no permissions. RBACCatalogSync.Run satisfies this
 	// requirement by wrapping the call in RunInTx.
 	SyncCatalog(ctx context.Context, perms []Definition, roles []SystemRole) error
+
+	// AssignRole grants roleID to userID scoped to tenantID (nil = global). Idempotent.
+	AssignRole(ctx context.Context, userID, roleID string, tenantID *string, grantedBy string) error
+	// RevokeRole removes the (userID, roleID, tenantID) binding. Returns count removed.
+	RevokeRole(ctx context.Context, userID, roleID string, tenantID *string) (int64, error)
+	// GetRole returns the role identified by key. Returns ErrRoleNotFound when missing.
+	GetRole(ctx context.Context, key string) (Role, error)
+	// CountPlatformAdmins returns the number of distinct global platform_admin holders.
+	CountPlatformAdmins(ctx context.Context) (int, error)
 }

@@ -278,6 +278,18 @@ type IdentityEmailVerification struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type IdentityInvitation struct {
+	ID             pgtype.UUID        `json:"id"`
+	Email          string             `json:"email"`
+	Token          string             `json:"token"`
+	RoleKey        string             `json:"role_key"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	CommissionRate *int32             `json:"commission_rate"`
+	InvitedBy      pgtype.UUID        `json:"invited_by"`
+	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
 type IdentityPasswordReset struct {
 	ID        pgtype.UUID        `json:"id"`
 	UserID    pgtype.UUID        `json:"user_id"`
@@ -295,16 +307,17 @@ type IdentityPermission struct {
 }
 
 type IdentityPlatformUser struct {
-	ID            pgtype.UUID        `json:"id"`
-	Email         string             `json:"email"`
-	PasswordHash  string             `json:"password_hash"`
-	DisplayName   *string            `json:"display_name"`
-	EmailVerified bool               `json:"email_verified"`
-	TelegramID    *int64             `json:"telegram_id"`
-	Role          string             `json:"role"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	ID                 pgtype.UUID        `json:"id"`
+	Email              string             `json:"email"`
+	PasswordHash       string             `json:"password_hash"`
+	DisplayName        *string            `json:"display_name"`
+	EmailVerified      bool               `json:"email_verified"`
+	TelegramID         *int64             `json:"telegram_id"`
+	Role               string             `json:"role"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	MustChangePassword bool               `json:"must_change_password"`
 }
 
 type IdentityRole struct {

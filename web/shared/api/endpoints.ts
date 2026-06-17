@@ -17,6 +17,8 @@ export const ENDPOINTS = {
     refresh: "/api/auth/refresh",
     forgotPassword: "/api/auth/forgot-password",
     resetPassword: "/api/auth/reset-password",
+    // Public: invitation acceptance (Phase B). Rate-limited; no JWT required.
+    acceptInvitation: "/api/auth/accept-invitation",
   },
 
   // ─── Plans (Public) ────────────────────────────────────────────────────
@@ -69,6 +71,22 @@ export const ENDPOINTS = {
     removeMember: (userId: string) => `/api/family/members/${userId}`,
   },
 
+  // ─── IAM: Users + Invitations + Roles (Protected, Phase B) ───────────
+  users: {
+    // Direct user creation (users.invite permission).
+    create: "/api/users",
+    invitations: {
+      list: "/api/users/invitations",
+      create: "/api/users/invitations",
+      revoke: (invitationId: string) => `/api/users/invitations/${invitationId}`,
+    },
+    roles: {
+      list: (userId: string) => `/api/users/${userId}/roles`,
+      assign: (userId: string) => `/api/users/${userId}/roles`,
+      revoke: (userId: string) => `/api/users/${userId}/roles`,
+    },
+  },
+
   // ─── Admin ─────────────────────────────────────────────────────────────
   admin: {
     users: {
@@ -97,6 +115,10 @@ export const ENDPOINTS = {
       detail: (tenantId: string) => `/api/admin/tenants/${tenantId}`,
       updateBranding: (tenantId: string) =>
         `/api/admin/tenants/${tenantId}/branding`,
+    },
+    // Shop provisioning: platform-admin only (shops.manage + service-level guard).
+    shops: {
+      create: "/api/admin/shops",
     },
     pluginPages: "/api/admin/plugin-pages",
     sessions: "/api/admin/sessions",

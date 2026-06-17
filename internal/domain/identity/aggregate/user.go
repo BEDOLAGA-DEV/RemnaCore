@@ -29,16 +29,17 @@ const (
 type PlatformUser struct {
 	domainevent.EventRecorder
 
-	ID            string    `json:"id"`
-	Email         string    `json:"email"`
-	PasswordHash  string    `json:"-"`
-	DisplayName   string    `json:"display_name"`
-	EmailVerified bool      `json:"email_verified"`
-	TelegramID    *int64    `json:"telegram_id,omitempty"`
-	Role          vo.Role   `json:"role"`
-	TenantID      *string   `json:"tenant_id,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID                 string    `json:"id"`
+	Email              string    `json:"email"`
+	PasswordHash       string    `json:"-"`
+	DisplayName        string    `json:"display_name"`
+	EmailVerified      bool      `json:"email_verified"`
+	TelegramID         *int64    `json:"telegram_id,omitempty"`
+	Role               vo.Role   `json:"role"`
+	TenantID           *string   `json:"tenant_id,omitempty"`
+	MustChangePassword bool      `json:"must_change_password"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 type Session struct {

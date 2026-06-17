@@ -13,6 +13,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
+	identityservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/payment"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller"
@@ -26,6 +27,7 @@ import (
 // bounded context, or nil to pass through to the next mapper.
 var domainErrorMappers = []func(error) *apierror.Error{
 	identity.MapToAPIError,
+	identityservice.MapIAMError,
 	billing.MapToAPIError,
 	aggregate.MapToAPIError,
 	multisub.MapToAPIError,

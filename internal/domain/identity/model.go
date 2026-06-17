@@ -21,6 +21,7 @@ type (
 	Session           = aggregate.Session
 	EmailVerification = aggregate.EmailVerification
 	PasswordReset     = aggregate.PasswordReset
+	Invitation        = aggregate.Invitation
 )
 
 // --- Value object aliases (backward compatibility) ---
@@ -59,6 +60,7 @@ var (
 
 type (
 	Service               = service.Service
+	SessionIssuer         = service.SessionIssuer
 	RegisterInput         = service.RegisterInput
 	RegisterResult        = service.RegisterResult
 	LoginInput            = service.LoginInput
@@ -68,6 +70,9 @@ type (
 
 // NewService is a convenience re-export from the service subpackage.
 var NewService = service.NewService
+
+// NewSessionIssuer is a convenience re-export from the service subpackage.
+var NewSessionIssuer = service.NewSessionIssuer
 
 // --- Event factory aliases (backward compatibility) ---
 

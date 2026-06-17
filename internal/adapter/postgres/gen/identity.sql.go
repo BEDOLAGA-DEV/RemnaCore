@@ -48,6 +48,38 @@ func (q *Queries) CreateEmailVerification(ctx context.Context, arg CreateEmailVe
 	return err
 }
 
+const createInvitation = `-- name: CreateInvitation :exec
+INSERT INTO identity.invitations (id, email, token, role_key, tenant_id, commission_rate, invited_by, expires_at, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+`
+
+type CreateInvitationParams struct {
+	ID             pgtype.UUID        `json:"id"`
+	Email          string             `json:"email"`
+	Token          string             `json:"token"`
+	RoleKey        string             `json:"role_key"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	CommissionRate *int32             `json:"commission_rate"`
+	InvitedBy      pgtype.UUID        `json:"invited_by"`
+	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) CreateInvitation(ctx context.Context, arg CreateInvitationParams) error {
+	_, err := q.db.Exec(ctx, createInvitation,
+		arg.ID,
+		arg.Email,
+		arg.Token,
+		arg.RoleKey,
+		arg.TenantID,
+		arg.CommissionRate,
+		arg.InvitedBy,
+		arg.ExpiresAt,
+		arg.CreatedAt,
+	)
+	return err
+}
+
 const createPasswordReset = `-- name: CreatePasswordReset :exec
 INSERT INTO identity.password_resets (id, user_id, email, token, expires_at, created_at)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -103,21 +135,22 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 }
 
 const createUser = `-- name: CreateUser :exec
-INSERT INTO identity.platform_users (id, email, password_hash, display_name, email_verified, telegram_id, role, tenant_id, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+INSERT INTO identity.platform_users (id, email, password_hash, display_name, email_verified, telegram_id, role, tenant_id, created_at, updated_at, must_change_password)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 `
 
 type CreateUserParams struct {
-	ID            pgtype.UUID        `json:"id"`
-	Email         string             `json:"email"`
-	PasswordHash  string             `json:"password_hash"`
-	DisplayName   *string            `json:"display_name"`
-	EmailVerified bool               `json:"email_verified"`
-	TelegramID    *int64             `json:"telegram_id"`
-	Role          string             `json:"role"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	ID                 pgtype.UUID        `json:"id"`
+	Email              string             `json:"email"`
+	PasswordHash       string             `json:"password_hash"`
+	DisplayName        *string            `json:"display_name"`
+	EmailVerified      bool               `json:"email_verified"`
+	TelegramID         *int64             `json:"telegram_id"`
+	Role               string             `json:"role"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	MustChangePassword bool               `json:"must_change_password"`
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
@@ -132,6 +165,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
 		arg.TenantID,
 		arg.CreatedAt,
 		arg.UpdatedAt,
+		arg.MustChangePassword,
 	)
 	return err
 }
@@ -143,6 +177,18 @@ DELETE FROM identity.email_verifications WHERE id = $1
 func (q *Queries) DeleteEmailVerification(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteEmailVerification, id)
 	return err
+}
+
+const deleteExpiredInvitations = `-- name: DeleteExpiredInvitations :execrows
+DELETE FROM identity.invitations WHERE expires_at < now()
+`
+
+func (q *Queries) DeleteExpiredInvitations(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteExpiredInvitations)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteExpiredPasswordResets = `-- name: DeleteExpiredPasswordResets :execrows
@@ -179,6 +225,15 @@ func (q *Queries) DeleteExpiredVerifications(ctx context.Context) (int64, error)
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const deleteInvitation = `-- name: DeleteInvitation :exec
+DELETE FROM identity.invitations WHERE id = $1
+`
+
+func (q *Queries) DeleteInvitation(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteInvitation, id)
+	return err
 }
 
 const deletePasswordReset = `-- name: DeletePasswordReset :exec
@@ -236,6 +291,50 @@ func (q *Queries) GetEmailVerification(ctx context.Context, token string) (Ident
 	return i, err
 }
 
+const getInvitationByID = `-- name: GetInvitationByID :one
+SELECT id, email, token, role_key, tenant_id, commission_rate, invited_by, expires_at, created_at
+FROM identity.invitations WHERE id = $1
+`
+
+func (q *Queries) GetInvitationByID(ctx context.Context, id pgtype.UUID) (IdentityInvitation, error) {
+	row := q.db.QueryRow(ctx, getInvitationByID, id)
+	var i IdentityInvitation
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Token,
+		&i.RoleKey,
+		&i.TenantID,
+		&i.CommissionRate,
+		&i.InvitedBy,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getInvitationByToken = `-- name: GetInvitationByToken :one
+SELECT id, email, token, role_key, tenant_id, commission_rate, invited_by, expires_at, created_at
+FROM identity.invitations WHERE token = $1
+`
+
+func (q *Queries) GetInvitationByToken(ctx context.Context, token string) (IdentityInvitation, error) {
+	row := q.db.QueryRow(ctx, getInvitationByToken, token)
+	var i IdentityInvitation
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Token,
+		&i.RoleKey,
+		&i.TenantID,
+		&i.CommissionRate,
+		&i.InvitedBy,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getPasswordResetByToken = `-- name: GetPasswordResetByToken :one
 SELECT id, user_id, email, token, expires_at, created_at
 FROM identity.password_resets WHERE token = $1
@@ -286,7 +385,7 @@ func (q *Queries) GetSessionByRefreshToken(ctx context.Context, refreshToken str
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, display_name, email_verified, telegram_id, role, tenant_id, created_at, updated_at
+SELECT id, email, password_hash, display_name, email_verified, telegram_id, role, tenant_id, created_at, updated_at, must_change_password
 FROM identity.platform_users WHERE lower(email) = lower($1)
 `
 
@@ -304,12 +403,13 @@ func (q *Queries) GetUserByEmail(ctx context.Context, lower string) (IdentityPla
 		&i.TenantID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.MustChangePassword,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, display_name, email_verified, telegram_id, role, tenant_id, created_at, updated_at
+SELECT id, email, password_hash, display_name, email_verified, telegram_id, role, tenant_id, created_at, updated_at, must_change_password
 FROM identity.platform_users WHERE id = $1
 `
 
@@ -327,12 +427,13 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (IdentityPlat
 		&i.TenantID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.MustChangePassword,
 	)
 	return i, err
 }
 
 const getUserByIDForUpdate = `-- name: GetUserByIDForUpdate :one
-SELECT id, email, password_hash, display_name, email_verified, telegram_id, role, tenant_id, created_at, updated_at
+SELECT id, email, password_hash, display_name, email_verified, telegram_id, role, tenant_id, created_at, updated_at, must_change_password
 FROM identity.platform_users WHERE id = $1 FOR UPDATE
 `
 
@@ -350,12 +451,13 @@ func (q *Queries) GetUserByIDForUpdate(ctx context.Context, id pgtype.UUID) (Ide
 		&i.TenantID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.MustChangePassword,
 	)
 	return i, err
 }
 
 const getUserByTelegramID = `-- name: GetUserByTelegramID :one
-SELECT id, email, password_hash, display_name, email_verified, telegram_id, role, tenant_id, created_at, updated_at
+SELECT id, email, password_hash, display_name, email_verified, telegram_id, role, tenant_id, created_at, updated_at, must_change_password
 FROM identity.platform_users WHERE telegram_id = $1
 `
 
@@ -373,6 +475,7 @@ func (q *Queries) GetUserByTelegramID(ctx context.Context, telegramID *int64) (I
 		&i.TenantID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.MustChangePassword,
 	)
 	return i, err
 }
@@ -430,8 +533,78 @@ func (q *Queries) ListActiveSessions(ctx context.Context, arg ListActiveSessions
 	return items, nil
 }
 
+const listAllInvitations = `-- name: ListAllInvitations :many
+SELECT id, email, token, role_key, tenant_id, commission_rate, invited_by, expires_at, created_at
+FROM identity.invitations ORDER BY created_at DESC
+`
+
+func (q *Queries) ListAllInvitations(ctx context.Context) ([]IdentityInvitation, error) {
+	rows, err := q.db.Query(ctx, listAllInvitations)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []IdentityInvitation{}
+	for rows.Next() {
+		var i IdentityInvitation
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.Token,
+			&i.RoleKey,
+			&i.TenantID,
+			&i.CommissionRate,
+			&i.InvitedBy,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInvitationsByTenants = `-- name: ListInvitationsByTenants :many
+SELECT id, email, token, role_key, tenant_id, commission_rate, invited_by, expires_at, created_at
+FROM identity.invitations WHERE tenant_id = ANY($1::uuid[]) ORDER BY created_at DESC
+`
+
+func (q *Queries) ListInvitationsByTenants(ctx context.Context, dollar_1 []pgtype.UUID) ([]IdentityInvitation, error) {
+	rows, err := q.db.Query(ctx, listInvitationsByTenants, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []IdentityInvitation{}
+	for rows.Next() {
+		var i IdentityInvitation
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.Token,
+			&i.RoleKey,
+			&i.TenantID,
+			&i.CommissionRate,
+			&i.InvitedBy,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUsers = `-- name: ListUsers :many
-SELECT id, email, password_hash, display_name, email_verified, telegram_id, role, tenant_id, created_at, updated_at
+SELECT id, email, password_hash, display_name, email_verified, telegram_id, role, tenant_id, created_at, updated_at, must_change_password
 FROM identity.platform_users
 ORDER BY created_at DESC
 LIMIT $1 OFFSET $2
@@ -462,6 +635,7 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]Identit
 			&i.TenantID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.MustChangePassword,
 		); err != nil {
 			return nil, err
 		}
@@ -475,19 +649,20 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]Identit
 
 const updateUser = `-- name: UpdateUser :exec
 UPDATE identity.platform_users
-SET email = $2, password_hash = $3, display_name = $4, email_verified = $5, telegram_id = $6, role = $7, tenant_id = $8
+SET email = $2, password_hash = $3, display_name = $4, email_verified = $5, telegram_id = $6, role = $7, tenant_id = $8, must_change_password = $9
 WHERE id = $1
 `
 
 type UpdateUserParams struct {
-	ID            pgtype.UUID `json:"id"`
-	Email         string      `json:"email"`
-	PasswordHash  string      `json:"password_hash"`
-	DisplayName   *string     `json:"display_name"`
-	EmailVerified bool        `json:"email_verified"`
-	TelegramID    *int64      `json:"telegram_id"`
-	Role          string      `json:"role"`
-	TenantID      pgtype.UUID `json:"tenant_id"`
+	ID                 pgtype.UUID `json:"id"`
+	Email              string      `json:"email"`
+	PasswordHash       string      `json:"password_hash"`
+	DisplayName        *string     `json:"display_name"`
+	EmailVerified      bool        `json:"email_verified"`
+	TelegramID         *int64      `json:"telegram_id"`
+	Role               string      `json:"role"`
+	TenantID           pgtype.UUID `json:"tenant_id"`
+	MustChangePassword bool        `json:"must_change_password"`
 }
 
 func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) error {
@@ -500,6 +675,7 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) error {
 		arg.TelegramID,
 		arg.Role,
 		arg.TenantID,
+		arg.MustChangePassword,
 	)
 	return err
 }

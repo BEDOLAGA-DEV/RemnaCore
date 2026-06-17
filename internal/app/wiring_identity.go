@@ -36,9 +36,13 @@ var identityWiring = fx.Options(
 	// JWT issuer
 	fx.Provide(provideJWTIssuer),
 
+	// SessionIssuer — shared singleton consumed by both identity.Service and
+	// IdentityAdminService; handles all token generation and session persistence.
+	fx.Provide(provideSessionIssuer),
+
 	// Identity domain service
-	fx.Provide(func(repo identity.Repository, pub domainevent.Publisher, txRunner txmanager.Runner, jwt *authutil.JWTIssuer, clk clock.Clock, cfg *config.Config) *identity.Service {
-		return identity.NewService(repo, pub, txRunner, jwt, clk, cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL)
+	fx.Provide(func(repo identity.Repository, pub domainevent.Publisher, txRunner txmanager.Runner, jwt *authutil.JWTIssuer, clk clock.Clock, cfg *config.Config, sessions *identityservice.SessionIssuer) *identity.Service {
+		return identity.NewService(repo, pub, txRunner, jwt, clk, cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL, sessions)
 	}),
 
 	// Identity cleanup scheduler — uses concrete repo type which satisfies
@@ -66,6 +70,14 @@ var identityWiring = fx.Options(
 		return identityservice.NewRBACCatalogSync(repo, txRunner)
 	}),
 
+	// ShopProvisioner bridge — adapts ResellerService to the identity port.
+	fx.Provide(newShopProvisioner),
+
+	// Account-management orchestration service (invitations, roles, shops).
+	fx.Provide(func(repo identity.Repository, rbacRepo rbac.Repository, access *identityservice.AccessService, shops identityservice.ShopProvisioner, sessions *identityservice.SessionIssuer, txRunner txmanager.Runner, pub domainevent.Publisher, clk clock.Clock) *identityservice.IdentityAdminService {
+		return identityservice.NewIdentityAdminService(repo, rbacRepo, access, shops, sessions, txRunner, pub, clk)
+	}),
+
 	// Lifecycle hooks
 	fx.Invoke(startIdentityCleanup),
 	fx.Invoke(startMetricsCollector),
@@ -75,6 +87,11 @@ var identityWiring = fx.Options(
 	fx.Provide(postgres.NewIdentityRepository),
 	fx.Provide(func(repo *postgres.IdentityRepository) identity.Repository { return repo }),
 )
+
+// provideSessionIssuer constructs the shared SessionIssuer from the DI graph.
+func provideSessionIssuer(repo identity.Repository, pub domainevent.Publisher, jwt *authutil.JWTIssuer, cfg *config.Config) *identityservice.SessionIssuer {
+	return identityservice.NewSessionIssuer(repo, pub, jwt, cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL)
+}
 
 // provideJWTIssuer loads the ECDSA private key from the configured path. If the
 // file does not exist it generates an ephemeral P-256 key pair suitable for

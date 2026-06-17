@@ -95,6 +95,15 @@ func newAuthRateLimiters(client *redis.Client, cfg *config.Config, clk clock.Clo
 		forgotWindow = time.Duration(config.DefaultForgotPwdWindowMinutes) * time.Minute
 	}
 
+	acceptLimit := cfg.RateLimit.AcceptInvitationMaxPerWindow
+	if acceptLimit == 0 {
+		acceptLimit = config.DefaultAcceptInvitationMaxPerWindow
+	}
+	acceptWindow := time.Duration(cfg.RateLimit.AcceptInvitationWindowMinutes) * time.Minute
+	if cfg.RateLimit.AcceptInvitationWindowMinutes == 0 {
+		acceptWindow = time.Duration(config.DefaultAcceptInvitationWindowMinutes) * time.Minute
+	}
+
 	return &middleware.AuthRateLimiters{
 		Login: valkey.NewSlidingWindowRateLimiter(client, loginLimit, loginWindow, clk),
 		LoginCfg: middleware.AuthRateLimitConfig{
@@ -105,6 +114,11 @@ func newAuthRateLimiters(client *redis.Client, cfg *config.Config, clk clock.Clo
 		ForgotPwdCfg: middleware.AuthRateLimitConfig{
 			Limit:  forgotLimit,
 			Window: forgotWindow,
+		},
+		AcceptInvitation: valkey.NewSlidingWindowRateLimiter(client, acceptLimit, acceptWindow, clk),
+		AcceptInvitationCfg: middleware.AuthRateLimitConfig{
+			Limit:  acceptLimit,
+			Window: acceptWindow,
 		},
 	}
 }
