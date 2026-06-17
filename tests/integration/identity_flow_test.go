@@ -55,7 +55,8 @@ func newIdentityTestHarness(t *testing.T) *identityTestHarness {
 	repo := new(identitytest.MockRepository)
 	pub := new(identitytest.MockPublisher)
 
-	svc := identity.NewService(repo, pub, txmanagertest.NoopTxRunner{}, jwtIssuer, clock.NewReal(), testAccessTTL, testRefreshTTL)
+	sessions := identity.NewSessionIssuer(repo, pub, jwtIssuer, testAccessTTL, testRefreshTTL)
+	svc := identity.NewService(repo, pub, txmanagertest.NoopTxRunner{}, jwtIssuer, clock.NewReal(), testAccessTTL, testRefreshTTL, sessions)
 	h := handler.NewIdentityHandler(svc)
 
 	r := chi.NewRouter()

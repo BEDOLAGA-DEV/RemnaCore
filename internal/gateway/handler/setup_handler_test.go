@@ -28,7 +28,8 @@ func newTestSetupHandler(t *testing.T) (*SetupHandler, *identitytest.MockReposit
 	key := generateTestECDSAKey(t)
 	jwtIssuer := authutil.NewJWTIssuer(key, &key.PublicKey)
 
-	svc := identity.NewService(repo, pub, txmanagertest.NoopTxRunner{}, jwtIssuer, clock.NewReal(), 15*time.Minute, 7*24*time.Hour)
+	sessions := identity.NewSessionIssuer(repo, pub, jwtIssuer, 15*time.Minute, 7*24*time.Hour)
+	svc := identity.NewService(repo, pub, txmanagertest.NoopTxRunner{}, jwtIssuer, clock.NewReal(), 15*time.Minute, 7*24*time.Hour, sessions)
 	return NewSetupHandler(svc), repo, pub
 }
 
