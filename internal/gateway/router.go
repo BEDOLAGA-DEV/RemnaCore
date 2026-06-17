@@ -67,6 +67,7 @@ type RouterParams struct {
 	SettingsHandler       *handler.SettingsHandler
 	StatsHandler          *handler.StatsHandler
 	ActivityHandler       *handler.ActivityHandler
+	IdentityAdminHandler  *handler.IAMHandler
 	PluginRPCHandler      *handler.PluginRPCHandler
 	PluginRouteHandler    *handler.PluginRouteHandler
 	BuiltinRouteRegistry  *BuiltinRouteRegistry
@@ -144,6 +145,11 @@ func NewRouter(p RouterParams) http.Handler {
 		p.AuthRateLimiters.LoginCfg,
 		"setup",
 	)
+	acceptInviteRL := middleware.AuthRateLimit(
+		p.AuthRateLimiters.AcceptInvitation,
+		p.AuthRateLimiters.AcceptInvitationCfg,
+		"accept_invitation",
+	)
 
 	// API routes — tenant middleware scoped to API only (not health/metrics).
 	r.Route("/api", func(api chi.Router) {
@@ -175,6 +181,9 @@ func NewRouter(p RouterParams) http.Handler {
 		api.With(forgotPwdRL).Post("/auth/forgot-password", p.IdentityHandler.ForgotPassword)
 		api.Post("/auth/reset-password", p.IdentityHandler.ResetPassword)
 
+		// Public invitation acceptance — rate-limited to prevent token brute-force.
+		api.With(acceptInviteRL).Post("/auth/accept-invitation", p.IdentityAdminHandler.AcceptInvitation)
+
 		// Protected endpoints — require valid JWT.
 		api.Group(func(protected chi.Router) {
 			protected.Use(middleware.Auth(p.JWT))
@@ -185,6 +194,15 @@ func NewRouter(p RouterParams) http.Handler {
 			protected.Put("/me", p.IdentityHandler.UpdateProfile)
 			protected.Post("/me/link-telegram", p.IdentityHandler.LinkTelegram)
 			protected.Delete("/me/link-telegram", p.IdentityHandler.UnlinkTelegram)
+
+			// IAM — invitation management, user creation, role assignment.
+			protected.With(perm(p.AccessService, rbac.UsersInvite)).Post("/users/invitations", p.IdentityAdminHandler.CreateInvitation)
+			protected.With(perm(p.AccessService, rbac.UsersInvite)).Get("/users/invitations", p.IdentityAdminHandler.ListInvitations)
+			protected.With(perm(p.AccessService, rbac.UsersInvite)).Delete("/users/invitations/{id}", p.IdentityAdminHandler.RevokeInvitation)
+			protected.With(perm(p.AccessService, rbac.UsersInvite)).Post("/users", p.IdentityAdminHandler.CreateUserDirect)
+			protected.With(perm(p.AccessService, rbac.UsersAssignRole)).Post("/users/{userID}/roles", p.IdentityAdminHandler.AssignRole)
+			protected.With(perm(p.AccessService, rbac.UsersAssignRole)).Delete("/users/{userID}/roles", p.IdentityAdminHandler.RevokeRole)
+			protected.With(perm(p.AccessService, rbac.UsersRead)).Get("/users/{userID}/roles", p.IdentityAdminHandler.ListUserRoles)
 
 			// Subscriptions
 			protected.Post("/subscriptions", p.BillingHandler.CreateSubscription)
@@ -255,6 +273,9 @@ func NewRouter(p RouterParams) http.Handler {
 				admin.With(perm(p.AccessService, rbac.AnalyticsRead)).Get("/metrics/history", p.StatsHandler.GetMetricsHistory)
 				admin.With(perm(p.AccessService, rbac.SessionsRead)).Get("/sessions", p.StatsHandler.ListSessions)
 				admin.With(perm(p.AccessService, rbac.SessionsRead)).Get("/activity", p.ActivityHandler.ListActivity)
+
+				// Shop provisioning — create a new shop with owner + API key.
+				admin.With(perm(p.AccessService, rbac.ShopsManage)).Post("/shops", p.IdentityAdminHandler.CreateShop)
 
 				// Tenant (shop) management
 				admin.With(perm(p.AccessService, rbac.ShopsManage)).Post("/tenants", p.ResellerHandler.CreateTenant)

@@ -9,6 +9,7 @@ import (
 	identityservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pgutil"
 )
 
 // IAMHandler exposes HTTP endpoints for invitation management, user creation,
@@ -360,8 +361,8 @@ func (h *IAMHandler) CreateShop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ownerUserID := derefStrOrEmpty(req.OwnerUserID)
-	inviteEmail := derefStrOrEmpty(req.InviteEmail)
+	ownerUserID := pgutil.DerefStr(req.OwnerUserID)
+	inviteEmail := pgutil.DerefStr(req.InviteEmail)
 
 	result, err := h.svc.CreateShop(r.Context(), claims.UserID, identityservice.CreateShopInput{
 		Name:   req.Name,
@@ -402,10 +403,3 @@ func strPtrOrNil(p *string) *string {
 	return p
 }
 
-// derefStrOrEmpty safely dereferences a *string, returning "" when nil.
-func derefStrOrEmpty(p *string) string {
-	if p == nil {
-		return ""
-	}
-	return *p
-}

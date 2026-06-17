@@ -36,9 +36,8 @@ var identityWiring = fx.Options(
 	// JWT issuer
 	fx.Provide(provideJWTIssuer),
 
-	// SessionIssuer — shared token+session issuance component (Task 12 will
-	// provide it as a named singleton; here it is constructed inline so the
-	// build stays green after NewService gained the sessions parameter).
+	// SessionIssuer — shared singleton consumed by both identity.Service and
+	// IdentityAdminService; handles all token generation and session persistence.
 	fx.Provide(provideSessionIssuer),
 
 	// Identity domain service

@@ -316,12 +316,13 @@ func extractIP(r *http.Request) string {
 // userToResponse converts a PlatformUser to a JSON-friendly map.
 func userToResponse(u *identity.PlatformUser) map[string]any {
 	return map[string]any{
-		"id":             u.ID,
-		"email":          u.Email,
-		"display_name":   u.DisplayName,
-		"email_verified": u.EmailVerified,
-		"role":           string(u.Role),
-		"created_at":     u.CreatedAt,
-		"updated_at":     u.UpdatedAt,
+		"id":                   u.ID,
+		"email":                u.Email,
+		"display_name":         u.DisplayName,
+		"email_verified":       u.EmailVerified,
+		"role":                 string(u.Role),
+		"must_change_password": u.MustChangePassword,
+		"created_at":           u.CreatedAt,
+		"updated_at":           u.UpdatedAt,
 	}
 }
