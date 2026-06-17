@@ -31,7 +31,8 @@ func newTestService(t *testing.T) (*identity.Service, *identitytest.MockReposito
 	repo := new(identitytest.MockRepository)
 	pub := new(identitytest.MockPublisher)
 
-	svc := identity.NewService(repo, pub, txmanagertest.NoopTxRunner{}, jwtIssuer, clock.NewReal(), 15*time.Minute, 7*24*time.Hour)
+	sessions := identity.NewSessionIssuer(repo, pub, jwtIssuer, 15*time.Minute, 7*24*time.Hour)
+	svc := identity.NewService(repo, pub, txmanagertest.NoopTxRunner{}, jwtIssuer, clock.NewReal(), 15*time.Minute, 7*24*time.Hour, sessions)
 	return svc, repo, pub
 }
 

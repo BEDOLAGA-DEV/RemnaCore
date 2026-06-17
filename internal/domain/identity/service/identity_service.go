@@ -2,8 +2,6 @@ package service
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -101,12 +99,14 @@ type Service struct {
 	clock      clock.Clock
 	accessTTL  time.Duration
 	refreshTTL time.Duration
+	sessions   *SessionIssuer
 }
 
 // NewService creates a Service with the given dependencies. accessTTL and
 // refreshTTL control token lifetimes and must be supplied by the caller
-// (typically from configuration).
-func NewService(repo Repository, publisher domainevent.Publisher, txRunner txmanager.Runner, jwt *authutil.JWTIssuer, clk clock.Clock, accessTTL, refreshTTL time.Duration) *Service {
+// (typically from configuration). sessions is the shared SessionIssuer used
+// by Login, CreateFirstAdmin, and (in Phase B) IdentityAdminService.
+func NewService(repo Repository, publisher domainevent.Publisher, txRunner txmanager.Runner, jwt *authutil.JWTIssuer, clk clock.Clock, accessTTL, refreshTTL time.Duration, sessions *SessionIssuer) *Service {
 	return &Service{
 		repo:       repo,
 		publisher:  publisher,
@@ -115,6 +115,7 @@ func NewService(repo Repository, publisher domainevent.Publisher, txRunner txman
 		clock:      clk,
 		accessTTL:  accessTTL,
 		refreshTTL: refreshTTL,
+		sessions:   sessions,
 	}
 }
 
@@ -234,45 +235,10 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (*LoginResult, er
 	return result, nil
 }
 
-// issueSession signs an access token, persists a new session, and publishes a
-// login event within the provided transaction context. Shared by Login and
-// CreateFirstAdmin so token/session issuance lives in exactly one place.
+// issueSession is a thin wrapper that delegates to the shared SessionIssuer.
+// Login and CreateFirstAdmin call this; their call sites are unchanged.
 func (s *Service) issueSession(txCtx context.Context, user *aggregate.PlatformUser, ip, userAgent string, now time.Time) (*LoginResult, error) {
-	accessToken, err := s.jwt.Sign(authutil.UserClaims{
-		UserID: user.ID,
-		Email:  user.Email,
-	}, s.accessTTL)
-	if err != nil {
-		return nil, fmt.Errorf("signing access token: %w", err)
-	}
-
-	refreshToken, err := s.generateRefreshToken()
-	if err != nil {
-		return nil, fmt.Errorf("generating refresh token: %w", err)
-	}
-
-	session := &aggregate.Session{
-		ID:           uuid.Must(uuid.NewV7()).String(),
-		UserID:       user.ID,
-		RefreshToken: refreshToken,
-		IPAddress:    ip,
-		UserAgent:    userAgent,
-		ExpiresAt:    now.Add(s.refreshTTL),
-		CreatedAt:    now,
-	}
-
-	if err := s.repo.CreateSession(txCtx, session); err != nil {
-		return nil, fmt.Errorf("persisting session: %w", err)
-	}
-	if err := s.publisher.Publish(txCtx, NewUserLoggedInEvent(user.ID, now)); err != nil {
-		return nil, fmt.Errorf("publishing %s: %w", aggregate.EventUserLoggedIn, err)
-	}
-
-	return &LoginResult{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		User:         user,
-	}, nil
+	return s.sessions.Issue(txCtx, user, ip, userAgent, now)
 }
 
 // RefreshToken validates the existing session, rotates the refresh token, and
@@ -292,7 +258,7 @@ func (s *Service) RefreshToken(ctx context.Context, refreshToken string) (*Login
 		return nil, fmt.Errorf("finding user: %w", err)
 	}
 
-	newRefreshToken, err := s.generateRefreshToken()
+	newRefreshToken, err := generateRefreshToken()
 	if err != nil {
 		return nil, fmt.Errorf("generating refresh token: %w", err)
 	}
@@ -387,15 +353,6 @@ func (s *Service) CreateFirstAdmin(ctx context.Context, in CreateFirstAdminInput
 	}
 
 	return result, nil
-}
-
-// generateRefreshToken produces a cryptographically random hex string.
-func (s *Service) generateRefreshToken() (string, error) {
-	b := make([]byte, RefreshTokenLen)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("generating random bytes: %w", err)
-	}
-	return hex.EncodeToString(b), nil
 }
 
 // NewUserLoggedInEvent creates an event for a successful login.

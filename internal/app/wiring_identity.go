@@ -36,9 +36,16 @@ var identityWiring = fx.Options(
 	// JWT issuer
 	fx.Provide(provideJWTIssuer),
 
+	// SessionIssuer — shared token+session issuance component (Task 12 will
+	// provide it as a named singleton; here it is constructed inline so the
+	// build stays green after NewService gained the sessions parameter).
+	fx.Provide(func(repo identity.Repository, pub domainevent.Publisher, jwt *authutil.JWTIssuer, cfg *config.Config) *identityservice.SessionIssuer {
+		return identityservice.NewSessionIssuer(repo, pub, jwt, cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL)
+	}),
+
 	// Identity domain service
-	fx.Provide(func(repo identity.Repository, pub domainevent.Publisher, txRunner txmanager.Runner, jwt *authutil.JWTIssuer, clk clock.Clock, cfg *config.Config) *identity.Service {
-		return identity.NewService(repo, pub, txRunner, jwt, clk, cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL)
+	fx.Provide(func(repo identity.Repository, pub domainevent.Publisher, txRunner txmanager.Runner, jwt *authutil.JWTIssuer, clk clock.Clock, cfg *config.Config, sessions *identityservice.SessionIssuer) *identity.Service {
+		return identity.NewService(repo, pub, txRunner, jwt, clk, cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL, sessions)
 	}),
 
 	// Identity cleanup scheduler — uses concrete repo type which satisfies
