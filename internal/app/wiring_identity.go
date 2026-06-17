@@ -71,6 +71,14 @@ var identityWiring = fx.Options(
 		return identityservice.NewRBACCatalogSync(repo, txRunner)
 	}),
 
+	// ShopProvisioner bridge — adapts ResellerService to the identity port.
+	fx.Provide(newShopProvisioner),
+
+	// Account-management orchestration service (invitations, roles, shops).
+	fx.Provide(func(repo identity.Repository, rbacRepo rbac.Repository, access *identityservice.AccessService, shops identityservice.ShopProvisioner, sessions *identityservice.SessionIssuer, txRunner txmanager.Runner, pub domainevent.Publisher, clk clock.Clock) *identityservice.IdentityAdminService {
+		return identityservice.NewIdentityAdminService(repo, rbacRepo, access, shops, sessions, txRunner, pub, clk)
+	}),
+
 	// Lifecycle hooks
 	fx.Invoke(startIdentityCleanup),
 	fx.Invoke(startMetricsCollector),
