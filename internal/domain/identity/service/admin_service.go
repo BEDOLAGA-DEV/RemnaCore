@@ -384,6 +384,167 @@ func (s *IdentityAdminService) CreateUserDirect(
 	return user, nil
 }
 
+// CreateShopInput is the input for CreateShop (Task 11).
+type CreateShopInput struct {
+	Name           string
+	Domain         string
+	Owner          OwnerSpec // exactly one of ExistingUserID / InviteEmail must be set
+	CommissionRate int
+}
+
+// OwnerSpec identifies the shop owner: either an existing user or an email to
+// invite. Exactly one field must be non-empty.
+type OwnerSpec struct {
+	ExistingUserID string // wire an existing platform user as owner immediately
+	InviteEmail    string // create a pending shop_owner invitation for this email
+}
+
+// ShopResult is the return value of CreateShop.
+type ShopResult struct {
+	TenantID        string
+	APIKey          string
+	OwnerUserID     *string // set on ExistingUserID path; nil on InviteEmail path
+	InvitationToken string  // set on InviteEmail path; empty on ExistingUserID path
+}
+
+// CreateShop provisions a new shop (tenant) and wires the owner atomically.
+// Only platform admins may call this method — the service enforces this guard
+// independently of any route-level permission check, because shop_owner also
+// holds the shops.manage permission and a route gate alone would not suffice.
+//
+// Two owner paths:
+//   - ExistingUserID: creates the tenant with the owner set, updates the user's
+//     tenant_id, assigns shop_owner, and creates the reseller account — all in
+//     one transaction. Invalidates the owner's cached access afterwards.
+//   - InviteEmail: creates a pending tenant (nil owner), mints a shop_owner
+//     invitation carrying the commission rate, and publishes both UserInvited and
+//     ShopCreated events in one transaction. The owner wiring completes when the
+//     invitee calls AcceptInvitation.
+func (s *IdentityAdminService) CreateShop(
+	ctx context.Context,
+	actorUserID string,
+	in CreateShopInput,
+) (*ShopResult, error) {
+	// Platform-admin guard: independent of any route gate. shop_owner holds
+	// shops.manage, so route-level permission alone is insufficient.
+	acc, err := s.access.Resolve(ctx, actorUserID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("resolving actor access: %w", err)
+	}
+	if !acc.IsPlatformAdmin {
+		return nil, ErrNotPlatformAdmin
+	}
+
+	// Validate exactly one owner path is specified.
+	if in.Owner.ExistingUserID == "" && in.Owner.InviteEmail == "" {
+		return nil, fmt.Errorf("one of Owner.ExistingUserID or Owner.InviteEmail must be set")
+	}
+	if in.Owner.ExistingUserID != "" && in.Owner.InviteEmail != "" {
+		return nil, fmt.Errorf("only one of Owner.ExistingUserID or Owner.InviteEmail may be set")
+	}
+
+	// Fail fast: verify the shop_owner role exists before provisioning anything.
+	role, err := s.rbacRepo.GetRole(ctx, rbac.RoleShopOwner)
+	if err != nil {
+		return nil, fmt.Errorf("getting shop_owner role: %w", err)
+	}
+
+	now := s.clock.Now()
+
+	if in.Owner.ExistingUserID != "" {
+		// Existing-owner path: provision tenant + wire owner all in one transaction.
+		owner := in.Owner.ExistingUserID
+		var res ShopResult
+
+		if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+			tenantID, apiKey, err := s.shops.CreateTenant(txCtx, in.Name, in.Domain, &owner)
+			if err != nil {
+				return fmt.Errorf("creating tenant: %w", err)
+			}
+
+			u, err := s.repo.GetUserByIDForUpdate(txCtx, owner)
+			if err != nil {
+				return fmt.Errorf("getting owner user: %w", err)
+			}
+			u.TenantID = &tenantID
+			if err := s.repo.UpdateUser(txCtx, u); err != nil {
+				return fmt.Errorf("updating owner tenant_id: %w", err)
+			}
+
+			if err := s.rbacRepo.AssignRole(txCtx, owner, role.ID, &tenantID, actorUserID); err != nil {
+				return fmt.Errorf("assigning shop_owner role: %w", err)
+			}
+
+			if err := s.shops.CreateResellerAccount(txCtx, tenantID, owner, in.CommissionRate); err != nil {
+				return fmt.Errorf("creating reseller account: %w", err)
+			}
+
+			res = ShopResult{
+				TenantID:    tenantID,
+				APIKey:      apiKey,
+				OwnerUserID: &owner,
+			}
+
+			if err := s.publisher.Publish(txCtx, NewShopCreatedEvent(tenantID, &owner, now)); err != nil {
+				return fmt.Errorf("publishing %s: %w", aggregate.EventShopCreated, err)
+			}
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+
+		// Invalidate the owner's cached access after the transaction so the new
+		// shop_owner binding takes effect immediately on the next request.
+		s.access.Invalidate(owner)
+		return &res, nil
+	}
+
+	// Invite-owner path: create a pending tenant (nil owner) + shop_owner invitation.
+	var res ShopResult
+
+	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		tenantID, apiKey, err := s.shops.CreateTenant(txCtx, in.Name, in.Domain, nil)
+		if err != nil {
+			return fmt.Errorf("creating pending tenant: %w", err)
+		}
+
+		rate := in.CommissionRate
+		inv, err := aggregate.NewInvitation(
+			in.Owner.InviteEmail,
+			rbac.RoleShopOwner,
+			&tenantID,
+			&rate,
+			actorUserID,
+			now,
+		)
+		if err != nil {
+			return fmt.Errorf("creating shop_owner invitation: %w", err)
+		}
+
+		if err := s.repo.CreateInvitation(txCtx, inv); err != nil {
+			return fmt.Errorf("persisting invitation: %w", err)
+		}
+
+		res = ShopResult{
+			TenantID:        tenantID,
+			APIKey:          apiKey,
+			InvitationToken: inv.Token,
+		}
+
+		if err := s.publisher.Publish(txCtx, NewUserInvitedEvent(inv, now)); err != nil {
+			return fmt.Errorf("publishing %s: %w", aggregate.EventUserInvited, err)
+		}
+		if err := s.publisher.Publish(txCtx, NewShopCreatedEvent(tenantID, nil, now)); err != nil {
+			return fmt.Errorf("publishing %s: %w", aggregate.EventShopCreated, err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	return &res, nil
+}
+
 // ListInvitations returns pending invitations visible to the actor. Platform
 // admins see all invitations; non-admins see only invitations scoped to the
 // tenants they belong to.

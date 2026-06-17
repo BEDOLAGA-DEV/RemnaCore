@@ -30,9 +30,10 @@ import (
 // calls an unexpected method fails loudly.
 type adminStubRepo struct {
 	// pre-loaded data
-	invitations    map[string]*aggregate.Invitation // keyed by token
-	usersByEmail   map[string]*aggregate.PlatformUser
-	sessions       []*aggregate.Session
+	invitations  map[string]*aggregate.Invitation // keyed by token
+	usersByEmail map[string]*aggregate.PlatformUser
+	usersByID    map[string]*aggregate.PlatformUser
+	sessions     []*aggregate.Session
 
 	// recorded calls
 	createdInvitations []*aggregate.Invitation
@@ -45,6 +46,7 @@ func newAdminStubRepo() *adminStubRepo {
 	return &adminStubRepo{
 		invitations:  map[string]*aggregate.Invitation{},
 		usersByEmail: map[string]*aggregate.PlatformUser{},
+		usersByID:    map[string]*aggregate.PlatformUser{},
 	}
 }
 
@@ -55,7 +57,10 @@ func (r *adminStubRepo) CreateUser(_ context.Context, u *aggregate.PlatformUser)
 func (r *adminStubRepo) GetUserByID(_ context.Context, _ string) (*aggregate.PlatformUser, error) {
 	return nil, service.ErrNotFound
 }
-func (r *adminStubRepo) GetUserByIDForUpdate(_ context.Context, _ string) (*aggregate.PlatformUser, error) {
+func (r *adminStubRepo) GetUserByIDForUpdate(_ context.Context, id string) (*aggregate.PlatformUser, error) {
+	if u, ok := r.usersByID[id]; ok {
+		return u, nil
+	}
 	return nil, service.ErrNotFound
 }
 func (r *adminStubRepo) GetUserByEmail(_ context.Context, email string) (*aggregate.PlatformUser, error) {
@@ -244,8 +249,15 @@ func (r *adminStubRBACRepo) CountPlatformAdmins(_ context.Context) (int, error) 
 // ---- shop provisioner stub ----
 
 type adminStubShops struct {
-	setTenantOwnerCalls      []setTenantOwnerCall
-	createResellerCalls      []createResellerCall
+	createTenantCalls   []createTenantCall
+	setTenantOwnerCalls []setTenantOwnerCall
+	createResellerCalls []createResellerCall
+}
+
+type createTenantCall struct {
+	Name        string
+	Domain      string
+	OwnerUserID *string
 }
 
 type setTenantOwnerCall struct {
@@ -260,6 +272,7 @@ type createResellerCall struct {
 }
 
 func (s *adminStubShops) CreateTenant(_ context.Context, name, domain string, ownerUserID *string) (string, string, error) {
+	s.createTenantCalls = append(s.createTenantCalls, createTenantCall{Name: name, Domain: domain, OwnerUserID: ownerUserID})
 	return "tenant-1", "api-key-1", nil
 }
 
@@ -1211,4 +1224,210 @@ func TestListInvitations_GlobalHiddenFromNonAdmin(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, invites, 1, "non-admin must not see global (nil-tenant) invitations")
 	assert.Equal(t, &shopA, invites[0].TenantID)
+}
+
+// ============================================================
+// Tests: CreateShop (Task 11)
+// ============================================================
+
+// TestCreateShop_NonAdminRejected verifies that a shop_owner (who holds
+// shops.manage) is still rejected by the platform-admin guard inside
+// CreateShop. The route gate alone (shops.manage) is insufficient.
+func TestCreateShop_NonAdminRejected(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "owner-user-id"
+	shopA := "11111111-1111-1111-1111-111111111111"
+
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	// Actor is a shop_owner (holds shops.manage) but is NOT a platform admin.
+	rbacRepo.bindings = shopOwnerBindings(actorID, shopA)
+	rbacRepo.addRole(rbac.Role{
+		ID:        "role-owner-id",
+		Key:       rbac.RoleShopOwner,
+		ScopeKind: rbac.ScopeShop,
+	})
+	shops := &adminStubShops{}
+	pub := &noopPublisher{}
+
+	svc := buildAdminSvc(t, repo, rbacRepo, shops, pub, now)
+
+	_, err := svc.CreateShop(context.Background(), actorID, service.CreateShopInput{
+		Name:   "My Shop",
+		Domain: "myshop.example.com",
+		Owner:  service.OwnerSpec{InviteEmail: "owner@example.com"},
+	})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, service.ErrNotPlatformAdmin,
+		"shop_owner must not be allowed to create shops even if they hold shops.manage")
+	// No tenant must be provisioned.
+	assert.Empty(t, shops.createTenantCalls)
+}
+
+// TestCreateShop_ExistingOwner verifies the existing-owner path:
+//   - CreateTenant is called with the owner's user ID.
+//   - The owner user's TenantID is set and UpdateUser is called.
+//   - AssignRole(shop_owner, tenant) is called atomically.
+//   - CreateResellerAccount is called with the commission rate.
+//   - ShopResult.OwnerUserID is populated; InvitationToken is empty.
+//   - ShopCreated event is published.
+//   - Access cache is invalidated for the owner.
+func TestCreateShop_ExistingOwner(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "admin-user-id"
+	ownerID := "existing-owner-id"
+	commissionRate := 20
+
+	repo := newAdminStubRepo()
+	// Pre-load the owner so GetUserByIDForUpdate succeeds.
+	repo.usersByID[ownerID] = &aggregate.PlatformUser{
+		ID:    ownerID,
+		Email: "existingowner@example.com",
+	}
+
+	rbacRepo := newAdminStubRBACRepo()
+	rbacRepo.bindings = platformAdminBindings(actorID)
+	rbacRepo.addRole(rbac.Role{
+		ID:        "role-owner-id",
+		Key:       rbac.RoleShopOwner,
+		ScopeKind: rbac.ScopeShop,
+	})
+	shops := &adminStubShops{}
+	pub := &noopPublisher{}
+
+	svc := buildAdminSvc(t, repo, rbacRepo, shops, pub, now)
+
+	result, err := svc.CreateShop(context.Background(), actorID, service.CreateShopInput{
+		Name:           "Acme Shop",
+		Domain:         "acme.example.com",
+		Owner:          service.OwnerSpec{ExistingUserID: ownerID},
+		CommissionRate: commissionRate,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	// TenantID and APIKey from stub.
+	assert.Equal(t, "tenant-1", result.TenantID)
+	assert.Equal(t, "api-key-1", result.APIKey)
+
+	// OwnerUserID must be set; InvitationToken must be empty.
+	require.NotNil(t, result.OwnerUserID)
+	assert.Equal(t, ownerID, *result.OwnerUserID)
+	assert.Empty(t, result.InvitationToken)
+
+	// CreateTenant must have been called with the owner's user ID.
+	require.Len(t, shops.createTenantCalls, 1)
+	assert.Equal(t, "Acme Shop", shops.createTenantCalls[0].Name)
+	assert.Equal(t, "acme.example.com", shops.createTenantCalls[0].Domain)
+	require.NotNil(t, shops.createTenantCalls[0].OwnerUserID)
+	assert.Equal(t, ownerID, *shops.createTenantCalls[0].OwnerUserID)
+
+	// UpdateUser must have been called with TenantID set.
+	require.Len(t, repo.updatedUsers, 1)
+	require.NotNil(t, repo.updatedUsers[0].TenantID)
+	assert.Equal(t, "tenant-1", *repo.updatedUsers[0].TenantID)
+
+	// AssignRole(shop_owner, tenantID) must have been called.
+	require.Len(t, rbacRepo.assignedRoles, 1)
+	assert.Equal(t, ownerID, rbacRepo.assignedRoles[0].UserID)
+	assert.Equal(t, "role-owner-id", rbacRepo.assignedRoles[0].RoleID)
+	require.NotNil(t, rbacRepo.assignedRoles[0].TenantID)
+	assert.Equal(t, "tenant-1", *rbacRepo.assignedRoles[0].TenantID)
+	assert.Equal(t, actorID, rbacRepo.assignedRoles[0].GrantedBy)
+
+	// CreateResellerAccount must have been called with the commission rate.
+	// The existing-owner path calls CreateResellerAccount but NOT SetTenantOwner
+	// (SetTenantOwner is only called in AcceptInvitation for invite-owner flow).
+	require.Len(t, shops.createResellerCalls, 1)
+	assert.Equal(t, "tenant-1", shops.createResellerCalls[0].TenantID)
+	assert.Equal(t, ownerID, shops.createResellerCalls[0].UserID)
+	assert.Equal(t, commissionRate, shops.createResellerCalls[0].CommissionRate)
+
+	// SetTenantOwner must NOT be called in the existing-owner path.
+	assert.Empty(t, shops.setTenantOwnerCalls)
+
+	// ShopCreated event must be published.
+	hasShopCreated := false
+	for _, e := range pub.events {
+		if e.Type == aggregate.EventShopCreated {
+			hasShopCreated = true
+		}
+	}
+	assert.True(t, hasShopCreated, "ShopCreated event must be published")
+}
+
+// TestCreateShop_InviteOwner verifies the invite-owner path:
+//   - CreateTenant is called with a nil owner (pending).
+//   - CreateInvitation is called for shop_owner scoped to the new tenant.
+//   - ShopResult.InvitationToken is set; OwnerUserID is nil.
+//   - Both UserInvited and ShopCreated events are published.
+func TestCreateShop_InviteOwner(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "admin-user-id"
+	commissionRate := 15
+
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	rbacRepo.bindings = platformAdminBindings(actorID)
+	rbacRepo.addRole(rbac.Role{
+		ID:        "role-owner-id",
+		Key:       rbac.RoleShopOwner,
+		ScopeKind: rbac.ScopeShop,
+	})
+	shops := &adminStubShops{}
+	pub := &noopPublisher{}
+
+	svc := buildAdminSvc(t, repo, rbacRepo, shops, pub, now)
+
+	result, err := svc.CreateShop(context.Background(), actorID, service.CreateShopInput{
+		Name:           "Pending Shop",
+		Domain:         "pending.example.com",
+		Owner:          service.OwnerSpec{InviteEmail: "futureowner@example.com"},
+		CommissionRate: commissionRate,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	// TenantID and APIKey from stub.
+	assert.Equal(t, "tenant-1", result.TenantID)
+	assert.Equal(t, "api-key-1", result.APIKey)
+
+	// InvitationToken must be set; OwnerUserID must be nil.
+	assert.NotEmpty(t, result.InvitationToken)
+	assert.Nil(t, result.OwnerUserID)
+
+	// CreateTenant must have been called with nil owner (pending shop).
+	require.Len(t, shops.createTenantCalls, 1)
+	assert.Nil(t, shops.createTenantCalls[0].OwnerUserID,
+		"invite-owner path must create tenant with nil owner")
+
+	// CreateInvitation must be called with role=shop_owner, the new tenant, and
+	// the commission rate.
+	require.Len(t, repo.createdInvitations, 1)
+	inv := repo.createdInvitations[0]
+	assert.Equal(t, "futureowner@example.com", inv.Email)
+	assert.Equal(t, rbac.RoleShopOwner, inv.RoleKey)
+	require.NotNil(t, inv.TenantID)
+	assert.Equal(t, "tenant-1", *inv.TenantID)
+	require.NotNil(t, inv.CommissionRate)
+	assert.Equal(t, commissionRate, *inv.CommissionRate)
+
+	// The returned InvitationToken must match the created invitation's token.
+	assert.Equal(t, inv.Token, result.InvitationToken)
+
+	// Both UserInvited and ShopCreated events must be published.
+	var hasUserInvited, hasShopCreated bool
+	for _, e := range pub.events {
+		switch e.Type {
+		case aggregate.EventUserInvited:
+			hasUserInvited = true
+		case aggregate.EventShopCreated:
+			hasShopCreated = true
+		}
+	}
+	assert.True(t, hasUserInvited, "UserInvited event must be published")
+	assert.True(t, hasShopCreated, "ShopCreated event must be published")
 }
