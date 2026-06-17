@@ -196,6 +196,9 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 
 		now := s.clock.Now()
 		user.ChangePassword(hash, now)
+		// Spec: a successful password reset clears the forced-change flag so the
+		// user is not prompted again after completing the reset flow.
+		user.MustChangePassword = false
 
 		if err := s.repo.UpdateUser(txCtx, user); err != nil {
 			return fmt.Errorf("updating user: %w", err)

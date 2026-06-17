@@ -48,6 +48,14 @@ const rlsTenantVariable = "app.tenant_id"
 // at the database level. The setting is scoped to this transaction and
 // automatically cleared on commit/rollback.
 func (tm *TxManager) RunInTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	// Re-entrant: if a transaction is already active in ctx (set by an outer
+	// RunInTx), join it so nested service calls participate in the SAME atomic
+	// transaction rather than beginning an independent one (which would commit
+	// separately and break all-or-nothing semantics).
+	if _, ok := ctx.Value(txKey).(pgx.Tx); ok {
+		return fn(ctx)
+	}
+
 	tx, err := tm.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)

@@ -111,6 +111,13 @@ func (s *IdentityAdminService) authorizeGrant(
 	var perms []rbac.Permission
 	if sr, ok := rbac.SystemRoleByKey(role.Key); ok {
 		perms = sr.Permissions
+	} else {
+		// Defensive guard: Phase B only supports granting system roles (reached via
+		// GetRole by key). Custom roles have a NULL key and are not reachable through
+		// this path, but if one ever slips through its permissions would be nil and
+		// the no-escalation check would pass vacuously. Reject it explicitly until
+		// Phase D wires custom-role permission resolution.
+		return rbac.Role{}, ErrGrantNotAllowed
 	}
 
 	target := rbac.GrantTarget{
@@ -206,6 +213,12 @@ func (s *IdentityAdminService) AcceptInvitation(
 	role, err := s.rbacRepo.GetRole(ctx, inv.RoleKey)
 	if err != nil {
 		return nil, fmt.Errorf("resolving invited role %q: %w", inv.RoleKey, err)
+	}
+	// Defense-in-depth: guard against a stored invite whose role scope changed
+	// after the invite was created (e.g. a role that was migrated from shop to
+	// global scope). Validates spec §4.4 binding invariants before writing.
+	if err := rbac.ValidateBinding(role, inv.TenantID); err != nil {
+		return nil, fmt.Errorf("invitation binding validation: %w", err)
 	}
 
 	var result *LoginResult
