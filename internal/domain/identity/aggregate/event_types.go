@@ -14,6 +14,13 @@ const (
 	EventPasswordChanged        domainevent.EventType = "user.password_changed"
 	EventTelegramLinked         domainevent.EventType = "user.telegram_linked"
 	EventTelegramUnlinked       domainevent.EventType = "user.telegram_unlinked"
+
+	// Phase B: account management & RBAC events.
+	EventUserInvited             domainevent.EventType = "user.invited"
+	EventUserInvitationAccepted  domainevent.EventType = "user.invitation_accepted"
+	EventRoleAssigned            domainevent.EventType = "user.role_assigned"
+	EventRoleRevoked             domainevent.EventType = "user.role_revoked"
+	EventShopCreated             domainevent.EventType = "shop.created"
 )
 
 // --- Event payload types ---
@@ -85,6 +92,51 @@ func (TelegramUnlinkedPayload) EventType() domainevent.EventType {
 	return EventTelegramUnlinked
 }
 
+// --- Phase B event payload types ---
+
+// UserInvitedPayload is the typed payload for EventUserInvited.
+type UserInvitedPayload struct {
+	InvitationID string  `json:"invitation_id"`
+	Email        string  `json:"email"`
+	RoleKey      string  `json:"role_key"`
+	TenantID     *string `json:"tenant_id,omitempty"`
+}
+
+// UserInvitationAcceptedPayload is the typed payload for EventUserInvitationAccepted.
+type UserInvitationAcceptedPayload struct {
+	UserID string `json:"user_id"`
+	Email  string `json:"email"`
+}
+
+// RoleAssignedPayload is the typed payload for EventRoleAssigned.
+type RoleAssignedPayload struct {
+	UserID    string  `json:"user_id"`
+	RoleKey   string  `json:"role_key"`
+	TenantID  *string `json:"tenant_id,omitempty"`
+	GrantedBy string  `json:"granted_by"`
+}
+
+// RoleRevokedPayload is the typed payload for EventRoleRevoked.
+type RoleRevokedPayload struct {
+	UserID   string  `json:"user_id"`
+	RoleKey  string  `json:"role_key"`
+	TenantID *string `json:"tenant_id,omitempty"`
+}
+
+// ShopCreatedPayload is the typed payload for EventShopCreated.
+type ShopCreatedPayload struct {
+	TenantID    string  `json:"tenant_id"`
+	OwnerUserID *string `json:"owner_user_id,omitempty"`
+}
+
+// --- Phase B EventPayload interface implementations ---
+
+func (UserInvitedPayload) EventType() domainevent.EventType            { return EventUserInvited }
+func (UserInvitationAcceptedPayload) EventType() domainevent.EventType { return EventUserInvitationAccepted }
+func (RoleAssignedPayload) EventType() domainevent.EventType           { return EventRoleAssigned }
+func (RoleRevokedPayload) EventType() domainevent.EventType            { return EventRoleRevoked }
+func (ShopCreatedPayload) EventType() domainevent.EventType            { return EventShopCreated }
+
 // Compile-time interface checks.
 var (
 	_ domainevent.EventPayload = UserRegisteredPayload{}
@@ -96,4 +148,11 @@ var (
 	_ domainevent.EventPayload = PasswordChangedPayload{}
 	_ domainevent.EventPayload = TelegramLinkedPayload{}
 	_ domainevent.EventPayload = TelegramUnlinkedPayload{}
+
+	// Phase B payload checks.
+	_ domainevent.EventPayload = UserInvitedPayload{}
+	_ domainevent.EventPayload = UserInvitationAcceptedPayload{}
+	_ domainevent.EventPayload = RoleAssignedPayload{}
+	_ domainevent.EventPayload = RoleRevokedPayload{}
+	_ domainevent.EventPayload = ShopCreatedPayload{}
 )

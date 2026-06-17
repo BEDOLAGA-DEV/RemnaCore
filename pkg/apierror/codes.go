@@ -154,6 +154,16 @@ var (
 	PluginCannotUninstallBuiltIn = New("PLUGIN.CANNOT_UNINSTALL_BUILTIN", "cannot uninstall built-in plugin", http.StatusForbidden)
 )
 
+// IAM (account management & RBAC) error codes.
+var (
+	IAMGrantNotAllowed    = New("IAM.GRANT_NOT_ALLOWED", "you may not grant that role", http.StatusForbidden)
+	IAMNotPlatformAdmin   = New("IAM.NOT_PLATFORM_ADMIN", "platform admin required", http.StatusForbidden)
+	IAMLastAdmin          = New("IAM.LAST_ADMIN", "cannot revoke the last platform admin", http.StatusConflict)
+	IAMInvitationExpired  = New("IAM.INVITATION_EXPIRED", "invitation has expired", http.StatusGone)
+	IAMInvitationNotFound = New("IAM.INVITATION_NOT_FOUND", "invitation not found", http.StatusNotFound)
+	IAMEmailAlreadyUser   = New("IAM.EMAIL_ALREADY_USER", "email already belongs to a user", http.StatusConflict)
+)
+
 // Routing error codes.
 var (
 	RoutingNoNodes = New("ROUTING.NO_NODES_AVAILABLE", "no suitable node available", http.StatusServiceUnavailable)
