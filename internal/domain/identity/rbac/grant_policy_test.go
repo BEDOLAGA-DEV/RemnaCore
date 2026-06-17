@@ -58,4 +58,20 @@ func TestCanGrant(t *testing.T) {
 		tgt := rbac.GrantTarget{RoleKey: "custom", ScopeKind: rbac.ScopeShop, Permissions: []rbac.Permission{rbac.SettingsManage}}
 		assert.ErrorIs(t, rbac.CanGrant(ownerActor(shopA), tgt, &shopA), rbac.ErrGrantNotAllowed)
 	})
+	t.Run("non-admin without users.assign_role is rejected", func(t *testing.T) {
+		// Actor is a member of shopA but holds only CustomersRead — no UsersAssignRole.
+		actor := rbac.Actor{
+			Permissions:    map[rbac.Permission]struct{}{rbac.CustomersRead: {}},
+			AllowedTenants: map[string]struct{}{shopA: {}},
+		}
+		assert.ErrorIs(t, rbac.CanGrant(actor, staffTarget(), &shopA), rbac.ErrGrantNotAllowed)
+	})
+	t.Run("shop owner cannot grant platform_admin role", func(t *testing.T) {
+		tgt := rbac.GrantTarget{RoleKey: rbac.RolePlatformAdmin, ScopeKind: rbac.ScopeShop}
+		assert.ErrorIs(t, rbac.CanGrant(ownerActor(shopA), tgt, &shopA), rbac.ErrGrantNotAllowed)
+	})
+	t.Run("nil scope tenant with shop role is rejected", func(t *testing.T) {
+		tgt := rbac.GrantTarget{RoleKey: rbac.RoleShopStaff, ScopeKind: rbac.ScopeShop}
+		assert.ErrorIs(t, rbac.CanGrant(ownerActor(shopA), tgt, nil), rbac.ErrGrantNotAllowed)
+	})
 }

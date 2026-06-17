@@ -17,7 +17,7 @@ type Actor struct {
 
 // GrantTarget describes the role being granted.
 type GrantTarget struct {
-	RoleKey     string // "" for custom roles
+	RoleKey     string // system or custom role key (never empty)
 	ScopeKind   string // ScopeGlobal | ScopeShop
 	Permissions []Permission
 }
@@ -27,6 +27,11 @@ type GrantTarget struct {
 func CanGrant(actor Actor, target GrantTarget, scopeTenantID *string) error {
 	if actor.IsPlatformAdmin {
 		return nil
+	}
+	// Rule 2: a non-admin must independently hold the grant-authorization
+	// permission (defense-in-depth; the HTTP route gate also enforces this).
+	if _, ok := actor.Permissions[UsersAssignRole]; !ok {
+		return ErrGrantNotAllowed
 	}
 	// Non-admins may only grant shop-scoped roles within a shop they belong to.
 	if target.ScopeKind != ScopeShop {
