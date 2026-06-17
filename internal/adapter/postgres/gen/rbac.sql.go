@@ -56,6 +56,86 @@ func (q *Queries) BackfillGlobalAssignment(ctx context.Context, arg BackfillGlob
 	return err
 }
 
+const countPlatformAdmins = `-- name: CountPlatformAdmins :one
+SELECT COUNT(*) FROM identity.role_assignments ra
+JOIN identity.roles r ON r.id = ra.role_id
+WHERE r.key = 'platform_admin'
+  AND ra.tenant_id IS NULL
+`
+
+func (q *Queries) CountPlatformAdmins(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countPlatformAdmins)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const deleteGlobalRoleAssignment = `-- name: DeleteGlobalRoleAssignment :execrows
+DELETE FROM identity.role_assignments
+WHERE user_id = $1::uuid
+  AND role_id = $2::uuid
+  AND tenant_id IS NULL
+`
+
+type DeleteGlobalRoleAssignmentParams struct {
+	UserID pgtype.UUID `json:"user_id"`
+	RoleID pgtype.UUID `json:"role_id"`
+}
+
+func (q *Queries) DeleteGlobalRoleAssignment(ctx context.Context, arg DeleteGlobalRoleAssignmentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteGlobalRoleAssignment, arg.UserID, arg.RoleID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteShopRoleAssignment = `-- name: DeleteShopRoleAssignment :execrows
+DELETE FROM identity.role_assignments
+WHERE user_id = $1::uuid
+  AND role_id = $2::uuid
+  AND tenant_id = $3::uuid
+`
+
+type DeleteShopRoleAssignmentParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	RoleID   pgtype.UUID `json:"role_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) DeleteShopRoleAssignment(ctx context.Context, arg DeleteShopRoleAssignmentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteShopRoleAssignment, arg.UserID, arg.RoleID, arg.TenantID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const getRoleByKey = `-- name: GetRoleByKey :one
+SELECT id, key, scope_kind, tenant_id
+FROM identity.roles
+WHERE key = $1
+`
+
+type GetRoleByKeyRow struct {
+	ID        pgtype.UUID `json:"id"`
+	Key       *string     `json:"key"`
+	ScopeKind string      `json:"scope_kind"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetRoleByKey(ctx context.Context, key *string) (GetRoleByKeyRow, error) {
+	row := q.db.QueryRow(ctx, getRoleByKey, key)
+	var i GetRoleByKeyRow
+	err := row.Scan(
+		&i.ID,
+		&i.Key,
+		&i.ScopeKind,
+		&i.TenantID,
+	)
+	return i, err
+}
+
 const getRoleIDByKey = `-- name: GetRoleIDByKey :one
 SELECT id FROM identity.roles WHERE key = $1
 `
@@ -65,6 +145,55 @@ func (q *Queries) GetRoleIDByKey(ctx context.Context, key *string) (pgtype.UUID,
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const insertGlobalRoleAssignment = `-- name: InsertGlobalRoleAssignment :exec
+INSERT INTO identity.role_assignments (user_id, role_id, granted_by)
+VALUES (
+    $1::uuid,
+    $2::uuid,
+    $3::uuid
+)
+ON CONFLICT (user_id, role_id) DO NOTHING
+`
+
+type InsertGlobalRoleAssignmentParams struct {
+	UserID    pgtype.UUID `json:"user_id"`
+	RoleID    pgtype.UUID `json:"role_id"`
+	GrantedBy pgtype.UUID `json:"granted_by"`
+}
+
+func (q *Queries) InsertGlobalRoleAssignment(ctx context.Context, arg InsertGlobalRoleAssignmentParams) error {
+	_, err := q.db.Exec(ctx, insertGlobalRoleAssignment, arg.UserID, arg.RoleID, arg.GrantedBy)
+	return err
+}
+
+const insertShopRoleAssignment = `-- name: InsertShopRoleAssignment :exec
+INSERT INTO identity.role_assignments (user_id, role_id, tenant_id, granted_by)
+VALUES (
+    $1::uuid,
+    $2::uuid,
+    $3::uuid,
+    $4::uuid
+)
+ON CONFLICT (user_id, role_id, tenant_id) DO NOTHING
+`
+
+type InsertShopRoleAssignmentParams struct {
+	UserID    pgtype.UUID `json:"user_id"`
+	RoleID    pgtype.UUID `json:"role_id"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	GrantedBy pgtype.UUID `json:"granted_by"`
+}
+
+func (q *Queries) InsertShopRoleAssignment(ctx context.Context, arg InsertShopRoleAssignmentParams) error {
+	_, err := q.db.Exec(ctx, insertShopRoleAssignment,
+		arg.UserID,
+		arg.RoleID,
+		arg.TenantID,
+		arg.GrantedBy,
+	)
+	return err
 }
 
 const listAssignmentsForUser = `-- name: ListAssignmentsForUser :many

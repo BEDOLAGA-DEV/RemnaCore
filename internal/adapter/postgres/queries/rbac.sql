@@ -51,3 +51,45 @@ WHERE ra.user_id = $1;
 SELECT role_id, permission_key
 FROM identity.role_permissions
 WHERE role_id = ANY($1::uuid[]);
+
+-- name: InsertShopRoleAssignment :exec
+INSERT INTO identity.role_assignments (user_id, role_id, tenant_id, granted_by)
+VALUES (
+    sqlc.arg(user_id)::uuid,
+    sqlc.arg(role_id)::uuid,
+    sqlc.arg(tenant_id)::uuid,
+    sqlc.arg(granted_by)::uuid
+)
+ON CONFLICT (user_id, role_id, tenant_id) DO NOTHING;
+
+-- name: InsertGlobalRoleAssignment :exec
+INSERT INTO identity.role_assignments (user_id, role_id, granted_by)
+VALUES (
+    sqlc.arg(user_id)::uuid,
+    sqlc.arg(role_id)::uuid,
+    sqlc.arg(granted_by)::uuid
+)
+ON CONFLICT (user_id, role_id) DO NOTHING;
+
+-- name: DeleteShopRoleAssignment :execrows
+DELETE FROM identity.role_assignments
+WHERE user_id = sqlc.arg(user_id)::uuid
+  AND role_id = sqlc.arg(role_id)::uuid
+  AND tenant_id = sqlc.arg(tenant_id)::uuid;
+
+-- name: DeleteGlobalRoleAssignment :execrows
+DELETE FROM identity.role_assignments
+WHERE user_id = sqlc.arg(user_id)::uuid
+  AND role_id = sqlc.arg(role_id)::uuid
+  AND tenant_id IS NULL;
+
+-- name: GetRoleByKey :one
+SELECT id, key, scope_kind, tenant_id
+FROM identity.roles
+WHERE key = sqlc.arg(key);
+
+-- name: CountPlatformAdmins :one
+SELECT COUNT(*) FROM identity.role_assignments ra
+JOIN identity.roles r ON r.id = ra.role_id
+WHERE r.key = 'platform_admin'
+  AND ra.tenant_id IS NULL;

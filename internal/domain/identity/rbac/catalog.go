@@ -115,6 +115,17 @@ type SystemRole struct {
 	Permissions []Permission // empty for platform_admin (allow-all in the resolver)
 }
 
+// SystemRoleByKey returns the system role matching key. The second return value
+// is false when no system role has that key (e.g. for custom roles).
+func SystemRoleByKey(key string) (SystemRole, bool) {
+	for _, sr := range SystemRoles() {
+		if sr.Key == key {
+			return sr, true
+		}
+	}
+	return SystemRole{}, false
+}
+
 // SystemRoles returns the built-in roles. platform_admin is intentionally
 // allow-all and carries NO explicit permissions (the resolver special-cases it,
 // so newly added permissions never drift from a stale join table).

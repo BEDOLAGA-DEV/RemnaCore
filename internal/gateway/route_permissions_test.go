@@ -73,6 +73,16 @@ func (denyAllRepo) PermissionsForRoles(_ context.Context, _ []string) (map[strin
 func (denyAllRepo) SyncCatalog(context.Context, []rbac.Definition, []rbac.SystemRole) error {
 	return nil
 }
+func (denyAllRepo) AssignRole(_ context.Context, _, _ string, _ *string, _ string) error {
+	return nil
+}
+func (denyAllRepo) RevokeRole(_ context.Context, _, _ string, _ *string) (int64, error) {
+	return 0, nil
+}
+func (denyAllRepo) GetRole(_ context.Context, _ string) (rbac.Role, error) {
+	return rbac.Role{}, nil
+}
+func (denyAllRepo) CountPlatformAdmins(_ context.Context) (int, error) { return 0, nil }
 
 // ─── test helper ─────────────────────────────────────────────────────────────
 
