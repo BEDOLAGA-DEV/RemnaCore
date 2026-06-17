@@ -437,10 +437,10 @@ func (s *IdentityAdminService) CreateShop(
 
 	// Validate exactly one owner path is specified.
 	if in.Owner.ExistingUserID == "" && in.Owner.InviteEmail == "" {
-		return nil, fmt.Errorf("one of Owner.ExistingUserID or Owner.InviteEmail must be set")
+		return nil, ErrOwnerNotSpecified
 	}
 	if in.Owner.ExistingUserID != "" && in.Owner.InviteEmail != "" {
-		return nil, fmt.Errorf("only one of Owner.ExistingUserID or Owner.InviteEmail may be set")
+		return nil, ErrOwnerAmbiguous
 	}
 
 	// Fail fast: verify the shop_owner role exists before provisioning anything.
@@ -479,10 +479,11 @@ func (s *IdentityAdminService) CreateShop(
 				return fmt.Errorf("creating reseller account: %w", err)
 			}
 
+			ownerCopy := owner
 			res = ShopResult{
 				TenantID:    tenantID,
 				APIKey:      apiKey,
-				OwnerUserID: &owner,
+				OwnerUserID: &ownerCopy,
 			}
 
 			if err := s.publisher.Publish(txCtx, NewShopCreatedEvent(tenantID, &owner, now)); err != nil {

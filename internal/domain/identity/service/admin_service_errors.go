@@ -20,6 +20,12 @@ var (
 	ErrEmailAlreadyUser   = errors.New("email already belongs to an existing user")
 	// ErrBindingNotFound is returned by RevokeRole when no matching binding exists.
 	ErrBindingNotFound = errors.New("role binding not found")
+	// ErrOwnerNotSpecified is returned by CreateShop when neither ExistingUserID
+	// nor InviteEmail is set in OwnerSpec.
+	ErrOwnerNotSpecified = errors.New("shop owner not specified")
+	// ErrOwnerAmbiguous is returned by CreateShop when both ExistingUserID and
+	// InviteEmail are set in OwnerSpec.
+	ErrOwnerAmbiguous = errors.New("shop owner over-specified")
 )
 
 // MapIAMError maps IdentityAdminService errors to API error codes.
@@ -41,6 +47,10 @@ func MapIAMError(err error) *apierror.Error {
 		return apierror.IAMEmailAlreadyUser
 	case errors.Is(err, ErrBindingNotFound):
 		return apierror.IAMBindingNotFound
+	case errors.Is(err, ErrOwnerNotSpecified):
+		return apierror.IAMOwnerNotSpecified
+	case errors.Is(err, ErrOwnerAmbiguous):
+		return apierror.IAMOwnerAmbiguous
 	default:
 		return nil
 	}

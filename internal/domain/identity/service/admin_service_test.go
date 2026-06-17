@@ -1431,3 +1431,68 @@ func TestCreateShop_InviteOwner(t *testing.T) {
 	assert.True(t, hasUserInvited, "UserInvited event must be published")
 	assert.True(t, hasShopCreated, "ShopCreated event must be published")
 }
+
+// TestCreateShop_NoOwner verifies that passing an empty OwnerSpec (neither
+// ExistingUserID nor InviteEmail set) returns ErrOwnerNotSpecified and does
+// not call CreateTenant.
+func TestCreateShop_NoOwner(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "admin-user-id"
+
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	rbacRepo.bindings = platformAdminBindings(actorID)
+	rbacRepo.addRole(rbac.Role{
+		ID:        "role-owner-id",
+		Key:       rbac.RoleShopOwner,
+		ScopeKind: rbac.ScopeShop,
+	})
+	shops := &adminStubShops{}
+	pub := &noopPublisher{}
+
+	svc := buildAdminSvc(t, repo, rbacRepo, shops, pub, now)
+
+	_, err := svc.CreateShop(context.Background(), actorID, service.CreateShopInput{
+		Name: "X",
+		// Owner is zero-value: both ExistingUserID and InviteEmail are empty.
+	})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, service.ErrOwnerNotSpecified,
+		"empty OwnerSpec must return ErrOwnerNotSpecified")
+	assert.Empty(t, shops.createTenantCalls, "CreateTenant must not be called when owner is missing")
+}
+
+// TestCreateShop_BothOwners verifies that passing an OwnerSpec with both
+// ExistingUserID and InviteEmail set returns ErrOwnerAmbiguous and does not
+// call CreateTenant.
+func TestCreateShop_BothOwners(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "admin-user-id"
+
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	rbacRepo.bindings = platformAdminBindings(actorID)
+	rbacRepo.addRole(rbac.Role{
+		ID:        "role-owner-id",
+		Key:       rbac.RoleShopOwner,
+		ScopeKind: rbac.ScopeShop,
+	})
+	shops := &adminStubShops{}
+	pub := &noopPublisher{}
+
+	svc := buildAdminSvc(t, repo, rbacRepo, shops, pub, now)
+
+	_, err := svc.CreateShop(context.Background(), actorID, service.CreateShopInput{
+		Name: "Ambiguous Shop",
+		Owner: service.OwnerSpec{
+			ExistingUserID: "existing-user-id",
+			InviteEmail:    "invite@example.com",
+		},
+	})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, service.ErrOwnerAmbiguous,
+		"both ExistingUserID and InviteEmail set must return ErrOwnerAmbiguous")
+	assert.Empty(t, shops.createTenantCalls, "CreateTenant must not be called when owner is over-specified")
+}
