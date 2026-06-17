@@ -18,8 +18,6 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 )
 
-func strPtr(s string) *string { return &s }
-
 func newTestService(t *testing.T) (
 	*reseller.ResellerService,
 	*resellertest.MockTenantRepository,
@@ -44,13 +42,13 @@ func TestCreateTenant_Success(t *testing.T) {
 	tenantRepo.On("CreateTenant", ctx, mock.AnythingOfType("*aggregate.Tenant")).Return(nil)
 	pub.On("Publish", ctx, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
-	tenant, plainKey, err := svc.CreateTenant(ctx, "Acme VPN", "acme.vpn.com", strPtr("owner-1"))
+	tenant, plainKey, err := svc.CreateTenant(ctx, "Acme VPN", "acme.vpn.com", resellertest.StrPtr("owner-1"))
 	require.NoError(t, err)
 
 	assert.NotEmpty(t, tenant.ID)
 	assert.Equal(t, "Acme VPN", tenant.Name)
 	assert.Equal(t, "acme.vpn.com", tenant.Domain)
-	assert.Equal(t, strPtr("owner-1"), tenant.OwnerUserID)
+	assert.Equal(t, resellertest.StrPtr("owner-1"), tenant.OwnerUserID)
 	assert.True(t, tenant.IsActive)
 	assert.NotEmpty(t, plainKey)
 	assert.Len(t, plainKey, reseller.APIKeyLen*2)
@@ -66,7 +64,7 @@ func TestGetTenant_Success(t *testing.T) {
 	svc, tenantRepo, _, _ := newTestService(t)
 	ctx := context.Background()
 
-	expected := reseller.NewTenant("Acme VPN", "acme.vpn.com", strPtr("owner-1"), time.Now())
+	expected := reseller.NewTenant("Acme VPN", "acme.vpn.com", resellertest.StrPtr("owner-1"), time.Now())
 	tenantRepo.On("GetTenantByID", ctx, expected.ID).Return(expected, nil)
 
 	tenant, err := svc.GetTenant(ctx, expected.ID)
@@ -149,7 +147,7 @@ func TestValidateAPIKey_Success(t *testing.T) {
 	svc, tenantRepo, _, _ := newTestService(t)
 	ctx := context.Background()
 
-	tenant := reseller.NewTenant("Acme VPN", "acme.vpn.com", strPtr("owner-1"), time.Now())
+	tenant := reseller.NewTenant("Acme VPN", "acme.vpn.com", resellertest.StrPtr("owner-1"), time.Now())
 	plainKey, _ := tenant.GenerateAPIKey(time.Now())
 	expectedHash := reseller.HashAPIKey(plainKey)
 
@@ -179,7 +177,7 @@ func TestValidateAPIKey_InactiveTenant(t *testing.T) {
 	svc, tenantRepo, _, _ := newTestService(t)
 	ctx := context.Background()
 
-	tenant := reseller.NewTenant("Acme VPN", "acme.vpn.com", strPtr("owner-1"), time.Now())
+	tenant := reseller.NewTenant("Acme VPN", "acme.vpn.com", resellertest.StrPtr("owner-1"), time.Now())
 	tenant.IsActive = false
 	plainKey, _ := tenant.GenerateAPIKey(time.Now())
 	expectedHash := reseller.HashAPIKey(plainKey)
@@ -197,7 +195,7 @@ func TestUpdateBranding_Success(t *testing.T) {
 	svc, tenantRepo, _, pub := newTestService(t)
 	ctx := context.Background()
 
-	tenant := reseller.NewTenant("Acme VPN", "acme.vpn.com", strPtr("owner-1"), time.Now())
+	tenant := reseller.NewTenant("Acme VPN", "acme.vpn.com", resellertest.StrPtr("owner-1"), time.Now())
 	tenant.DomainEvents() // flush creation events to simulate DB-loaded aggregate
 	tenantRepo.On("GetTenantByIDForUpdate", ctx, tenant.ID).Return(tenant, nil)
 	tenantRepo.On("UpdateTenant", ctx, mock.AnythingOfType("*aggregate.Tenant")).Return(nil)
@@ -237,4 +235,22 @@ func TestGetPendingCommissions_Success(t *testing.T) {
 	assert.Len(t, result, 2)
 
 	commissionRepo.AssertExpectations(t)
+}
+
+func TestSetTenantOwner_Success(t *testing.T) {
+	svc, tenantRepo, _, _ := newTestService(t)
+	ctx := context.Background()
+
+	tenant := reseller.NewTenant("Acme VPN", "acme.vpn.com", nil, time.Now())
+	tenant.DomainEvents() // flush creation events
+
+	tenantRepo.On("GetTenantByIDForUpdate", ctx, tenant.ID).Return(tenant, nil)
+	tenantRepo.On("SetTenantOwnerUserID", ctx, tenant.ID, "user-456", mock.AnythingOfType("time.Time")).Return(nil)
+
+	err := svc.SetTenantOwner(ctx, tenant.ID, "user-456")
+	require.NoError(t, err)
+
+	tenantRepo.AssertExpectations(t)
+	require.NotNil(t, tenant.OwnerUserID)
+	assert.Equal(t, "user-456", *tenant.OwnerUserID)
 }

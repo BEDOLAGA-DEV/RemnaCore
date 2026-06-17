@@ -9,6 +9,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pgutil"
 )
 
 // ResellerHandler exposes HTTP endpoints for reseller and white-label tenant
@@ -54,12 +55,7 @@ func (h *ResellerHandler) CreateTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var ownerUserID *string
-	if req.OwnerUserID != "" {
-		ownerUserID = &req.OwnerUserID
-	}
-
-	tenant, plainKey, err := h.service.CreateTenant(r.Context(), req.Name, req.Domain, ownerUserID)
+	tenant, plainKey, err := h.service.CreateTenant(r.Context(), req.Name, req.Domain, pgutil.StrPtrOrNil(req.OwnerUserID))
 	if err != nil {
 		writeErrorFromDomain(w, err)
 		return

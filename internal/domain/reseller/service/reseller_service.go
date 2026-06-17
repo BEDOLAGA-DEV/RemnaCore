@@ -10,6 +10,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/vo"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pgutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
@@ -134,7 +135,7 @@ func (s *ResellerService) CreateTenant(ctx context.Context, name, domain string,
 	s.logger.Info("tenant created",
 		slog.String("tenant_id", tenant.ID),
 		slog.String("name", name),
-		slog.Any("owner_user_id", ownerUserID),
+		slog.String("owner_user_id", pgutil.DerefStr(ownerUserID)),
 	)
 
 	return tenant, plainKey, nil

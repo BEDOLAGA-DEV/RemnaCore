@@ -336,3 +336,14 @@ func TestTenant_Activate(t *testing.T) {
 		})
 	}
 }
+
+func TestTenant_SetOwner(t *testing.T) {
+	tenant := NewTenant("Acme", "acme.com", nil, time.Now())
+	now := time.Now()
+
+	tenant.SetOwner("user-123", now)
+
+	require.NotNil(t, tenant.OwnerUserID)
+	assert.Equal(t, "user-123", *tenant.OwnerUserID)
+	assert.Equal(t, now, tenant.UpdatedAt)
+}
