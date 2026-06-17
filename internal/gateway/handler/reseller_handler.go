@@ -49,12 +49,17 @@ func (h *ResellerHandler) CreateTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Name == "" || req.OwnerUserID == "" {
-		writeAPIError(w, apierror.ValidationFailed.WithDetails("name and owner_user_id are required"))
+	if req.Name == "" {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("name is required"))
 		return
 	}
 
-	tenant, plainKey, err := h.service.CreateTenant(r.Context(), req.Name, req.Domain, req.OwnerUserID)
+	var ownerUserID *string
+	if req.OwnerUserID != "" {
+		ownerUserID = &req.OwnerUserID
+	}
+
+	tenant, plainKey, err := h.service.CreateTenant(r.Context(), req.Name, req.Domain, ownerUserID)
 	if err != nil {
 		writeErrorFromDomain(w, err)
 		return

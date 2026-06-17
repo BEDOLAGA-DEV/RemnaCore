@@ -16,8 +16,8 @@ const (
 
 // TenantCreatedPayload is the typed payload for EventTenantCreated.
 type TenantCreatedPayload struct {
-	TenantID    string `json:"tenant_id"`
-	OwnerUserID string `json:"owner_user_id"`
+	TenantID    string  `json:"tenant_id"`
+	OwnerUserID *string `json:"owner_user_id"`
 }
 
 // TenantUpdatedPayload is the typed payload for EventTenantUpdated.

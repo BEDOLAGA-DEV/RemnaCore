@@ -11,20 +11,23 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/money"
 )
 
+func strPtr(s string) *string { return &s }
+
 func TestNewTenant(t *testing.T) {
-	tenant := NewTenant("Acme VPN", "acme.vpn.com", "owner-123", time.Now())
+	owner := "owner-123"
+	tenant := NewTenant("Acme VPN", "acme.vpn.com", &owner, time.Now())
 
 	assert.NotEmpty(t, tenant.ID)
 	assert.Equal(t, "Acme VPN", tenant.Name)
 	assert.Equal(t, "acme.vpn.com", tenant.Domain)
-	assert.Equal(t, "owner-123", tenant.OwnerUserID)
+	assert.Equal(t, &owner, tenant.OwnerUserID)
 	assert.True(t, tenant.IsActive)
 	assert.False(t, tenant.CreatedAt.IsZero())
 	assert.False(t, tenant.UpdatedAt.IsZero())
 }
 
 func TestTenant_GenerateAPIKey(t *testing.T) {
-	tenant := NewTenant("Acme VPN", "acme.vpn.com", "owner-123", time.Now())
+	tenant := NewTenant("Acme VPN", "acme.vpn.com", strPtr("owner-123"), time.Now())
 
 	plainKey, err := tenant.GenerateAPIKey(time.Now())
 	require.NoError(t, err)
@@ -35,7 +38,7 @@ func TestTenant_GenerateAPIKey(t *testing.T) {
 }
 
 func TestTenant_GenerateAPIKey_HashConsistency(t *testing.T) {
-	tenant := NewTenant("Acme VPN", "acme.vpn.com", "owner-123", time.Now())
+	tenant := NewTenant("Acme VPN", "acme.vpn.com", strPtr("owner-123"), time.Now())
 
 	plainKey, err := tenant.GenerateAPIKey(time.Now())
 	require.NoError(t, err)
@@ -280,7 +283,7 @@ func TestTenant_Deactivate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tenant := NewTenant("Acme", "acme.com", "owner-1", time.Now())
+			tenant := NewTenant("Acme", "acme.com", strPtr("owner-1"), time.Now())
 			tenant.IsActive = tt.isActive
 			now := time.Now()
 
@@ -317,7 +320,7 @@ func TestTenant_Activate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tenant := NewTenant("Acme", "acme.com", "owner-1", time.Now())
+			tenant := NewTenant("Acme", "acme.com", strPtr("owner-1"), time.Now())
 			tenant.IsActive = tt.isActive
 			now := time.Now()
 

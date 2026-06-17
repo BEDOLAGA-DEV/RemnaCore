@@ -27,7 +27,7 @@ type Tenant struct {
 	ID             string
 	Name           string
 	Domain         string // custom domain
-	OwnerUserID    string
+	OwnerUserID    *string
 	BrandingConfig vo.BrandingConfig
 	APIKeyHash     string // SHA-256 hash of the API key
 	IsActive       bool
@@ -42,7 +42,7 @@ type BrandingConfig = vo.BrandingConfig
 // NewTenant creates a new Tenant with a generated UUID and default settings.
 // The creation event is recorded on the aggregate; callers must flush
 // via DomainEvents() after persisting.
-func NewTenant(name, domain, ownerUserID string, now time.Time) *Tenant {
+func NewTenant(name, domain string, ownerUserID *string, now time.Time) *Tenant {
 	t := &Tenant{
 		ID:          uuid.Must(uuid.NewV7()).String(),
 		Name:        name,
@@ -57,6 +57,12 @@ func NewTenant(name, domain, ownerUserID string, now time.Time) *Tenant {
 		OwnerUserID: ownerUserID,
 	}, now, t.ID))
 	return t
+}
+
+// SetOwner assigns the tenant's owner (used when an invited owner accepts).
+func (t *Tenant) SetOwner(userID string, now time.Time) {
+	t.OwnerUserID = &userID
+	t.UpdatedAt = now
 }
 
 // Deactivate marks the tenant as inactive.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -54,7 +55,7 @@ func tenantRowToDomain(row gen.ResellerTenant) *reseller.Tenant {
 		ID:             pgutil.PgtypeToUUID(row.ID),
 		Name:           row.Name,
 		Domain:         pgutil.DerefStr(row.Domain),
-		OwnerUserID:    pgutil.PgtypeToUUID(row.OwnerUserID),
+		OwnerUserID:    pgutil.PgtypeUUIDToOptStr(row.OwnerUserID),
 		BrandingConfig: branding,
 		APIKeyHash:     pgutil.DerefStr(row.ApiKeyHash),
 		IsActive:       row.IsActive,
@@ -100,7 +101,7 @@ func (r *ResellerRepository) CreateTenant(ctx context.Context, tenant *reseller.
 		ID:             pgutil.UUIDToPgtype(tenant.ID),
 		Name:           tenant.Name,
 		Domain:         pgutil.StrPtrOrNil(tenant.Domain),
-		OwnerUserID:    pgutil.UUIDToPgtype(tenant.OwnerUserID),
+		OwnerUserID:    pgutil.OptStrToPgtypeUUID(tenant.OwnerUserID),
 		BrandingConfig: brandingJSON,
 		ApiKeyHash:     pgutil.StrPtrOrNil(tenant.APIKeyHash),
 		IsActive:       tenant.IsActive,
@@ -313,6 +314,26 @@ func (r *ResellerRepository) UpdateResellerBalance(ctx context.Context, reseller
 		Balance: balance,
 	})
 	return pgutil.MapErr(err, "update reseller balance", reseller.ErrResellerNotFound)
+}
+
+// setTenantOwnerSQL updates only the owner_user_id and updated_at columns.
+// Used by SetTenantOwner to atomically assign an owner to a pending-owner tenant.
+const setTenantOwnerSQL = `
+UPDATE reseller.tenants
+SET owner_user_id = $2, updated_at = $3
+WHERE id = $1
+`
+
+// SetTenantOwnerUserID persists an owner assignment on a tenant row.
+// Called from ResellerService.SetTenantOwner inside a transaction.
+func (r *ResellerRepository) SetTenantOwnerUserID(ctx context.Context, tenantID, userID string, now time.Time) error {
+	db := DBFromContext(ctx, r.pool)
+	_, err := db.Exec(ctx, setTenantOwnerSQL,
+		pgutil.UUIDToPgtype(tenantID),
+		pgutil.UUIDToPgtype(userID),
+		pgutil.TimeToPgtype(now),
+	)
+	return pgutil.MapErr(err, "set tenant owner", reseller.ErrTenantNotFound)
 }
 
 // compile-time interface checks
