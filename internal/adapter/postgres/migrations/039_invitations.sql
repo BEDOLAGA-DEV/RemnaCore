@@ -30,3 +30,9 @@ ALTER TABLE identity.platform_users
 
 -- Pending-owner shops (invite-owner flow) are created before the owner exists.
 ALTER TABLE reseller.tenants ALTER COLUMN owner_user_id DROP NOT NULL;
+
+-- owner_user_id is now nullable (pending-owner shops); replace the plain index
+-- from 006 with a partial one, matching the nullable-UUID index idiom.
+DROP INDEX IF EXISTS reseller.idx_tenant_owner;
+CREATE INDEX IF NOT EXISTS idx_tenant_owner
+    ON reseller.tenants (owner_user_id) WHERE owner_user_id IS NOT NULL;
