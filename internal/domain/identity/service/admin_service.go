@@ -120,7 +120,7 @@ func (s *IdentityAdminService) authorizeGrant(
 	}
 
 	if err := rbac.CanGrant(toActor(acc), target, tenantID); err != nil {
-		return rbac.Role{}, err // already ErrGrantNotAllowed
+		return rbac.Role{}, fmt.Errorf("%w: %w", ErrGrantNotAllowed, err)
 	}
 	if err := rbac.ValidateBinding(role, tenantID); err != nil {
 		return rbac.Role{}, fmt.Errorf("binding validation: %w", err)
@@ -241,7 +241,7 @@ func (s *IdentityAdminService) AcceptInvitation(
 
 		r, err := s.sessions.Issue(txCtx, user, ip, userAgent, now)
 		if err != nil {
-			return err
+			return fmt.Errorf("issuing session: %w", err)
 		}
 		result = r
 

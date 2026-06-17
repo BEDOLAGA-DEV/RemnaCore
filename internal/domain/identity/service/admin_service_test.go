@@ -399,6 +399,7 @@ func TestInviteUser_GrantNotAllowed(t *testing.T) {
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, rbac.ErrGrantNotAllowed)
+	assert.ErrorIs(t, err, service.ErrGrantNotAllowed)
 }
 
 // ============================================================
@@ -452,9 +453,10 @@ func TestAcceptInvitation_Valid(t *testing.T) {
 	assert.NotNil(t, result.User)
 	assert.True(t, result.User.EmailVerified, "invited user must be email-verified")
 
-	// User must be created.
+	// User must be created with EmailVerified=true (invite token proves ownership).
 	require.Len(t, repo.createdUsers, 1)
 	assert.Equal(t, "staff@example.com", repo.createdUsers[0].Email)
+	assert.True(t, repo.createdUsers[0].EmailVerified, "persisted user must have EmailVerified=true")
 
 	// Role binding must be assigned.
 	require.Len(t, rbacRepo.assignedRoles, 1)
