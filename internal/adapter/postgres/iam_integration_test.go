@@ -29,6 +29,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/rbac"
 )
@@ -189,7 +190,7 @@ func TestIAM_InvitationRoundTrip(t *testing.T) {
 
 	// Token lookup now returns not-found.
 	_, err = idRepo.GetInvitationByToken(ctx, inv.Token)
-	assert.Error(t, err, "invitation must be absent after delete")
+	assert.ErrorIs(t, err, identity.ErrNotFound)
 }
 
 func TestIAM_InvitationWithTenant(t *testing.T) {

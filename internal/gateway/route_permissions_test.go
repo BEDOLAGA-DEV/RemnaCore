@@ -203,7 +203,9 @@ func TestAdminRoutesArePermissionGated(t *testing.T) {
 		{http.MethodGet, "/api/users/invitations", rbac.UsersInvite},
 		{http.MethodPost, "/api/users/invitations", rbac.UsersInvite},
 		{http.MethodPost, "/api/users", rbac.UsersInvite},
+		{http.MethodDelete, "/api/users/invitations/{id}", rbac.UsersInvite},
 		{http.MethodPost, "/api/users/{userID}/roles", rbac.UsersAssignRole},
+		{http.MethodDelete, "/api/users/{userID}/roles", rbac.UsersAssignRole},
 		{http.MethodGet, "/api/users/{userID}/roles", rbac.UsersRead},
 		{http.MethodPost, "/api/admin/shops", rbac.ShopsManage},
 
