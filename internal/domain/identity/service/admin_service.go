@@ -256,3 +256,195 @@ func (s *IdentityAdminService) AcceptInvitation(
 	s.access.Invalidate(user.ID)
 	return result, nil
 }
+
+// AssignRole grants roleKey (scoped to tenantID) to targetUserID. The actor
+// must hold a grant right for that role (enforced by authorizeGrant). After
+// the transaction, the target's cached access is invalidated.
+func (s *IdentityAdminService) AssignRole(
+	ctx context.Context,
+	actorUserID, targetUserID, roleKey string,
+	tenantID *string,
+) error {
+	role, err := s.authorizeGrant(ctx, actorUserID, roleKey, tenantID)
+	if err != nil {
+		return err
+	}
+
+	now := s.clock.Now()
+	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		if err := s.rbacRepo.AssignRole(txCtx, targetUserID, role.ID, tenantID, actorUserID); err != nil {
+			return fmt.Errorf("assigning role: %w", err)
+		}
+		if err := s.publisher.Publish(txCtx, NewRoleAssignedEvent(targetUserID, roleKey, tenantID, actorUserID, now)); err != nil {
+			return fmt.Errorf("publishing %s: %w", aggregate.EventRoleAssigned, err)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	s.access.Invalidate(targetUserID)
+	return nil
+}
+
+// RevokeRole removes roleKey (scoped to tenantID) from targetUserID. The actor
+// must hold grant rights for the role. A last-admin guard prevents revoking the
+// final global platform_admin binding.
+func (s *IdentityAdminService) RevokeRole(
+	ctx context.Context,
+	actorUserID, targetUserID, roleKey string,
+	tenantID *string,
+) error {
+	role, err := s.authorizeGrant(ctx, actorUserID, roleKey, tenantID)
+	if err != nil {
+		return err
+	}
+
+	// Last-admin guard: refuse to revoke the only global platform_admin.
+	if roleKey == rbac.RolePlatformAdmin && tenantID == nil {
+		count, err := s.rbacRepo.CountPlatformAdmins(ctx)
+		if err != nil {
+			return fmt.Errorf("counting platform admins: %w", err)
+		}
+		if count <= 1 {
+			return ErrLastAdmin
+		}
+	}
+
+	now := s.clock.Now()
+	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		if _, err := s.rbacRepo.RevokeRole(txCtx, targetUserID, role.ID, tenantID); err != nil {
+			return fmt.Errorf("revoking role: %w", err)
+		}
+		if err := s.publisher.Publish(txCtx, NewRoleRevokedEvent(targetUserID, roleKey, tenantID, now)); err != nil {
+			return fmt.Errorf("publishing %s: %w", aggregate.EventRoleRevoked, err)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	s.access.Invalidate(targetUserID)
+	return nil
+}
+
+// CreateUserDirect creates an email-verified account and immediately assigns
+// roleKey. The admin must hold a grant right for the role. The new user has
+// MustChangePassword=true so the client prompts a change on first login.
+func (s *IdentityAdminService) CreateUserDirect(
+	ctx context.Context,
+	actorUserID string,
+	in CreateUserInput,
+) (*aggregate.PlatformUser, error) {
+	role, err := s.authorizeGrant(ctx, actorUserID, in.RoleKey, in.TenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	now := s.clock.Now()
+	user, err := aggregate.NewPlatformUser(in.Email, in.Password, now)
+	if err != nil {
+		return nil, fmt.Errorf("building user: %w", err)
+	}
+	// Admin-created accounts are email-verified (admin vouches for the address)
+	// and must change their password on first login.
+	user.EmailVerified = true
+	user.MustChangePassword = true
+
+	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		if err := s.repo.CreateUser(txCtx, user); err != nil {
+			// Unique-violation on email surfaces as ErrEmailTaken from the repo layer.
+			if errors.Is(err, ErrEmailTaken) {
+				return ErrEmailTaken
+			}
+			return fmt.Errorf("persisting user: %w", err)
+		}
+		if err := s.rbacRepo.AssignRole(txCtx, user.ID, role.ID, in.TenantID, actorUserID); err != nil {
+			return fmt.Errorf("assigning role: %w", err)
+		}
+		if err := s.publisher.Publish(txCtx, NewRoleAssignedEvent(user.ID, in.RoleKey, in.TenantID, actorUserID, now)); err != nil {
+			return fmt.Errorf("publishing %s: %w", aggregate.EventRoleAssigned, err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	s.access.Invalidate(user.ID)
+	return user, nil
+}
+
+// ListInvitations returns pending invitations visible to the actor. Platform
+// admins see all invitations; non-admins see only invitations scoped to the
+// tenants they belong to.
+func (s *IdentityAdminService) ListInvitations(
+	ctx context.Context,
+	actorUserID string,
+) ([]*aggregate.Invitation, error) {
+	acc, err := s.access.Resolve(ctx, actorUserID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("resolving actor access: %w", err)
+	}
+
+	if acc.IsPlatformAdmin {
+		return s.repo.ListInvitations(ctx, nil, true)
+	}
+
+	// Non-admin: collect the tenant IDs the actor belongs to.
+	tenants := make([]string, 0, len(acc.AllowedTenants))
+	for tid := range acc.AllowedTenants {
+		tenants = append(tenants, tid)
+	}
+	return s.repo.ListInvitations(ctx, tenants, false)
+}
+
+// RevokeInvitation deletes a pending invitation. The actor must be a platform
+// admin or a member of the tenant the invitation was scoped to.
+func (s *IdentityAdminService) RevokeInvitation(
+	ctx context.Context,
+	actorUserID, invitationID string,
+) error {
+	inv, err := s.repo.GetInvitationByID(ctx, invitationID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return ErrInvitationNotFound
+		}
+		return fmt.Errorf("getting invitation: %w", err)
+	}
+
+	acc, err := s.access.Resolve(ctx, actorUserID, inv.TenantID)
+	if err != nil {
+		return fmt.Errorf("resolving actor access: %w", err)
+	}
+
+	allowed := acc.IsPlatformAdmin
+	if !allowed && inv.TenantID != nil {
+		_, allowed = acc.AllowedTenants[*inv.TenantID]
+	}
+	if !allowed {
+		return ErrGrantNotAllowed
+	}
+
+	return s.repo.DeleteInvitation(ctx, inv.ID)
+}
+
+// ListUserRoles returns all role bindings for targetUserID. The actor must be
+// a platform admin or hold at least one tenant membership. Fine-grained
+// per-tenant scoping is intentionally omitted here — the route is already
+// gated on rbac.UsersRead, so callers without that permission are rejected at
+// the HTTP layer before reaching this method.
+func (s *IdentityAdminService) ListUserRoles(
+	ctx context.Context,
+	actorUserID, targetUserID string,
+) ([]rbac.Binding, error) {
+	acc, err := s.access.Resolve(ctx, actorUserID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("resolving actor access: %w", err)
+	}
+
+	if !acc.IsPlatformAdmin && len(acc.AllowedTenants) == 0 {
+		return nil, ErrGrantNotAllowed
+	}
+
+	return s.rbacRepo.ListBindingsForUser(ctx, targetUserID)
+}

@@ -132,8 +132,28 @@ func (r *adminStubRepo) DeleteInvitation(_ context.Context, id string) error {
 	}
 	return nil
 }
-func (r *adminStubRepo) ListInvitations(_ context.Context, _ []string, _ bool) ([]*aggregate.Invitation, error) {
-	return nil, nil
+func (r *adminStubRepo) ListInvitations(_ context.Context, tenantIDs []string, all bool) ([]*aggregate.Invitation, error) {
+	if all {
+		out := make([]*aggregate.Invitation, 0, len(r.invitations))
+		for _, inv := range r.invitations {
+			out = append(out, inv)
+		}
+		return out, nil
+	}
+	// Return only invitations whose tenant_id is in the provided list.
+	set := make(map[string]struct{}, len(tenantIDs))
+	for _, id := range tenantIDs {
+		set[id] = struct{}{}
+	}
+	var out []*aggregate.Invitation
+	for _, inv := range r.invitations {
+		if inv.TenantID != nil {
+			if _, ok := set[*inv.TenantID]; ok {
+				out = append(out, inv)
+			}
+		}
+	}
+	return out, nil
 }
 func (r *adminStubRepo) DeleteExpiredInvitations(_ context.Context) (int64, error) { return 0, nil }
 
@@ -142,9 +162,11 @@ func (r *adminStubRepo) DeleteExpiredInvitations(_ context.Context) (int64, erro
 // adminStubRBACRepo is a hand-written stub for rbac.Repository.
 // It stores roles in a map keyed by key string and records AssignRole calls.
 type adminStubRBACRepo struct {
-	roles         map[string]rbac.Role
-	bindings      map[string][]rbac.Binding // keyed by userID
-	assignedRoles []assignedRoleRecord
+	roles              map[string]rbac.Role
+	bindings           map[string][]rbac.Binding // keyed by userID
+	assignedRoles      []assignedRoleRecord
+	revokedRoles       []revokedRoleRecord
+	platformAdminCount int // controlled per-test; defaults to 1
 }
 
 type assignedRoleRecord struct {
@@ -154,10 +176,17 @@ type assignedRoleRecord struct {
 	GrantedBy string
 }
 
+type revokedRoleRecord struct {
+	UserID   string
+	RoleID   string
+	TenantID *string
+}
+
 func newAdminStubRBACRepo() *adminStubRBACRepo {
 	return &adminStubRBACRepo{
-		roles:    map[string]rbac.Role{},
-		bindings: map[string][]rbac.Binding{},
+		roles:              map[string]rbac.Role{},
+		bindings:           map[string][]rbac.Binding{},
+		platformAdminCount: 1, // safe default: there is at least one admin
 	}
 }
 
@@ -194,8 +223,9 @@ func (r *adminStubRBACRepo) AssignRole(_ context.Context, userID, roleID string,
 	return nil
 }
 
-func (r *adminStubRBACRepo) RevokeRole(_ context.Context, _, _ string, _ *string) (int64, error) {
-	return 0, nil
+func (r *adminStubRBACRepo) RevokeRole(_ context.Context, userID, roleID string, tenantID *string) (int64, error) {
+	r.revokedRoles = append(r.revokedRoles, revokedRoleRecord{UserID: userID, RoleID: roleID, TenantID: tenantID})
+	return 1, nil
 }
 
 func (r *adminStubRBACRepo) GetRole(_ context.Context, key string) (rbac.Role, error) {
@@ -205,7 +235,9 @@ func (r *adminStubRBACRepo) GetRole(_ context.Context, key string) (rbac.Role, e
 	return rbac.Role{}, rbac.ErrRoleNotFound
 }
 
-func (r *adminStubRBACRepo) CountPlatformAdmins(_ context.Context) (int, error) { return 1, nil }
+func (r *adminStubRBACRepo) CountPlatformAdmins(_ context.Context) (int, error) {
+	return r.platformAdminCount, nil
+}
 
 // ---- shop provisioner stub ----
 
@@ -294,11 +326,11 @@ func platformAdminBindings(userID string) map[string][]rbac.Binding {
 	}
 }
 
-// buildAdminSvc creates a ready-to-use IdentityAdminService with the given
-// stubs wired together.
-func buildAdminSvc(
+// buildAdminSvcWith creates a ready-to-use IdentityAdminService using the
+// provided Repository implementation (any type satisfying the interface).
+func buildAdminSvcWith(
 	t *testing.T,
-	repo *adminStubRepo,
+	repo service.Repository,
 	rbacRepo *adminStubRBACRepo,
 	shops *adminStubShops,
 	pub domainevent.Publisher,
@@ -306,8 +338,16 @@ func buildAdminSvc(
 ) *service.IdentityAdminService {
 	t.Helper()
 
+	// SessionIssuer only needs CreateSession; use the plain adminStubRepo if
+	// the caller passed a wrapper. Fall back to a bare stub for session storage.
+	sessionStore, ok := repo.(interface {
+		CreateSession(context.Context, *aggregate.Session) error
+	})
+	if !ok {
+		sessionStore = newAdminStubRepo()
+	}
 	jwtIssuer := newTestJWT(t)
-	issuer := service.NewSessionIssuer(repo, pub, jwtIssuer, 15*time.Minute, 7*24*time.Hour)
+	issuer := service.NewSessionIssuer(sessionStore, pub, jwtIssuer, 15*time.Minute, 7*24*time.Hour)
 	access := service.NewAccessService(rbacRepo, func() time.Time { return fixedNow }, time.Minute)
 	clk := clock.NewMock(fixedNow)
 
@@ -321,6 +361,20 @@ func buildAdminSvc(
 		pub,
 		clk,
 	)
+}
+
+// buildAdminSvc creates a ready-to-use IdentityAdminService with the given
+// stubs wired together. Convenience wrapper over buildAdminSvcWith.
+func buildAdminSvc(
+	t *testing.T,
+	repo *adminStubRepo,
+	rbacRepo *adminStubRBACRepo,
+	shops *adminStubShops,
+	pub domainevent.Publisher,
+	fixedNow time.Time,
+) *service.IdentityAdminService {
+	t.Helper()
+	return buildAdminSvcWith(t, repo, rbacRepo, shops, pub, fixedNow)
 }
 
 // ============================================================
@@ -585,4 +639,357 @@ func TestAcceptInvitation_ShopOwner(t *testing.T) {
 	require.Len(t, shops.createResellerCalls, 1)
 	assert.Equal(t, tenantID, shops.createResellerCalls[0].TenantID)
 	assert.Equal(t, commissionRate, shops.createResellerCalls[0].CommissionRate)
+}
+
+// ============================================================
+// Tests: AssignRole (Task 10)
+// ============================================================
+
+// TestAssignRole_HappyPath verifies that a platform admin can assign a
+// shop_staff role to an existing user. The RoleAssigned event must be published
+// and the role binding recorded.
+func TestAssignRole_HappyPath(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "admin-user-id"
+	targetID := "target-user-id"
+	shopID := "11111111-1111-1111-1111-111111111111"
+
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	rbacRepo.bindings = platformAdminBindings(actorID)
+	rbacRepo.addRole(rbac.Role{
+		ID:        "role-staff-id",
+		Key:       rbac.RoleShopStaff,
+		ScopeKind: rbac.ScopeShop,
+	})
+	shops := &adminStubShops{}
+	pub := &noopPublisher{}
+
+	svc := buildAdminSvc(t, repo, rbacRepo, shops, pub, now)
+
+	err := svc.AssignRole(context.Background(), actorID, targetID, rbac.RoleShopStaff, &shopID)
+
+	require.NoError(t, err)
+
+	// Role binding must be recorded.
+	require.Len(t, rbacRepo.assignedRoles, 1)
+	assert.Equal(t, targetID, rbacRepo.assignedRoles[0].UserID)
+	assert.Equal(t, "role-staff-id", rbacRepo.assignedRoles[0].RoleID)
+	assert.Equal(t, &shopID, rbacRepo.assignedRoles[0].TenantID)
+	assert.Equal(t, actorID, rbacRepo.assignedRoles[0].GrantedBy)
+
+	// RoleAssigned event must be published.
+	hasEvent := false
+	for _, e := range pub.events {
+		if e.Type == aggregate.EventRoleAssigned {
+			hasEvent = true
+		}
+	}
+	assert.True(t, hasEvent, "RoleAssigned event must be published")
+}
+
+// TestAssignRole_GrantNotAllowed verifies that a shop_owner cannot assign a
+// role in a shop they do not belong to.
+func TestAssignRole_GrantNotAllowed(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "owner-user-id"
+	targetID := "target-user-id"
+	shopA := "11111111-1111-1111-1111-111111111111"
+	shopB := "22222222-2222-2222-2222-222222222222"
+
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	rbacRepo.bindings = shopOwnerBindings(actorID, shopA)
+	rbacRepo.addRole(rbac.Role{
+		ID:        "role-staff-id",
+		Key:       rbac.RoleShopStaff,
+		ScopeKind: rbac.ScopeShop,
+	})
+	shops := &adminStubShops{}
+	pub := &noopPublisher{}
+
+	svc := buildAdminSvc(t, repo, rbacRepo, shops, pub, now)
+
+	err := svc.AssignRole(context.Background(), actorID, targetID, rbac.RoleShopStaff, &shopB)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, service.ErrGrantNotAllowed)
+}
+
+// ============================================================
+// Tests: RevokeRole (Task 10)
+// ============================================================
+
+// TestRevokeRole_HappyPath verifies that a platform admin can revoke a
+// shop_staff role from a user.
+func TestRevokeRole_HappyPath(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "admin-user-id"
+	targetID := "target-user-id"
+	shopID := "11111111-1111-1111-1111-111111111111"
+
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	rbacRepo.bindings = platformAdminBindings(actorID)
+	rbacRepo.addRole(rbac.Role{
+		ID:        "role-staff-id",
+		Key:       rbac.RoleShopStaff,
+		ScopeKind: rbac.ScopeShop,
+	})
+	shops := &adminStubShops{}
+	pub := &noopPublisher{}
+
+	svc := buildAdminSvc(t, repo, rbacRepo, shops, pub, now)
+
+	err := svc.RevokeRole(context.Background(), actorID, targetID, rbac.RoleShopStaff, &shopID)
+
+	require.NoError(t, err)
+
+	// RevokeRole must be called on the repo.
+	require.Len(t, rbacRepo.revokedRoles, 1)
+	assert.Equal(t, targetID, rbacRepo.revokedRoles[0].UserID)
+	assert.Equal(t, "role-staff-id", rbacRepo.revokedRoles[0].RoleID)
+	assert.Equal(t, &shopID, rbacRepo.revokedRoles[0].TenantID)
+
+	// RoleRevoked event must be published.
+	hasEvent := false
+	for _, e := range pub.events {
+		if e.Type == aggregate.EventRoleRevoked {
+			hasEvent = true
+		}
+	}
+	assert.True(t, hasEvent, "RoleRevoked event must be published")
+}
+
+// TestRevokeRole_LastAdmin verifies that revoking the last global
+// platform_admin binding returns ErrLastAdmin.
+func TestRevokeRole_LastAdmin(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "admin-user-id"
+	targetID := "admin-user-id" // actor revokes their own binding (last admin)
+
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	rbacRepo.bindings = platformAdminBindings(actorID)
+	rbacRepo.addRole(rbac.Role{
+		ID:        "role-admin-id",
+		Key:       rbac.RolePlatformAdmin,
+		ScopeKind: rbac.ScopeGlobal,
+	})
+	// Only one platform admin exists.
+	rbacRepo.platformAdminCount = 1
+	shops := &adminStubShops{}
+	pub := &noopPublisher{}
+
+	svc := buildAdminSvc(t, repo, rbacRepo, shops, pub, now)
+
+	err := svc.RevokeRole(context.Background(), actorID, targetID, rbac.RolePlatformAdmin, nil)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, service.ErrLastAdmin)
+	// No binding should be removed.
+	assert.Empty(t, rbacRepo.revokedRoles)
+}
+
+// ============================================================
+// Tests: CreateUserDirect (Task 10)
+// ============================================================
+
+// TestCreateUserDirect_HappyPath verifies that an admin can directly create a
+// new user with MustChangePassword=true and a role binding assigned atomically.
+func TestCreateUserDirect_HappyPath(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "admin-user-id"
+	shopID := "11111111-1111-1111-1111-111111111111"
+
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	rbacRepo.bindings = platformAdminBindings(actorID)
+	rbacRepo.addRole(rbac.Role{
+		ID:        "role-staff-id",
+		Key:       rbac.RoleShopStaff,
+		ScopeKind: rbac.ScopeShop,
+	})
+	shops := &adminStubShops{}
+	pub := &noopPublisher{}
+
+	svc := buildAdminSvc(t, repo, rbacRepo, shops, pub, now)
+
+	user, err := svc.CreateUserDirect(context.Background(), actorID, service.CreateUserInput{
+		Email:    "newstaff@example.com",
+		Password: "StrongP4ss",
+		RoleKey:  rbac.RoleShopStaff,
+		TenantID: &shopID,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, user)
+	assert.Equal(t, "newstaff@example.com", user.Email)
+	assert.True(t, user.EmailVerified, "admin-created user must be email-verified")
+	assert.True(t, user.MustChangePassword, "admin-created user must have MustChangePassword=true")
+
+	// User must be persisted.
+	require.Len(t, repo.createdUsers, 1)
+	assert.True(t, repo.createdUsers[0].MustChangePassword)
+
+	// Role binding must be assigned.
+	require.Len(t, rbacRepo.assignedRoles, 1)
+	assert.Equal(t, user.ID, rbacRepo.assignedRoles[0].UserID)
+	assert.Equal(t, "role-staff-id", rbacRepo.assignedRoles[0].RoleID)
+	assert.Equal(t, &shopID, rbacRepo.assignedRoles[0].TenantID)
+
+	// RoleAssigned event must be published.
+	hasEvent := false
+	for _, e := range pub.events {
+		if e.Type == aggregate.EventRoleAssigned {
+			hasEvent = true
+		}
+	}
+	assert.True(t, hasEvent, "RoleAssigned event must be published for direct-created user")
+}
+
+// TestCreateUserDirect_EmailTaken verifies that creating a user with a
+// duplicate email returns ErrEmailTaken.
+func TestCreateUserDirect_EmailTaken(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "admin-user-id"
+	shopID := "11111111-1111-1111-1111-111111111111"
+
+	repo := newAdminStubRepo()
+	// Pre-load an existing user with the same email.
+	repo.usersByEmail["dup@example.com"] = &aggregate.PlatformUser{ID: "existing-id", Email: "dup@example.com"}
+	// Simulate a duplicate-email error from the repo by intercepting CreateUser.
+	dupRepo := &dupEmailStubRepo{adminStubRepo: repo}
+
+	rbacRepo := newAdminStubRBACRepo()
+	rbacRepo.bindings = platformAdminBindings(actorID)
+	rbacRepo.addRole(rbac.Role{
+		ID:        "role-staff-id",
+		Key:       rbac.RoleShopStaff,
+		ScopeKind: rbac.ScopeShop,
+	})
+	shops := &adminStubShops{}
+	pub := &noopPublisher{}
+
+	svc := buildAdminSvcWith(t, dupRepo, rbacRepo, shops, pub, now)
+
+	_, err := svc.CreateUserDirect(context.Background(), actorID, service.CreateUserInput{
+		Email:    "dup@example.com",
+		Password: "StrongP4ss",
+		RoleKey:  rbac.RoleShopStaff,
+		TenantID: &shopID,
+	})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, service.ErrEmailTaken)
+}
+
+// dupEmailStubRepo wraps adminStubRepo and returns ErrEmailTaken from CreateUser.
+type dupEmailStubRepo struct {
+	*adminStubRepo
+}
+
+func (r *dupEmailStubRepo) CreateUser(_ context.Context, _ *aggregate.PlatformUser) error {
+	return service.ErrEmailTaken
+}
+
+// ============================================================
+// Tests: ListInvitations (Task 10)
+// ============================================================
+
+// TestListInvitations_AdminSeesAll verifies that a platform admin receives all
+// pending invitations regardless of tenant scope.
+func TestListInvitations_AdminSeesAll(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "admin-user-id"
+	shopA := "11111111-1111-1111-1111-111111111111"
+	shopB := "22222222-2222-2222-2222-222222222222"
+
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	rbacRepo.bindings = platformAdminBindings(actorID)
+
+	// Two invitations in different shops.
+	invA, err := aggregate.NewInvitation("a@example.com", rbac.RoleShopStaff, &shopA, nil, actorID, now)
+	require.NoError(t, err)
+	invB, err := aggregate.NewInvitation("b@example.com", rbac.RoleShopStaff, &shopB, nil, actorID, now)
+	require.NoError(t, err)
+	repo.invitations[invA.Token] = invA
+	repo.invitations[invB.Token] = invB
+
+	shops := &adminStubShops{}
+	pub := &noopPublisher{}
+
+	svc := buildAdminSvc(t, repo, rbacRepo, shops, pub, now)
+
+	invites, err := svc.ListInvitations(context.Background(), actorID)
+
+	require.NoError(t, err)
+	assert.Len(t, invites, 2, "platform admin must see all invitations")
+}
+
+// TestListInvitations_NonAdminScoped verifies that a shop_owner only sees
+// invitations scoped to their own shop.
+func TestListInvitations_NonAdminScoped(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "owner-user-id"
+	shopA := "11111111-1111-1111-1111-111111111111"
+	shopB := "22222222-2222-2222-2222-222222222222"
+
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	rbacRepo.bindings = shopOwnerBindings(actorID, shopA)
+
+	// One invitation in the actor's shop, one in another shop.
+	invA, err := aggregate.NewInvitation("a@example.com", rbac.RoleShopStaff, &shopA, nil, actorID, now)
+	require.NoError(t, err)
+	invB, err := aggregate.NewInvitation("b@example.com", rbac.RoleShopStaff, &shopB, nil, "other-admin", now)
+	require.NoError(t, err)
+	repo.invitations[invA.Token] = invA
+	repo.invitations[invB.Token] = invB
+
+	shops := &adminStubShops{}
+	pub := &noopPublisher{}
+
+	svc := buildAdminSvc(t, repo, rbacRepo, shops, pub, now)
+
+	invites, err := svc.ListInvitations(context.Background(), actorID)
+
+	require.NoError(t, err)
+	require.Len(t, invites, 1, "shop_owner must see only their shop's invitations")
+	assert.Equal(t, &shopA, invites[0].TenantID)
+}
+
+// ============================================================
+// Tests: RevokeInvitation (Task 10)
+// ============================================================
+
+// TestRevokeInvitation_ScopeReject verifies that a shop_owner cannot revoke an
+// invitation scoped to a different shop.
+func TestRevokeInvitation_ScopeReject(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "owner-user-id"
+	shopA := "11111111-1111-1111-1111-111111111111"
+	shopB := "22222222-2222-2222-2222-222222222222"
+
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	rbacRepo.bindings = shopOwnerBindings(actorID, shopA)
+
+	// Invitation belongs to shopB — the actor does not belong to shopB.
+	inv, err := aggregate.NewInvitation("b@example.com", rbac.RoleShopStaff, &shopB, nil, "other-admin", now)
+	require.NoError(t, err)
+	repo.invitations[inv.Token] = inv
+
+	shops := &adminStubShops{}
+	pub := &noopPublisher{}
+
+	svc := buildAdminSvc(t, repo, rbacRepo, shops, pub, now)
+
+	err = svc.RevokeInvitation(context.Background(), actorID, inv.ID)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, service.ErrGrantNotAllowed)
+	// Invitation must NOT be deleted.
+	assert.Empty(t, repo.deletedInvitations)
 }
