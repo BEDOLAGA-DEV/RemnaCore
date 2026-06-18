@@ -18,11 +18,18 @@ func ActiveTenantID(ctx context.Context) string {
 	return tenantctx.TenantIDFromContext(ctx)
 }
 
-// ShopResolver reads X-Shop-Id (panel/JWT path), validates that the
-// authenticated user is bound to that shop (or is a platform admin), and only
-// then sets it as the active tenant for RLS. It MUST run after Auth. Requests
-// without X-Shop-Id pass through unchanged (the storefront TenantResolver path,
-// which ran pre-Auth, is unaffected).
+// ShopResolver resolves the active tenant for the panel/JWT path and sets the
+// RLS tenant context. It MUST run after Auth. Rules:
+//   - X-Shop-Id present: must parse as a UUID, else 400 for EVERY actor (this
+//     rejects the platform sentinel "*" and any non-UUID before Resolve, so
+//     request input can never become the GUC sentinel). Non-platform-admins
+//     must be members of the shop (403 otherwise). The parsed UUID becomes the
+//     active tenant — never the raw header.
+//   - X-Shop-Id absent, platform admin: server-assigned platform scope
+//     (tenantctx.WithPlatformScope) — never echoed from a header.
+//   - X-Shop-Id absent, non-admin: passthrough with NO tenant (fail-closed;
+//     shop-scoped routes 403 at the scope gate).
+//   - No claims: passthrough (Auth already rejected unauthenticated requests).
 func ShopResolver(access *service.AccessService) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
