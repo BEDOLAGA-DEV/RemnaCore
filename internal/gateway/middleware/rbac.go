@@ -8,6 +8,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
+	"github.com/google/uuid"
 )
 
 // ActiveTenantID returns the active shop/tenant ID resolved for this request
@@ -27,13 +28,25 @@ func ShopResolver(access *service.AccessService) func(http.Handler) http.Handler
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			shopID := r.Header.Get(httpconst.HeaderShopID)
 			claims := GetClaims(r.Context())
-			// Passthrough: no shop in scope, or no authenticated user. The Auth
-			// middleware is assumed to have already rejected unauthenticated requests
-			// before ShopResolver runs, so a nil-claims pass-through here is safe.
-			if shopID == "" || claims == nil {
+			if claims == nil {
+				// Auth runs before ShopResolver and rejects unauthenticated
+				// requests, so a nil-claims passthrough here is safe.
 				next.ServeHTTP(w, r)
 				return
 			}
+			if shopID == "" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			// X-Shop-Id must be a real UUID. This rejects the platform sentinel
+			// ("*") and any other non-UUID for EVERY actor (incl. platform_admin)
+			// BEFORE Resolve, so request input can never become the GUC sentinel.
+			parsed, parseErr := uuid.Parse(shopID)
+			if parseErr != nil {
+				writeMiddlewareError(w, http.StatusBadRequest, "invalid shop id")
+				return
+			}
+			shopID = parsed.String()
 			acc, err := access.Resolve(r.Context(), claims.UserID, &shopID)
 			if err != nil {
 				writeMiddlewareError(w, http.StatusInternalServerError, "authorization unavailable")

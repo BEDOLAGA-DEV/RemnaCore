@@ -198,3 +198,52 @@ func TestShopResolver_500OnResolveError(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, rec.Code, "must be fail-closed on resolution error")
 	assert.False(t, reached, "handler must NOT be reached when resolution fails")
 }
+
+// TestShopResolver_RejectsSentinelHeader verifies the server-assigned sentinel
+// can never be injected via X-Shop-Id: the literal "*" is not a UUID and is
+// rejected with 400 BEFORE Resolve, for every actor.
+func TestShopResolver_RejectsSentinelHeader(t *testing.T) {
+	access := newAccess(map[string][]rbac.Binding{"u1": nil}, nil)
+	var reached bool
+	h := middleware.ShopResolver(access)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true }))
+	req := withClaims(httptest.NewRequest(http.MethodGet, "/x", nil), "u1")
+	req.Header.Set(httpconst.HeaderShopID, "*")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusBadRequest, rec.Code, "sentinel header must be rejected as a non-UUID")
+	assert.False(t, reached, "must not reach handler for a sentinel header")
+}
+
+// TestShopResolver_RejectsNonUUIDHeader verifies any malformed X-Shop-Id is
+// rejected with 400 before Resolve.
+func TestShopResolver_RejectsNonUUIDHeader(t *testing.T) {
+	access := newAccess(map[string][]rbac.Binding{"u1": nil}, nil)
+	var reached bool
+	h := middleware.ShopResolver(access)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true }))
+	req := withClaims(httptest.NewRequest(http.MethodGet, "/x", nil), "u1")
+	req.Header.Set(httpconst.HeaderShopID, "not-a-uuid")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusBadRequest, rec.Code, "malformed shop id must be rejected with 400")
+	assert.False(t, reached, "must not reach handler for a malformed shop id")
+}
+
+// TestShopResolver_RejectsSentinelHeaderForPlatformAdmin verifies the 400 UUID
+// gate runs for platform admins too — the sentinel is never request-derived.
+func TestShopResolver_RejectsSentinelHeaderForPlatformAdmin(t *testing.T) {
+	adminRoleID := "admin-role-id"
+	access := newAccess(
+		map[string][]rbac.Binding{
+			"admin1": {{RoleID: adminRoleID, RoleKey: rbac.RolePlatformAdmin, ScopeKind: rbac.ScopeGlobal, TenantID: nil}},
+		},
+		map[string][]rbac.Permission{adminRoleID: nil},
+	)
+	var reached bool
+	h := middleware.ShopResolver(access)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true }))
+	req := withClaims(httptest.NewRequest(http.MethodGet, "/x", nil), "admin1")
+	req.Header.Set(httpconst.HeaderShopID, "*")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusBadRequest, rec.Code, "platform admin sentinel header must still be rejected")
+	assert.False(t, reached, "platform admin must not reach handler with a sentinel header")
+}
