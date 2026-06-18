@@ -53,3 +53,66 @@ COMMENT ON COLUMN billing.family_members.tenant_id      IS 'Owning shop (no FK: 
 COMMENT ON COLUMN payment.payment_records.tenant_id     IS 'Owning shop (no FK: cross-schema boundary, enforced by application). NULL = platform-owned.';
 COMMENT ON COLUMN multisub.remnawave_bindings.tenant_id IS 'Owning shop (no FK: cross-schema boundary, enforced by application). NULL = platform-owned.';
 COMMENT ON COLUMN multisub.binding_sync_log.tenant_id   IS 'Owning shop (no FK: cross-schema boundary, enforced by application). NULL = platform-owned.';
+
+-- ---------------------------------------------------------------------------
+-- 2. Backfill tenant_id from the owning platform_users row.
+--    Runs under the platform sentinel ('*' = tenantctx.PlatformScopeSentinel)
+--    so the non-superuser, FORCE-RLS-subject migration role can read the
+--    source tables. Today every row resolves to NULL (no shop users exist),
+--    which is the correct, safe no-op; it self-corrects as shop users appear.
+--    Order is significant: invoice_line_items depends on invoices.tenant_id,
+--    and binding_sync_log depends on remnawave_bindings.tenant_id.
+-- ---------------------------------------------------------------------------
+BEGIN;
+SET LOCAL app.tenant_id = '*';
+
+-- subscriptions.tenant_id <- platform_users.tenant_id via subscriptions.user_id
+UPDATE billing.subscriptions s
+SET tenant_id = u.tenant_id
+FROM identity.platform_users u
+WHERE u.id = s.user_id;
+
+-- invoices.tenant_id <- platform_users.tenant_id via invoices.user_id (direct)
+UPDATE billing.invoices i
+SET tenant_id = u.tenant_id
+FROM identity.platform_users u
+WHERE u.id = i.user_id;
+
+-- invoice_line_items.tenant_id <- billing.invoices.tenant_id via invoice_id
+UPDATE billing.invoice_line_items li
+SET tenant_id = i.tenant_id
+FROM billing.invoices i
+WHERE i.id = li.invoice_id;
+
+-- family_groups.tenant_id <- platform_users.tenant_id via family_groups.owner_id
+UPDATE billing.family_groups g
+SET tenant_id = u.tenant_id
+FROM identity.platform_users u
+WHERE u.id = g.owner_id;
+
+-- family_members.tenant_id <- platform_users.tenant_id via family_members.user_id
+UPDATE billing.family_members m
+SET tenant_id = u.tenant_id
+FROM identity.platform_users u
+WHERE u.id = m.user_id;
+
+-- payment_records.tenant_id <- billing.invoices.user_id -> platform_users.tenant_id via invoice_id
+UPDATE payment.payment_records p
+SET tenant_id = u.tenant_id
+FROM billing.invoices i
+JOIN identity.platform_users u ON u.id = i.user_id
+WHERE i.id = p.invoice_id;
+
+-- remnawave_bindings.tenant_id <- platform_users.tenant_id via platform_user_id
+UPDATE multisub.remnawave_bindings b
+SET tenant_id = u.tenant_id
+FROM identity.platform_users u
+WHERE u.id = b.platform_user_id;
+
+-- binding_sync_log.tenant_id <- remnawave_bindings.tenant_id via binding_id (after bindings backfilled)
+UPDATE multisub.binding_sync_log l
+SET tenant_id = b.tenant_id
+FROM multisub.remnawave_bindings b
+WHERE b.id = l.binding_id;
+
+COMMIT;
