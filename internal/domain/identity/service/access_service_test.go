@@ -164,6 +164,75 @@ func TestResolve_ExpiresAfterTTL(t *testing.T) {
 	assert.Equal(t, 2, repo.calls, "Resolve after TTL expiry must hit repo again")
 }
 
+func TestResolve_ProvenanceSetsSeparatePlatformAndShop(t *testing.T) {
+	shopA := "11111111-1111-1111-1111-111111111111"
+	repo := &fakeRBACRepo{
+		bindings: map[string][]rbac.Binding{
+			"u1": {
+				{RoleID: "global", RoleKey: "custom-global", ScopeKind: rbac.ScopeGlobal, TenantID: nil},
+				{RoleID: "shop", RoleKey: rbac.RoleShopOwner, ScopeKind: rbac.ScopeShop, TenantID: &shopA},
+			},
+		},
+		perms: map[string][]rbac.Permission{
+			"global": {rbac.AnalyticsRead}, // platform-scoped, from a global binding
+			"shop":   {rbac.DashboardRead}, // shop-scoped, from the active-tenant binding
+		},
+	}
+	svc := service.NewAccessService(repo, clk(), time.Minute)
+	acc, err := svc.Resolve(context.Background(), "u1", &shopA)
+	require.NoError(t, err)
+
+	_, platHasAnalytics := acc.PlatformPermissions[rbac.AnalyticsRead]
+	_, shopHasDashboard := acc.ShopPermissions[rbac.DashboardRead]
+	assert.True(t, platHasAnalytics, "global binding perm must land in PlatformPermissions")
+	assert.True(t, shopHasDashboard, "active-tenant binding perm must land in ShopPermissions")
+	// The union retains both (back-compat).
+	assert.Contains(t, acc.Permissions, rbac.AnalyticsRead)
+	assert.Contains(t, acc.Permissions, rbac.DashboardRead)
+}
+
+func TestCan_RejectsPlatformPermLeakedViaShopBinding(t *testing.T) {
+	shopA := "11111111-1111-1111-1111-111111111111"
+	repo := &fakeRBACRepo{
+		bindings: map[string][]rbac.Binding{
+			"u1": {
+				{RoleID: "shop", RoleKey: rbac.RoleShopOwner, ScopeKind: rbac.ScopeShop, TenantID: &shopA},
+			},
+		},
+		// A shop binding that (wrongly) carries a platform-scoped perm.
+		perms: map[string][]rbac.Permission{"shop": {rbac.AnalyticsRead}},
+	}
+	svc := service.NewAccessService(repo, clk(), time.Minute)
+	acc, err := svc.Resolve(context.Background(), "u1", &shopA)
+	require.NoError(t, err)
+	// AnalyticsRead is PermScopePlatform → must be checked against
+	// PlatformPermissions, which is empty → denied even though it is in the
+	// active-tenant binding (escalation prevented).
+	assert.False(t, svc.Can(acc, rbac.AnalyticsRead))
+}
+
+func TestCan_ShopPermRequiresActiveTenantProvenance(t *testing.T) {
+	shopA := "11111111-1111-1111-1111-111111111111"
+	repo := &fakeRBACRepo{
+		bindings: map[string][]rbac.Binding{
+			"u1": {{RoleID: "shop", RoleKey: rbac.RoleShopOwner, ScopeKind: rbac.ScopeShop, TenantID: &shopA}},
+		},
+		perms: map[string][]rbac.Permission{"shop": {rbac.DashboardRead}},
+	}
+	svc := service.NewAccessService(repo, clk(), time.Minute)
+
+	// Resolved WITH shopA active → DashboardRead granted.
+	accWith, err := svc.Resolve(context.Background(), "u1", &shopA)
+	require.NoError(t, err)
+	assert.True(t, svc.Can(accWith, rbac.DashboardRead))
+
+	// Resolved with NO active tenant → the shop binding contributes nothing →
+	// DashboardRead denied (shop-scoped perm without an active tenant).
+	accNone, err := svc.Resolve(context.Background(), "u1", nil)
+	require.NoError(t, err)
+	assert.False(t, svc.Can(accNone, rbac.DashboardRead))
+}
+
 // TestFlush_ClearsCache verifies that Flush drops all cache entries so the
 // next Resolve for any key must go to the repo.
 func TestFlush_ClearsCache(t *testing.T) {
