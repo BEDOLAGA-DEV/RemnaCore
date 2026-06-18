@@ -13,6 +13,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -246,4 +247,73 @@ func TestShopResolver_RejectsSentinelHeaderForPlatformAdmin(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	assert.Equal(t, http.StatusBadRequest, rec.Code, "platform admin sentinel header must still be rejected")
 	assert.False(t, reached, "platform admin must not reach handler with a sentinel header")
+}
+
+// TestShopResolver_PlatformAdminNoShopGetsSentinel verifies that an
+// authenticated platform admin sending NO X-Shop-Id is server-assigned the
+// platform-scope sentinel (never echoed from a header).
+func TestShopResolver_PlatformAdminNoShopGetsSentinel(t *testing.T) {
+	adminRoleID := "admin-role-id"
+	access := newAccess(
+		map[string][]rbac.Binding{
+			"admin1": {{RoleID: adminRoleID, RoleKey: rbac.RolePlatformAdmin, ScopeKind: rbac.ScopeGlobal, TenantID: nil}},
+		},
+		map[string][]rbac.Permission{adminRoleID: nil},
+	)
+	var (
+		reached   bool
+		gotTenant string
+	)
+	h := middleware.ShopResolver(access)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		reached = true
+		gotTenant = middleware.ActiveTenantID(r.Context())
+	}))
+	req := withClaims(httptest.NewRequest(http.MethodGet, "/x", nil), "admin1") // no X-Shop-Id
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.True(t, reached, "platform admin without a shop must reach the handler")
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, tenantctx.PlatformScopeSentinel, gotTenant, "platform admin without a shop must get the sentinel")
+}
+
+// TestShopResolver_NonAdminNoShopPassthrough verifies a non-admin with no
+// X-Shop-Id is passed through with NO tenant set (fail-closed: shop-scoped
+// routes then 403 at the scope gate, never platform scope).
+func TestShopResolver_NonAdminNoShopPassthrough(t *testing.T) {
+	shopA := "11111111-1111-1111-1111-111111111111"
+	access := newAccess(
+		map[string][]rbac.Binding{"u1": {{RoleID: "owner", RoleKey: rbac.RoleShopOwner, ScopeKind: rbac.ScopeShop, TenantID: &shopA}}},
+		map[string][]rbac.Permission{"owner": {rbac.TariffsWrite}},
+	)
+	var (
+		reached   bool
+		gotTenant = "sentinel-not-overwritten"
+	)
+	h := middleware.ShopResolver(access)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		reached = true
+		gotTenant = middleware.ActiveTenantID(r.Context())
+	}))
+	req := withClaims(httptest.NewRequest(http.MethodGet, "/x", nil), "u1") // no X-Shop-Id
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.True(t, reached, "non-admin without a shop must pass through")
+	assert.Equal(t, "", gotTenant, "non-admin without a shop must have NO active tenant (fail-closed)")
+}
+
+// TestShopResolver_MemberShopSetsParsedUUID verifies a bound member entering
+// their shop gets the parsed UUID (canonical form) as the active tenant.
+func TestShopResolver_MemberShopSetsParsedUUID(t *testing.T) {
+	shopA := "11111111-1111-1111-1111-111111111111"
+	access := newAccess(
+		map[string][]rbac.Binding{"u1": {{RoleID: "owner", RoleKey: rbac.RoleShopOwner, ScopeKind: rbac.ScopeShop, TenantID: &shopA}}},
+		map[string][]rbac.Permission{"owner": {rbac.TariffsWrite}},
+	)
+	var gotTenant string
+	h := middleware.ShopResolver(access)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		gotTenant = middleware.ActiveTenantID(r.Context())
+	}))
+	req := withClaims(httptest.NewRequest(http.MethodGet, "/x", nil), "u1")
+	req.Header.Set(httpconst.HeaderShopID, shopA)
+	h.ServeHTTP(httptest.NewRecorder(), req)
+	require.Equal(t, shopA, gotTenant, "member shop must set the parsed UUID as active tenant")
 }

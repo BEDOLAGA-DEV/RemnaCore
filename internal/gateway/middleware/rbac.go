@@ -35,6 +35,22 @@ func ShopResolver(access *service.AccessService) func(http.Handler) http.Handler
 				return
 			}
 			if shopID == "" {
+				// No active shop selected. Resolve with a nil tenant to learn
+				// whether this principal is a platform admin.
+				acc, err := access.Resolve(r.Context(), claims.UserID, nil)
+				if err != nil {
+					writeMiddlewareError(w, http.StatusInternalServerError, "authorization unavailable")
+					return
+				}
+				if acc.IsPlatformAdmin {
+					// Server-assigned platform scope (sees all tenants). The
+					// sentinel is NEVER derived from a request header.
+					ctx := tenantctx.WithPlatformScope(r.Context())
+					next.ServeHTTP(w, r.WithContext(ctx))
+					return
+				}
+				// Non-admin without a shop: pass through with NO tenant set, so
+				// shop-scoped routes fail closed at the scope gate.
 				next.ServeHTTP(w, r)
 				return
 			}
