@@ -68,6 +68,7 @@ const (
 type Definition struct {
 	Key         Permission
 	Description string
+	Scope       PermScope // platform-wide vs active-shop enforcement axis
 }
 
 // Resource/Action are derived from Key; only the description needs declaring.
@@ -78,31 +79,31 @@ func (d Definition) Action() string   { return d.Key.Action() }
 // identity.permissions seed and the admin UI list.
 func Catalog() []Definition {
 	return []Definition{
-		{UsersRead, "View platform users"},
-		{UsersInvite, "Invite or create users"},
-		{UsersAssignRole, "Assign or revoke a user's roles"},
-		{RolesRead, "View roles and their permissions"},
-		{RolesManage, "Create, edit, or delete custom roles"},
-		{ShopsRead, "View shops (tenants)"},
-		{ShopsManage, "Create or update shops"},
-		{ShopsBranding, "Edit shop branding"},
-		{TariffsRead, "View tariffs and pricing"},
-		{TariffsWrite, "Create or modify tariffs and pricing"},
-		{CustomersRead, "View a shop's customers"},
-		{CustomersManage, "Manage a shop's customers"},
-		{SubscriptionsRead, "View subscriptions"},
-		{SubscriptionsManage, "Manage subscriptions"},
-		{BillingRead, "View invoices and billing"},
-		{BillingRefund, "Issue refunds"},
-		{PluginsRead, "View plugin pages and metadata"},
-		{PluginsManage, "Install, enable, configure, or remove plugins"},
-		{AnalyticsRead, "View platform analytics and metrics"},
-		{SessionsRead, "View active sessions and the activity feed"},
-		{SettingsManage, "Change platform settings"},
-		{InfraRead, "View Remnawave nodes, panels, and squads"},
-		{InfraManage, "Manage Remnawave nodes, panels, and squads (mutations)"},
-		{BillingManage, "Manage balances and financial operations (adjust, transfer, export)"},
-		{DashboardRead, "View a shop's dashboard (active subs, revenue, new customers)"},
+		{UsersRead, "View platform users", PermScopePlatform},
+		{UsersInvite, "Invite or create users", PermScopePlatform},
+		{UsersAssignRole, "Assign or revoke a user's roles", PermScopePlatform},
+		{RolesRead, "View roles and their permissions", PermScopePlatform},
+		{RolesManage, "Create, edit, or delete custom roles", PermScopePlatform},
+		{ShopsRead, "View shops (tenants)", PermScopePlatform},
+		{ShopsManage, "Create or update shops", PermScopePlatform},
+		{ShopsBranding, "Edit shop branding", PermScopePlatform},
+		{TariffsRead, "View tariffs and pricing", PermScopeShop},
+		{TariffsWrite, "Create or modify tariffs and pricing", PermScopeShop},
+		{CustomersRead, "View a shop's customers", PermScopeShop},
+		{CustomersManage, "Manage a shop's customers", PermScopeShop},
+		{SubscriptionsRead, "View subscriptions", PermScopeShop},
+		{SubscriptionsManage, "Manage subscriptions", PermScopeShop},
+		{BillingRead, "View invoices and billing", PermScopeShop},
+		{BillingRefund, "Issue refunds", PermScopePlatform},
+		{PluginsRead, "View plugin pages and metadata", PermScopeShop},
+		{PluginsManage, "Install, enable, configure, or remove plugins", PermScopePlatform},
+		{AnalyticsRead, "View platform analytics and metrics", PermScopePlatform},
+		{SessionsRead, "View active sessions and the activity feed", PermScopePlatform},
+		{SettingsManage, "Change platform settings", PermScopePlatform},
+		{InfraRead, "View Remnawave nodes, panels, and squads", PermScopePlatform},
+		{InfraManage, "Manage Remnawave nodes, panels, and squads (mutations)", PermScopePlatform},
+		{BillingManage, "Manage balances and financial operations (adjust, transfer, export)", PermScopePlatform},
+		{DashboardRead, "View a shop's dashboard (active subs, revenue, new customers)", PermScopeShop},
 	}
 }
 

@@ -62,3 +62,21 @@ func TestDashboardRead_IsCatalogued(t *testing.T) {
 	}
 	assert.True(t, found, "dashboard.read must be in Catalog()")
 }
+
+func TestCatalog_EveryEntryIsScoped(t *testing.T) {
+	shop := map[rbac.Permission]bool{
+		rbac.TariffsRead: true, rbac.TariffsWrite: true,
+		rbac.CustomersRead: true, rbac.CustomersManage: true,
+		rbac.SubscriptionsRead: true, rbac.SubscriptionsManage: true,
+		rbac.BillingRead: true, rbac.DashboardRead: true, rbac.PluginsRead: true,
+	}
+	for _, d := range rbac.Catalog() {
+		require.Contains(t, []rbac.PermScope{rbac.PermScopePlatform, rbac.PermScopeShop}, d.Scope,
+			"permission %s has no valid scope", d.Key)
+		want := rbac.PermScopePlatform
+		if shop[d.Key] {
+			want = rbac.PermScopeShop
+		}
+		assert.Equal(t, want, d.Scope, "permission %s has unexpected scope", d.Key)
+	}
+}
