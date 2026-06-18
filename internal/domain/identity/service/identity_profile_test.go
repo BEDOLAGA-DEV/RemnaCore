@@ -12,6 +12,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager/txmanagertest"
 )
 
@@ -70,6 +71,41 @@ func buildProfileSvc(t *testing.T, repo service.Repository, fixedNow time.Time) 
 		7*24*time.Hour,
 		sessions,
 	)
+}
+
+// recordingTxRunner records whether RunInTx was invoked and re-exposes the
+// child context fn received, so a test can assert the read ran in a tx.
+type recordingTxRunner struct {
+	called bool
+	gotCtx context.Context
+}
+
+func (r *recordingTxRunner) RunInTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	r.called = true
+	return fn(context.WithValue(ctx, txMarkerKey{}, true))
+}
+
+type txMarkerKey struct{}
+
+func TestListUsers_RunsInTx(t *testing.T) {
+	repo := newProfileStubRepo()
+	runner := &recordingTxRunner{}
+	svc := buildProfileSvcWithRunner(t, repo, runner, time.Unix(0, 0).UTC())
+
+	_, err := svc.ListUsers(context.Background(), 10, 0)
+	require.NoError(t, err)
+	assert.True(t, runner.called, "ListUsers must run inside RunInTx so the RLS GUC is set")
+}
+
+// buildProfileSvcWithRunner constructs a service.Service with an injectable
+// txmanager.Runner, so tests can observe transaction usage.
+func buildProfileSvcWithRunner(t *testing.T, repo service.Repository, runner txmanager.Runner, fixedNow time.Time) *service.Service {
+	t.Helper()
+	jwtIssuer := newTestJWT(t)
+	pub := &noopPublisher{}
+	clk := clock.NewMock(fixedNow)
+	sessions := service.NewSessionIssuer(repo, pub, jwtIssuer, 15*time.Minute, 7*24*time.Hour)
+	return service.NewService(repo, pub, runner, jwtIssuer, clk, 15*time.Minute, 7*24*time.Hour, sessions)
 }
 
 // TestResetPassword_ClearsMustChangePassword verifies that a successful
