@@ -26,29 +26,30 @@ func (p Permission) Action() string {
 // introduce a new capability.
 const (
 	UsersRead           Permission = "users.read"
-	UsersInvite         Permission = "users.invite"        // Phase B routes
-	UsersAssignRole     Permission = "users.assign_role"   // Phase B routes
+	UsersInvite         Permission = "users.invite"      // Phase B routes
+	UsersAssignRole     Permission = "users.assign_role" // Phase B routes
 	RolesRead           Permission = "roles.read"
-	RolesManage         Permission = "roles.manage"        // Phase B/D routes
+	RolesManage         Permission = "roles.manage" // Phase B/D routes
 	ShopsRead           Permission = "shops.read"
 	ShopsManage         Permission = "shops.manage"
 	ShopsBranding       Permission = "shops.branding"
 	TariffsRead         Permission = "tariffs.read"
 	TariffsWrite        Permission = "tariffs.write"
-	CustomersRead       Permission = "customers.read"      // forward-looking (Phase C)
-	CustomersManage     Permission = "customers.manage"    // forward-looking (Phase C)
+	CustomersRead       Permission = "customers.read"   // forward-looking (Phase C)
+	CustomersManage     Permission = "customers.manage" // forward-looking (Phase C)
 	SubscriptionsRead   Permission = "subscriptions.read"
 	SubscriptionsManage Permission = "subscriptions.manage" // forward-looking (Phase C)
 	BillingRead         Permission = "billing.read"
-	BillingRefund       Permission = "billing.refund"      // forward-looking (Phase C)
+	BillingRefund       Permission = "billing.refund" // forward-looking (Phase C)
 	PluginsRead         Permission = "plugins.read"
 	PluginsManage       Permission = "plugins.manage"
 	AnalyticsRead       Permission = "analytics.read"
 	SessionsRead        Permission = "sessions.read"
 	SettingsManage      Permission = "settings.manage"
-	InfraRead           Permission = "infra.read"    // remnawave topology (platform-only)
-	InfraManage         Permission = "infra.manage"  // remnawave mutations (platform-only)
+	InfraRead           Permission = "infra.read"     // remnawave topology (platform-only)
+	InfraManage         Permission = "infra.manage"   // remnawave mutations (platform-only)
 	BillingManage       Permission = "billing.manage" // balance/financial ops (platform-only)
+	DashboardRead       Permission = "dashboard.read" // shop dashboard (split from analytics.read; shop-scoped)
 )
 
 // PermScope is the enforcement axis of a permission: platform-wide vs
@@ -101,6 +102,7 @@ func Catalog() []Definition {
 		{InfraRead, "View Remnawave nodes, panels, and squads"},
 		{InfraManage, "Manage Remnawave nodes, panels, and squads (mutations)"},
 		{BillingManage, "Manage balances and financial operations (adjust, transfer, export)"},
+		{DashboardRead, "View a shop's dashboard (active subs, revenue, new customers)"},
 	}
 }
 

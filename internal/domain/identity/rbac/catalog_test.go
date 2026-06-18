@@ -50,3 +50,15 @@ func TestPermScope_ConstantsAreDistinct(t *testing.T) {
 	assert.Equal(t, rbac.PermScope("shop"), rbac.PermScopeShop)
 	assert.NotEqual(t, rbac.PermScopePlatform, rbac.PermScopeShop)
 }
+
+func TestDashboardRead_IsCatalogued(t *testing.T) {
+	assert.Equal(t, rbac.Permission("dashboard.read"), rbac.DashboardRead)
+	found := false
+	for _, d := range rbac.Catalog() {
+		if d.Key == rbac.DashboardRead {
+			found = true
+			assert.NotEmpty(t, d.Description)
+		}
+	}
+	assert.True(t, found, "dashboard.read must be in Catalog()")
+}
