@@ -133,30 +133,39 @@ func (r *CollectionsRepository) InsertDocument(ctx context.Context, pluginSlug, 
 }
 
 // UpdateDocument updates the document content for an existing document by ID,
-// scoped to the given plugin slug.
-// Returns pluginstore.ErrDocumentNotFound if no row was affected.
+// scoped to the given plugin slug. Runs inside RunInTx so the app.tenant_id
+// GUC applies (RLS USING hides foreign-tenant rows -> 0 rows affected ->
+// ErrDocumentNotFound). Returns pluginstore.ErrDocumentNotFound if no row was
+// affected.
 func (r *CollectionsRepository) UpdateDocument(ctx context.Context, pluginSlug, collection, id string, doc json.RawMessage) error {
-	tag, err := r.pool.Exec(ctx, updateDocumentSQL, doc, id, pluginSlug, collection)
-	if err != nil {
-		return fmt.Errorf("update document: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return pluginstore.ErrDocumentNotFound
-	}
-	return nil
+	return r.runner.RunInTx(ctx, func(ctx context.Context) error {
+		db := DBFromContext(ctx, r.pool)
+		tag, err := db.Exec(ctx, updateDocumentSQL, doc, id, pluginSlug, collection)
+		if err != nil {
+			return fmt.Errorf("update document: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return pluginstore.ErrDocumentNotFound
+		}
+		return nil
+	})
 }
 
 // DeleteDocument removes a document by ID, scoped to the given plugin slug.
-// Returns pluginstore.ErrDocumentNotFound if no row was affected.
+// Runs inside RunInTx so the app.tenant_id GUC applies. Returns
+// pluginstore.ErrDocumentNotFound if no row was affected.
 func (r *CollectionsRepository) DeleteDocument(ctx context.Context, pluginSlug, collection, id string) error {
-	tag, err := r.pool.Exec(ctx, deleteDocumentSQL, id, pluginSlug, collection)
-	if err != nil {
-		return fmt.Errorf("delete document: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return pluginstore.ErrDocumentNotFound
-	}
-	return nil
+	return r.runner.RunInTx(ctx, func(ctx context.Context) error {
+		db := DBFromContext(ctx, r.pool)
+		tag, err := db.Exec(ctx, deleteDocumentSQL, id, pluginSlug, collection)
+		if err != nil {
+			return fmt.Errorf("delete document: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return pluginstore.ErrDocumentNotFound
+		}
+		return nil
+	})
 }
 
 // DeleteCollection removes all documents in a collection for a plugin.
