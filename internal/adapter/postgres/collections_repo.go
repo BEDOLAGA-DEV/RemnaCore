@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pluginstore"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
 // Collection document SQL statements.
@@ -43,51 +44,77 @@ const (
 )
 
 // CollectionsRepository provides CRUD operations for plugin collections backed
-// by PostgreSQL. It uses raw SQL queries against the plugins.collections table.
+// by PostgreSQL. Every method runs inside runner.RunInTx so the per-request
+// app.tenant_id GUC (set by RunInTx from the tenant context) is in effect for
+// the row-level-security policy on plugins.collections, and resolves its
+// connection via DBFromContext so it joins any already-open transaction.
 type CollectionsRepository struct {
-	pool *pgxpool.Pool
+	pool   *pgxpool.Pool
+	runner txmanager.Runner
 }
 
-// NewCollectionsRepository creates a CollectionsRepository.
-func NewCollectionsRepository(pool *pgxpool.Pool) *CollectionsRepository {
-	return &CollectionsRepository{pool: pool}
+// NewCollectionsRepository creates a CollectionsRepository. The runner is used
+// to wrap every method in a transaction so RLS session variables apply.
+func NewCollectionsRepository(pool *pgxpool.Pool, runner txmanager.Runner) *CollectionsRepository {
+	return &CollectionsRepository{pool: pool, runner: runner}
 }
 
-// ListDocuments returns all documents in a collection for a plugin.
+// CollectionsRepository implements the pluginstore.Store interface.
+var _ pluginstore.Store = (*CollectionsRepository)(nil)
+
+// ListDocuments returns all documents in a collection for a plugin. The read
+// runs inside RunInTx so the app.tenant_id GUC is set and RLS on
+// plugins.collections scopes the result to the active tenant (or all rows
+// under the platform sentinel).
 func (r *CollectionsRepository) ListDocuments(ctx context.Context, pluginSlug, collection string) ([]pluginstore.Document, error) {
-	rows, err := r.pool.Query(ctx, listDocumentsSQL, pluginSlug, collection)
-	if err != nil {
-		return nil, fmt.Errorf("list documents: %w", err)
-	}
-	defer rows.Close()
-
 	docs := make([]pluginstore.Document, 0)
-	for rows.Next() {
-		var d pluginstore.Document
-		if err := rows.Scan(&d.ID, &d.PluginSlug, &d.Collection, &d.Data, &d.CreatedAt, &d.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("scan document: %w", err)
+	err := r.runner.RunInTx(ctx, func(ctx context.Context) error {
+		db := DBFromContext(ctx, r.pool)
+		rows, err := db.Query(ctx, listDocumentsSQL, pluginSlug, collection)
+		if err != nil {
+			return fmt.Errorf("list documents: %w", err)
 		}
-		docs = append(docs, d)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate documents: %w", err)
-	}
+		defer rows.Close()
 
+		for rows.Next() {
+			var d pluginstore.Document
+			if err := rows.Scan(&d.ID, &d.PluginSlug, &d.Collection, &d.Data, &d.CreatedAt, &d.UpdatedAt); err != nil {
+				return fmt.Errorf("scan document: %w", err)
+			}
+			docs = append(docs, d)
+		}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("iterate documents: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
 	return docs, nil
 }
 
 // GetDocument returns a single document by ID within a plugin collection.
-// Returns pluginstore.ErrDocumentNotFound if the document does not exist.
+// Returns pluginstore.ErrDocumentNotFound if the document does not exist (or
+// is hidden from the active tenant by RLS). The read runs inside RunInTx so
+// the app.tenant_id GUC is applied.
 func (r *CollectionsRepository) GetDocument(ctx context.Context, pluginSlug, collection, id string) (*pluginstore.Document, error) {
 	var d pluginstore.Document
-	err := r.pool.QueryRow(ctx, getDocumentSQL, pluginSlug, collection, id).Scan(
-		&d.ID, &d.PluginSlug, &d.Collection, &d.Data, &d.CreatedAt, &d.UpdatedAt,
-	)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, pluginstore.ErrDocumentNotFound
+	err := r.runner.RunInTx(ctx, func(ctx context.Context) error {
+		db := DBFromContext(ctx, r.pool)
+		scanErr := db.QueryRow(ctx, getDocumentSQL, pluginSlug, collection, id).Scan(
+			&d.ID, &d.PluginSlug, &d.Collection, &d.Data, &d.CreatedAt, &d.UpdatedAt,
+		)
+		if scanErr != nil {
+			if errors.Is(scanErr, pgx.ErrNoRows) {
+				return pluginstore.ErrDocumentNotFound
+			}
+			return fmt.Errorf("get document: %w", scanErr)
 		}
-		return nil, fmt.Errorf("get document: %w", err)
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return &d, nil
 }
