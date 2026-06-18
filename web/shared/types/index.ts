@@ -38,9 +38,20 @@ export const PERMISSIONS = {
   infraRead: "infra.read",
   infraManage: "infra.manage",
   billingManage: "billing.manage",
+  dashboardRead: "dashboard.read",
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
+
+// PermScope is the enforcement axis of a permission (platform-wide vs
+// active-shop). Mirror of rbac.PermScope in catalog.go — keep in sync. This is
+// distinct from a role's ScopeKind (global|shop).
+export const PERM_SCOPES = {
+  platform: "platform",
+  shop: "shop",
+} as const;
+
+export type PermScope = (typeof PERM_SCOPES)[keyof typeof PERM_SCOPES];
 
 export const SYSTEM_ROLES = {
   platformAdmin: "platform_admin",
