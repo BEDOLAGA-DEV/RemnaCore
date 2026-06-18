@@ -80,3 +80,13 @@ func TestCatalog_EveryEntryIsScoped(t *testing.T) {
 		assert.Equal(t, want, d.Scope, "permission %s has unexpected scope", d.Key)
 	}
 }
+
+func TestPermissionScope_LooksUpCatalogAndDefaultsToPlatform(t *testing.T) {
+	assert.Equal(t, rbac.PermScopeShop, rbac.PermissionScope(rbac.DashboardRead))
+	assert.Equal(t, rbac.PermScopeShop, rbac.PermissionScope(rbac.SubscriptionsRead))
+	assert.Equal(t, rbac.PermScopePlatform, rbac.PermissionScope(rbac.AnalyticsRead))
+	assert.Equal(t, rbac.PermScopePlatform, rbac.PermissionScope(rbac.InfraRead))
+	// Fail-safe: an untagged/unknown permission is treated as the more
+	// restrictive platform scope.
+	assert.Equal(t, rbac.PermScopePlatform, rbac.PermissionScope(rbac.Permission("nonexistent.permission")))
+}

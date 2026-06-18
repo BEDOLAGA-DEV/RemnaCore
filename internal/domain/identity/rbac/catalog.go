@@ -107,6 +107,19 @@ func Catalog() []Definition {
 	}
 }
 
+// PermissionScope returns the enforcement scope of p by looking it up in the
+// catalog. It defaults to PermScopePlatform for an unknown permission, which is
+// fail-safe: an untagged capability is treated as the more restrictive
+// platform scope rather than silently becoming shop-grantable.
+func PermissionScope(p Permission) PermScope {
+	for _, d := range Catalog() {
+		if d.Key == p {
+			return d.Scope
+		}
+	}
+	return PermScopePlatform
+}
+
 // Scope kinds for roles and bindings.
 const (
 	ScopeGlobal = "global"
