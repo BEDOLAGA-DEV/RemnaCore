@@ -19,6 +19,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/payment"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tracing"
 )
 
@@ -397,23 +398,38 @@ func (c *BillingEventConsumer) handleActivated(ctx context.Context, event domain
 		return errMissingSubscriptionID
 	}
 
-	subInfo, err := c.subs.GetSubscriptionInfo(ctx, payload.SubscriptionID)
-	if err != nil {
-		return fmt.Errorf("lookup subscription %s: %w", payload.SubscriptionID, err)
-	}
+	var subInfo multisub.SubscriptionInfo
+	var plan multisub.PlanSnapshot
+	var familyMemberIDs []string
 
-	plan, err := c.plans.GetPlanSnapshot(ctx, subInfo.PlanID)
-	if err != nil {
-		return fmt.Errorf("lookup plan %s: %w", subInfo.PlanID, err)
-	}
+	// Background path: the event carries no tenant key, so enrichment reads run
+	// under the platform sentinel (sees all tenants) inside a single tx, so the
+	// RLS GUC is set for the FORCE-RLS Tier-2 tables (post-042). When events
+	// gain a tenant key, swap WithPlatformScope for WithTenantID(event tenant).
+	err = c.runner.RunInTx(tenantctx.WithPlatformScope(ctx), func(txCtx context.Context) error {
+		var err error
+		subInfo, err = c.subs.GetSubscriptionInfo(txCtx, payload.SubscriptionID)
+		if err != nil {
+			return fmt.Errorf("lookup subscription %s: %w", payload.SubscriptionID, err)
+		}
 
-	familyMemberIDs, err := c.subs.GetFamilyMemberIDs(ctx, subInfo.UserID)
+		plan, err = c.plans.GetPlanSnapshot(txCtx, subInfo.PlanID)
+		if err != nil {
+			return fmt.Errorf("lookup plan %s: %w", subInfo.PlanID, err)
+		}
+
+		familyMemberIDs, err = c.subs.GetFamilyMemberIDs(txCtx, subInfo.UserID)
+		if err != nil {
+			c.logger.Warn("failed to lookup family members, proceeding without",
+				slog.String("user_id", subInfo.UserID),
+				slog.Any("error", err),
+			)
+			familyMemberIDs = nil
+		}
+		return nil
+	})
 	if err != nil {
-		c.logger.Warn("failed to lookup family members, proceeding without",
-			slog.String("user_id", subInfo.UserID),
-			slog.Any("error", err),
-		)
-		familyMemberIDs = nil
+		return err
 	}
 
 	return c.handler.OnSubscriptionActivated(
