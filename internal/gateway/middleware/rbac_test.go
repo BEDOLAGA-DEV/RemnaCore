@@ -300,6 +300,38 @@ func TestShopResolver_NonAdminNoShopPassthrough(t *testing.T) {
 	assert.Equal(t, "", gotTenant, "non-admin without a shop must have NO active tenant (fail-closed)")
 }
 
+// TestRequirePermission_ShopScopedNoTenant_ReturnsTenantRequired: a shop-scoped
+// permission requested with no active tenant returns 403 with the structured
+// IAM.TENANT_REQUIRED code (not the generic "permission denied").
+func TestRequirePermission_ShopScopedNoTenant_ReturnsTenantRequired(t *testing.T) {
+	// u1 holds a shop binding but no active shop is selected on this request.
+	access := newAccess(map[string][]rbac.Binding{"u1": nil}, nil)
+	h := middleware.RequirePermission(access, rbac.CustomersRead)(
+		http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	req := withClaims(httptest.NewRequest(http.MethodGet, "/x", nil), "u1")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	assert.Contains(t, rec.Body.String(), "IAM.TENANT_REQUIRED",
+		"a shop-scoped permission with no active tenant must surface the structured code")
+}
+
+// TestRequirePermission_PlatformScopedDenied_StaysGeneric: a denied
+// platform-scoped permission keeps the existing generic 403 body.
+func TestRequirePermission_PlatformScopedDenied_StaysGeneric(t *testing.T) {
+	access := newAccess(map[string][]rbac.Binding{"u1": nil}, nil)
+	h := middleware.RequirePermission(access, rbac.SettingsManage)(
+		http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	req := withClaims(httptest.NewRequest(http.MethodGet, "/x", nil), "u1")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	assert.NotContains(t, rec.Body.String(), "IAM.TENANT_REQUIRED")
+	assert.Contains(t, rec.Body.String(), "permission denied")
+}
+
 // TestShopResolver_MemberShopSetsParsedUUID verifies a bound member entering
 // their shop gets the parsed UUID (canonical form) as the active tenant.
 func TestShopResolver_MemberShopSetsParsedUUID(t *testing.T) {

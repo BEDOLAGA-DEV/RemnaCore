@@ -6,6 +6,7 @@ import (
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/rbac"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/service"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
 	"github.com/google/uuid"
@@ -108,6 +109,13 @@ func RequirePermission(access *service.AccessService, p rbac.Permission) func(ht
 				return
 			}
 			if !access.Can(acc, p) {
+				// A shop-scoped permission denied solely because no shop is active
+				// gets a machine-readable code so clients can prompt for shop
+				// selection rather than treating it as a hard authorization failure.
+				if rbac.PermissionScope(p) == rbac.PermScopeShop && tenantID == nil {
+					writeMiddlewareAPIError(w, apierror.IAMTenantRequired)
+					return
+				}
 				writeMiddlewareError(w, http.StatusForbidden, "permission denied")
 				return
 			}
