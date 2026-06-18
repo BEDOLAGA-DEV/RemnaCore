@@ -42,6 +42,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/rbac"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
 )
@@ -180,11 +181,14 @@ func TestAdminRoutesArePermissionGated(t *testing.T) {
 		// Plugin-pages: lighter plugins.read perm so shop roles can render pages.
 		{http.MethodGet, "/api/admin/plugin-pages", rbac.PluginsRead},
 
-		// ── User / subscription / invoice (users.read, subscriptions.read, billing.read) ──
+		// ── User mgmt (users.read) + platform subscription/invoice aggregates (analytics.read) ──
+		// The global /admin/subscriptions and /admin/invoices lists are platform
+		// aggregates: gated on analytics.read since subscriptions.read/billing.read
+		// are now shop-scoped (Task C1.3).
 		{http.MethodGet, "/api/admin/users", rbac.UsersRead},
 		{http.MethodGet, "/api/admin/users/{userID}", rbac.UsersRead},
-		{http.MethodGet, "/api/admin/subscriptions", rbac.SubscriptionsRead},
-		{http.MethodGet, "/api/admin/invoices", rbac.BillingRead},
+		{http.MethodGet, "/api/admin/subscriptions", rbac.AnalyticsRead},
+		{http.MethodGet, "/api/admin/invoices", rbac.AnalyticsRead},
 
 		// ── System settings (settings.manage) ───────────────────────────────
 		{http.MethodGet, "/api/admin/settings", rbac.SettingsManage},
@@ -261,6 +265,14 @@ func TestAdminRoutesArePermissionGated(t *testing.T) {
 				"%s %s must be permission-gated (got %d)", rt.method, rt.path, rec.Code)
 		})
 	}
+}
+
+// TestIAMTenantRequired_CodeIsDefined asserts the structured tenant-required
+// error code exists for the C0 middleware writer to consume.
+func TestIAMTenantRequired_CodeIsDefined(t *testing.T) {
+	require.NotNil(t, apierror.IAMTenantRequired)
+	assert.Equal(t, "IAM.TENANT_REQUIRED", apierror.IAMTenantRequired.Code)
+	assert.Equal(t, http.StatusForbidden, apierror.IAMTenantRequired.HTTPStatus)
 }
 
 // substitutePathParams replaces chi URL parameters ({param}) with a concrete

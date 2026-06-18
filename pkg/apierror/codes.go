@@ -165,6 +165,7 @@ var (
 	IAMBindingNotFound    = New("IAM.BINDING_NOT_FOUND", "role binding not found", http.StatusNotFound)
 	IAMOwnerNotSpecified  = New("IAM.OWNER_NOT_SPECIFIED", "exactly one shop owner (existing user or invite email) must be specified", http.StatusBadRequest)
 	IAMOwnerAmbiguous     = New("IAM.OWNER_AMBIGUOUS", "only one of existing user or invite email may be specified", http.StatusBadRequest)
+	IAMTenantRequired     = New("IAM.TENANT_REQUIRED", "an active shop must be selected for this action", http.StatusForbidden)
 )
 
 // Routing error codes.

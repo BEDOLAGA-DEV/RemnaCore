@@ -260,8 +260,11 @@ func NewRouter(p RouterParams) http.Handler {
 				// User / subscription / invoice management
 				admin.With(perm(p.AccessService, rbac.UsersRead)).Get("/users", p.AdminHandler.ListUsers)
 				admin.With(perm(p.AccessService, rbac.UsersRead)).Get("/users/{userID}", p.AdminHandler.GetUser)
-				admin.With(perm(p.AccessService, rbac.SubscriptionsRead)).Get("/subscriptions", p.AdminHandler.ListSubscriptions)
-				admin.With(perm(p.AccessService, rbac.BillingRead)).Get("/invoices", p.AdminHandler.ListInvoices)
+				// Platform aggregate lists — gated platform-only (AnalyticsRead).
+				// SubscriptionsRead/BillingRead are now shop-scoped; shop owners get
+				// their own subscriptions/invoices via the tenant-scoped C4 endpoints.
+				admin.With(perm(p.AccessService, rbac.AnalyticsRead)).Get("/subscriptions", p.AdminHandler.ListSubscriptions)
+				admin.With(perm(p.AccessService, rbac.AnalyticsRead)).Get("/invoices", p.AdminHandler.ListInvoices)
 
 				// System settings
 				admin.With(perm(p.AccessService, rbac.SettingsManage)).Get("/settings", p.SettingsHandler.GetSettings)
