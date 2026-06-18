@@ -27,8 +27,8 @@ const (
 		WHERE plugin_slug = $1 AND collection = $2 AND id = $3`
 
 	insertDocumentSQL = `
-		INSERT INTO plugins.collections (plugin_slug, collection, document)
-		VALUES ($1, $2, $3)
+		INSERT INTO plugins.collections (plugin_slug, collection, document, tenant_id)
+		VALUES ($1, $2, $3, NULLIF(current_setting('app.tenant_id', true), '*')::uuid)
 		RETURNING id, plugin_slug, collection, document, created_at, updated_at`
 
 	updateDocumentSQL = `
@@ -120,14 +120,24 @@ func (r *CollectionsRepository) GetDocument(ctx context.Context, pluginSlug, col
 }
 
 // InsertDocument creates a new document in a collection and returns the created
-// document with its generated ID and timestamps.
+// document. The tenant_id column is self-stamped from the app.tenant_id GUC
+// (sentinel -> NULL platform doc; shop GUC -> shop UUID), so the caller never
+// passes a tenant and a shop GUC can never write a foreign tenant_id. Runs
+// inside RunInTx so the GUC is in effect.
 func (r *CollectionsRepository) InsertDocument(ctx context.Context, pluginSlug, collection string, doc json.RawMessage) (*pluginstore.Document, error) {
 	var d pluginstore.Document
-	err := r.pool.QueryRow(ctx, insertDocumentSQL, pluginSlug, collection, doc).Scan(
-		&d.ID, &d.PluginSlug, &d.Collection, &d.Data, &d.CreatedAt, &d.UpdatedAt,
-	)
+	err := r.runner.RunInTx(ctx, func(ctx context.Context) error {
+		db := DBFromContext(ctx, r.pool)
+		scanErr := db.QueryRow(ctx, insertDocumentSQL, pluginSlug, collection, doc).Scan(
+			&d.ID, &d.PluginSlug, &d.Collection, &d.Data, &d.CreatedAt, &d.UpdatedAt,
+		)
+		if scanErr != nil {
+			return fmt.Errorf("insert document: %w", scanErr)
+		}
+		return nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("insert document: %w", err)
+		return nil, err
 	}
 	return &d, nil
 }
