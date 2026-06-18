@@ -169,12 +169,10 @@ func SystemRoles() []SystemRole {
 			Description: "Owns a shop; manages its staff, tariffs, and customers.",
 			ScopeKind:   ScopeShop,
 			Permissions: []Permission{
-				ShopsRead, ShopsManage, ShopsBranding,
 				TariffsRead, TariffsWrite,
 				CustomersRead, CustomersManage,
 				SubscriptionsRead, SubscriptionsManage,
-				BillingRead, UsersInvite, UsersAssignRole,
-				RolesRead, PluginsRead, AnalyticsRead,
+				BillingRead, DashboardRead, PluginsRead,
 			},
 		},
 		{

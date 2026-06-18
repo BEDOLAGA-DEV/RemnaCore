@@ -90,3 +90,28 @@ func TestPermissionScope_LooksUpCatalogAndDefaultsToPlatform(t *testing.T) {
 	// restrictive platform scope.
 	assert.Equal(t, rbac.PermScopePlatform, rbac.PermissionScope(rbac.Permission("nonexistent.permission")))
 }
+
+func TestRoleShopOwner_IsCleanOfPlatformPerms(t *testing.T) {
+	owner, ok := rbac.SystemRoleByKey(rbac.RoleShopOwner)
+	require.True(t, ok)
+
+	has := map[rbac.Permission]bool{}
+	for _, p := range owner.Permissions {
+		has[p] = true
+		assert.Equal(t, rbac.PermScopeShop, rbac.PermissionScope(p),
+			"shop_owner must not hold platform-scoped permission %s", p)
+	}
+	// Removed platform perms (tenant management is platform-scoped per DECISION A).
+	assert.False(t, has[rbac.AnalyticsRead])
+	assert.False(t, has[rbac.UsersInvite])
+	assert.False(t, has[rbac.UsersAssignRole])
+	assert.False(t, has[rbac.RolesRead])
+	assert.False(t, has[rbac.ShopsRead])
+	assert.False(t, has[rbac.ShopsManage])
+	assert.False(t, has[rbac.ShopsBranding])
+	// Added shop-scoped dashboard.
+	assert.True(t, has[rbac.DashboardRead])
+	// Retained shop perms.
+	assert.True(t, has[rbac.TariffsWrite])
+	assert.True(t, has[rbac.SubscriptionsManage])
+}
