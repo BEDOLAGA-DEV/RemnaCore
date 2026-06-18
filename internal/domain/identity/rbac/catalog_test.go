@@ -115,3 +115,19 @@ func TestRoleShopOwner_IsCleanOfPlatformPerms(t *testing.T) {
 	assert.True(t, has[rbac.TariffsWrite])
 	assert.True(t, has[rbac.SubscriptionsManage])
 }
+
+func TestSystemRoles_ShopScopedRolesHoldNoPlatformPerms(t *testing.T) {
+	checked := 0
+	for _, role := range rbac.SystemRoles() {
+		if role.ScopeKind != rbac.ScopeShop {
+			continue
+		}
+		checked++
+		for _, p := range role.Permissions {
+			assert.Equal(t, rbac.PermScopeShop, rbac.PermissionScope(p),
+				"shop-scoped role %s grants platform-scoped permission %s", role.Key, p)
+		}
+	}
+	// Guard against a vacuous pass if the shop roles were ever removed.
+	assert.Greater(t, checked, 0, "expected at least one ScopeShop system role")
+}
