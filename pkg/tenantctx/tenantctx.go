@@ -25,3 +25,14 @@ func TenantIDFromContext(ctx context.Context) string {
 	v, _ := ctx.Value(tenantIDKey{}).(string)
 	return v
 }
+
+// PlatformScopeSentinel is the app.tenant_id value that RLS policies treat as
+// "all tenants" (platform-admin / system scope). It is a real value the policy
+// matches on, NOT an unset GUC — so an unset/empty GUC fails closed.
+const PlatformScopeSentinel = "*"
+
+// WithPlatformScope marks ctx as platform-scoped (sees all tenants under the
+// sentinel-aware RLS policies). Server-assigned only — never from request input.
+func WithPlatformScope(ctx context.Context) context.Context {
+	return WithTenantID(ctx, PlatformScopeSentinel)
+}
