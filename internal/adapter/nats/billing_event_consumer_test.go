@@ -980,6 +980,7 @@ func TestHandleChargeCompleted_Success(t *testing.T) {
 		schemaRegistry: domainevent.NewSchemaRegistry(),
 		logger:         discardLogger(),
 		clock:          clock.NewReal(),
+		runner:         &passthroughRunner{},
 	}
 
 	event := domainevent.NewWithEntity(
@@ -1056,6 +1057,7 @@ func TestHandleChargeCompleted_CompleteCheckoutError(t *testing.T) {
 		schemaRegistry: domainevent.NewSchemaRegistry(),
 		logger:         discardLogger(),
 		clock:          clock.NewReal(),
+		runner:         &passthroughRunner{},
 	}
 
 	event := domainevent.NewWithEntity(

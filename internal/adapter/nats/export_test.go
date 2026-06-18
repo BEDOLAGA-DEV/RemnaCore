@@ -41,6 +41,33 @@ func (c *BillingEventConsumer) handleActivatedForTest(ctx context.Context, event
 	return c.handleActivated(ctx, event)
 }
 
+// newTestBillingConsumerWithCheckout builds a consumer wired with only the deps
+// handleChargeCompleted needs: a CheckoutCompleter and a runner. Everything
+// else is nil — handleChargeCompleted touches only checkout and runner, so the
+// other ports are never dereferenced.
+func newTestBillingConsumerWithCheckout(_ testingT, checkout CheckoutCompleter, runner txmanager.Runner) *BillingEventConsumer {
+	return NewBillingEventConsumer(
+		nil,      // subscriber
+		nil,      // handler — handleChargeCompleted does not dispatch to it
+		checkout, // checkout — handleChargeCompleted delegates to it
+		nil,      // plans
+		nil,      // subs
+		nil,      // idempotency
+		nil,      // publisher
+		nil,      // schemaRegistry
+		nil,      // logger
+		nil,      // clock
+		nil,      // metrics
+		runner,   // runner (wraps CompleteCheckout under the platform sentinel)
+		nil,      // conn
+	)
+}
+
+// handleChargeCompletedForTest exposes the unexported handler to the _test package.
+func (c *BillingEventConsumer) handleChargeCompletedForTest(ctx context.Context, event domainevent.Event) error {
+	return c.handleChargeCompleted(ctx, event)
+}
+
 // testingT is the minimal *testing.T surface the wrapper needs; keeping it as
 // an interface lets export_test.go avoid importing testing into a non-_test file.
 type testingT interface{ Helper() }

@@ -457,7 +457,12 @@ func (c *BillingEventConsumer) handleChargeCompleted(ctx context.Context, event 
 		return errMissingInvoiceID
 	}
 
-	return c.checkout.CompleteCheckout(ctx, payload.InvoiceID)
+	// Background path: no tenant key on the event, so the invoice read/update
+	// inside CompleteCheckout runs under the platform sentinel in a single tx so
+	// the RLS GUC is set for the FORCE-RLS checkout/balance tables (post-042).
+	return c.runner.RunInTx(tenantctx.WithPlatformScope(ctx), func(txCtx context.Context) error {
+		return c.checkout.CompleteCheckout(txCtx, payload.InvoiceID)
+	})
 }
 
 // handleSimple handles events that only require a subscription_id (cancelled,
