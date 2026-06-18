@@ -44,3 +44,9 @@ func TestSystemRoles_OnlyReferenceCatalogPermissions(t *testing.T) {
 		}
 	}
 }
+
+func TestPermScope_ConstantsAreDistinct(t *testing.T) {
+	assert.Equal(t, rbac.PermScope("platform"), rbac.PermScopePlatform)
+	assert.Equal(t, rbac.PermScope("shop"), rbac.PermScopeShop)
+	assert.NotEqual(t, rbac.PermScopePlatform, rbac.PermScopeShop)
+}

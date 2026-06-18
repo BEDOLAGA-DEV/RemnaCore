@@ -51,6 +51,18 @@ const (
 	BillingManage       Permission = "billing.manage" // balance/financial ops (platform-only)
 )
 
+// PermScope is the enforcement axis of a permission: platform-wide vs
+// active-shop. It is DISTINCT from ScopeKind (global|shop), which is the
+// role/binding scope. A platform-scoped permission maps onto a global binding
+// at enforcement time; a shop-scoped permission is satisfied only via the
+// active-tenant binding.
+type PermScope string
+
+const (
+	PermScopePlatform PermScope = "platform"
+	PermScopeShop     PermScope = "shop"
+)
+
 // Definition is catalog metadata for one permission.
 type Definition struct {
 	Key         Permission
