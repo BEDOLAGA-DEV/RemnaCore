@@ -59,7 +59,10 @@ func NewPool(lc fx.Lifecycle, cfg *config.Config, logger *slog.Logger) (*pgxpool
 	logIOMethod(pool, logger)
 
 	lc.Append(fx.Hook{
-		OnStop: func(ctx context.Context) error {
+		OnStart: func(ctx context.Context) error {
+			return assertNonBypassRLSRole(ctx, poolQuerier{pool})
+		},
+		OnStop: func(_ context.Context) error {
 			pool.Close()
 			return nil
 		},
