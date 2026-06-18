@@ -4,6 +4,7 @@ package postgres_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -19,27 +20,52 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/rbac"
 )
 
+// inlineSetUpdatedAt is a sentinel passed to setupTestDBWith in place of a
+// migration filename. It applies a standalone set_updated_at() stub (in BOTH
+// the identity and public schemas, mirroring 001 and 019) so that migrations
+// whose triggers reference set_updated_at() — e.g. 004 (identity.set_updated_at)
+// and 034 (public.set_updated_at) — can be applied in isolation without pulling
+// in the full migration chain. The schemas are created if absent so the stub is
+// self-contained regardless of which migrations precede it.
+const inlineSetUpdatedAt = "__inline_set_updated_at"
+
+// inlineSetUpdatedAtSQL is the body applied for the inlineSetUpdatedAt sentinel.
+const inlineSetUpdatedAtSQL = `
+CREATE SCHEMA IF NOT EXISTS identity;
+CREATE SCHEMA IF NOT EXISTS plugins;
+CREATE OR REPLACE FUNCTION public.set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+CREATE OR REPLACE FUNCTION identity.set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+`
+
 // setupTestDBWith boots a Postgres testcontainer and applies the given migration
-// files (in order) from internal/adapter/postgres/migrations. Mirrors setupTestDB
-// but accepts multiple init scripts. Skips the test if Docker is unavailable.
-func setupTestDBWith(t *testing.T, files ...string) *pgxpool.Pool {
+// files (in order) from internal/adapter/postgres/migrations, returning the admin
+// pool and its connection string. The inlineSetUpdatedAt sentinel may be passed in
+// place of a filename to apply an inline set_updated_at() stub.
+//
+// It SKIPS only when the container cannot start (Docker unavailable). Any
+// migration error is a hard failure (t.Fatal) — never a skip — so a test can
+// never pass vacuously against a half-applied schema.
+func setupTestDBWith(t *testing.T, files ...string) (*pgxpool.Pool, string) {
 	t.Helper()
 	ctx := context.Background()
-
-	migrationPath, err := filepath.Abs("migrations")
-	require.NoError(t, err)
-
-	paths := make([]string, len(files))
-	for i, f := range files {
-		paths[i] = filepath.Join(migrationPath, f)
-	}
 
 	ctr, err := tcpostgres.Run(ctx,
 		"postgres:18",
 		tcpostgres.WithDatabase(testDBName),
 		tcpostgres.WithUsername(testDBUser),
 		tcpostgres.WithPassword(testDBPass),
-		tcpostgres.WithInitScripts(paths...),
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").
 				WithOccurrence(2).
@@ -58,12 +84,29 @@ func setupTestDBWith(t *testing.T, files ...string) *pgxpool.Pool {
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 
-	return pool
+	migrationPath, err := filepath.Abs("migrations")
+	require.NoError(t, err)
+
+	for _, f := range files {
+		sql := inlineSetUpdatedAtSQL
+		if f != inlineSetUpdatedAt {
+			b, readErr := os.ReadFile(filepath.Join(migrationPath, f))
+			require.NoError(t, readErr, "read migration %s", f)
+			sql = string(b)
+		}
+		// Migration errors fail the test (never skip): a half-applied schema
+		// would let downstream assertions pass vacuously.
+		_, execErr := pool.Exec(ctx, sql)
+		require.NoError(t, execErr, "apply migration %s", f)
+	}
+
+	return pool, connStr
 }
 
 func setupRBACTestDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	return setupTestDBWith(t, "001_identity.sql", "006_reseller.sql", "038_rbac.sql")
+	pool, _ := setupTestDBWith(t, "001_identity.sql", "006_reseller.sql", "038_rbac.sql")
+	return pool
 }
 
 // insertLegacyUser inserts a row into identity.platform_users with the given
