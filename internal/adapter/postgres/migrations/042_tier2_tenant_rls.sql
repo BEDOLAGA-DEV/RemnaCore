@@ -116,3 +116,190 @@ FROM multisub.remnawave_bindings b
 WHERE b.id = l.binding_id;
 
 COMMIT;
+
+-- ---------------------------------------------------------------------------
+-- 3. Enable sentinel-aware FORCE RLS on every Tier-2 table. FORCE goes LAST,
+--    after the section-2 backfill, so the migration role can still write
+--    tenant_id during backfill. Policy shape (canonical, contract §2):
+--      USING     : '*' (sentinel) OR tenant_id matches the GUC  (NO IS NULL branch)
+--      WITH CHECK : '*' OR tenant_id IS NULL OR tenant_id matches (permits
+--                   tenant-less public/system inserts; blocks foreign tenant_id)
+--    The literal '*' is the platform sentinel, = tenantctx.PlatformScopeSentinel.
+--    payment.webhook_log is deliberately NOT included (see header).
+-- ---------------------------------------------------------------------------
+
+-- billing.subscriptions
+ALTER TABLE billing.subscriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE billing.subscriptions FORCE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE tablename = 'subscriptions' AND schemaname = 'billing' AND policyname = 'tenant_isolation_subscriptions'
+    ) THEN
+        CREATE POLICY tenant_isolation_subscriptions ON billing.subscriptions
+            USING (
+                current_setting('app.tenant_id', true) = '*'
+                OR tenant_id::text = current_setting('app.tenant_id', true)
+            )
+            WITH CHECK (
+                current_setting('app.tenant_id', true) = '*'
+                OR tenant_id IS NULL
+                OR tenant_id::text = current_setting('app.tenant_id', true)
+            );
+    END IF;
+END $$;
+
+-- billing.invoices
+ALTER TABLE billing.invoices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE billing.invoices FORCE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE tablename = 'invoices' AND schemaname = 'billing' AND policyname = 'tenant_isolation_invoices'
+    ) THEN
+        CREATE POLICY tenant_isolation_invoices ON billing.invoices
+            USING (
+                current_setting('app.tenant_id', true) = '*'
+                OR tenant_id::text = current_setting('app.tenant_id', true)
+            )
+            WITH CHECK (
+                current_setting('app.tenant_id', true) = '*'
+                OR tenant_id IS NULL
+                OR tenant_id::text = current_setting('app.tenant_id', true)
+            );
+    END IF;
+END $$;
+
+-- billing.invoice_line_items
+ALTER TABLE billing.invoice_line_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE billing.invoice_line_items FORCE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE tablename = 'invoice_line_items' AND schemaname = 'billing' AND policyname = 'tenant_isolation_invoice_line_items'
+    ) THEN
+        CREATE POLICY tenant_isolation_invoice_line_items ON billing.invoice_line_items
+            USING (
+                current_setting('app.tenant_id', true) = '*'
+                OR tenant_id::text = current_setting('app.tenant_id', true)
+            )
+            WITH CHECK (
+                current_setting('app.tenant_id', true) = '*'
+                OR tenant_id IS NULL
+                OR tenant_id::text = current_setting('app.tenant_id', true)
+            );
+    END IF;
+END $$;
+
+-- billing.family_groups
+ALTER TABLE billing.family_groups ENABLE ROW LEVEL SECURITY;
+ALTER TABLE billing.family_groups FORCE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE tablename = 'family_groups' AND schemaname = 'billing' AND policyname = 'tenant_isolation_family_groups'
+    ) THEN
+        CREATE POLICY tenant_isolation_family_groups ON billing.family_groups
+            USING (
+                current_setting('app.tenant_id', true) = '*'
+                OR tenant_id::text = current_setting('app.tenant_id', true)
+            )
+            WITH CHECK (
+                current_setting('app.tenant_id', true) = '*'
+                OR tenant_id IS NULL
+                OR tenant_id::text = current_setting('app.tenant_id', true)
+            );
+    END IF;
+END $$;
+
+-- billing.family_members
+ALTER TABLE billing.family_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE billing.family_members FORCE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE tablename = 'family_members' AND schemaname = 'billing' AND policyname = 'tenant_isolation_family_members'
+    ) THEN
+        CREATE POLICY tenant_isolation_family_members ON billing.family_members
+            USING (
+                current_setting('app.tenant_id', true) = '*'
+                OR tenant_id::text = current_setting('app.tenant_id', true)
+            )
+            WITH CHECK (
+                current_setting('app.tenant_id', true) = '*'
+                OR tenant_id IS NULL
+                OR tenant_id::text = current_setting('app.tenant_id', true)
+            );
+    END IF;
+END $$;
+
+-- payment.payment_records
+ALTER TABLE payment.payment_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payment.payment_records FORCE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE tablename = 'payment_records' AND schemaname = 'payment' AND policyname = 'tenant_isolation_payment_records'
+    ) THEN
+        CREATE POLICY tenant_isolation_payment_records ON payment.payment_records
+            USING (
+                current_setting('app.tenant_id', true) = '*'
+                OR tenant_id::text = current_setting('app.tenant_id', true)
+            )
+            WITH CHECK (
+                current_setting('app.tenant_id', true) = '*'
+                OR tenant_id IS NULL
+                OR tenant_id::text = current_setting('app.tenant_id', true)
+            );
+    END IF;
+END $$;
+
+-- multisub.remnawave_bindings
+ALTER TABLE multisub.remnawave_bindings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE multisub.remnawave_bindings FORCE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE tablename = 'remnawave_bindings' AND schemaname = 'multisub' AND policyname = 'tenant_isolation_remnawave_bindings'
+    ) THEN
+        CREATE POLICY tenant_isolation_remnawave_bindings ON multisub.remnawave_bindings
+            USING (
+                current_setting('app.tenant_id', true) = '*'
+                OR tenant_id::text = current_setting('app.tenant_id', true)
+            )
+            WITH CHECK (
+                current_setting('app.tenant_id', true) = '*'
+                OR tenant_id IS NULL
+                OR tenant_id::text = current_setting('app.tenant_id', true)
+            );
+    END IF;
+END $$;
+
+-- multisub.binding_sync_log
+ALTER TABLE multisub.binding_sync_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE multisub.binding_sync_log FORCE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE tablename = 'binding_sync_log' AND schemaname = 'multisub' AND policyname = 'tenant_isolation_binding_sync_log'
+    ) THEN
+        CREATE POLICY tenant_isolation_binding_sync_log ON multisub.binding_sync_log
+            USING (
+                current_setting('app.tenant_id', true) = '*'
+                OR tenant_id::text = current_setting('app.tenant_id', true)
+            )
+            WITH CHECK (
+                current_setting('app.tenant_id', true) = '*'
+                OR tenant_id IS NULL
+                OR tenant_id::text = current_setting('app.tenant_id', true)
+            );
+    END IF;
+END $$;
