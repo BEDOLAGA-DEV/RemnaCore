@@ -168,11 +168,15 @@ func (r *CollectionsRepository) DeleteDocument(ctx context.Context, pluginSlug, 
 	})
 }
 
-// DeleteCollection removes all documents in a collection for a plugin.
+// DeleteCollection removes all documents in a collection for a plugin. Runs
+// inside RunInTx so the app.tenant_id GUC applies — under a shop tenant only
+// that tenant's documents are removed; under the platform sentinel all are.
 func (r *CollectionsRepository) DeleteCollection(ctx context.Context, pluginSlug, collection string) error {
-	_, err := r.pool.Exec(ctx, deleteCollectionSQL, pluginSlug, collection)
-	if err != nil {
-		return fmt.Errorf("delete collection: %w", err)
-	}
-	return nil
+	return r.runner.RunInTx(ctx, func(ctx context.Context) error {
+		db := DBFromContext(ctx, r.pool)
+		if _, err := db.Exec(ctx, deleteCollectionSQL, pluginSlug, collection); err != nil {
+			return fmt.Errorf("delete collection: %w", err)
+		}
+		return nil
+	})
 }
