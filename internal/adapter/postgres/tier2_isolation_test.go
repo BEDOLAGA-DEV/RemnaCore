@@ -5,6 +5,7 @@ package postgres_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -316,6 +317,18 @@ func setupTier2DB(t *testing.T) (*pgxpool.Pool, string) {
 		paths[i] = filepath.Join(migrationPath, f)
 	}
 
+	// Validate every migration path BEFORE booting the container (#6). With
+	// tcpostgres.WithInitScripts each file is copied from its host path at
+	// container-create time, so a missing/renamed migration surfaces as "no such
+	// file or directory" from tcpostgres.Run — indistinguishable from a Docker
+	// socket being absent. Stat'ing here makes a broken migration list a hard
+	// t.Fatal (never a vacuous skip) and keeps isDockerUnavailable narrow.
+	for _, p := range paths {
+		if _, statErr := os.Stat(p); statErr != nil {
+			t.Fatalf("tier-2 migration file missing or unreadable (broken migration list, NOT docker-absent): %v", statErr)
+		}
+	}
+
 	ctr, err := tcpostgres.Run(ctx,
 		"postgres:18",
 		tcpostgres.WithDatabase(testDBName),
@@ -359,13 +372,18 @@ func isDockerUnavailable(err error) bool {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
+	// Match ONLY Docker-daemon-absence phrasing. Generic markers like "no such
+	// file or directory" and "connection refused" are deliberately excluded:
+	// under tcpostgres.WithInitScripts a missing migration file also surfaces as
+	// "no such file or directory", so those markers would mask a broken migration
+	// list as a vacuous skip (#6). A missing migration is now caught up front by
+	// the os.Stat check in setupTier2DB and is always a hard t.Fatal.
 	for _, marker := range []string{
 		"cannot connect to the docker daemon",
-		"docker daemon",
+		"docker: command not found",
+		"permission denied while trying to connect to the docker daemon socket",
 		"rootless docker not found",
 		"failed to find rootless docker",
-		"no such file or directory",
-		"connection refused",
 	} {
 		if strings.Contains(msg, marker) {
 			return true
