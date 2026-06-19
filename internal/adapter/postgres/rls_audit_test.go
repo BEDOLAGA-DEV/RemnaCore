@@ -110,5 +110,32 @@ func TestRLSAudit_SentinelConstMatches(t *testing.T) {
 		"audit sentinelGUC must equal tenantctx.PlatformScopeSentinel")
 }
 
+// TestRLSAudit_AllTablesEnableAndForceRLS verifies each Phase-C tenant table is
+// both ENABLE and FORCE row-level security. FORCE is mandatory: without it the
+// table owner (the runtime role) bypasses the policy, defeating the C0 boot
+// assertion's premise. relrowsecurity=ENABLE, relforcerowsecurity=FORCE.
+func TestRLSAudit_AllTablesEnableAndForceRLS(t *testing.T) {
+	pool := setupAuditDB(t)
+	ctx := context.Background()
+
+	for _, tbl := range phaseCTenantTables {
+		var enabled, forced bool
+		err := pool.QueryRow(ctx,
+			`SELECT c.relrowsecurity, c.relforcerowsecurity
+			   FROM pg_class c
+			   JOIN pg_namespace n ON n.oid = c.relnamespace
+			  WHERE n.nspname = $1 AND c.relname = $2`,
+			tbl.schema, tbl.table).Scan(&enabled, &forced)
+		require.NoErrorf(t, err, "reading RLS flags for %s.%s", tbl.schema, tbl.table)
+
+		assert.Truef(t, enabled,
+			"%s.%s (migration %s) must have ENABLE ROW LEVEL SECURITY",
+			tbl.schema, tbl.table, tbl.migration)
+		assert.Truef(t, forced,
+			"%s.%s (migration %s) must have FORCE ROW LEVEL SECURITY (FORCE applied last, after backfill)",
+			tbl.schema, tbl.table, tbl.migration)
+	}
+}
+
 // silence the imports used only by later sub-tests in this file until they land.
 var _ = strings.TrimSpace
