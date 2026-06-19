@@ -175,6 +175,13 @@ func (h *Handler) CreateTariff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Per-shop tariffs (C6): only a platform actor (sentinel scope) may stamp a
+	// shared template. A shop actor's tariff is always a shop tariff — its
+	// tenant_id is self-stamped by the collections layer (C2) from the GUC.
+	if !h.isPlatformActor(r.Context()) {
+		input.IsTemplate = false
+	}
+
 	data, err := json.Marshal(input)
 	if err != nil {
 		writeAPIError(w, apierror.Internal)
