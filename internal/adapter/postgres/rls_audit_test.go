@@ -4,6 +4,8 @@ package postgres_test
 
 import (
 	"context"
+	"regexp"
+	"sort"
 	"strings"
 	"testing"
 
@@ -77,6 +79,24 @@ var phaseCTenantTables = []phaseCTenantTable{
 	{"multisub", "remnawave_bindings", policyPrefix + "remnawave_bindings", "042"},
 	{"multisub", "binding_sync_log", policyPrefix + "binding_sync_log", "042"},
 	{"reseller", "commissions", policyPrefix + "commissions", "043"},
+}
+
+// phaseCSchemaSet returns the distinct schemas covered by phaseCTenantTables,
+// sorted for deterministic output. Deriving the set from the single source of
+// truth (instead of re-listing schema names) means a future Phase-C table in a
+// new schema is automatically swept by the fail-open audit — it cannot escape.
+func phaseCSchemaSet() []string {
+	seen := make(map[string]struct{}, len(phaseCTenantTables))
+	var schemas []string
+	for _, tbl := range phaseCTenantTables {
+		if _, ok := seen[tbl.schema]; ok {
+			continue
+		}
+		seen[tbl.schema] = struct{}{}
+		schemas = append(schemas, tbl.schema)
+	}
+	sort.Strings(schemas)
+	return schemas
 }
 
 // setupAuditDB boots a container with the full Phase-C migration chain.
@@ -184,10 +204,9 @@ func TestRLSAudit_NoFailOpenUsingBranch(t *testing.T) {
 
 	// Restrict to the schemas Phase C tenant-isolates so unrelated platform-only
 	// tables (e.g. metrics.samples, identity.roles) are not falsely flagged.
-	phaseCSchemas := []string{
-		"identity", "reseller", "balance", "checkout",
-		"plugins", "billing", "payment", "multisub",
-	}
+	// Derived from phaseCTenantTables (the single source of truth) so a new
+	// Phase-C schema cannot silently escape this audit.
+	phaseCSchemas := phaseCSchemaSet()
 
 	rows, err := pool.Query(ctx,
 		`SELECT schemaname, tablename, policyname, qual
@@ -207,19 +226,58 @@ func TestRLSAudit_NoFailOpenUsingBranch(t *testing.T) {
 	require.NoError(t, rows.Err())
 	require.NotEmpty(t, policies, "expected RLS policies in Phase-C schemas")
 
-	// Fail-open fragments that must NEVER appear in a USING (read) expression.
-	failOpenUsingFragments := []string{
-		"tenant_id IS NULL OR",                           // 018/035/036 NULL leak
-		"current_setting('app.tenant_id', true) IS NULL", // 028 unset-GUC leak
-		"current_setting('app.tenant_id', true) = ''",    // 028 empty-GUC leak
-	}
-
+	// Each fail-open USING branch is matched against the normalized qual (see
+	// normalizeQual: lowercased, ::<type> casts stripped, whitespace collapsed).
+	// Regexes — not plain substrings — because pg_get_expr parenthesizes every
+	// boolean sub-expression, so the 018 NULL leak deparses as either
+	// `tenant_id is null or ...` or `(tenant_id is null) or ...`; a fixed
+	// substring would miss the parenthesized form and the check would go dead.
 	for _, p := range policies {
-		normalized := strings.ToLower(p.qual)
-		for _, frag := range failOpenUsingFragments {
-			assert.NotContainsf(t, normalized, strings.ToLower(frag),
-				"policy %s on %s.%s has a FAIL-OPEN USING branch %q — USING must contain no IS NULL / empty-GUC branch (see Phase-C contract §2)",
-				p.name, p.schema, p.table, frag)
+		normalized := normalizeQual(p.qual)
+		for _, marker := range failOpenUsingMarkers {
+			assert.NotRegexpf(t, marker.re, normalized,
+				"policy %s on %s.%s has a FAIL-OPEN USING branch (%s) — USING must contain no IS NULL / empty-GUC branch (see Phase-C contract §2); normalized qual: %s",
+				p.name, p.schema, p.table, marker.desc, normalized)
 		}
 	}
+}
+
+// failOpenUsingMarker is one regressed fail-open USING branch the audit forbids.
+type failOpenUsingMarker struct {
+	re   *regexp.Regexp
+	desc string
+}
+
+// failOpenUsingMarkers are the fail-open USING (read) branches that must NEVER
+// appear in a Phase-C policy. Patterns run against the normalized qual and are
+// tolerant of pg_get_expr deparse reformatting (casts already stripped by
+// normalizeQual; optional parentheses allowed around the boolean sub-expression).
+var failOpenUsingMarkers = []failOpenUsingMarker{
+	// 018/035/036 NULL leak: a `tenant_id IS NULL` disjunct. pg_get_expr may
+	// render it `(tenant_id is null) or ...`, so allow an optional ) before or.
+	{regexp.MustCompile(`tenant_id is null\s*\)?\s+or`), "018/035/036 tenant_id IS NULL OR leak"},
+	// 028 unset-GUC leak: current_setting(...) IS NULL.
+	{regexp.MustCompile(`current_setting\('app\.tenant_id', true\) is null`), "028 unset-GUC IS NULL leak"},
+	// 028 empty-GUC leak: current_setting(...) = '' (empty-string compare).
+	{regexp.MustCompile(`current_setting\('app\.tenant_id', true\) = ''`), "028 empty-GUC = '' leak"},
+}
+
+// castRE matches PostgreSQL ::<type> cast suffixes that pg_get_expr inserts
+// when deparsing a policy's qual (for example the ::text appended to an
+// app.tenant_id literal or an empty string literal). The type name may contain
+// interior spaces (e.g. "character varying"), so interior spaces are allowed but
+// trailing whitespace is not consumed. Stripping these lets cast-free fail-open
+// markers match the deparsed expression reliably.
+var castRE = regexp.MustCompile(`::[a-z_]+(?: [a-z_]+)*`)
+
+// normalizeQual canonicalises a deparsed pg_policies.qual for marker matching:
+// lowercase, drop ::<type> casts, and collapse all runs of whitespace to single
+// spaces. This makes fail-open detection tolerant of pg_get_expr's cast insertion
+// and reformatting so a regressed 018/028-style policy is reliably caught.
+// Parentheses are preserved so the current_setting(...) markers still anchor on
+// the function call; the OR-branch marker handles parens itself.
+func normalizeQual(qual string) string {
+	lowered := strings.ToLower(qual)
+	withoutCasts := castRE.ReplaceAllString(lowered, "")
+	return strings.Join(strings.Fields(withoutCasts), " ")
 }
