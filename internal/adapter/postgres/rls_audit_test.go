@@ -173,5 +173,53 @@ func TestRLSAudit_SentinelPolicyShape(t *testing.T) {
 	}
 }
 
-// silence the imports used only by later sub-tests in this file until they land.
-var _ = strings.TrimSpace
+// TestRLSAudit_NoFailOpenUsingBranch fails if ANY policy in a Phase-C schema
+// keeps a fail-open USING branch: the 018/035/036 `tenant_id IS NULL OR` NULL
+// branch (makes platform-private rows visible to every shop) or the 028
+// empty/unset-GUC branches. The IS NULL branch is allowed ONLY in WITH CHECK
+// (tenant-less public inserts), so this inspects qual (USING) exclusively.
+func TestRLSAudit_NoFailOpenUsingBranch(t *testing.T) {
+	pool := setupAuditDB(t)
+	ctx := context.Background()
+
+	// Restrict to the schemas Phase C tenant-isolates so unrelated platform-only
+	// tables (e.g. metrics.samples, identity.roles) are not falsely flagged.
+	phaseCSchemas := []string{
+		"identity", "reseller", "balance", "checkout",
+		"plugins", "billing", "payment", "multisub",
+	}
+
+	rows, err := pool.Query(ctx,
+		`SELECT schemaname, tablename, policyname, qual
+		   FROM pg_policies
+		  WHERE schemaname = ANY($1)
+		    AND qual IS NOT NULL`, phaseCSchemas)
+	require.NoError(t, err)
+	defer rows.Close()
+
+	type pol struct{ schema, table, name, qual string }
+	var policies []pol
+	for rows.Next() {
+		var p pol
+		require.NoError(t, rows.Scan(&p.schema, &p.table, &p.name, &p.qual))
+		policies = append(policies, p)
+	}
+	require.NoError(t, rows.Err())
+	require.NotEmpty(t, policies, "expected RLS policies in Phase-C schemas")
+
+	// Fail-open fragments that must NEVER appear in a USING (read) expression.
+	failOpenUsingFragments := []string{
+		"tenant_id IS NULL OR",                           // 018/035/036 NULL leak
+		"current_setting('app.tenant_id', true) IS NULL", // 028 unset-GUC leak
+		"current_setting('app.tenant_id', true) = ''",    // 028 empty-GUC leak
+	}
+
+	for _, p := range policies {
+		normalized := strings.ToLower(p.qual)
+		for _, frag := range failOpenUsingFragments {
+			assert.NotContainsf(t, normalized, strings.ToLower(frag),
+				"policy %s on %s.%s has a FAIL-OPEN USING branch %q — USING must contain no IS NULL / empty-GUC branch (see Phase-C contract §2)",
+				p.name, p.schema, p.table, frag)
+		}
+	}
+}
