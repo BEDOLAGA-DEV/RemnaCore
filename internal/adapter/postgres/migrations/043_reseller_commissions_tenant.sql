@@ -40,3 +40,29 @@ CREATE INDEX IF NOT EXISTS idx_commissions_tenant_status
     ON reseller.commissions (tenant_id, status);
 
 COMMIT;
+
+-- ============================================================================
+-- Step 4: enable RLS with the fail-closed sentinel policy (contract §2 / spec §3.1).
+-- FORCE is applied LAST, after the backfill above is committed.
+--   USING: unset/'' -> zero rows; '*' (= tenantctx.PlatformScopeSentinel) -> all;
+--          a shop UUID -> only that shop's commissions. NO `IS NULL` branch in
+--          USING (NULL-tenant commissions are platform-private, visible only
+--          under the sentinel).
+--   WITH CHECK: adds `tenant_id IS NULL` so platform-owned commission inserts
+--          (created by the system RecordCommission path with no active shop)
+--          succeed; a shop GUC can never insert a foreign tenant_id.
+-- ============================================================================
+
+ALTER TABLE reseller.commissions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation_commissions ON reseller.commissions;
+CREATE POLICY tenant_isolation_commissions ON reseller.commissions
+    USING (
+        current_setting('app.tenant_id', true) = '*'
+        OR tenant_id::text = current_setting('app.tenant_id', true)
+    )
+    WITH CHECK (
+        current_setting('app.tenant_id', true) = '*'
+        OR tenant_id IS NULL
+        OR tenant_id::text = current_setting('app.tenant_id', true)
+    );
+ALTER TABLE reseller.commissions FORCE ROW LEVEL SECURITY;
