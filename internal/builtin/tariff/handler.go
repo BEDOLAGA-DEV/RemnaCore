@@ -45,6 +45,30 @@ func (h *Handler) isPlatformActor(ctx context.Context) bool {
 	return tenantctx.TenantIDFromContext(ctx) == tenantctx.PlatformScopeSentinel
 }
 
+// errTemplateRequiresPlatform is returned by the template-write guard when a
+// non-platform actor attempts to mutate a stored template document.
+var errTemplateRequiresPlatform = errors.New("tariff template writes require platform scope")
+
+// guardTemplateWrite loads the stored document for tariffID and, if it is a
+// template (is_template=true), requires the request to run under platform
+// scope. It returns the loaded document so callers can avoid a second Get.
+// Returns pluginstore.ErrDocumentNotFound when the document is absent and
+// errTemplateRequiresPlatform when a shop actor targets a template.
+func (h *Handler) guardTemplateWrite(ctx context.Context, tariffID string) (*pluginstore.Document, error) {
+	doc, err := h.collections.GetDocument(ctx, PluginSlug, CollectionName, tariffID)
+	if err != nil {
+		return nil, err
+	}
+	var existing TariffInput
+	if err := json.Unmarshal(doc.Data, &existing); err != nil {
+		return nil, fmt.Errorf("decode stored tariff: %w", err)
+	}
+	if existing.IsTemplate && !h.isPlatformActor(ctx) {
+		return nil, errTemplateRequiresPlatform
+	}
+	return doc, nil
+}
+
 // Handler provides HTTP endpoints for tariff CRUD, pricing, promo codes,
 // A/B experiments, cohorts, analytics, and Remnawave data lookups.
 type Handler struct {
@@ -225,6 +249,24 @@ func (h *Handler) UpdateTariff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// C6: a stored template may only be updated by a platform actor.
+	if _, err := h.guardTemplateWrite(r.Context(), tariffID); err != nil {
+		if errors.Is(err, pluginstore.ErrDocumentNotFound) {
+			writeAPIError(w, apierror.NotFound)
+			return
+		}
+		if errors.Is(err, errTemplateRequiresPlatform) {
+			writeAPIError(w, apierror.Forbidden)
+			return
+		}
+		writeAPIError(w, apierror.Internal)
+		return
+	}
+	// A shop actor can never flip an existing shop tariff into a template.
+	if !h.isPlatformActor(r.Context()) {
+		input.IsTemplate = false
+	}
+
 	data, err := json.Marshal(input)
 	if err != nil {
 		writeAPIError(w, apierror.Internal)
@@ -266,10 +308,14 @@ func (h *Handler) DeleteTariff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	doc, err := h.collections.GetDocument(r.Context(), PluginSlug, CollectionName, tariffID)
+	doc, err := h.guardTemplateWrite(r.Context(), tariffID)
 	if err != nil {
 		if errors.Is(err, pluginstore.ErrDocumentNotFound) {
 			writeAPIError(w, apierror.NotFound)
+			return
+		}
+		if errors.Is(err, errTemplateRequiresPlatform) {
+			writeAPIError(w, apierror.Forbidden)
 			return
 		}
 		writeAPIError(w, apierror.Internal)

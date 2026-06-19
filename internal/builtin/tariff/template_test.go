@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -150,4 +151,73 @@ func TestCreateTariff_PlatformActor_MaySetTemplate(t *testing.T) {
 	var persisted TariffInput
 	require.NoError(t, json.Unmarshal(store.inserted[0], &persisted))
 	assert.True(t, persisted.IsTemplate, "platform actor must be able to persist a template")
+}
+
+// withURLParam attaches a chi route param to the request context so handlers
+// that call chi.URLParam(r, key) resolve it under test.
+func withURLParam(r *http.Request, key, value string) *http.Request {
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add(key, value)
+	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+}
+
+// seedTemplate inserts a stored template document (is_template=true) and
+// returns its ID.
+func seedTemplate(t *testing.T, store *fakeStore) string {
+	t.Helper()
+	tmpl := defaultTariffInput()
+	tmpl.Name = "Shared Template"
+	tmpl.PriceCurrency = "USD"
+	tmpl.DurationDays = 30
+	tmpl.IsTemplate = true
+	b, err := json.Marshal(tmpl)
+	require.NoError(t, err)
+	doc, err := store.InsertDocument(context.Background(), PluginSlug, CollectionName, b)
+	require.NoError(t, err)
+	return doc.ID
+}
+
+func TestUpdateTariff_ShopActor_CannotWriteTemplate(t *testing.T) {
+	store := newFakeStore()
+	h := newTestHandler(store)
+	id := seedTemplate(t, store)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/tariffs/"+id, strings.NewReader(validCreateBody(false)))
+	req = req.WithContext(tenantctx.WithTenantID(req.Context(), "11111111-1111-1111-1111-111111111111"))
+	req = withURLParam(req, "tariffID", id)
+	rec := httptest.NewRecorder()
+
+	h.UpdateTariff(rec, req)
+
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestUpdateTariff_PlatformActor_MayWriteTemplate(t *testing.T) {
+	store := newFakeStore()
+	h := newTestHandler(store)
+	id := seedTemplate(t, store)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/tariffs/"+id, strings.NewReader(validCreateBody(true)))
+	req = req.WithContext(tenantctx.WithTenantID(req.Context(), tenantctx.PlatformScopeSentinel))
+	req = withURLParam(req, "tariffID", id)
+	rec := httptest.NewRecorder()
+
+	h.UpdateTariff(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestDeleteTariff_ShopActor_CannotDeleteTemplate(t *testing.T) {
+	store := newFakeStore()
+	h := newTestHandler(store)
+	id := seedTemplate(t, store)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/tariffs/"+id, nil)
+	req = req.WithContext(tenantctx.WithTenantID(req.Context(), "11111111-1111-1111-1111-111111111111"))
+	req = withURLParam(req, "tariffID", id)
+	rec := httptest.NewRecorder()
+
+	h.DeleteTariff(rec, req)
+
+	assert.Equal(t, http.StatusForbidden, rec.Code)
 }
