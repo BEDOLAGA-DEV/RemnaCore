@@ -13,8 +13,11 @@ import (
 
 const createFamilyGroup = `-- name: CreateFamilyGroup :exec
 
-INSERT INTO billing.family_groups (id, owner_id, max_members, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO billing.family_groups (id, owner_id, max_members, created_at, updated_at, tenant_id)
+VALUES (
+    $1, $2, $3, $4, $5,
+    NULLIF(current_setting('app.tenant_id', true), '*')::uuid
+)
 `
 
 type CreateFamilyGroupParams struct {
@@ -28,6 +31,7 @@ type CreateFamilyGroupParams struct {
 // ============================================================================
 // Family Groups
 // ============================================================================
+// tenant_id self-stamped from the app.tenant_id GUC; see CreateSubscription.
 func (q *Queries) CreateFamilyGroup(ctx context.Context, arg CreateFamilyGroupParams) error {
 	_, err := q.db.Exec(ctx, createFamilyGroup,
 		arg.ID,
@@ -41,8 +45,11 @@ func (q *Queries) CreateFamilyGroup(ctx context.Context, arg CreateFamilyGroupPa
 
 const createFamilyMember = `-- name: CreateFamilyMember :exec
 
-INSERT INTO billing.family_members (family_group_id, user_id, role, nickname, joined_at)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO billing.family_members (family_group_id, user_id, role, nickname, joined_at, tenant_id)
+VALUES (
+    $1, $2, $3, $4, $5,
+    NULLIF(current_setting('app.tenant_id', true), '*')::uuid
+)
 `
 
 type CreateFamilyMemberParams struct {
@@ -56,6 +63,7 @@ type CreateFamilyMemberParams struct {
 // ============================================================================
 // Family Members
 // ============================================================================
+// tenant_id self-stamped from the app.tenant_id GUC; see CreateSubscription.
 func (q *Queries) CreateFamilyMember(ctx context.Context, arg CreateFamilyMemberParams) error {
 	_, err := q.db.Exec(ctx, createFamilyMember,
 		arg.FamilyGroupID,
@@ -71,8 +79,11 @@ const createInvoice = `-- name: CreateInvoice :exec
 
 INSERT INTO billing.invoices (
     id, subscription_id, user_id, subtotal_amount, total_discount_amount,
-    total_amount, currency, pricing_reason, discounts, status, paid_at, created_at, updated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    total_amount, currency, pricing_reason, discounts, status, paid_at, created_at, updated_at, tenant_id
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+    NULLIF(current_setting('app.tenant_id', true), '*')::uuid
+)
 `
 
 type CreateInvoiceParams struct {
@@ -94,6 +105,7 @@ type CreateInvoiceParams struct {
 // ============================================================================
 // Invoices
 // ============================================================================
+// tenant_id self-stamped from the app.tenant_id GUC; see CreateSubscription.
 func (q *Queries) CreateInvoice(ctx context.Context, arg CreateInvoiceParams) error {
 	_, err := q.db.Exec(ctx, createInvoice,
 		arg.ID,
@@ -116,8 +128,11 @@ func (q *Queries) CreateInvoice(ctx context.Context, arg CreateInvoiceParams) er
 const createInvoiceLineItem = `-- name: CreateInvoiceLineItem :exec
 
 
-INSERT INTO billing.invoice_line_items (invoice_id, description, item_type, amount, currency, quantity)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO billing.invoice_line_items (invoice_id, description, item_type, amount, currency, quantity, tenant_id)
+VALUES (
+    $1, $2, $3, $4, $5, $6,
+    NULLIF(current_setting('app.tenant_id', true), '*')::uuid
+)
 `
 
 type CreateInvoiceLineItemParams struct {
@@ -135,6 +150,7 @@ type CreateInvoiceLineItemParams struct {
 // ============================================================================
 // Invoice Line Items
 // ============================================================================
+// tenant_id self-stamped from the app.tenant_id GUC; see CreateSubscription.
 func (q *Queries) CreateInvoiceLineItem(ctx context.Context, arg CreateInvoiceLineItemParams) error {
 	_, err := q.db.Exec(ctx, createInvoiceLineItem,
 		arg.InvoiceID,
@@ -253,8 +269,11 @@ const createSubscription = `-- name: CreateSubscription :exec
 INSERT INTO billing.subscriptions (
     id, user_id, plan_id, status, period_start, period_end, period_interval,
     addon_ids, assigned_to, pending_plan_id, pending_original_plan_id, pending_requested_at,
-    cancelled_at, paused_at, created_at, updated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+    cancelled_at, paused_at, created_at, updated_at, tenant_id
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+    NULLIF(current_setting('app.tenant_id', true), '*')::uuid
+)
 `
 
 type CreateSubscriptionParams struct {
@@ -279,6 +298,10 @@ type CreateSubscriptionParams struct {
 // ============================================================================
 // Subscriptions
 // ============================================================================
+// tenant_id is self-stamped from the app.tenant_id GUC (sentinel '*' -> NULL
+// platform row; shop GUC -> that shop's UUID), so a shop session can never
+// write a foreign tenant_id and platform/sentinel writes yield the NULL the
+// WITH CHECK permits. Do NOT pass tenant_id as a param.
 func (q *Queries) CreateSubscription(ctx context.Context, arg CreateSubscriptionParams) error {
 	_, err := q.db.Exec(ctx, createSubscription,
 		arg.ID,
@@ -777,9 +800,17 @@ SELECT id, owner_id, max_members, created_at, updated_at
 FROM billing.family_groups WHERE id = $1
 `
 
-func (q *Queries) GetFamilyGroupByID(ctx context.Context, id pgtype.UUID) (BillingFamilyGroup, error) {
+type GetFamilyGroupByIDRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	OwnerID    pgtype.UUID        `json:"owner_id"`
+	MaxMembers int32              `json:"max_members"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetFamilyGroupByID(ctx context.Context, id pgtype.UUID) (GetFamilyGroupByIDRow, error) {
 	row := q.db.QueryRow(ctx, getFamilyGroupByID, id)
-	var i BillingFamilyGroup
+	var i GetFamilyGroupByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.OwnerID,
@@ -795,9 +826,17 @@ SELECT id, owner_id, max_members, created_at, updated_at
 FROM billing.family_groups WHERE owner_id = $1
 `
 
-func (q *Queries) GetFamilyGroupByOwnerID(ctx context.Context, ownerID pgtype.UUID) (BillingFamilyGroup, error) {
+type GetFamilyGroupByOwnerIDRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	OwnerID    pgtype.UUID        `json:"owner_id"`
+	MaxMembers int32              `json:"max_members"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetFamilyGroupByOwnerID(ctx context.Context, ownerID pgtype.UUID) (GetFamilyGroupByOwnerIDRow, error) {
 	row := q.db.QueryRow(ctx, getFamilyGroupByOwnerID, ownerID)
-	var i BillingFamilyGroup
+	var i GetFamilyGroupByOwnerIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.OwnerID,
@@ -813,9 +852,17 @@ SELECT id, owner_id, max_members, created_at, updated_at
 FROM billing.family_groups WHERE owner_id = $1 FOR UPDATE
 `
 
-func (q *Queries) GetFamilyGroupByOwnerIDForUpdate(ctx context.Context, ownerID pgtype.UUID) (BillingFamilyGroup, error) {
+type GetFamilyGroupByOwnerIDForUpdateRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	OwnerID    pgtype.UUID        `json:"owner_id"`
+	MaxMembers int32              `json:"max_members"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetFamilyGroupByOwnerIDForUpdate(ctx context.Context, ownerID pgtype.UUID) (GetFamilyGroupByOwnerIDForUpdateRow, error) {
 	row := q.db.QueryRow(ctx, getFamilyGroupByOwnerIDForUpdate, ownerID)
-	var i BillingFamilyGroup
+	var i GetFamilyGroupByOwnerIDForUpdateRow
 	err := row.Scan(
 		&i.ID,
 		&i.OwnerID,
@@ -831,15 +878,24 @@ SELECT id, family_group_id, user_id, role, nickname, joined_at
 FROM billing.family_members WHERE family_group_id = $1 ORDER BY joined_at
 `
 
-func (q *Queries) GetFamilyMembersByGroupID(ctx context.Context, familyGroupID pgtype.UUID) ([]BillingFamilyMember, error) {
+type GetFamilyMembersByGroupIDRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	FamilyGroupID pgtype.UUID        `json:"family_group_id"`
+	UserID        pgtype.UUID        `json:"user_id"`
+	Role          string             `json:"role"`
+	Nickname      *string            `json:"nickname"`
+	JoinedAt      pgtype.Timestamptz `json:"joined_at"`
+}
+
+func (q *Queries) GetFamilyMembersByGroupID(ctx context.Context, familyGroupID pgtype.UUID) ([]GetFamilyMembersByGroupIDRow, error) {
 	rows, err := q.db.Query(ctx, getFamilyMembersByGroupID, familyGroupID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []BillingFamilyMember{}
+	items := []GetFamilyMembersByGroupIDRow{}
 	for rows.Next() {
-		var i BillingFamilyMember
+		var i GetFamilyMembersByGroupIDRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.FamilyGroupID,
@@ -1005,15 +1061,25 @@ SELECT id, invoice_id, description, item_type, amount, currency, quantity
 FROM billing.invoice_line_items WHERE invoice_id = $1 ORDER BY id
 `
 
-func (q *Queries) GetLineItemsByInvoiceID(ctx context.Context, invoiceID pgtype.UUID) ([]BillingInvoiceLineItem, error) {
+type GetLineItemsByInvoiceIDRow struct {
+	ID          pgtype.UUID `json:"id"`
+	InvoiceID   pgtype.UUID `json:"invoice_id"`
+	Description string      `json:"description"`
+	ItemType    string      `json:"item_type"`
+	Amount      int64       `json:"amount"`
+	Currency    string      `json:"currency"`
+	Quantity    int32       `json:"quantity"`
+}
+
+func (q *Queries) GetLineItemsByInvoiceID(ctx context.Context, invoiceID pgtype.UUID) ([]GetLineItemsByInvoiceIDRow, error) {
 	rows, err := q.db.Query(ctx, getLineItemsByInvoiceID, invoiceID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []BillingInvoiceLineItem{}
+	items := []GetLineItemsByInvoiceIDRow{}
 	for rows.Next() {
-		var i BillingInvoiceLineItem
+		var i GetLineItemsByInvoiceIDRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.InvoiceID,
@@ -1038,15 +1104,25 @@ SELECT id, invoice_id, description, item_type, amount, currency, quantity
 FROM billing.invoice_line_items WHERE invoice_id = ANY($1::uuid[]) ORDER BY id
 `
 
-func (q *Queries) GetLineItemsByInvoiceIDs(ctx context.Context, dollar_1 []pgtype.UUID) ([]BillingInvoiceLineItem, error) {
+type GetLineItemsByInvoiceIDsRow struct {
+	ID          pgtype.UUID `json:"id"`
+	InvoiceID   pgtype.UUID `json:"invoice_id"`
+	Description string      `json:"description"`
+	ItemType    string      `json:"item_type"`
+	Amount      int64       `json:"amount"`
+	Currency    string      `json:"currency"`
+	Quantity    int32       `json:"quantity"`
+}
+
+func (q *Queries) GetLineItemsByInvoiceIDs(ctx context.Context, dollar_1 []pgtype.UUID) ([]GetLineItemsByInvoiceIDsRow, error) {
 	rows, err := q.db.Query(ctx, getLineItemsByInvoiceIDs, dollar_1)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []BillingInvoiceLineItem{}
+	items := []GetLineItemsByInvoiceIDsRow{}
 	for rows.Next() {
-		var i BillingInvoiceLineItem
+		var i GetLineItemsByInvoiceIDsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.InvoiceID,
@@ -1270,7 +1346,9 @@ const getSubscriptionByID = `-- name: GetSubscriptionByID :one
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
        addon_ids, assigned_to, pending_plan_id, pending_original_plan_id, pending_requested_at,
        cancelled_at, paused_at, created_at, updated_at
-FROM billing.subscriptions WHERE id = $1
+FROM billing.subscriptions
+WHERE id = $1
+  AND (tenant_id::text = current_setting('app.tenant_id', true) OR current_setting('app.tenant_id', true) = '*')
 `
 
 type GetSubscriptionByIDRow struct {
@@ -1292,6 +1370,9 @@ type GetSubscriptionByIDRow struct {
 	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
 }
 
+// Belt-and-suspenders tenant predicate (spec §5.3) behind the RLS GUC, mirroring
+// the GetSubscriptionByIDForUpdate guarded variant: sentinel '*' sees all, a shop
+// GUC sees only its own row; no IS NULL fail-open branch.
 func (q *Queries) GetSubscriptionByID(ctx context.Context, id pgtype.UUID) (GetSubscriptionByIDRow, error) {
 	row := q.db.QueryRow(ctx, getSubscriptionByID, id)
 	var i GetSubscriptionByIDRow
@@ -1568,8 +1649,11 @@ func (q *Queries) UpdateSubscription(ctx context.Context, arg UpdateSubscription
 }
 
 const upsertFamilyMember = `-- name: UpsertFamilyMember :exec
-INSERT INTO billing.family_members (family_group_id, user_id, role, nickname, joined_at)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO billing.family_members (family_group_id, user_id, role, nickname, joined_at, tenant_id)
+VALUES (
+    $1, $2, $3, $4, $5,
+    NULLIF(current_setting('app.tenant_id', true), '*')::uuid
+)
 ON CONFLICT (family_group_id, user_id) DO UPDATE SET
     role     = EXCLUDED.role,
     nickname = EXCLUDED.nickname
@@ -1583,6 +1667,7 @@ type UpsertFamilyMemberParams struct {
 	JoinedAt      pgtype.Timestamptz `json:"joined_at"`
 }
 
+// tenant_id self-stamped from the app.tenant_id GUC; see CreateSubscription.
 func (q *Queries) UpsertFamilyMember(ctx context.Context, arg UpsertFamilyMemberParams) error {
 	_, err := q.db.Exec(ctx, upsertFamilyMember,
 		arg.FamilyGroupID,

@@ -14,8 +14,11 @@ import (
 const createCommission = `-- name: CreateCommission :exec
 
 INSERT INTO reseller.commissions (
-    id, reseller_id, sale_id, amount, currency, status, created_at, paid_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    id, reseller_id, sale_id, amount, currency, status, created_at, paid_at, tenant_id
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8,
+    NULLIF(current_setting('app.tenant_id', true), '*')::uuid
+)
 `
 
 type CreateCommissionParams struct {
@@ -32,6 +35,11 @@ type CreateCommissionParams struct {
 // ============================================================================
 // Commissions
 // ============================================================================
+// tenant_id self-stamped from the app.tenant_id GUC (sentinel '*' -> NULL
+// platform-owned commission; shop GUC -> that shop's UUID), so the system
+// RecordCommission path with no active shop yields the NULL the WITH CHECK
+// permits, while a shop session can never write a foreign tenant_id. Do NOT
+// pass tenant_id as a param.
 func (q *Queries) CreateCommission(ctx context.Context, arg CreateCommissionParams) error {
 	_, err := q.db.Exec(ctx, createCommission,
 		arg.ID,
@@ -119,9 +127,20 @@ SELECT id, reseller_id, sale_id, amount, currency, status, created_at, paid_at
 FROM reseller.commissions WHERE id = $1
 `
 
-func (q *Queries) GetCommissionByID(ctx context.Context, id pgtype.UUID) (ResellerCommission, error) {
+type GetCommissionByIDRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	ResellerID pgtype.UUID        `json:"reseller_id"`
+	SaleID     string             `json:"sale_id"`
+	Amount     int64              `json:"amount"`
+	Currency   string             `json:"currency"`
+	Status     string             `json:"status"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	PaidAt     pgtype.Timestamptz `json:"paid_at"`
+}
+
+func (q *Queries) GetCommissionByID(ctx context.Context, id pgtype.UUID) (GetCommissionByIDRow, error) {
 	row := q.db.QueryRow(ctx, getCommissionByID, id)
-	var i ResellerCommission
+	var i GetCommissionByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.ResellerID,
@@ -140,9 +159,20 @@ SELECT id, reseller_id, sale_id, amount, currency, status, created_at, paid_at
 FROM reseller.commissions WHERE id = $1 FOR UPDATE
 `
 
-func (q *Queries) GetCommissionByIDForUpdate(ctx context.Context, id pgtype.UUID) (ResellerCommission, error) {
+type GetCommissionByIDForUpdateRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	ResellerID pgtype.UUID        `json:"reseller_id"`
+	SaleID     string             `json:"sale_id"`
+	Amount     int64              `json:"amount"`
+	Currency   string             `json:"currency"`
+	Status     string             `json:"status"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	PaidAt     pgtype.Timestamptz `json:"paid_at"`
+}
+
+func (q *Queries) GetCommissionByIDForUpdate(ctx context.Context, id pgtype.UUID) (GetCommissionByIDForUpdateRow, error) {
 	row := q.db.QueryRow(ctx, getCommissionByIDForUpdate, id)
-	var i ResellerCommission
+	var i GetCommissionByIDForUpdateRow
 	err := row.Scan(
 		&i.ID,
 		&i.ResellerID,
@@ -163,15 +193,26 @@ WHERE reseller_id = $1 AND status = 'pending'
 ORDER BY created_at DESC
 `
 
-func (q *Queries) GetPendingCommissions(ctx context.Context, resellerID pgtype.UUID) ([]ResellerCommission, error) {
+type GetPendingCommissionsRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	ResellerID pgtype.UUID        `json:"reseller_id"`
+	SaleID     string             `json:"sale_id"`
+	Amount     int64              `json:"amount"`
+	Currency   string             `json:"currency"`
+	Status     string             `json:"status"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	PaidAt     pgtype.Timestamptz `json:"paid_at"`
+}
+
+func (q *Queries) GetPendingCommissions(ctx context.Context, resellerID pgtype.UUID) ([]GetPendingCommissionsRow, error) {
 	rows, err := q.db.Query(ctx, getPendingCommissions, resellerID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ResellerCommission{}
+	items := []GetPendingCommissionsRow{}
 	for rows.Next() {
-		var i ResellerCommission
+		var i GetPendingCommissionsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.ResellerID,

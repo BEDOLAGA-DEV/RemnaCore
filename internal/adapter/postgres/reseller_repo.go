@@ -76,15 +76,51 @@ func resellerAccountRowToDomain(row gen.ResellerResellerAccount) *reseller.Resel
 	}
 }
 
-func commissionRowToDomain(row gen.ResellerCommission) *reseller.Commission {
+// commissionFields holds the columns shared by every commission row shape.
+type commissionFields struct {
+	ID         pgtype.UUID
+	ResellerID pgtype.UUID
+	SaleID     string
+	Amount     int64
+	Currency   string
+	Status     string
+	CreatedAt  pgtype.Timestamptz
+	PaidAt     pgtype.Timestamptz
+}
+
+// commissionRow constrains the sqlc-generated commission row types and the base
+// model. The explicit-column SELECTs each emit a distinct *Row struct (the
+// model carries the extra tenant_id column added in migration 043), so the
+// converter is generic over all of them plus the model used by the raw FOR
+// UPDATE and tenant-scoped scans.
+type commissionRow interface {
+	gen.ResellerCommission | gen.GetCommissionByIDRow | gen.GetPendingCommissionsRow
+}
+
+// extractCommissionFields pulls the shared columns from any commission row type.
+func extractCommissionFields[T commissionRow](row T) commissionFields {
+	switch r := any(row).(type) {
+	case gen.ResellerCommission:
+		return commissionFields{r.ID, r.ResellerID, r.SaleID, r.Amount, r.Currency, r.Status, r.CreatedAt, r.PaidAt}
+	case gen.GetCommissionByIDRow:
+		return commissionFields{r.ID, r.ResellerID, r.SaleID, r.Amount, r.Currency, r.Status, r.CreatedAt, r.PaidAt}
+	case gen.GetPendingCommissionsRow:
+		return commissionFields{r.ID, r.ResellerID, r.SaleID, r.Amount, r.Currency, r.Status, r.CreatedAt, r.PaidAt}
+	default:
+		panic("unreachable: unhandled commissionRow type")
+	}
+}
+
+func commissionRowToDomain[T commissionRow](row T) *reseller.Commission {
+	f := extractCommissionFields(row)
 	return &reseller.Commission{
-		ID:         pgutil.PgtypeToUUID(row.ID),
-		ResellerID: pgutil.PgtypeToUUID(row.ResellerID),
-		SaleID:     row.SaleID,
-		Amount:     money.NewMoney(row.Amount, money.Currency(row.Currency)),
-		Status:     reseller.CommissionStatus(row.Status),
-		CreatedAt:  pgutil.PgtypeToTime(row.CreatedAt),
-		PaidAt:     pgutil.PgtypeToOptTime(row.PaidAt),
+		ID:         pgutil.PgtypeToUUID(f.ID),
+		ResellerID: pgutil.PgtypeToUUID(f.ResellerID),
+		SaleID:     f.SaleID,
+		Amount:     money.NewMoney(f.Amount, money.Currency(f.Currency)),
+		Status:     reseller.CommissionStatus(f.Status),
+		CreatedAt:  pgutil.PgtypeToTime(f.CreatedAt),
+		PaidAt:     pgutil.PgtypeToOptTime(f.PaidAt),
 	}
 }
 

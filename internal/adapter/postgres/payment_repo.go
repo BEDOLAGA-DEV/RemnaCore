@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres/gen"
@@ -28,17 +29,54 @@ func (r *PaymentRepository) q(ctx context.Context) *gen.Queries {
 	return gen.New(DBFromContext(ctx, r.pool))
 }
 
-func paymentRowToDomain(row gen.PaymentPaymentRecord) *payment.PaymentRecord {
+// paymentFields holds the columns shared by every payment-record row shape.
+type paymentFields struct {
+	ID         pgtype.UUID
+	InvoiceID  pgtype.UUID
+	Provider   string
+	ExternalID string
+	Amount     int64
+	Currency   string
+	Status     string
+	CreatedAt  pgtype.Timestamptz
+	UpdatedAt  pgtype.Timestamptz
+}
+
+// paymentRow constrains the sqlc-generated payment-record row types and the
+// base model. The explicit-column SELECTs each emit a distinct *Row struct
+// (the model carries the extra tenant_id column added in migration 042), so the
+// converter is generic over all of them plus the model used by the raw FOR
+// UPDATE scans.
+type paymentRow interface {
+	gen.PaymentPaymentRecord | gen.GetPaymentRecordByIDRow | gen.GetPaymentRecordByExternalIDRow
+}
+
+// extractPaymentFields pulls the shared columns from any payment row type.
+func extractPaymentFields[T paymentRow](row T) paymentFields {
+	switch r := any(row).(type) {
+	case gen.PaymentPaymentRecord:
+		return paymentFields{r.ID, r.InvoiceID, r.Provider, r.ExternalID, r.Amount, r.Currency, r.Status, r.CreatedAt, r.UpdatedAt}
+	case gen.GetPaymentRecordByIDRow:
+		return paymentFields{r.ID, r.InvoiceID, r.Provider, r.ExternalID, r.Amount, r.Currency, r.Status, r.CreatedAt, r.UpdatedAt}
+	case gen.GetPaymentRecordByExternalIDRow:
+		return paymentFields{r.ID, r.InvoiceID, r.Provider, r.ExternalID, r.Amount, r.Currency, r.Status, r.CreatedAt, r.UpdatedAt}
+	default:
+		panic("unreachable: unhandled paymentRow type")
+	}
+}
+
+func paymentRowToDomain[T paymentRow](row T) *payment.PaymentRecord {
+	f := extractPaymentFields(row)
 	return &payment.PaymentRecord{
-		ID:         pgutil.PgtypeToUUID(row.ID),
-		InvoiceID:  pgutil.PgtypeToUUID(row.InvoiceID),
-		Provider:   row.Provider,
-		ExternalID: row.ExternalID,
-		Amount:     row.Amount,
-		Currency:   row.Currency,
-		Status:     payment.PaymentStatus(row.Status),
-		CreatedAt:  pgutil.PgtypeToTime(row.CreatedAt),
-		UpdatedAt:  pgutil.PgtypeToTime(row.UpdatedAt),
+		ID:         pgutil.PgtypeToUUID(f.ID),
+		InvoiceID:  pgutil.PgtypeToUUID(f.InvoiceID),
+		Provider:   f.Provider,
+		ExternalID: f.ExternalID,
+		Amount:     f.Amount,
+		Currency:   f.Currency,
+		Status:     payment.PaymentStatus(f.Status),
+		CreatedAt:  pgutil.PgtypeToTime(f.CreatedAt),
+		UpdatedAt:  pgutil.PgtypeToTime(f.UpdatedAt),
 	}
 }
 

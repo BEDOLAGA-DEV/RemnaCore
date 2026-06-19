@@ -65,9 +65,17 @@ WHERE id = $1;
 -- ============================================================================
 
 -- name: CreateCommission :exec
+-- tenant_id self-stamped from the app.tenant_id GUC (sentinel '*' -> NULL
+-- platform-owned commission; shop GUC -> that shop's UUID), so the system
+-- RecordCommission path with no active shop yields the NULL the WITH CHECK
+-- permits, while a shop session can never write a foreign tenant_id. Do NOT
+-- pass tenant_id as a param.
 INSERT INTO reseller.commissions (
-    id, reseller_id, sale_id, amount, currency, status, created_at, paid_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+    id, reseller_id, sale_id, amount, currency, status, created_at, paid_at, tenant_id
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8,
+    NULLIF(current_setting('app.tenant_id', true), '*')::uuid
+);
 
 -- name: GetCommissionByID :one
 SELECT id, reseller_id, sale_id, amount, currency, status, created_at, paid_at

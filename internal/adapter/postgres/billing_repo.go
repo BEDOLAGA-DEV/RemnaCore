@@ -902,12 +902,41 @@ func invFieldsToDomain(f invFields) (*aggregate.Invoice, error) {
 	}, nil
 }
 
-func lineItemRowToDomain(row gen.BillingInvoiceLineItem) vo.LineItem {
+// lineItemFields holds the columns shared by every line-item row shape.
+type lineItemFields struct {
+	Description string
+	ItemType    string
+	Amount      int64
+	Currency    string
+	Quantity    int32
+}
+
+// lineItemRow constrains the sqlc-generated line-item row types. The
+// explicit-column SELECTs each emit a distinct *Row struct (the model carries
+// the extra tenant_id column added in migration 042), so the converter is
+// generic over them.
+type lineItemRow interface {
+	gen.GetLineItemsByInvoiceIDRow | gen.GetLineItemsByInvoiceIDsRow
+}
+
+func extractLineItemFields[T lineItemRow](row T) lineItemFields {
+	switch r := any(row).(type) {
+	case gen.GetLineItemsByInvoiceIDRow:
+		return lineItemFields{r.Description, r.ItemType, r.Amount, r.Currency, r.Quantity}
+	case gen.GetLineItemsByInvoiceIDsRow:
+		return lineItemFields{r.Description, r.ItemType, r.Amount, r.Currency, r.Quantity}
+	default:
+		panic("unreachable: unhandled lineItemRow type")
+	}
+}
+
+func lineItemRowToDomain[T lineItemRow](row T) vo.LineItem {
+	f := extractLineItemFields(row)
 	return vo.LineItem{
-		Description: row.Description,
-		Type:        vo.LineItemType(row.ItemType),
-		Amount:      vo.NewMoney(row.Amount, vo.Currency(row.Currency)),
-		Quantity:    int(row.Quantity),
+		Description: f.Description,
+		Type:        vo.LineItemType(f.ItemType),
+		Amount:      vo.NewMoney(f.Amount, vo.Currency(f.Currency)),
+		Quantity:    int(f.Quantity),
 	}
 }
 
@@ -1221,17 +1250,48 @@ func (r *FamilyRepository) q(ctx context.Context) *gen.Queries {
 	return gen.New(DBFromContext(ctx, r.pool))
 }
 
-func familyGroupRowToDomain(row gen.BillingFamilyGroup) *aggregate.FamilyGroup {
-	return &aggregate.FamilyGroup{
-		ID:         pgutil.PgtypeToUUID(row.ID),
-		OwnerID:    pgutil.PgtypeToUUID(row.OwnerID),
-		MaxMembers: int(row.MaxMembers),
-		CreatedAt:  pgutil.PgtypeToTime(row.CreatedAt),
-		UpdatedAt:  pgutil.PgtypeToTime(row.UpdatedAt),
+// familyGroupFields holds the columns shared by every family-group row shape.
+type familyGroupFields struct {
+	ID         pgtype.UUID
+	OwnerID    pgtype.UUID
+	MaxMembers int32
+	CreatedAt  pgtype.Timestamptz
+	UpdatedAt  pgtype.Timestamptz
+}
+
+// familyGroupRow constrains the sqlc-generated family-group row types. The
+// explicit-column SELECTs each emit a distinct *Row struct (the model carries
+// the extra tenant_id column added in migration 042), so the converter is
+// generic over them.
+type familyGroupRow interface {
+	gen.GetFamilyGroupByIDRow | gen.GetFamilyGroupByOwnerIDRow | gen.GetFamilyGroupByOwnerIDForUpdateRow
+}
+
+func extractFamilyGroupFields[T familyGroupRow](row T) familyGroupFields {
+	switch r := any(row).(type) {
+	case gen.GetFamilyGroupByIDRow:
+		return familyGroupFields{r.ID, r.OwnerID, r.MaxMembers, r.CreatedAt, r.UpdatedAt}
+	case gen.GetFamilyGroupByOwnerIDRow:
+		return familyGroupFields{r.ID, r.OwnerID, r.MaxMembers, r.CreatedAt, r.UpdatedAt}
+	case gen.GetFamilyGroupByOwnerIDForUpdateRow:
+		return familyGroupFields{r.ID, r.OwnerID, r.MaxMembers, r.CreatedAt, r.UpdatedAt}
+	default:
+		panic("unreachable: unhandled familyGroupRow type")
 	}
 }
 
-func familyMemberRowToDomain(row gen.BillingFamilyMember) aggregate.FamilyMember {
+func familyGroupRowToDomain[T familyGroupRow](row T) *aggregate.FamilyGroup {
+	f := extractFamilyGroupFields(row)
+	return &aggregate.FamilyGroup{
+		ID:         pgutil.PgtypeToUUID(f.ID),
+		OwnerID:    pgutil.PgtypeToUUID(f.OwnerID),
+		MaxMembers: int(f.MaxMembers),
+		CreatedAt:  pgutil.PgtypeToTime(f.CreatedAt),
+		UpdatedAt:  pgutil.PgtypeToTime(f.UpdatedAt),
+	}
+}
+
+func familyMemberRowToDomain(row gen.GetFamilyMembersByGroupIDRow) aggregate.FamilyMember {
 	return aggregate.FamilyMember{
 		UserID:   pgutil.PgtypeToUUID(row.UserID),
 		Role:     aggregate.MemberRole(row.Role),
