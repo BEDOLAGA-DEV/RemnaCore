@@ -1,11 +1,14 @@
 package tariff
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
 )
 
 func TestTariffInput_IsTemplate_RoundTrips(t *testing.T) {
@@ -26,4 +29,16 @@ func TestTariffInput_IsTemplate_RoundTrips(t *testing.T) {
 
 func TestTariffInput_IsTemplate_DefaultsFalse(t *testing.T) {
 	assert.False(t, defaultTariffInput().IsTemplate)
+}
+
+func TestHandler_isPlatformActor(t *testing.T) {
+	h := &Handler{}
+
+	platformCtx := tenantctx.WithTenantID(context.Background(), tenantctx.PlatformScopeSentinel)
+	assert.True(t, h.isPlatformActor(platformCtx))
+
+	shopCtx := tenantctx.WithTenantID(context.Background(), "11111111-1111-1111-1111-111111111111")
+	assert.False(t, h.isPlatformActor(shopCtx))
+
+	assert.False(t, h.isPlatformActor(context.Background()))
 }

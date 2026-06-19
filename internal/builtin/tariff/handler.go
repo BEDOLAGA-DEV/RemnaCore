@@ -24,6 +24,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pluginstore"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
 )
 
 const (
@@ -33,6 +34,16 @@ const (
 	// CollectionName is the plugin collection where tariffs are stored.
 	CollectionName = "tariffs"
 )
+
+// isPlatformActor reports whether the request runs under the platform scope
+// (sentinel tenant), i.e. a platform admin with no active shop. Per the C0
+// ShopResolver redesign, a platform admin's active tenant is set to
+// tenantctx.PlatformScopeSentinel; a shop actor's is a shop UUID; an
+// unscoped request is the empty string. Template management (create/update/
+// delete of is_template documents) is restricted to platform actors.
+func (h *Handler) isPlatformActor(ctx context.Context) bool {
+	return tenantctx.TenantIDFromContext(ctx) == tenantctx.PlatformScopeSentinel
+}
 
 // Handler provides HTTP endpoints for tariff CRUD, pricing, promo codes,
 // A/B experiments, cohorts, analytics, and Remnawave data lookups.
