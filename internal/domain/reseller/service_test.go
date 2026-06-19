@@ -28,11 +28,81 @@ func newTestService(t *testing.T) (
 
 	tenantRepo := new(resellertest.MockTenantRepository)
 	commissionRepo := new(resellertest.MockCommissionRepository)
+	customerRepo := new(resellertest.MockCustomerRepository)
 	pub := new(resellertest.MockPublisher)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	svc := reseller.NewResellerService(tenantRepo, commissionRepo, pub, logger, clock.NewReal(), resellertest.NoopTxRunner{})
+	svc := reseller.NewResellerService(tenantRepo, commissionRepo, customerRepo, pub, logger, clock.NewReal(), resellertest.NoopTxRunner{})
 	return svc, tenantRepo, commissionRepo, pub
+}
+
+func newTestServiceWithCustomers(t *testing.T) (
+	*reseller.ResellerService,
+	*resellertest.MockCommissionRepository,
+	*resellertest.MockCustomerRepository,
+) {
+	t.Helper()
+	tenantRepo := new(resellertest.MockTenantRepository)
+	commissionRepo := new(resellertest.MockCommissionRepository)
+	customerRepo := new(resellertest.MockCustomerRepository)
+	pub := new(resellertest.MockPublisher)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	svc := reseller.NewResellerService(tenantRepo, commissionRepo, customerRepo, pub, logger, clock.NewReal(), resellertest.NoopTxRunner{})
+	return svc, commissionRepo, customerRepo
+}
+
+func TestListCommissions_ResolvesAccountServerSide(t *testing.T) {
+	svc, commissionRepo, _ := newTestServiceWithCustomers(t)
+	ctx := context.Background()
+
+	acct := &reseller.ResellerAccount{ID: "acct-1", TenantID: "shop-A", UserID: "user-1"}
+	commissionRepo.On("GetResellerAccountByUserAndTenant", ctx, "user-1", "shop-A").Return(acct, nil)
+	commissionRepo.On("ListCommissionsByTenant", ctx, "shop-A").
+		Return([]*reseller.Commission{{ID: "c1", ResellerID: "acct-1"}}, nil)
+
+	got, err := svc.ListCommissions(ctx, "user-1", "shop-A")
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, "c1", got[0].ID)
+	commissionRepo.AssertExpectations(t)
+}
+
+func TestListCommissions_NoAccountIsForbidden(t *testing.T) {
+	svc, commissionRepo, _ := newTestServiceWithCustomers(t)
+	ctx := context.Background()
+	commissionRepo.On("GetResellerAccountByUserAndTenant", ctx, "user-1", "shop-A").
+		Return(nil, reseller.ErrResellerNotFound)
+
+	_, err := svc.ListCommissions(ctx, "user-1", "shop-A")
+	require.ErrorIs(t, err, reseller.ErrResellerNotFound)
+}
+
+func TestListCustomers_TenantScoped(t *testing.T) {
+	svc, _, customerRepo := newTestServiceWithCustomers(t)
+	ctx := context.Background()
+	customerRepo.On("ListCustomersByTenant", ctx, "shop-A", 50, 0).
+		Return([]*reseller.CustomerSummary{{UserID: "u1", Email: "c@x.io", ActiveSubsCount: 2}}, nil)
+
+	got, err := svc.ListCustomers(ctx, "shop-A", 50, 0)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, "u1", got[0].UserID)
+	customerRepo.AssertExpectations(t)
+}
+
+func TestDashboardSummary_Aggregates(t *testing.T) {
+	svc, _, customerRepo := newTestServiceWithCustomers(t)
+	ctx := context.Background()
+	customerRepo.On("CountActiveCustomersByTenant", ctx, "shop-A").Return(5, nil)
+	customerRepo.On("CountActiveSubscriptionsByTenant", ctx, "shop-A").Return(8, nil)
+	customerRepo.On("SumPendingCommissionByTenant", ctx, "shop-A").Return(int64(4200), "usd", nil)
+
+	ds, err := svc.DashboardSummary(ctx, "shop-A")
+	require.NoError(t, err)
+	assert.Equal(t, 5, ds.ActiveCustomers)
+	assert.Equal(t, 8, ds.ActiveSubscriptions)
+	assert.Equal(t, int64(4200), ds.PendingCommission)
+	assert.Equal(t, "usd", ds.Currency)
 }
 
 func TestCreateTenant_Success(t *testing.T) {
