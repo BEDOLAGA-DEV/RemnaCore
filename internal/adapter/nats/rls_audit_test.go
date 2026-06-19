@@ -61,15 +61,19 @@ func TestHandleChargeCompleted_RunsUnderPlatformSentinel(t *testing.T) {
 //     GetPlanSnapshot / GetFamilyMemberIDs) under the sentinel (fixed in C0.7).
 //   - handleChargeCompleted  wrapped — CompleteCheckout reads/updates the
 //     invoice + balance under the sentinel (fixed in C0.7b).
-//   - handleSimple           noTier2 — payload-only; delegates to the
-//     orchestrator (OnSubscription{Cancelled,Paused,Resumed}) which opens its
-//     own RunInTx downstream.
-//   - handleTrafficExceeded  noTier2 — payload-only; delegates to
-//     orchestrator OnBindingTrafficExceeded (owns its tx).
-//   - handleTrafficReset     noTier2 — payload-only; delegates to
-//     orchestrator OnBindingTrafficReset (owns its tx).
-//   - handleTrafficWarning   noTier2 — payload-only; fire-and-forget
-//     OnTrafficWarning (owns its tx).
+//   - handleSimple           wrapped — the orchestrator
+//     (OnSubscription{Cancelled,Paused,Resumed}) reads/updates bindings (Tier-2)
+//     on the passed ctx; its downstream sagas' RunInTx is re-entrant and joins
+//     this handler's sentinel-scoped tx (fixed in C0.7c).
+//   - handleTrafficExceeded  wrapped — OnBindingTrafficExceeded reads/updates the
+//     binding (Tier-2) via LimitBinding on the passed ctx, under the sentinel
+//     (fixed in C0.7c).
+//   - handleTrafficReset     wrapped — OnBindingTrafficReset reads/updates the
+//     binding (Tier-2) via UnlimitBinding on the passed ctx, under the sentinel
+//     (fixed in C0.7c).
+//   - handleTrafficWarning   wrapped — OnTrafficWarning is fire-and-forget, but
+//     its async hook dispatch runs under the sentinel-scoped tx for consistency
+//     and to keep any future Tier-2 read covered (fixed in C0.7c).
 //
 // The remaining audited package entry points perform no bare-ctx Tier-2 read:
 //   - multisub_events.go        publisher only (Publish/PublishBatch); no read.
@@ -87,11 +91,13 @@ func TestHandleChargeCompleted_RunsUnderPlatformSentinel(t *testing.T) {
 func TestRLSAudit_AllHandlersClassified(t *testing.T) {
 	// Keep these two sets exhaustive: every handle* method must appear in
 	// exactly one. A new handler with a Tier-2 read MUST be wrapped (C0.7/C0.7b).
-	wrapped := map[string]bool{"handleActivated": true, "handleChargeCompleted": true}
+	wrapped := map[string]bool{
+		"handleActivated": true, "handleChargeCompleted": true,
+		"handleSimple": true, "handleTrafficExceeded": true,
+		"handleTrafficReset": true, "handleTrafficWarning": true,
+	}
 	noTier2 := map[string]bool{
 		"handleMessage": true,
-		"handleSimple":  true, "handleTrafficExceeded": true,
-		"handleTrafficReset": true, "handleTrafficWarning": true,
 	}
 	all := listHandleMethods(t, "billing_event_handlers.go")
 	require.NotEmpty(t, all, "expected at least one handle* method in the source")
