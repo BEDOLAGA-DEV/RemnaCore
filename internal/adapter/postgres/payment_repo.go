@@ -87,7 +87,10 @@ func (r *PaymentRepository) GetPaymentByID(ctx context.Context, id string) (*pay
 // acquires a FOR UPDATE row lock. Must be called within a transaction.
 const getPaymentRecordByIDForUpdateSQL = `
 SELECT id, invoice_id, provider, external_id, amount, currency, status, created_at, updated_at
-FROM payment.payment_records WHERE id = $1 FOR UPDATE
+FROM payment.payment_records
+WHERE id = $1
+  AND (tenant_id::text = current_setting('app.tenant_id', true) OR current_setting('app.tenant_id', true) = '*')
+FOR UPDATE
 `
 
 func (r *PaymentRepository) GetPaymentByIDForUpdate(ctx context.Context, id string) (*payment.PaymentRecord, error) {
@@ -120,7 +123,10 @@ func (r *PaymentRepository) GetPaymentByExternalID(ctx context.Context, provider
 // GetPaymentRecordByExternalID but acquires a FOR UPDATE row lock.
 const getPaymentRecordByExternalIDForUpdateSQL = `
 SELECT id, invoice_id, provider, external_id, amount, currency, status, created_at, updated_at
-FROM payment.payment_records WHERE provider = $1 AND external_id = $2 FOR UPDATE
+FROM payment.payment_records
+WHERE provider = $1 AND external_id = $2
+  AND (tenant_id::text = current_setting('app.tenant_id', true) OR current_setting('app.tenant_id', true) = '*')
+FOR UPDATE
 `
 
 func (r *PaymentRepository) GetPaymentByExternalIDForUpdate(ctx context.Context, provider, externalID string) (*payment.PaymentRecord, error) {
