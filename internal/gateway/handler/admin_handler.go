@@ -1,14 +1,17 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
 const (
@@ -25,6 +28,7 @@ type AdminHandler struct {
 	identitySvc *identity.Service
 	subs        billing.SubscriptionReader
 	invoices    billing.InvoiceReader
+	txRunner    txmanager.Runner
 }
 
 // NewAdminHandler creates an AdminHandler backed by the given services.
@@ -32,11 +36,13 @@ func NewAdminHandler(
 	identitySvc *identity.Service,
 	subs billing.SubscriptionReader,
 	invoices billing.InvoiceReader,
+	txRunner txmanager.Runner,
 ) *AdminHandler {
 	return &AdminHandler{
 		identitySvc: identitySvc,
 		subs:        subs,
 		invoices:    invoices,
+		txRunner:    txRunner,
 	}
 }
 
@@ -94,7 +100,15 @@ func (h *AdminHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 // subscriptions (paginated).
 func (h *AdminHandler) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
 	limit, offset := parsePagination(r)
-	subs, err := h.subs.GetAll(r.Context(), limit, offset)
+	// Wrap the read in a tx so the platform-admin sentinel GUC set by ShopResolver
+	// is applied; on the bare pool the GUC is never set and FORCE-RLS (post-042)
+	// would return zero rows. This route is platform-only gated.
+	var subs []*aggregate.Subscription
+	err := h.txRunner.RunInTx(r.Context(), func(txCtx context.Context) error {
+		var err error
+		subs, err = h.subs.GetAll(txCtx, limit, offset)
+		return err
+	})
 	if err != nil {
 		writeErrorFromDomain(w, err)
 		return
@@ -106,7 +120,15 @@ func (h *AdminHandler) ListSubscriptions(w http.ResponseWriter, r *http.Request)
 // ListInvoices handles GET /api/admin/invoices -- list all invoices (paginated).
 func (h *AdminHandler) ListInvoices(w http.ResponseWriter, r *http.Request) {
 	limit, offset := parsePagination(r)
-	invoices, err := h.invoices.GetAll(r.Context(), limit, offset)
+	// Wrap the read in a tx so the platform-admin sentinel GUC set by ShopResolver
+	// is applied; on the bare pool the GUC is never set and FORCE-RLS (post-042)
+	// would return zero rows. This route is platform-only gated.
+	var invoices []*aggregate.Invoice
+	err := h.txRunner.RunInTx(r.Context(), func(txCtx context.Context) error {
+		var err error
+		invoices, err = h.invoices.GetAll(txCtx, limit, offset)
+		return err
+	})
 	if err != nil {
 		writeErrorFromDomain(w, err)
 		return
