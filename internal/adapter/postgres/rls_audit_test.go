@@ -103,6 +103,12 @@ func TestRLSAudit_PhaseCTablesPresent(t *testing.T) {
 	}
 }
 
+// TestRLSAudit_SentinelConstMatches pins the audit's literal to the production
+// constant so the policy-shape checks below can never validate the wrong value.
+func TestRLSAudit_SentinelConstMatches(t *testing.T) {
+	assert.Equal(t, tenantctx.PlatformScopeSentinel, sentinelGUC,
+		"audit sentinelGUC must equal tenantctx.PlatformScopeSentinel")
+}
+
 // silence the imports used only by later sub-tests in this file until they land.
 var _ = strings.TrimSpace
-var _ = tenantctx.PlatformScopeSentinel
