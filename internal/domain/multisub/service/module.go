@@ -9,6 +9,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
 // MultiSubOrchestrator is the facade that coordinates billing lifecycle events
@@ -25,6 +26,7 @@ type MultiSubOrchestrator struct {
 	lifecycle      *BindingLifecycleService
 	bindings       multisubdomain.BindingRepository
 	publisher      domainevent.Publisher
+	txRunner       txmanager.Runner
 	clock          clock.Clock
 	logger         *slog.Logger
 	limitingHook   LimitingHookFn // nil-safe; all dispatches guarded
@@ -69,6 +71,7 @@ func NewMultiSubOrchestrator(
 	lifecycle *BindingLifecycleService,
 	bindings multisubdomain.BindingRepository,
 	publisher domainevent.Publisher,
+	txRunner txmanager.Runner,
 	clk clock.Clock,
 	logger *slog.Logger,
 	opts ...OrchestratorOption,
@@ -80,6 +83,7 @@ func NewMultiSubOrchestrator(
 		lifecycle:      lifecycle,
 		bindings:       bindings,
 		publisher:      publisher,
+		txRunner:       txRunner,
 		clock:          clk,
 		logger:         logger,
 	}
@@ -142,7 +146,14 @@ const cancelledPendingBindingReason = "subscription cancelled before provisionin
 // finished provisioning). In that case, pending bindings are marked as failed
 // to prevent the provisioning saga from completing.
 func (o *MultiSubOrchestrator) OnSubscriptionCancelled(ctx context.Context, subscriptionID string) error {
-	existing, err := o.bindings.GetActiveBySubscriptionID(ctx, subscriptionID)
+	// Narrow read tx so the RLS GUC (carried on ctx) is applied to this
+	// FORCE-RLS read before delegating to the deprovisioning saga.
+	var existing []*aggregate.RemnawaveBinding
+	err := o.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		var readErr error
+		existing, readErr = o.bindings.GetActiveBySubscriptionID(txCtx, subscriptionID)
+		return readErr
+	})
 	if err != nil {
 		return fmt.Errorf("check existing bindings: %w", err)
 	}
@@ -167,7 +178,14 @@ func (o *MultiSubOrchestrator) OnSubscriptionCancelled(ctx context.Context, subs
 // ProvisioningSaga will also check subscription status before provisioning,
 // but this provides a belt-and-suspenders defense.
 func (o *MultiSubOrchestrator) cancelPendingBindings(ctx context.Context, subscriptionID string) error {
-	allBindings, err := o.bindings.GetBySubscriptionID(ctx, subscriptionID)
+	// Narrow read tx so the RLS GUC (carried on ctx) is applied to this
+	// FORCE-RLS read.
+	var allBindings []*aggregate.RemnawaveBinding
+	err := o.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		var readErr error
+		allBindings, readErr = o.bindings.GetBySubscriptionID(txCtx, subscriptionID)
+		return readErr
+	})
 	if err != nil {
 		return fmt.Errorf("get bindings by subscription: %w", err)
 	}
@@ -186,7 +204,12 @@ func (o *MultiSubOrchestrator) cancelPendingBindings(ctx context.Context, subscr
 			)
 			continue
 		}
-		if updateErr := o.bindings.Update(ctx, b); updateErr != nil {
+		// Per-step tx: each pending-binding cancellation commits independently
+		// with the RLS GUC set from the scope carried on ctx.
+		updateErr := o.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+			return o.bindings.Update(txCtx, b)
+		})
+		if updateErr != nil {
 			o.logger.Warn("failed to persist cancelled pending binding",
 				slog.String("binding_id", b.ID),
 				slog.String("subscription_id", subscriptionID),

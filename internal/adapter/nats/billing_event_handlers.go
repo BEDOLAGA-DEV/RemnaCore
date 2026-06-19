@@ -481,12 +481,14 @@ func (c *BillingEventConsumer) handleSimple(
 		return errMissingSubscriptionID
 	}
 
-	// Background path: no tenant key on the event, so the downstream Tier-2 work
-	// runs under the platform sentinel in a single tx so the RLS GUC is set for
-	// the FORCE-RLS tables (post-042), consistent with handleActivated.
-	return c.runner.RunInTx(tenantctx.WithPlatformScope(ctx), func(txCtx context.Context) error {
-		return fn(txCtx, payload.SubscriptionID)
-	})
+	// Background path: no tenant key on the event, so the platform sentinel is
+	// annotated onto the ctx. We do NOT open an outer RunInTx here: the downstream
+	// orchestrator is a multi-step saga / binding-lifecycle loop whose steps must
+	// commit independently (per-step crash durability) and whose external
+	// Remnawave HTTP calls must stay outside any open DB tx. Each Tier-2 step
+	// opens its OWN narrow RunInTx, which sets the RLS GUC from this annotated
+	// scope without holding one big transaction.
+	return fn(tenantctx.WithPlatformScope(ctx), payload.SubscriptionID)
 }
 
 // handleTrafficExceeded handles the binding.traffic_exceeded event. It extracts
@@ -508,12 +510,11 @@ func (c *BillingEventConsumer) handleTrafficExceeded(ctx context.Context, event 
 		return errMissingSubscriptionID
 	}
 
-	// Background path: no tenant key on the event, so the downstream Tier-2 work
-	// runs under the platform sentinel in a single tx so the RLS GUC is set for
-	// the FORCE-RLS tables (post-042), consistent with handleActivated.
-	return c.runner.RunInTx(tenantctx.WithPlatformScope(ctx), func(txCtx context.Context) error {
-		return c.handler.OnBindingTrafficExceeded(txCtx, payload.BindingID, payload.SubscriptionID, payload.UsedBytes, payload.LimitBytes)
-	})
+	// Background path: no tenant key on the event, so the platform sentinel is
+	// annotated onto the ctx. No outer RunInTx: the orchestrator's binding-lifecycle
+	// step opens its OWN narrow RunInTx, which sets the RLS GUC from this scope
+	// per-step rather than holding one wrapping transaction.
+	return c.handler.OnBindingTrafficExceeded(tenantctx.WithPlatformScope(ctx), payload.BindingID, payload.SubscriptionID, payload.UsedBytes, payload.LimitBytes)
 }
 
 // handleTrafficReset handles the subscription.traffic_cycle_reset event. It
@@ -531,12 +532,11 @@ func (c *BillingEventConsumer) handleTrafficReset(ctx context.Context, event dom
 		return errMissingSubscriptionID
 	}
 
-	// Background path: no tenant key on the event, so the downstream Tier-2 work
-	// runs under the platform sentinel in a single tx so the RLS GUC is set for
-	// the FORCE-RLS tables (post-042), consistent with handleActivated.
-	return c.runner.RunInTx(tenantctx.WithPlatformScope(ctx), func(txCtx context.Context) error {
-		return c.handler.OnBindingTrafficReset(txCtx, payload.BindingID, payload.SubscriptionID)
-	})
+	// Background path: no tenant key on the event, so the platform sentinel is
+	// annotated onto the ctx. No outer RunInTx: the orchestrator's binding-lifecycle
+	// step opens its OWN narrow RunInTx, which sets the RLS GUC from this scope
+	// per-step rather than holding one wrapping transaction.
+	return c.handler.OnBindingTrafficReset(tenantctx.WithPlatformScope(ctx), payload.BindingID, payload.SubscriptionID)
 }
 
 // handleTrafficWarning handles the subscription.traffic_warning event. It
@@ -556,12 +556,10 @@ func (c *BillingEventConsumer) handleTrafficWarning(ctx context.Context, event d
 		return errMissingSubscriptionID
 	}
 
-	// Background path: no tenant key on the event, so the downstream Tier-2 work
-	// runs under the platform sentinel in a single tx so the RLS GUC is set for
-	// the FORCE-RLS tables (post-042), consistent with handleActivated.
-	// OnTrafficWarning is fire-and-forget, so the tx closure always returns nil.
-	return c.runner.RunInTx(tenantctx.WithPlatformScope(ctx), func(txCtx context.Context) error {
-		c.handler.OnTrafficWarning(txCtx, payload.BindingID, payload.SubscriptionID, payload.UsedBytes, payload.LimitBytes, payload.ThresholdPct)
-		return nil
-	})
+	// Background path: no tenant key on the event, so the platform sentinel is
+	// annotated onto the ctx. OnTrafficWarning is fire-and-forget and performs no
+	// Tier-2 DB read (it only dispatches an async hook), so there is nothing to
+	// wrap in a tx; the scope is carried for consistency and any future Tier-2 op.
+	c.handler.OnTrafficWarning(tenantctx.WithPlatformScope(ctx), payload.BindingID, payload.SubscriptionID, payload.UsedBytes, payload.LimitBytes, payload.ThresholdPct)
+	return nil
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/multisubtest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager/txmanagertest"
 )
 
 func newLifecycleService(
@@ -21,7 +22,7 @@ func newLifecycleService(
 	gw *multisubtest.MockRemnawaveGateway,
 	pub *multisubtest.MockEventPublisher,
 ) *service.BindingLifecycleService {
-	return service.NewBindingLifecycleService(repo, gw, pub, clock.NewReal(), testLogger())
+	return service.NewBindingLifecycleService(repo, gw, pub, txmanagertest.NoopTxRunner{}, clock.NewReal(), testLogger())
 }
 
 // --- DisableAllForSubscription ---

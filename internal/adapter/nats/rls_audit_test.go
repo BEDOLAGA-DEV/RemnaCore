@@ -45,35 +45,49 @@ func TestHandleChargeCompleted_RunsUnderPlatformSentinel(t *testing.T) {
 		"charge-completed invoice read/update must run under the platform sentinel")
 }
 
-// TestRLSAudit_AllHandlersClassified is the completeness checklist (C0.7/C0.7b).
+// TestRLSAudit_AllHandlersClassified is the completeness checklist (C0.7/C0.7b/C0.7c).
 //
 // Every handle* method the BillingEventConsumer defines must appear in exactly
-// one of the two sets below. A handler that reaches a Tier-2 (tenant-scoped)
-// read/write on a bare ctx MUST be wrapped in RunInTx under the platform
-// sentinel (or the event's tenant key, once events carry one); a handler that
-// performs no Tier-2 read (pure routing, payload-only, or delegation to an
-// orchestrator that opens its OWN RunInTx downstream) is recorded as noTier2.
+// one of the three sets below.
+//
+//   - wrapped      — a single-step handler that reaches a Tier-2 (tenant-scoped)
+//     read/write and opens its OWN outer RunInTx under the platform sentinel
+//     (or the event's tenant key, once events carry one) so the RLS GUC covers
+//     the whole operation.
+//   - scopeCarried — a multi-step orchestrator (deprovisioning saga / binding-
+//     lifecycle loop). It does NOT open one wrapping tx; instead it ANNOTATES
+//     the ctx with the platform sentinel (tenantctx.WithPlatformScope) and lets
+//     each downstream Tier-2 step open its OWN narrow RunInTx, which sets the
+//     GUC per step from the carried scope. This preserves per-step crash
+//     durability (saga checkpoints commit independently) and keeps external
+//     Remnawave HTTP calls OUTSIDE any open DB tx — both of which a single
+//     wrapping tx would violate (regression from 1289083, fixed in C0.7c).
+//   - noTier2      — pure routing / payload-only handler that performs no Tier-2
+//     read at all (it dispatches to a classified handler or only fires an async
+//     hook), so there is nothing to scope.
 //
 // Audit classification (every handle* method in billing_event_handlers.go):
 //   - handleMessage          noTier2 — pure subject routing; opens no tx itself,
 //     each branch dispatches to a classified handler below.
-//   - handleActivated        wrapped — enrichment reads (GetSubscriptionInfo /
-//     GetPlanSnapshot / GetFamilyMemberIDs) under the sentinel (fixed in C0.7).
-//   - handleChargeCompleted  wrapped — CompleteCheckout reads/updates the
-//     invoice + balance under the sentinel (fixed in C0.7b).
-//   - handleSimple           wrapped — the orchestrator
-//     (OnSubscription{Cancelled,Paused,Resumed}) reads/updates bindings (Tier-2)
-//     on the passed ctx; its downstream sagas' RunInTx is re-entrant and joins
-//     this handler's sentinel-scoped tx (fixed in C0.7c).
-//   - handleTrafficExceeded  wrapped — OnBindingTrafficExceeded reads/updates the
-//     binding (Tier-2) via LimitBinding on the passed ctx, under the sentinel
-//     (fixed in C0.7c).
-//   - handleTrafficReset     wrapped — OnBindingTrafficReset reads/updates the
-//     binding (Tier-2) via UnlimitBinding on the passed ctx, under the sentinel
-//     (fixed in C0.7c).
-//   - handleTrafficWarning   wrapped — OnTrafficWarning is fire-and-forget, but
-//     its async hook dispatch runs under the sentinel-scoped tx for consistency
-//     and to keep any future Tier-2 read covered (fixed in C0.7c).
+//   - handleActivated        wrapped — single-step enrichment reads
+//     (GetSubscriptionInfo / GetPlanSnapshot / GetFamilyMemberIDs) inside one
+//     outer RunInTx under the sentinel (C0.7).
+//   - handleChargeCompleted  wrapped — single-step CompleteCheckout reads/updates
+//     the invoice + balance inside one outer RunInTx under the sentinel (C0.7b).
+//   - handleSimple           scopeCarried — delegates to the multi-step
+//     OnSubscription{Cancelled,Paused,Resumed} orchestrators. The sentinel is
+//     annotated on the ctx (no outer tx); each Tier-2 read/update opens its own
+//     narrow RunInTx (per-step durability) and Remnawave Disable/Enable HTTP
+//     calls run between those step-txs, outside any tx (C0.7c).
+//   - handleTrafficExceeded  scopeCarried — sentinel annotated on ctx; the
+//     OnBindingTrafficExceeded -> LimitBinding step reads/updates the binding in
+//     its own narrow RunInTx (no gateway call on this path) (C0.7c).
+//   - handleTrafficReset     scopeCarried — sentinel annotated on ctx; the
+//     OnBindingTrafficReset -> UnlimitBinding step reads/updates the binding in
+//     its own narrow RunInTx (no gateway call on this path) (C0.7c).
+//   - handleTrafficWarning   noTier2 — sentinel annotated on ctx for consistency,
+//     but OnTrafficWarning only fires an async hook; it performs no Tier-2 DB
+//     read, so there is no tx and nothing to wrap (C0.7c).
 //
 // The remaining audited package entry points perform no bare-ctx Tier-2 read:
 //   - multisub_events.go        publisher only (Publish/PublishBatch); no read.
@@ -89,25 +103,35 @@ func TestHandleChargeCompleted_RunsUnderPlatformSentinel(t *testing.T) {
 //   - billing_lookup.go         the lookup ports invoked by handleActivated
 //     inside its sentinel-scoped tx; carry no tx of their own.
 func TestRLSAudit_AllHandlersClassified(t *testing.T) {
-	// Keep these two sets exhaustive: every handle* method must appear in
-	// exactly one. A new handler with a Tier-2 read MUST be wrapped (C0.7/C0.7b).
+	// Keep these three sets exhaustive: every handle* method must appear in
+	// exactly one. A new single-step handler with a Tier-2 read MUST be wrapped
+	// (C0.7/C0.7b); a new multi-step orchestrator handler MUST carry the scope on
+	// ctx and rely on per-step RunInTx (C0.7c).
 	wrapped := map[string]bool{
 		"handleActivated": true, "handleChargeCompleted": true,
+	}
+	scopeCarried := map[string]bool{
 		"handleSimple": true, "handleTrafficExceeded": true,
-		"handleTrafficReset": true, "handleTrafficWarning": true,
+		"handleTrafficReset": true,
 	}
 	noTier2 := map[string]bool{
-		"handleMessage": true,
+		"handleMessage": true, "handleTrafficWarning": true,
 	}
 	all := listHandleMethods(t, "billing_event_handlers.go")
 	require.NotEmpty(t, all, "expected at least one handle* method in the source")
 	for _, name := range all {
-		inWrapped := wrapped[name]
-		inNoTier2 := noTier2[name]
-		assert.Truef(t, inWrapped || inNoTier2,
-			"handler %q is unclassified: add it to wrapped (with RunInTx) or noTier2", name)
-		assert.Falsef(t, inWrapped && inNoTier2,
-			"handler %q must be in exactly one set, not both", name)
+		classifications := 0
+		if wrapped[name] {
+			classifications++
+		}
+		if scopeCarried[name] {
+			classifications++
+		}
+		if noTier2[name] {
+			classifications++
+		}
+		assert.Equalf(t, 1, classifications,
+			"handler %q must be in exactly one set (wrapped / scopeCarried / noTier2), found %d", name, classifications)
 	}
 }
 

@@ -18,6 +18,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookfn"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/sdk"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
 // multisubWiring provides all multisub-domain bindings: binding repository,
@@ -81,6 +82,7 @@ func newMultiSubOrchestrator(
 	lifecycle *multisubservice.BindingLifecycleService,
 	bindings multisub.BindingRepository,
 	publisher domainevent.Publisher,
+	txRunner txmanager.Runner,
 	clk clock.Clock,
 	logger *slog.Logger,
 	dispatcher hookdispatch.Dispatcher,
@@ -97,7 +99,7 @@ func newMultiSubOrchestrator(
 	opts = append(opts, multisubservice.WithHooksEnabled(cfg.FeatureFlags.HooksSubscriptionEnabled))
 
 	return multisubservice.NewMultiSubOrchestrator(
-		provisioning, deprovisioning, syncService, lifecycle, bindings, publisher, clk, logger,
+		provisioning, deprovisioning, syncService, lifecycle, bindings, publisher, txRunner, clk, logger,
 		opts...,
 	)
 }

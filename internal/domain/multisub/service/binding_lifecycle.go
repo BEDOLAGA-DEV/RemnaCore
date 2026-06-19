@@ -9,6 +9,7 @@ import (
 	multisubagg "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
 // BindingLifecycleService coordinates binding state changes in response to
@@ -20,10 +21,17 @@ import (
 // the remaining bindings. Gateway calls are intentionally kept outside of
 // database transactions — each binding is updated independently after its
 // gateway call succeeds.
+//
+// Every Tier-2 DB read/write is wrapped in its own narrow txRunner.RunInTx so
+// the RLS GUC (app.tenant_id) is set per-step from the scope carried on the
+// incoming ctx (e.g. the platform sentinel for background NATS events). The
+// per-step txs commit independently; external gateway calls run between them,
+// outside any open transaction.
 type BindingLifecycleService struct {
 	bindings  multisubdomain.BindingRepository
 	gateway   multisubdomain.RemnawaveGateway
 	publisher domainevent.Publisher
+	txRunner  txmanager.Runner
 	clock     clock.Clock
 	logger    *slog.Logger
 }
@@ -34,6 +42,7 @@ func NewBindingLifecycleService(
 	bindings multisubdomain.BindingRepository,
 	gateway multisubdomain.RemnawaveGateway,
 	publisher domainevent.Publisher,
+	txRunner txmanager.Runner,
 	clk clock.Clock,
 	logger *slog.Logger,
 ) *BindingLifecycleService {
@@ -41,6 +50,7 @@ func NewBindingLifecycleService(
 		bindings:  bindings,
 		gateway:   gateway,
 		publisher: publisher,
+		txRunner:  txRunner,
 		clock:     clk,
 		logger:    logger,
 	}
@@ -56,7 +66,7 @@ func NewBindingLifecycleService(
 //
 // Idempotency: returns nil if no active bindings exist.
 func (s *BindingLifecycleService) DisableAllForSubscription(ctx context.Context, subscriptionID string) error {
-	bindings, err := s.bindings.GetActiveBySubscriptionID(ctx, subscriptionID)
+	bindings, err := s.activeBindings(ctx, subscriptionID)
 	if err != nil {
 		return fmt.Errorf("get active bindings: %w", err)
 	}
@@ -102,7 +112,7 @@ func (s *BindingLifecycleService) DisableAllForSubscription(ctx context.Context,
 // Bindings in non-disabled states (active, deprovisioned, failed) are skipped.
 // Idempotency: returns nil if no disabled bindings exist.
 func (s *BindingLifecycleService) EnableAllForSubscription(ctx context.Context, subscriptionID string) error {
-	bindings, err := s.bindings.GetBySubscriptionID(ctx, subscriptionID)
+	bindings, err := s.allBindings(ctx, subscriptionID)
 	if err != nil {
 		return fmt.Errorf("get bindings: %w", err)
 	}
@@ -150,7 +160,7 @@ func (s *BindingLifecycleService) EnableAllForSubscription(ctx context.Context, 
 // LimitBinding transitions a single binding to limited state.
 // No gateway call — the VPN provider already restricted the user.
 func (s *BindingLifecycleService) LimitBinding(ctx context.Context, bindingID string, reason string) error {
-	binding, err := s.bindings.GetByID(ctx, bindingID)
+	binding, err := s.bindingByID(ctx, bindingID)
 	if err != nil {
 		return fmt.Errorf("get binding: %w", err)
 	}
@@ -166,7 +176,7 @@ func (s *BindingLifecycleService) LimitBinding(ctx context.Context, bindingID st
 // UnlimitBinding transitions a single binding from limited back to active.
 // No gateway call — the VPN provider already reset the traffic.
 func (s *BindingLifecycleService) UnlimitBinding(ctx context.Context, bindingID string) error {
-	binding, err := s.bindings.GetByID(ctx, bindingID)
+	binding, err := s.bindingByID(ctx, bindingID)
 	if err != nil {
 		return fmt.Errorf("get binding: %w", err)
 	}
@@ -187,7 +197,7 @@ func (s *BindingLifecycleService) UnlimitBinding(ctx context.Context, bindingID 
 // is logged and the loop continues with the remaining bindings.
 // Idempotency: returns nil if no active bindings exist.
 func (s *BindingLifecycleService) LimitAllForSubscription(ctx context.Context, subscriptionID string, reason string) error {
-	bindings, err := s.bindings.GetActiveBySubscriptionID(ctx, subscriptionID)
+	bindings, err := s.activeBindings(ctx, subscriptionID)
 	if err != nil {
 		return fmt.Errorf("get active bindings: %w", err)
 	}
@@ -221,7 +231,7 @@ func (s *BindingLifecycleService) LimitAllForSubscription(ctx context.Context, s
 // is logged and the loop continues with the remaining bindings.
 // Idempotency: returns nil if no limited bindings exist.
 func (s *BindingLifecycleService) UnlimitAllForSubscription(ctx context.Context, subscriptionID string) error {
-	bindings, err := s.bindings.GetBySubscriptionID(ctx, subscriptionID)
+	bindings, err := s.allBindings(ctx, subscriptionID)
 	if err != nil {
 		return fmt.Errorf("get bindings: %w", err)
 	}
@@ -274,7 +284,12 @@ func (s *BindingLifecycleService) handleGatewayFailure(
 		)
 		return
 	}
-	if updateErr := s.bindings.Update(ctx, binding); updateErr != nil {
+	// Per-step tx: commits this single failure-status update independently and
+	// sets the RLS GUC from the scope carried on ctx.
+	updateErr := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		return s.bindings.Update(txCtx, binding)
+	})
+	if updateErr != nil {
 		s.logger.Warn("failed to update binding status",
 			slog.String("binding_id", binding.ID),
 			slog.Any("error", updateErr),
@@ -283,20 +298,56 @@ func (s *BindingLifecycleService) handleGatewayFailure(
 }
 
 // persistAndPublish updates the binding in the repository and publishes all
-// accumulated domain events.
+// accumulated domain events inside a single narrow transaction so the update
+// and its outbox events commit atomically per step. The RLS GUC is set from
+// the scope carried on ctx; this tx is independent of any other step.
 func (s *BindingLifecycleService) persistAndPublish(ctx context.Context, binding *multisubagg.RemnawaveBinding) {
-	if err := s.bindings.Update(ctx, binding); err != nil {
-		s.logger.Warn("failed to update binding status",
+	err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		if err := s.bindings.Update(txCtx, binding); err != nil {
+			return fmt.Errorf("update binding: %w", err)
+		}
+		return domainevent.PublishAll(txCtx, s.publisher, binding)
+	})
+	if err != nil {
+		s.logger.Warn("failed to persist binding status",
 			slog.String("binding_id", binding.ID),
 			slog.Any("error", err),
 		)
-		return
 	}
+}
 
-	if err := domainevent.PublishAll(ctx, s.publisher, binding); err != nil {
-		s.logger.Warn("failed to publish binding event",
-			slog.String("binding_id", binding.ID),
-			slog.Any("error", err),
-		)
-	}
+// activeBindings reads the active bindings for a subscription inside a narrow
+// read tx so the RLS GUC (carried on ctx) is applied to this FORCE-RLS read.
+func (s *BindingLifecycleService) activeBindings(ctx context.Context, subscriptionID string) ([]*multisubagg.RemnawaveBinding, error) {
+	var bindings []*multisubagg.RemnawaveBinding
+	err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		var readErr error
+		bindings, readErr = s.bindings.GetActiveBySubscriptionID(txCtx, subscriptionID)
+		return readErr
+	})
+	return bindings, err
+}
+
+// allBindings reads all bindings for a subscription inside a narrow read tx so
+// the RLS GUC (carried on ctx) is applied to this FORCE-RLS read.
+func (s *BindingLifecycleService) allBindings(ctx context.Context, subscriptionID string) ([]*multisubagg.RemnawaveBinding, error) {
+	var bindings []*multisubagg.RemnawaveBinding
+	err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		var readErr error
+		bindings, readErr = s.bindings.GetBySubscriptionID(txCtx, subscriptionID)
+		return readErr
+	})
+	return bindings, err
+}
+
+// bindingByID reads a single binding inside a narrow read tx so the RLS GUC
+// (carried on ctx) is applied to this FORCE-RLS read.
+func (s *BindingLifecycleService) bindingByID(ctx context.Context, bindingID string) (*multisubagg.RemnawaveBinding, error) {
+	var binding *multisubagg.RemnawaveBinding
+	err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		var readErr error
+		binding, readErr = s.bindings.GetByID(txCtx, bindingID)
+		return readErr
+	})
+	return binding, err
 }
