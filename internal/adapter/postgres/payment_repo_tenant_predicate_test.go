@@ -22,3 +22,10 @@ func TestPaymentByExternalIDForUpdate_HasTenantPredicate(t *testing.T) {
 			tenantPredicate, getPaymentRecordByExternalIDForUpdateSQL)
 	}
 }
+
+func TestSubscriptionByIDForUpdate_HasTenantPredicate(t *testing.T) {
+	if !strings.Contains(getSubscriptionByIDForUpdateGuardedSQL, tenantPredicate) {
+		t.Fatalf("getSubscriptionByIDForUpdateGuardedSQL is missing the explicit tenant predicate %q:\n%s",
+			tenantPredicate, getSubscriptionByIDForUpdateGuardedSQL)
+	}
+}

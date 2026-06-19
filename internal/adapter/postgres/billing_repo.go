@@ -401,11 +401,19 @@ func (r *SubscriptionRepository) GetByID(ctx context.Context, id string) (*aggre
 }
 
 func (r *SubscriptionRepository) GetByIDForUpdate(ctx context.Context, id string) (*aggregate.Subscription, error) {
-	row, err := r.q(ctx).GetSubscriptionByIDForUpdate(ctx, pgutil.UUIDToPgtype(id))
+	db := DBFromContext(ctx, r.pool)
+	row := db.QueryRow(ctx, getSubscriptionByIDForUpdateGuardedSQL, pgutil.UUIDToPgtype(id))
+
+	var raw gen.GetSubscriptionByIDForUpdateRow
+	err := row.Scan(
+		&raw.ID, &raw.UserID, &raw.PlanID, &raw.Status, &raw.PeriodStart, &raw.PeriodEnd, &raw.PeriodInterval,
+		&raw.AddonIds, &raw.AssignedTo, &raw.PendingPlanID, &raw.PendingOriginalPlanID, &raw.PendingRequestedAt,
+		&raw.CancelledAt, &raw.PausedAt, &raw.CreatedAt, &raw.UpdatedAt,
+	)
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get subscription by id for update", billing.ErrSubscriptionNotFound)
 	}
-	return subRowToDomain(row), nil
+	return subRowToDomain(raw), nil
 }
 
 func (r *SubscriptionRepository) GetByUserID(ctx context.Context, userID string) ([]*aggregate.Subscription, error) {
@@ -498,6 +506,24 @@ func (r *SubscriptionRepository) Update(ctx context.Context, sub *aggregate.Subs
 // This bypasses sqlc (which does not yet support OLD/NEW syntax) and uses
 // pgx directly. The query is race-free unlike the CTE-based alternative.
 const updateSubscriptionStatusSQL = `UPDATE billing.subscriptions SET status = $2 WHERE id = $1 RETURNING old.status AS previous_status, new.status AS current_status`
+
+// getSubscriptionByIDForUpdateGuardedSQL is the by-id lock path with an explicit
+// tenant predicate (spec §5.3 belt-and-suspenders behind the RLS GUC). Must be
+// called inside RunInTx so the GUC is set; the predicate also blocks a by-id
+// lookup that would otherwise bypass the user_id chain. The predicate matches the
+// RLS USING clause exactly (sentinel '*' OR tenant match; no IS NULL fail-open
+// branch), so a NULL-tenant row is visible ONLY under the platform sentinel.
+// Column order matches
+// gen.GetSubscriptionByIDForUpdateRow so subRowToDomain can convert the scan.
+const getSubscriptionByIDForUpdateGuardedSQL = `
+SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
+       addon_ids, assigned_to, pending_plan_id, pending_original_plan_id, pending_requested_at,
+       cancelled_at, paused_at, created_at, updated_at
+FROM billing.subscriptions
+WHERE id = $1
+  AND (tenant_id::text = current_setting('app.tenant_id', true) OR current_setting('app.tenant_id', true) = '*')
+FOR UPDATE
+`
 
 // UpdateStatus atomically transitions a subscription's status and returns both
 // the old and new values for audit trail and event payloads.
