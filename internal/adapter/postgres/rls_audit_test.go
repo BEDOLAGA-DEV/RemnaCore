@@ -137,5 +137,41 @@ func TestRLSAudit_AllTablesEnableAndForceRLS(t *testing.T) {
 	}
 }
 
+// TestRLSAudit_SentinelPolicyShape verifies each Phase-C table has its
+// tenant_isolation_<table> policy and that the policy is the sentinel form:
+// USING references current_setting('app.tenant_id', true) = '<sentinel>' and a
+// non-empty WITH CHECK exists (the write-side clause; USING-only is the old shape).
+func TestRLSAudit_SentinelPolicyShape(t *testing.T) {
+	pool := setupAuditDB(t)
+	ctx := context.Background()
+
+	// e.g. current_setting('app.tenant_id', true) = '*'  — sentinel from the named const.
+	sentinelFragment := "current_setting('app.tenant_id', true) = '" + sentinelGUC + "'"
+
+	for _, tbl := range phaseCTenantTables {
+		policyName := tbl.policy
+
+		var qual, withCheck *string
+		err := pool.QueryRow(ctx,
+			`SELECT qual, with_check
+			   FROM pg_policies
+			  WHERE schemaname = $1 AND tablename = $2 AND policyname = $3`,
+			tbl.schema, tbl.table, policyName).Scan(&qual, &withCheck)
+		require.NoErrorf(t, err,
+			"policy %s on %s.%s (migration %s) must exist",
+			policyName, tbl.schema, tbl.table, tbl.migration)
+
+		require.NotNilf(t, qual, "policy %s must have a USING expression", policyName)
+		assert.Containsf(t, *qual, sentinelFragment,
+			"policy %s USING must match the platform sentinel via current_setting (table %s.%s, migration %s)",
+			policyName, tbl.schema, tbl.table, tbl.migration)
+
+		require.NotNilf(t, withCheck, "policy %s must have a WITH CHECK clause (write-side isolation)", policyName)
+		assert.Containsf(t, *withCheck, sentinelFragment,
+			"policy %s WITH CHECK must match the platform sentinel (table %s.%s, migration %s)",
+			policyName, tbl.schema, tbl.table, tbl.migration)
+	}
+}
+
 // silence the imports used only by later sub-tests in this file until they land.
 var _ = strings.TrimSpace
