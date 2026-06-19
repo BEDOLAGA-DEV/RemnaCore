@@ -41,9 +41,43 @@ type CommissionRepository interface {
 	GetCommissionByID(ctx context.Context, id string) (*aggregate.Commission, error)
 	GetCommissionByIDForUpdate(ctx context.Context, id string) (*aggregate.Commission, error)
 	GetPendingCommissions(ctx context.Context, resellerID string) ([]*aggregate.Commission, error)
+	ListCommissionsByTenant(ctx context.Context, tenantID string) ([]*aggregate.Commission, error)
 	UpdateCommission(ctx context.Context, commission *aggregate.Commission) error
 
 	UpdateResellerBalance(ctx context.Context, resellerID string, balance int64) error
+}
+
+// CustomerSummary is a tenant-scoped view of one of a shop's customers
+// (an identity.platform_users row whose tenant_id is the active shop) plus
+// lightweight rollups used by the reseller customers list. Canonical here;
+// the reseller root re-exports it as a type alias.
+type CustomerSummary struct {
+	UserID          string
+	Email           string
+	DisplayName     string
+	ActiveSubsCount int
+	CreatedAt       time.Time
+}
+
+// DashboardSummary is the purpose-built tenant-scoped aggregate backing the
+// reseller dashboard (NOT the platform-only /api/admin/stats view). Canonical
+// here; the reseller root re-exports it as a type alias.
+type DashboardSummary struct {
+	ActiveCustomers     int
+	ActiveSubscriptions int
+	PendingCommission   int64 // cents, sum of pending commissions for the shop
+	Currency            string
+}
+
+// CustomerRepository reads a shop's customers from identity.platform_users.
+// All methods rely on the active app.tenant_id GUC (RLS on platform_users) and
+// ALSO carry an explicit tenant_id predicate (spec §7, belt-and-suspenders).
+// Canonical here; the reseller root re-exports it as a type alias.
+type CustomerRepository interface {
+	ListCustomersByTenant(ctx context.Context, tenantID string, limit, offset int) ([]*CustomerSummary, error)
+	CountActiveCustomersByTenant(ctx context.Context, tenantID string) (int, error)
+	CountActiveSubscriptionsByTenant(ctx context.Context, tenantID string) (int, error)
+	SumPendingCommissionByTenant(ctx context.Context, tenantID string) (amount int64, currency string, err error)
 }
 
 // ResellerService implements the core reseller and white-label use-cases:

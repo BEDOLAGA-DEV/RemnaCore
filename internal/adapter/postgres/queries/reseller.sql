@@ -87,3 +87,17 @@ ORDER BY created_at DESC;
 UPDATE reseller.commissions
 SET status = $2, paid_at = $3
 WHERE id = $1;
+
+-- ============================================================================
+-- C4 tenant-scoped reads (implemented as raw-SQL consts in reseller_repo.go,
+-- NOT via sqlc: they rely on the active app.tenant_id GUC + RLS, and one joins
+-- across schemas, so they are kept as hand-written queries like
+-- getCommissionByIDForUpdateSQL). Documented here for discoverability.
+--
+-- ListCommissionsByTenant:
+--   SELECT id, reseller_id, sale_id, amount, currency, status, created_at, paid_at
+--   FROM reseller.commissions WHERE tenant_id = $1 ORDER BY created_at DESC;
+--
+-- ListCustomersByTenant: identity.platform_users WHERE tenant_id = $1, with
+--   per-user active-subscription count and summed commissions.
+-- ============================================================================
