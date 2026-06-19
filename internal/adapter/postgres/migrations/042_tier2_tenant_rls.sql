@@ -122,7 +122,7 @@ COMMIT;
 --    after the section-2 backfill, so the migration role can still write
 --    tenant_id during backfill. Policy shape (canonical, contract §2):
 --      USING     : '*' (sentinel) OR tenant_id matches the GUC  (NO IS NULL branch)
---      WITH CHECK : '*' OR tenant_id IS NULL OR tenant_id matches (permits
+--      WITH CHECK : '*' OR a NULL tenant_id OR tenant_id matches the GUC (permits
 --                   tenant-less public/system inserts; blocks foreign tenant_id)
 --    The literal '*' is the platform sentinel, = tenantctx.PlatformScopeSentinel.
 --    payment.webhook_log is deliberately NOT included (see header).
