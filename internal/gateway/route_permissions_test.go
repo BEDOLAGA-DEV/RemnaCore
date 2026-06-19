@@ -241,7 +241,7 @@ func TestAdminRoutesArePermissionGated(t *testing.T) {
 		{http.MethodPost, "/api/tariffs/reseller/customize", rbac.TariffsWrite},
 
 		// ── Reseller self-service routes (router.go /reseller re-gating) ────────
-		{http.MethodGet, "/api/reseller/dashboard", rbac.ShopsRead},
+		{http.MethodGet, "/api/reseller/dashboard", rbac.DashboardRead},
 		{http.MethodGet, "/api/reseller/commissions", rbac.BillingRead},
 		{http.MethodGet, "/api/reseller/customers", rbac.CustomersRead},
 	}

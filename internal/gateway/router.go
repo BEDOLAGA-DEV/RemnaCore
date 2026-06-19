@@ -297,7 +297,7 @@ func NewRouter(p RouterParams) http.Handler {
 			// permissions (ShopResolver already applied at the protected-group
 			// level, so the active tenant from X-Shop-Id is present here).
 			protected.Route("/reseller", func(resellerRouter chi.Router) {
-				resellerRouter.With(perm(p.AccessService, rbac.ShopsRead)).Get("/dashboard", p.ResellerHandler.Dashboard)
+				resellerRouter.With(perm(p.AccessService, rbac.DashboardRead)).Get("/dashboard", p.ResellerHandler.Dashboard)
 				resellerRouter.With(perm(p.AccessService, rbac.BillingRead)).Get("/commissions", p.ResellerHandler.Commissions)
 				resellerRouter.With(perm(p.AccessService, rbac.CustomersRead)).Get("/customers", p.ResellerHandler.Customers)
 			})
