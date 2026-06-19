@@ -57,7 +57,7 @@ func TestListCommissions_ResolvesAccountServerSide(t *testing.T) {
 
 	acct := &reseller.ResellerAccount{ID: "acct-1", TenantID: "shop-A", UserID: "user-1"}
 	commissionRepo.On("GetResellerAccountByUserAndTenant", ctx, "user-1", "shop-A").Return(acct, nil)
-	commissionRepo.On("ListCommissionsByTenant", ctx, "shop-A").
+	commissionRepo.On("ListCommissionsByTenant", ctx, "shop-A", "acct-1").
 		Return([]*reseller.Commission{{ID: "c1", ResellerID: "acct-1"}}, nil)
 
 	got, err := svc.ListCommissions(ctx, "user-1", "shop-A")

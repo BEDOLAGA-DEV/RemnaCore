@@ -336,19 +336,22 @@ func (r *ResellerRepository) GetPendingCommissions(ctx context.Context, reseller
 	return commissions, nil
 }
 
-// listCommissionsByTenantSQL lists a shop's commissions newest-first. RLS on
-// reseller.commissions (043) scopes the rows; the explicit tenant_id predicate
-// is belt-and-suspenders. Must be called inside RunInTx so the GUC is set.
+// listCommissionsByTenantSQL lists a single reseller's commissions within a
+// shop, newest-first. RLS on reseller.commissions (043) scopes rows to the
+// shop (tenant_id GUC); the reseller_id predicate additionally prevents a
+// horizontal leak between two reseller accounts in the same shop. The explicit
+// tenant_id predicate is belt-and-suspenders. Must be called inside RunInTx so
+// the GUC is set.
 const listCommissionsByTenantSQL = `
 SELECT id, reseller_id, sale_id, amount, currency, status, created_at, paid_at
 FROM reseller.commissions
-WHERE tenant_id = $1
+WHERE tenant_id = $1 AND reseller_id = $2
 ORDER BY created_at DESC
 `
 
-func (r *ResellerRepository) ListCommissionsByTenant(ctx context.Context, tenantID string) ([]*reseller.Commission, error) {
+func (r *ResellerRepository) ListCommissionsByTenant(ctx context.Context, tenantID, resellerID string) ([]*reseller.Commission, error) {
 	db := DBFromContext(ctx, r.pool)
-	rows, err := db.Query(ctx, listCommissionsByTenantSQL, pgutil.UUIDToPgtype(tenantID))
+	rows, err := db.Query(ctx, listCommissionsByTenantSQL, pgutil.UUIDToPgtype(tenantID), pgutil.UUIDToPgtype(resellerID))
 	if err != nil {
 		return nil, fmt.Errorf("list commissions by tenant: %w", err)
 	}

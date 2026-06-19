@@ -39,10 +39,12 @@ type CommissionRepository interface {
 	// TOCTOU races during read-modify-write cycles.
 	GetCommissionByIDForUpdate(ctx context.Context, id string) (*aggregate.Commission, error)
 	GetPendingCommissions(ctx context.Context, resellerID string) ([]*aggregate.Commission, error)
-	// ListCommissionsByTenant returns all commissions for the active shop,
-	// ordered newest-first. RLS on reseller.commissions (043) scopes the rows;
-	// the active app.tenant_id GUC must be set (call inside RunInTx).
-	ListCommissionsByTenant(ctx context.Context, tenantID string) ([]*aggregate.Commission, error)
+	// ListCommissionsByTenant returns a single reseller's commissions within the
+	// active shop, ordered newest-first. RLS on reseller.commissions (043) scopes
+	// rows to the shop; the resellerID argument additionally scopes them to the
+	// resolved account so co-tenant resellers cannot see each other's rows. The
+	// active app.tenant_id GUC must be set (call inside RunInTx).
+	ListCommissionsByTenant(ctx context.Context, tenantID, resellerID string) ([]*aggregate.Commission, error)
 	UpdateCommission(ctx context.Context, commission *aggregate.Commission) error
 
 	UpdateResellerBalance(ctx context.Context, resellerID string, balance int64) error

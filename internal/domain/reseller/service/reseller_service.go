@@ -41,7 +41,7 @@ type CommissionRepository interface {
 	GetCommissionByID(ctx context.Context, id string) (*aggregate.Commission, error)
 	GetCommissionByIDForUpdate(ctx context.Context, id string) (*aggregate.Commission, error)
 	GetPendingCommissions(ctx context.Context, resellerID string) ([]*aggregate.Commission, error)
-	ListCommissionsByTenant(ctx context.Context, tenantID string) ([]*aggregate.Commission, error)
+	ListCommissionsByTenant(ctx context.Context, tenantID, resellerID string) ([]*aggregate.Commission, error)
 	UpdateCommission(ctx context.Context, commission *aggregate.Commission) error
 
 	UpdateResellerBalance(ctx context.Context, resellerID string, balance int64) error
@@ -376,17 +376,20 @@ func (s *ResellerService) ValidateAPIKey(ctx context.Context, plainKey string) (
 }
 
 // ListCommissions resolves the reseller account for userID under the active
-// shop server-side (never from request input), then returns the shop's
-// commissions tenant-scoped under RunInTx so the RLS GUC is set.
+// shop server-side (never from request input), then returns that reseller's
+// own commissions under RunInTx so the RLS GUC is set. The query is scoped to
+// the resolved account ID (not just the shop) so two reseller accounts in the
+// same shop cannot see each other's commissions.
 func (s *ResellerService) ListCommissions(ctx context.Context, userID, tenantID string) ([]*aggregate.Commission, error) {
 	// NOTE: s.commissions.ListCommissionsByTenant resolves because the
 	// service-local CommissionRepository was extended with it in C4.3.
 	var commissions []*aggregate.Commission
 	err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
-		if _, err := s.commissions.GetResellerAccountByUserAndTenant(txCtx, userID, tenantID); err != nil {
+		account, err := s.commissions.GetResellerAccountByUserAndTenant(txCtx, userID, tenantID)
+		if err != nil {
 			return fmt.Errorf("resolving reseller account: %w", err)
 		}
-		list, err := s.commissions.ListCommissionsByTenant(txCtx, tenantID)
+		list, err := s.commissions.ListCommissionsByTenant(txCtx, tenantID, account.ID)
 		if err != nil {
 			return fmt.Errorf("listing commissions: %w", err)
 		}

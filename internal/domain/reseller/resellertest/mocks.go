@@ -131,8 +131,8 @@ func (m *MockCommissionRepository) GetPendingCommissions(ctx context.Context, re
 	return args.Get(0).([]*reseller.Commission), args.Error(1)
 }
 
-func (m *MockCommissionRepository) ListCommissionsByTenant(ctx context.Context, tenantID string) ([]*reseller.Commission, error) {
-	args := m.Called(ctx, tenantID)
+func (m *MockCommissionRepository) ListCommissionsByTenant(ctx context.Context, tenantID, resellerID string) ([]*reseller.Commission, error) {
+	args := m.Called(ctx, tenantID, resellerID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
