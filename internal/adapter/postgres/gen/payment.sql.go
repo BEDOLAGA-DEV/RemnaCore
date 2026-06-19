@@ -14,8 +14,11 @@ import (
 const createPaymentRecord = `-- name: CreatePaymentRecord :exec
 
 INSERT INTO payment.payment_records (
-    id, invoice_id, provider, external_id, amount, currency, status, created_at, updated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    id, invoice_id, provider, external_id, amount, currency, status, created_at, updated_at, tenant_id
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9,
+    NULLIF(current_setting('app.tenant_id', true), '*')::uuid
+)
 `
 
 type CreatePaymentRecordParams struct {
@@ -33,6 +36,10 @@ type CreatePaymentRecordParams struct {
 // ============================================================================
 // Payment Records
 // ============================================================================
+// tenant_id self-stamped from the app.tenant_id GUC (sentinel '*' -> NULL
+// platform row; shop GUC -> that shop's UUID), so a shop session can never
+// write a foreign tenant_id and platform/sentinel writes yield the NULL the
+// WITH CHECK permits. Do NOT pass tenant_id as a param.
 func (q *Queries) CreatePaymentRecord(ctx context.Context, arg CreatePaymentRecordParams) error {
 	_, err := q.db.Exec(ctx, createPaymentRecord,
 		arg.ID,
@@ -83,7 +90,9 @@ func (q *Queries) CreateWebhookLog(ctx context.Context, arg CreateWebhookLogPara
 
 const getPaymentRecordByExternalID = `-- name: GetPaymentRecordByExternalID :one
 SELECT id, invoice_id, provider, external_id, amount, currency, status, created_at, updated_at
-FROM payment.payment_records WHERE provider = $1 AND external_id = $2
+FROM payment.payment_records
+WHERE provider = $1 AND external_id = $2
+  AND (tenant_id::text = current_setting('app.tenant_id', true) OR current_setting('app.tenant_id', true) = '*')
 `
 
 type GetPaymentRecordByExternalIDParams struct {
@@ -91,9 +100,24 @@ type GetPaymentRecordByExternalIDParams struct {
 	ExternalID string `json:"external_id"`
 }
 
-func (q *Queries) GetPaymentRecordByExternalID(ctx context.Context, arg GetPaymentRecordByExternalIDParams) (PaymentPaymentRecord, error) {
+type GetPaymentRecordByExternalIDRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	InvoiceID  pgtype.UUID        `json:"invoice_id"`
+	Provider   string             `json:"provider"`
+	ExternalID string             `json:"external_id"`
+	Amount     int64              `json:"amount"`
+	Currency   string             `json:"currency"`
+	Status     string             `json:"status"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Belt-and-suspenders tenant predicate (spec §5.3) behind the RLS GUC, mirroring
+// the GetPaymentRecordByExternalIDForUpdate guarded variant: sentinel '*' sees
+// all, a shop GUC sees only its own row; no IS NULL fail-open branch.
+func (q *Queries) GetPaymentRecordByExternalID(ctx context.Context, arg GetPaymentRecordByExternalIDParams) (GetPaymentRecordByExternalIDRow, error) {
 	row := q.db.QueryRow(ctx, getPaymentRecordByExternalID, arg.Provider, arg.ExternalID)
-	var i PaymentPaymentRecord
+	var i GetPaymentRecordByExternalIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.InvoiceID,
@@ -118,9 +142,21 @@ type GetPaymentRecordByExternalIDForUpdateParams struct {
 	ExternalID string `json:"external_id"`
 }
 
-func (q *Queries) GetPaymentRecordByExternalIDForUpdate(ctx context.Context, arg GetPaymentRecordByExternalIDForUpdateParams) (PaymentPaymentRecord, error) {
+type GetPaymentRecordByExternalIDForUpdateRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	InvoiceID  pgtype.UUID        `json:"invoice_id"`
+	Provider   string             `json:"provider"`
+	ExternalID string             `json:"external_id"`
+	Amount     int64              `json:"amount"`
+	Currency   string             `json:"currency"`
+	Status     string             `json:"status"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetPaymentRecordByExternalIDForUpdate(ctx context.Context, arg GetPaymentRecordByExternalIDForUpdateParams) (GetPaymentRecordByExternalIDForUpdateRow, error) {
 	row := q.db.QueryRow(ctx, getPaymentRecordByExternalIDForUpdate, arg.Provider, arg.ExternalID)
-	var i PaymentPaymentRecord
+	var i GetPaymentRecordByExternalIDForUpdateRow
 	err := row.Scan(
 		&i.ID,
 		&i.InvoiceID,
@@ -140,9 +176,21 @@ SELECT id, invoice_id, provider, external_id, amount, currency, status, created_
 FROM payment.payment_records WHERE id = $1
 `
 
-func (q *Queries) GetPaymentRecordByID(ctx context.Context, id pgtype.UUID) (PaymentPaymentRecord, error) {
+type GetPaymentRecordByIDRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	InvoiceID  pgtype.UUID        `json:"invoice_id"`
+	Provider   string             `json:"provider"`
+	ExternalID string             `json:"external_id"`
+	Amount     int64              `json:"amount"`
+	Currency   string             `json:"currency"`
+	Status     string             `json:"status"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetPaymentRecordByID(ctx context.Context, id pgtype.UUID) (GetPaymentRecordByIDRow, error) {
 	row := q.db.QueryRow(ctx, getPaymentRecordByID, id)
-	var i PaymentPaymentRecord
+	var i GetPaymentRecordByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.InvoiceID,
@@ -162,9 +210,21 @@ SELECT id, invoice_id, provider, external_id, amount, currency, status, created_
 FROM payment.payment_records WHERE id = $1 FOR UPDATE
 `
 
-func (q *Queries) GetPaymentRecordByIDForUpdate(ctx context.Context, id pgtype.UUID) (PaymentPaymentRecord, error) {
+type GetPaymentRecordByIDForUpdateRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	InvoiceID  pgtype.UUID        `json:"invoice_id"`
+	Provider   string             `json:"provider"`
+	ExternalID string             `json:"external_id"`
+	Amount     int64              `json:"amount"`
+	Currency   string             `json:"currency"`
+	Status     string             `json:"status"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetPaymentRecordByIDForUpdate(ctx context.Context, id pgtype.UUID) (GetPaymentRecordByIDForUpdateRow, error) {
 	row := q.db.QueryRow(ctx, getPaymentRecordByIDForUpdate, id)
-	var i PaymentPaymentRecord
+	var i GetPaymentRecordByIDForUpdateRow
 	err := row.Scan(
 		&i.ID,
 		&i.InvoiceID,

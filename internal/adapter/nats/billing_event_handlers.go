@@ -19,6 +19,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/payment"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tracing"
 )
 
@@ -397,23 +398,38 @@ func (c *BillingEventConsumer) handleActivated(ctx context.Context, event domain
 		return errMissingSubscriptionID
 	}
 
-	subInfo, err := c.subs.GetSubscriptionInfo(ctx, payload.SubscriptionID)
-	if err != nil {
-		return fmt.Errorf("lookup subscription %s: %w", payload.SubscriptionID, err)
-	}
+	var subInfo multisub.SubscriptionInfo
+	var plan multisub.PlanSnapshot
+	var familyMemberIDs []string
 
-	plan, err := c.plans.GetPlanSnapshot(ctx, subInfo.PlanID)
-	if err != nil {
-		return fmt.Errorf("lookup plan %s: %w", subInfo.PlanID, err)
-	}
+	// Background path: the event carries no tenant key, so enrichment reads run
+	// under the platform sentinel (sees all tenants) inside a single tx, so the
+	// RLS GUC is set for the FORCE-RLS Tier-2 tables (post-042). When events
+	// gain a tenant key, swap WithPlatformScope for WithTenantID(event tenant).
+	err = c.runner.RunInTx(tenantctx.WithPlatformScope(ctx), func(txCtx context.Context) error {
+		var err error
+		subInfo, err = c.subs.GetSubscriptionInfo(txCtx, payload.SubscriptionID)
+		if err != nil {
+			return fmt.Errorf("lookup subscription %s: %w", payload.SubscriptionID, err)
+		}
 
-	familyMemberIDs, err := c.subs.GetFamilyMemberIDs(ctx, subInfo.UserID)
+		plan, err = c.plans.GetPlanSnapshot(txCtx, subInfo.PlanID)
+		if err != nil {
+			return fmt.Errorf("lookup plan %s: %w", subInfo.PlanID, err)
+		}
+
+		familyMemberIDs, err = c.subs.GetFamilyMemberIDs(txCtx, subInfo.UserID)
+		if err != nil {
+			c.logger.Warn("failed to lookup family members, proceeding without",
+				slog.String("user_id", subInfo.UserID),
+				slog.Any("error", err),
+			)
+			familyMemberIDs = nil
+		}
+		return nil
+	})
 	if err != nil {
-		c.logger.Warn("failed to lookup family members, proceeding without",
-			slog.String("user_id", subInfo.UserID),
-			slog.Any("error", err),
-		)
-		familyMemberIDs = nil
+		return err
 	}
 
 	return c.handler.OnSubscriptionActivated(
@@ -441,7 +457,12 @@ func (c *BillingEventConsumer) handleChargeCompleted(ctx context.Context, event 
 		return errMissingInvoiceID
 	}
 
-	return c.checkout.CompleteCheckout(ctx, payload.InvoiceID)
+	// Background path: no tenant key on the event, so the invoice read/update
+	// inside CompleteCheckout runs under the platform sentinel in a single tx so
+	// the RLS GUC is set for the FORCE-RLS checkout/balance tables (post-042).
+	return c.runner.RunInTx(tenantctx.WithPlatformScope(ctx), func(txCtx context.Context) error {
+		return c.checkout.CompleteCheckout(txCtx, payload.InvoiceID)
+	})
 }
 
 // handleSimple handles events that only require a subscription_id (cancelled,
@@ -460,7 +481,14 @@ func (c *BillingEventConsumer) handleSimple(
 		return errMissingSubscriptionID
 	}
 
-	return fn(ctx, payload.SubscriptionID)
+	// Background path: no tenant key on the event, so the platform sentinel is
+	// annotated onto the ctx. We do NOT open an outer RunInTx here: the downstream
+	// orchestrator is a multi-step saga / binding-lifecycle loop whose steps must
+	// commit independently (per-step crash durability) and whose external
+	// Remnawave HTTP calls must stay outside any open DB tx. Each Tier-2 step
+	// opens its OWN narrow RunInTx, which sets the RLS GUC from this annotated
+	// scope without holding one big transaction.
+	return fn(tenantctx.WithPlatformScope(ctx), payload.SubscriptionID)
 }
 
 // handleTrafficExceeded handles the binding.traffic_exceeded event. It extracts
@@ -482,7 +510,11 @@ func (c *BillingEventConsumer) handleTrafficExceeded(ctx context.Context, event 
 		return errMissingSubscriptionID
 	}
 
-	return c.handler.OnBindingTrafficExceeded(ctx, payload.BindingID, payload.SubscriptionID, payload.UsedBytes, payload.LimitBytes)
+	// Background path: no tenant key on the event, so the platform sentinel is
+	// annotated onto the ctx. No outer RunInTx: the orchestrator's binding-lifecycle
+	// step opens its OWN narrow RunInTx, which sets the RLS GUC from this scope
+	// per-step rather than holding one wrapping transaction.
+	return c.handler.OnBindingTrafficExceeded(tenantctx.WithPlatformScope(ctx), payload.BindingID, payload.SubscriptionID, payload.UsedBytes, payload.LimitBytes)
 }
 
 // handleTrafficReset handles the subscription.traffic_cycle_reset event. It
@@ -500,7 +532,11 @@ func (c *BillingEventConsumer) handleTrafficReset(ctx context.Context, event dom
 		return errMissingSubscriptionID
 	}
 
-	return c.handler.OnBindingTrafficReset(ctx, payload.BindingID, payload.SubscriptionID)
+	// Background path: no tenant key on the event, so the platform sentinel is
+	// annotated onto the ctx. No outer RunInTx: the orchestrator's binding-lifecycle
+	// step opens its OWN narrow RunInTx, which sets the RLS GUC from this scope
+	// per-step rather than holding one wrapping transaction.
+	return c.handler.OnBindingTrafficReset(tenantctx.WithPlatformScope(ctx), payload.BindingID, payload.SubscriptionID)
 }
 
 // handleTrafficWarning handles the subscription.traffic_warning event. It
@@ -520,6 +556,10 @@ func (c *BillingEventConsumer) handleTrafficWarning(ctx context.Context, event d
 		return errMissingSubscriptionID
 	}
 
-	c.handler.OnTrafficWarning(ctx, payload.BindingID, payload.SubscriptionID, payload.UsedBytes, payload.LimitBytes, payload.ThresholdPct)
+	// Background path: no tenant key on the event, so the platform sentinel is
+	// annotated onto the ctx. OnTrafficWarning is fire-and-forget and performs no
+	// Tier-2 DB read (it only dispatches an async hook), so there is nothing to
+	// wrap in a tx; the scope is carried for consistency and any future Tier-2 op.
+	c.handler.OnTrafficWarning(tenantctx.WithPlatformScope(ctx), payload.BindingID, payload.SubscriptionID, payload.UsedBytes, payload.LimitBytes, payload.ThresholdPct)
 	return nil
 }

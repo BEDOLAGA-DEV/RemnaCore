@@ -8,6 +8,7 @@ import (
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tracing"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
@@ -220,7 +221,10 @@ func (f *PaymentFacade) Refund(ctx context.Context, paymentID string, amount int
 // publish are all inside a single transaction to prevent TOCTOU races.
 func (f *PaymentFacade) CompletePayment(ctx context.Context, provider, externalID string) (*PaymentRecord, error) {
 	var record *PaymentRecord
-	err := f.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+	// The public payment webhook carries no tenant context, so the read/lock and
+	// writes on payment_records (FORCE RLS post-042) run under the platform
+	// sentinel; an unset GUC would otherwise see and persist zero rows.
+	err := f.txRunner.RunInTx(tenantctx.WithPlatformScope(ctx), func(txCtx context.Context) error {
 		var err error
 		record, err = f.repo.GetPaymentByExternalIDForUpdate(txCtx, provider, externalID)
 		if err != nil {

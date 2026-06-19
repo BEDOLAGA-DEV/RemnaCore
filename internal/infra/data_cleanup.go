@@ -5,6 +5,9 @@ import (
 	"context"
 	"log/slog"
 	"time"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
 // Data cleanup constants.
@@ -40,20 +43,25 @@ type BindingSyncLogCleaner interface {
 type DataCleanupScheduler struct {
 	idempotency IdempotencyKeysCleaner
 	syncLog     BindingSyncLogCleaner
+	runner      txmanager.Runner
 	logger      *slog.Logger
 	interval    time.Duration
 }
 
 // NewDataCleanupScheduler creates a DataCleanupScheduler with its
-// dependencies and the default cleanup interval.
+// dependencies and the default cleanup interval. The runner wraps each cleanup
+// in a transaction under the platform sentinel so it can read/delete from
+// FORCE-RLS tables (idempotency keys, binding sync log).
 func NewDataCleanupScheduler(
 	idempotency IdempotencyKeysCleaner,
 	syncLog BindingSyncLogCleaner,
+	runner txmanager.Runner,
 	logger *slog.Logger,
 ) *DataCleanupScheduler {
 	return &DataCleanupScheduler{
 		idempotency: idempotency,
 		syncLog:     syncLog,
+		runner:      runner,
 		logger:      logger,
 		interval:    DataCleanupInterval,
 	}
@@ -74,30 +82,43 @@ func (s *DataCleanupScheduler) Run(ctx context.Context) {
 	}
 }
 
-// cleanup removes old idempotency keys and binding sync log entries.
-// Each operation is independent; a failure in one does not block the others.
+// CleanupForTest exposes cleanup for unit tests in the infra_test package.
+func (s *DataCleanupScheduler) CleanupForTest(ctx context.Context) { s.cleanup(ctx) }
+
+// cleanup removes old idempotency keys and binding sync log entries. Each
+// operation runs in its own transaction under the platform sentinel so it can
+// touch FORCE-RLS tables; a failure in one does not block the others.
 func (s *DataCleanupScheduler) cleanup(ctx context.Context) {
 	now := time.Now()
+	platformCtx := tenantctx.WithPlatformScope(ctx)
 
 	idempotencyCutoff := now.Add(-IdempotencyKeyRetention)
-	if n, err := s.idempotency.CleanupOldKeys(ctx, idempotencyCutoff); err != nil {
-		s.logger.Warn("data cleanup: idempotency keys failed",
-			slog.Any("error", err),
-		)
-	} else if n > 0 {
-		s.logger.Info("data cleanup: removed old idempotency keys",
-			slog.Int64("count", n),
-		)
+	err := s.runner.RunInTx(platformCtx, func(txCtx context.Context) error {
+		n, err := s.idempotency.CleanupOldKeys(txCtx, idempotencyCutoff)
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			s.logger.Info("data cleanup: removed old idempotency keys", slog.Int64("count", n))
+		}
+		return nil
+	})
+	if err != nil {
+		s.logger.Warn("data cleanup: idempotency keys failed", slog.Any("error", err))
 	}
 
 	syncLogCutoff := now.Add(-BindingSyncLogRetention)
-	if n, err := s.syncLog.CleanupOldSyncLog(ctx, syncLogCutoff); err != nil {
-		s.logger.Warn("data cleanup: binding sync log failed",
-			slog.Any("error", err),
-		)
-	} else if n > 0 {
-		s.logger.Info("data cleanup: removed old binding sync log entries",
-			slog.Int64("count", n),
-		)
+	err = s.runner.RunInTx(platformCtx, func(txCtx context.Context) error {
+		n, err := s.syncLog.CleanupOldSyncLog(txCtx, syncLogCutoff)
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			s.logger.Info("data cleanup: removed old binding sync log entries", slog.Int64("count", n))
+		}
+		return nil
+	})
+	if err != nil {
+		s.logger.Warn("data cleanup: binding sync log failed", slog.Any("error", err))
 	}
 }

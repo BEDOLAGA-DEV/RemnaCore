@@ -117,6 +117,24 @@ func (h *PluginRPCHandler) CallFunction(w http.ResponseWriter, r *http.Request) 
 	_, _ = w.Write(output)
 }
 
+// denyBuiltInCollectionWrite blocks generic collection write routes
+// (Insert/Update/Delete) against built-in plugins. C6: built-in plugins (e.g.
+// tariff-manager) register their OWN dedicated, permission- and provenance-
+// guarded write endpoints; the generic /collections write path bypasses those
+// guards, letting any authed principal POST e.g. {"is_template":true} straight
+// into a built-in plugin's reserved collection. Writes to a built-in plugin's
+// collections must therefore go through that plugin's own endpoints. WASM
+// (non-built-in) plugins keep using the generic write routes for their own
+// collections. Returns true when the write was denied (response already
+// written) and the caller must stop.
+func (h *PluginRPCHandler) denyBuiltInCollectionWrite(w http.ResponseWriter, p *plugin.Plugin) bool {
+	if p.IsBuiltIn {
+		writeAPIError(w, apierror.PluginCollectionReadOnly)
+		return true
+	}
+	return false
+}
+
 // --- Collections ---
 
 // ListDocuments handles GET /api/plugins/{pluginSlug}/collections/{collection}.
@@ -140,8 +158,11 @@ func (h *PluginRPCHandler) ListDocuments(w http.ResponseWriter, r *http.Request)
 
 // InsertDocument handles POST /api/plugins/{pluginSlug}/collections/{collection}.
 func (h *PluginRPCHandler) InsertDocument(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.verifyPluginEnabled(w, r)
+	p, ok := h.verifyPluginEnabled(w, r)
 	if !ok {
+		return
+	}
+	if h.denyBuiltInCollectionWrite(w, p) {
 		return
 	}
 
@@ -198,8 +219,11 @@ func (h *PluginRPCHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
 
 // UpdateDocument handles PUT /api/plugins/{pluginSlug}/collections/{collection}/{docID}.
 func (h *PluginRPCHandler) UpdateDocument(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.verifyPluginEnabled(w, r)
+	p, ok := h.verifyPluginEnabled(w, r)
 	if !ok {
+		return
+	}
+	if h.denyBuiltInCollectionWrite(w, p) {
 		return
 	}
 
@@ -236,8 +260,11 @@ func (h *PluginRPCHandler) UpdateDocument(w http.ResponseWriter, r *http.Request
 
 // DeleteDocument handles DELETE /api/plugins/{pluginSlug}/collections/{collection}/{docID}.
 func (h *PluginRPCHandler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.verifyPluginEnabled(w, r)
+	p, ok := h.verifyPluginEnabled(w, r)
 	if !ok {
+		return
+	}
+	if h.denyBuiltInCollectionWrite(w, p) {
 		return
 	}
 

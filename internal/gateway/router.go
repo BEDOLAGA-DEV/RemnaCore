@@ -260,8 +260,11 @@ func NewRouter(p RouterParams) http.Handler {
 				// User / subscription / invoice management
 				admin.With(perm(p.AccessService, rbac.UsersRead)).Get("/users", p.AdminHandler.ListUsers)
 				admin.With(perm(p.AccessService, rbac.UsersRead)).Get("/users/{userID}", p.AdminHandler.GetUser)
-				admin.With(perm(p.AccessService, rbac.SubscriptionsRead)).Get("/subscriptions", p.AdminHandler.ListSubscriptions)
-				admin.With(perm(p.AccessService, rbac.BillingRead)).Get("/invoices", p.AdminHandler.ListInvoices)
+				// Platform aggregate lists — gated platform-only (AnalyticsRead).
+				// SubscriptionsRead/BillingRead are now shop-scoped; shop owners get
+				// their own subscriptions/invoices via the tenant-scoped C4 endpoints.
+				admin.With(perm(p.AccessService, rbac.AnalyticsRead)).Get("/subscriptions", p.AdminHandler.ListSubscriptions)
+				admin.With(perm(p.AccessService, rbac.AnalyticsRead)).Get("/invoices", p.AdminHandler.ListInvoices)
 
 				// System settings
 				admin.With(perm(p.AccessService, rbac.SettingsManage)).Get("/settings", p.SettingsHandler.GetSettings)
@@ -294,7 +297,7 @@ func NewRouter(p RouterParams) http.Handler {
 			// permissions (ShopResolver already applied at the protected-group
 			// level, so the active tenant from X-Shop-Id is present here).
 			protected.Route("/reseller", func(resellerRouter chi.Router) {
-				resellerRouter.With(perm(p.AccessService, rbac.ShopsRead)).Get("/dashboard", p.ResellerHandler.Dashboard)
+				resellerRouter.With(perm(p.AccessService, rbac.DashboardRead)).Get("/dashboard", p.ResellerHandler.Dashboard)
 				resellerRouter.With(perm(p.AccessService, rbac.BillingRead)).Get("/commissions", p.ResellerHandler.Commissions)
 				resellerRouter.With(perm(p.AccessService, rbac.CustomersRead)).Get("/customers", p.ResellerHandler.Customers)
 			})

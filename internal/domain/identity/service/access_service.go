@@ -11,10 +11,12 @@ import (
 
 // EffectiveAccess is a user's resolved authorization for an active tenant.
 type EffectiveAccess struct {
-	UserID          string
-	IsPlatformAdmin bool
-	Permissions     map[rbac.Permission]struct{}
-	AllowedTenants  map[string]struct{}
+	UserID              string
+	IsPlatformAdmin     bool
+	Permissions         map[rbac.Permission]struct{} // union (back-compat)
+	PlatformPermissions map[rbac.Permission]struct{} // from global/platform bindings only
+	ShopPermissions     map[rbac.Permission]struct{} // from the active-tenant binding only
+	AllowedTenants      map[string]struct{}
 }
 
 // AccessCacheTTL bounds how long a resolved EffectiveAccess is reused. A revoked
@@ -76,11 +78,16 @@ func (s *AccessService) Resolve(ctx context.Context, userID string, tenantID *st
 	}
 
 	acc := EffectiveAccess{
-		UserID:         userID,
-		Permissions:    map[rbac.Permission]struct{}{},
-		AllowedTenants: map[string]struct{}{},
+		UserID:              userID,
+		Permissions:         map[rbac.Permission]struct{}{},
+		PlatformPermissions: map[rbac.Permission]struct{}{},
+		ShopPermissions:     map[rbac.Permission]struct{}{},
+		AllowedTenants:      map[string]struct{}{},
 	}
-	relevantRoleIDs := make([]string, 0, len(bindings))
+	// Track which relevant role IDs came from a platform (global) binding vs the
+	// active-tenant (shop) binding, so permissions can be attributed by source.
+	platformRoleIDs := make([]string, 0, len(bindings))
+	shopRoleIDs := make([]string, 0, len(bindings))
 	for _, b := range bindings {
 		if b.TenantID != nil {
 			acc.AllowedTenants[*b.TenantID] = struct{}{}
@@ -88,19 +95,30 @@ func (s *AccessService) Resolve(ctx context.Context, userID string, tenantID *st
 		if b.ScopeKind == rbac.ScopeGlobal && b.RoleKey == rbac.RolePlatformAdmin {
 			acc.IsPlatformAdmin = true
 		}
-		// A binding contributes permissions only if it is global, or scoped to
-		// the active tenant.
-		if b.TenantID == nil || (tenantID != nil && *b.TenantID == *tenantID) {
-			relevantRoleIDs = append(relevantRoleIDs, b.RoleID)
+		switch {
+		case b.TenantID == nil:
+			// Global/platform binding.
+			platformRoleIDs = append(platformRoleIDs, b.RoleID)
+		case tenantID != nil && *b.TenantID == *tenantID:
+			// Active-tenant (shop) binding.
+			shopRoleIDs = append(shopRoleIDs, b.RoleID)
 		}
 	}
+	relevantRoleIDs := append(append([]string{}, platformRoleIDs...), shopRoleIDs...)
 	if len(relevantRoleIDs) > 0 {
 		permsByRole, err := s.repo.PermissionsForRoles(ctx, relevantRoleIDs)
 		if err != nil {
 			return EffectiveAccess{}, err
 		}
-		for _, ps := range permsByRole {
-			for _, p := range ps {
+		for _, id := range platformRoleIDs {
+			for _, p := range permsByRole[id] {
+				acc.PlatformPermissions[p] = struct{}{}
+				acc.Permissions[p] = struct{}{}
+			}
+		}
+		for _, id := range shopRoleIDs {
+			for _, p := range permsByRole[id] {
+				acc.ShopPermissions[p] = struct{}{}
 				acc.Permissions[p] = struct{}{}
 			}
 		}
@@ -112,13 +130,23 @@ func (s *AccessService) Resolve(ctx context.Context, userID string, tenantID *st
 	return acc, nil
 }
 
-// Can reports whether the access grants permission p (platform admin = allow-all).
+// Can reports whether the access grants permission p. Platform admin is
+// allow-all. Otherwise enforcement is provenance-aware: a PermScopeShop
+// permission is satisfied only from ShopPermissions (the active-tenant
+// binding); a PermScopePlatform permission only from PlatformPermissions. A
+// shop-scoped principal can never satisfy a platform gate via its shop binding.
 func (s *AccessService) Can(acc EffectiveAccess, p rbac.Permission) bool {
 	if acc.IsPlatformAdmin {
 		return true
 	}
-	_, ok := acc.Permissions[p]
-	return ok
+	switch rbac.PermissionScope(p) {
+	case rbac.PermScopeShop:
+		_, ok := acc.ShopPermissions[p]
+		return ok
+	default: // PermScopePlatform
+		_, ok := acc.PlatformPermissions[p]
+		return ok
+	}
 }
 
 // Invalidate drops all cached entries for a user (call on assignment grant/revoke).

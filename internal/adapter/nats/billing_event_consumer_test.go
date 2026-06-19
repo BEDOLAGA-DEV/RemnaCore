@@ -31,11 +31,11 @@ import (
 // stubIdempotencyChecker records keys and allows controlling duplicates.
 // It also tracks Release and IncrementRetry calls for assertion.
 type stubIdempotencyChecker struct {
-	mu           sync.Mutex
-	seen         map[string]bool
-	retryCounts  map[string]int
-	released     []string
-	forceErr     error
+	mu            sync.Mutex
+	seen          map[string]bool
+	retryCounts   map[string]int
+	released      []string
+	forceErr      error
 	forceRetryErr error
 }
 
@@ -227,6 +227,7 @@ func TestHandleMessage_PerEventInstanceIdempotencyKey(t *testing.T) {
 	handler := &recordingHandler{}
 
 	consumer := &BillingEventConsumer{
+		runner:         &passthroughRunner{},
 		handler:        handler,
 		idempotency:    idem,
 		schemaRegistry: domainevent.NewSchemaRegistry(),
@@ -265,6 +266,7 @@ func TestHandleMessage_DuplicateEventSkipped(t *testing.T) {
 	}
 
 	consumer := &BillingEventConsumer{
+		runner:         &passthroughRunner{},
 		handler:        handler,
 		idempotency:    idem,
 		schemaRegistry: domainevent.NewSchemaRegistry(),
@@ -298,6 +300,7 @@ func TestHandleMessage_FallbackToSubscriptionIDFromPayload(t *testing.T) {
 	handler := &recordingHandler{}
 
 	consumer := &BillingEventConsumer{
+		runner:         &passthroughRunner{},
 		handler:        handler,
 		idempotency:    idem,
 		schemaRegistry: domainevent.NewSchemaRegistry(),
@@ -344,6 +347,7 @@ func TestHandleMessage_SerialProcessingPerEntity(t *testing.T) {
 	}
 
 	consumer := &BillingEventConsumer{
+		runner:         &passthroughRunner{},
 		handler:        handler,
 		idempotency:    idem,
 		schemaRegistry: domainevent.NewSchemaRegistry(),
@@ -405,6 +409,7 @@ func TestHandleMessage_DifferentEntitiesProcessConcurrently(t *testing.T) {
 	}
 
 	consumer := &BillingEventConsumer{
+		runner:         &passthroughRunner{},
 		handler:        handler,
 		idempotency:    idem,
 		schemaRegistry: domainevent.NewSchemaRegistry(),
@@ -463,6 +468,7 @@ func TestHandleMessage_FailureReleasesIdempotencyKey(t *testing.T) {
 	}
 
 	consumer := &BillingEventConsumer{
+		runner:         &passthroughRunner{},
 		handler:        handler,
 		idempotency:    idem,
 		schemaRegistry: domainevent.NewSchemaRegistry(),
@@ -500,6 +506,7 @@ func TestHandleMessage_RetryCountIncrementedOnFailure(t *testing.T) {
 	}
 
 	consumer := &BillingEventConsumer{
+		runner:         &passthroughRunner{},
 		handler:        handler,
 		idempotency:    idem,
 		schemaRegistry: domainevent.NewSchemaRegistry(),
@@ -533,6 +540,7 @@ func TestHandleMessage_DLQAfterMaxRetries(t *testing.T) {
 	}
 
 	consumer := &BillingEventConsumer{
+		runner:         &passthroughRunner{},
 		handler:        handler,
 		idempotency:    idem,
 		schemaRegistry: domainevent.NewSchemaRegistry(),
@@ -575,6 +583,7 @@ func TestHandleMessage_RedeliveryAfterFailureIsProcessed(t *testing.T) {
 	}
 
 	consumer := &BillingEventConsumer{
+		runner:         &passthroughRunner{},
 		handler:        handler,
 		idempotency:    idem,
 		schemaRegistry: domainevent.NewSchemaRegistry(),
@@ -648,6 +657,7 @@ func TestHandleMessage_SuccessIncrementsProcessedCounter(t *testing.T) {
 	handler := &recordingHandler{}
 
 	consumer := &BillingEventConsumer{
+		runner:         &passthroughRunner{},
 		handler:        handler,
 		idempotency:    &alwaysNewIdempotencyChecker{},
 		schemaRegistry: domainevent.NewSchemaRegistry(),
@@ -682,6 +692,7 @@ func TestHandleMessage_DuplicateIncrementsIdempotencyHitCounter(t *testing.T) {
 	handler := &recordingHandler{}
 
 	consumer := &BillingEventConsumer{
+		runner:         &passthroughRunner{},
 		handler:        handler,
 		idempotency:    idem,
 		schemaRegistry: domainevent.NewSchemaRegistry(),
@@ -720,6 +731,7 @@ func TestHandleMessage_EventProcessingLagRecorded(t *testing.T) {
 	handler := &recordingHandler{}
 
 	consumer := &BillingEventConsumer{
+		runner:         &passthroughRunner{},
 		handler:        handler,
 		idempotency:    &alwaysNewIdempotencyChecker{},
 		schemaRegistry: domainevent.NewSchemaRegistry(),
@@ -752,6 +764,7 @@ func TestHandleMessage_ZeroTimestampSkipsLag(t *testing.T) {
 	handler := &recordingHandler{}
 
 	consumer := &BillingEventConsumer{
+		runner:         &passthroughRunner{},
 		handler:        handler,
 		idempotency:    &alwaysNewIdempotencyChecker{},
 		schemaRegistry: domainevent.NewSchemaRegistry(),
@@ -779,6 +792,7 @@ func TestHandleMessage_ZeroTimestampSkipsLag(t *testing.T) {
 
 func TestDrain_CompletesWhenNoInflight(t *testing.T) {
 	consumer := &BillingEventConsumer{
+		runner: &passthroughRunner{},
 		logger: discardLogger(),
 		clock:  clock.NewReal(),
 	}
@@ -800,6 +814,7 @@ func TestDrain_CompletesWhenNoInflight(t *testing.T) {
 
 func TestDrain_WaitsForInflight(t *testing.T) {
 	consumer := &BillingEventConsumer{
+		runner: &passthroughRunner{},
 		logger: discardLogger(),
 		clock:  clock.NewReal(),
 	}
@@ -834,6 +849,7 @@ func TestDrain_WaitsForInflight(t *testing.T) {
 
 func TestPollDLQDepth_ReturnsWhenNilConn(t *testing.T) {
 	consumer := &BillingEventConsumer{
+		runner:  &passthroughRunner{},
 		logger:  discardLogger(),
 		clock:   clock.NewReal(),
 		metrics: newTestConsumerMetrics(),
@@ -856,6 +872,7 @@ func TestPollDLQDepth_ReturnsWhenNilConn(t *testing.T) {
 
 func TestPollDLQDepth_ReturnsWhenNilMetrics(t *testing.T) {
 	consumer := &BillingEventConsumer{
+		runner: &passthroughRunner{},
 		logger: discardLogger(),
 		clock:  clock.NewReal(),
 		// metrics is nil — pollDLQDepth must return immediately.
@@ -901,6 +918,7 @@ func TestHandleMessage_TwoEventsForSameEntityBothProcessed(t *testing.T) {
 	}
 
 	consumer := &BillingEventConsumer{
+		runner:         &passthroughRunner{},
 		handler:        handler,
 		idempotency:    idem,
 		schemaRegistry: domainevent.NewSchemaRegistry(),
@@ -939,6 +957,7 @@ func TestHandleMessage_BackwardCompat_OldEventWithoutIDUsesTypeEntityKey(t *test
 	handler := &recordingHandler{}
 
 	consumer := &BillingEventConsumer{
+		runner:         &passthroughRunner{},
 		handler:        handler,
 		idempotency:    idem,
 		schemaRegistry: domainevent.NewSchemaRegistry(),
@@ -980,6 +999,7 @@ func TestHandleChargeCompleted_Success(t *testing.T) {
 		schemaRegistry: domainevent.NewSchemaRegistry(),
 		logger:         discardLogger(),
 		clock:          clock.NewReal(),
+		runner:         &passthroughRunner{},
 	}
 
 	event := domainevent.NewWithEntity(
@@ -1012,6 +1032,7 @@ func TestHandleChargeCompleted_MissingInvoiceID(t *testing.T) {
 	idem := newStubIdempotencyChecker()
 
 	consumer := &BillingEventConsumer{
+		runner:         &passthroughRunner{},
 		handler:        &recordingHandler{},
 		checkout:       checkout,
 		idempotency:    idem,
@@ -1056,6 +1077,7 @@ func TestHandleChargeCompleted_CompleteCheckoutError(t *testing.T) {
 		schemaRegistry: domainevent.NewSchemaRegistry(),
 		logger:         discardLogger(),
 		clock:          clock.NewReal(),
+		runner:         &passthroughRunner{},
 	}
 
 	event := domainevent.NewWithEntity(
@@ -1090,6 +1112,7 @@ func TestEvictStaleLocks_RemovesExpiredAndKeepsActive(t *testing.T) {
 	mockClock := clock.NewMock(baseTime)
 
 	consumer := &BillingEventConsumer{
+		runner:  &passthroughRunner{},
 		logger:  discardLogger(),
 		clock:   mockClock,
 		metrics: metrics,
@@ -1154,6 +1177,7 @@ func TestEvictStaleLocks_NoEvictionsWhenAllFresh(t *testing.T) {
 	mockClock := clock.NewMock(baseTime)
 
 	consumer := &BillingEventConsumer{
+		runner:  &passthroughRunner{},
 		logger:  discardLogger(),
 		clock:   mockClock,
 		metrics: metrics,
@@ -1193,6 +1217,7 @@ func TestEvictStaleLocks_NoEvictionsWhenAllFresh(t *testing.T) {
 
 func TestEvictStaleLocks_ExitsOnContextCancel(t *testing.T) {
 	consumer := &BillingEventConsumer{
+		runner: &passthroughRunner{},
 		logger: discardLogger(),
 		clock:  clock.NewReal(),
 	}

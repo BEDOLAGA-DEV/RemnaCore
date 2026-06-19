@@ -136,6 +136,8 @@ type BillingFamilyGroup struct {
 	MaxMembers int32              `json:"max_members"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+	// Owning shop (no FK: cross-schema boundary, enforced by application). NULL = platform-owned.
+	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
 type BillingFamilyMember struct {
@@ -145,6 +147,8 @@ type BillingFamilyMember struct {
 	Role          string             `json:"role"`
 	Nickname      *string            `json:"nickname"`
 	JoinedAt      pgtype.Timestamptz `json:"joined_at"`
+	// Owning shop (no FK: cross-schema boundary, enforced by application). NULL = platform-owned.
+	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
 type BillingInvoice struct {
@@ -162,6 +166,8 @@ type BillingInvoice struct {
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 	PricingReason       string             `json:"pricing_reason"`
 	Discounts           []byte             `json:"discounts"`
+	// Owning shop (no FK: cross-schema boundary, enforced by application). NULL = platform-owned.
+	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
 type BillingInvoiceLineItem struct {
@@ -172,6 +178,8 @@ type BillingInvoiceLineItem struct {
 	Amount      int64       `json:"amount"`
 	Currency    string      `json:"currency"`
 	Quantity    int32       `json:"quantity"`
+	// Owning shop (no FK: cross-schema boundary, enforced by application). NULL = platform-owned.
+	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
 type BillingPlan struct {
@@ -226,6 +234,8 @@ type BillingSubscription struct {
 	PendingPlanID         pgtype.UUID        `json:"pending_plan_id"`
 	PendingOriginalPlanID pgtype.UUID        `json:"pending_original_plan_id"`
 	PendingRequestedAt    pgtype.Timestamptz `json:"pending_requested_at"`
+	// Owning shop (no FK: cross-schema boundary, enforced by application). NULL = platform-owned.
+	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
 type CheckoutSavedMethod struct {
@@ -372,6 +382,8 @@ type MultisubBindingSyncLog struct {
 	EventType string             `json:"event_type"`
 	Details   []byte             `json:"details"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// Owning shop (no FK: cross-schema boundary, enforced by application). NULL = platform-owned.
+	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
 type MultisubIdempotencyKey struct {
@@ -400,6 +412,8 @@ type MultisubRemnawaveBinding struct {
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	FailReason         string             `json:"fail_reason"`
+	// Owning shop (no FK: cross-schema boundary, enforced by application). NULL = platform-owned.
+	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
 type MultisubSagaInstance struct {
@@ -441,6 +455,8 @@ type PaymentPaymentRecord struct {
 	Status     string             `json:"status"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+	// Owning shop (no FK: cross-schema boundary, enforced by application). NULL = platform-owned.
+	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
 type PaymentWebhookLog struct {
@@ -466,6 +482,8 @@ type PluginsCollection struct {
 	Document   []byte             `json:"document"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+	// Owning shop tenant (no FK: cross-schema boundary, enforced by application + RLS). NULL = platform-owned document, visible only under the platform sentinel.
+	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
 type PluginsPluginRegistry struct {
@@ -516,6 +534,8 @@ type ResellerCommission struct {
 	Status     string             `json:"status"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	PaidAt     pgtype.Timestamptz `json:"paid_at"`
+	// Denormalized from reseller.reseller_accounts.tenant_id via reseller_id (no FK: same-schema denormalization for RLS). NULL = platform-owned.
+	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
 type ResellerResellerAccount struct {

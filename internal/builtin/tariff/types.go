@@ -199,6 +199,13 @@ type TariffInput struct {
 	BadgeText    string            `json:"badge_text"`
 	BadgeColor   string            `json:"badge_color"`
 	ExternalRefs map[string]string `json:"external_refs,omitempty"`
+
+	// --- Tenancy (RBAC Phase C6) ---
+	// IsTemplate marks a platform-managed shared tariff that is readable by
+	// every shop (read-filter in ListTariffs). Server-controlled: a shop actor
+	// can never set this true (CreateTariff forces it false). Writes to a
+	// stored template are platform-admin-only.
+	IsTemplate bool `json:"is_template"`
 }
 
 // TariffResponse wraps TariffInput with server-assigned identity and

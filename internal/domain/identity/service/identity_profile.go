@@ -118,10 +118,20 @@ func (s *Service) UnlinkTelegram(ctx context.Context, userID string) error {
 }
 
 // ListUsers returns a paginated list of all users. Intended for admin endpoints.
+// Wrapped in RunInTx so set_config('app.tenant_id', …) runs for RLS; the
+// re-entrancy guard makes this cheap when an outer tx is already open.
 func (s *Service) ListUsers(ctx context.Context, limit, offset int) ([]*aggregate.PlatformUser, error) {
-	users, err := s.repo.ListUsers(ctx, limit, offset)
+	var users []*aggregate.PlatformUser
+	err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		var err error
+		users, err = s.repo.ListUsers(txCtx, limit, offset)
+		if err != nil {
+			return fmt.Errorf("listing users: %w", err)
+		}
+		return nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("listing users: %w", err)
+		return nil, err
 	}
 	return users, nil
 }

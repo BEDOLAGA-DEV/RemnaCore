@@ -38,7 +38,7 @@ import (
 // by IAM Phase B: identity, reseller, rbac, and invitations.
 func setupIAMTestDB(t *testing.T) *postgres.RBACRepository {
 	t.Helper()
-	pool := setupTestDBWith(t,
+	pool, _ := setupTestDBWith(t,
 		"001_identity.sql",
 		"006_reseller.sql",
 		"038_rbac.sql",
@@ -56,7 +56,7 @@ func setupIAMTestDB(t *testing.T) *postgres.RBACRepository {
 // ── RBAC repo: AssignRole / RevokeRole / GetRole / CountPlatformAdmins ───────
 
 func TestIAM_RBACRepo_AssignRevoke(t *testing.T) {
-	pool := setupTestDBWith(t,
+	pool, _ := setupTestDBWith(t,
 		"001_identity.sql",
 		"006_reseller.sql",
 		"038_rbac.sql",
@@ -119,7 +119,7 @@ func TestIAM_RBACRepo_AssignRevoke(t *testing.T) {
 }
 
 func TestIAM_RBACRepo_CountPlatformAdmins(t *testing.T) {
-	pool := setupTestDBWith(t,
+	pool, _ := setupTestDBWith(t,
 		"001_identity.sql",
 		"006_reseller.sql",
 		"038_rbac.sql",
@@ -147,7 +147,7 @@ func TestIAM_RBACRepo_CountPlatformAdmins(t *testing.T) {
 // ── Identity repo: invitation round-trip ─────────────────────────────────────
 
 func TestIAM_InvitationRoundTrip(t *testing.T) {
-	pool := setupTestDBWith(t,
+	pool, _ := setupTestDBWith(t,
 		"001_identity.sql",
 		"006_reseller.sql",
 		"038_rbac.sql",
@@ -194,7 +194,7 @@ func TestIAM_InvitationRoundTrip(t *testing.T) {
 }
 
 func TestIAM_InvitationWithTenant(t *testing.T) {
-	pool := setupTestDBWith(t,
+	pool, _ := setupTestDBWith(t,
 		"001_identity.sql",
 		"006_reseller.sql",
 		"038_rbac.sql",

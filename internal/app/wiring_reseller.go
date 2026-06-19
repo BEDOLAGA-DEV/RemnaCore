@@ -17,4 +17,5 @@ var resellerWiring = fx.Options(
 	fx.Provide(postgres.NewResellerRepository),
 	fx.Provide(func(repo *postgres.ResellerRepository) resellerservice.TenantRepository { return repo }),
 	fx.Provide(func(repo *postgres.ResellerRepository) resellerservice.CommissionRepository { return repo }),
+	fx.Provide(func(repo *postgres.ResellerRepository) resellerservice.CustomerRepository { return repo }),
 )

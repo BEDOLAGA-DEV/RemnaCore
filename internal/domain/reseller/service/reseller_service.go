@@ -41,9 +41,43 @@ type CommissionRepository interface {
 	GetCommissionByID(ctx context.Context, id string) (*aggregate.Commission, error)
 	GetCommissionByIDForUpdate(ctx context.Context, id string) (*aggregate.Commission, error)
 	GetPendingCommissions(ctx context.Context, resellerID string) ([]*aggregate.Commission, error)
+	ListCommissionsByTenant(ctx context.Context, tenantID, resellerID string) ([]*aggregate.Commission, error)
 	UpdateCommission(ctx context.Context, commission *aggregate.Commission) error
 
 	UpdateResellerBalance(ctx context.Context, resellerID string, balance int64) error
+}
+
+// CustomerSummary is a tenant-scoped view of one of a shop's customers
+// (an identity.platform_users row whose tenant_id is the active shop) plus
+// lightweight rollups used by the reseller customers list. Canonical here;
+// the reseller root re-exports it as a type alias.
+type CustomerSummary struct {
+	UserID          string
+	Email           string
+	DisplayName     string
+	ActiveSubsCount int
+	CreatedAt       time.Time
+}
+
+// DashboardSummary is the purpose-built tenant-scoped aggregate backing the
+// reseller dashboard (NOT the platform-only /api/admin/stats view). Canonical
+// here; the reseller root re-exports it as a type alias.
+type DashboardSummary struct {
+	ActiveCustomers     int
+	ActiveSubscriptions int
+	PendingCommission   int64 // cents, sum of pending commissions for the shop
+	Currency            string
+}
+
+// CustomerRepository reads a shop's customers from identity.platform_users.
+// All methods rely on the active app.tenant_id GUC (RLS on platform_users) and
+// ALSO carry an explicit tenant_id predicate (spec §7, belt-and-suspenders).
+// Canonical here; the reseller root re-exports it as a type alias.
+type CustomerRepository interface {
+	ListCustomersByTenant(ctx context.Context, tenantID string, limit, offset int) ([]*CustomerSummary, error)
+	CountActiveCustomersByTenant(ctx context.Context, tenantID string) (int, error)
+	CountActiveSubscriptionsByTenant(ctx context.Context, tenantID string) (int, error)
+	SumPendingCommissionByTenant(ctx context.Context, tenantID string) (amount int64, currency string, err error)
 }
 
 // ResellerService implements the core reseller and white-label use-cases:
@@ -83,6 +117,7 @@ type CommissionRepository interface {
 type ResellerService struct {
 	tenants     TenantRepository
 	commissions CommissionRepository
+	customers   CustomerRepository
 	publisher   domainevent.Publisher
 	logger      *slog.Logger
 	clock       clock.Clock
@@ -93,6 +128,7 @@ type ResellerService struct {
 func NewResellerService(
 	tenants TenantRepository,
 	commissions CommissionRepository,
+	customers CustomerRepository,
 	publisher domainevent.Publisher,
 	logger *slog.Logger,
 	clk clock.Clock,
@@ -101,6 +137,7 @@ func NewResellerService(
 	return &ResellerService{
 		tenants:     tenants,
 		commissions: commissions,
+		customers:   customers,
 		publisher:   publisher,
 		logger:      logger,
 		clock:       clk,
@@ -336,4 +373,81 @@ func (s *ResellerService) ValidateAPIKey(ctx context.Context, plainKey string) (
 	}
 
 	return tenant, nil
+}
+
+// ListCommissions resolves the reseller account for userID under the active
+// shop server-side (never from request input), then returns that reseller's
+// own commissions under RunInTx so the RLS GUC is set. The query is scoped to
+// the resolved account ID (not just the shop) so two reseller accounts in the
+// same shop cannot see each other's commissions.
+func (s *ResellerService) ListCommissions(ctx context.Context, userID, tenantID string) ([]*aggregate.Commission, error) {
+	// NOTE: s.commissions.ListCommissionsByTenant resolves because the
+	// service-local CommissionRepository was extended with it in C4.3.
+	var commissions []*aggregate.Commission
+	err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		account, err := s.commissions.GetResellerAccountByUserAndTenant(txCtx, userID, tenantID)
+		if err != nil {
+			return fmt.Errorf("resolving reseller account: %w", err)
+		}
+		list, err := s.commissions.ListCommissionsByTenant(txCtx, tenantID, account.ID)
+		if err != nil {
+			return fmt.Errorf("listing commissions: %w", err)
+		}
+		commissions = list
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return commissions, nil
+}
+
+// ListCustomers returns the active shop's customers (platform_users scoped to
+// the tenant) under RunInTx.
+func (s *ResellerService) ListCustomers(ctx context.Context, tenantID string, limit, offset int) ([]*CustomerSummary, error) {
+	var customers []*CustomerSummary
+	err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		list, err := s.customers.ListCustomersByTenant(txCtx, tenantID, limit, offset)
+		if err != nil {
+			return fmt.Errorf("listing customers: %w", err)
+		}
+		customers = list
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return customers, nil
+}
+
+// DashboardSummary builds the purpose-built tenant-scoped reseller dashboard
+// aggregate (active customers, active subscriptions, pending commission) under
+// RunInTx. It does NOT read the platform-only /api/admin/stats aggregates.
+func (s *ResellerService) DashboardSummary(ctx context.Context, tenantID string) (DashboardSummary, error) {
+	var ds DashboardSummary
+	err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		customers, err := s.customers.CountActiveCustomersByTenant(txCtx, tenantID)
+		if err != nil {
+			return fmt.Errorf("counting customers: %w", err)
+		}
+		subs, err := s.customers.CountActiveSubscriptionsByTenant(txCtx, tenantID)
+		if err != nil {
+			return fmt.Errorf("counting subscriptions: %w", err)
+		}
+		pending, currency, err := s.customers.SumPendingCommissionByTenant(txCtx, tenantID)
+		if err != nil {
+			return fmt.Errorf("summing pending commission: %w", err)
+		}
+		ds = DashboardSummary{
+			ActiveCustomers:     customers,
+			ActiveSubscriptions: subs,
+			PendingCommission:   pending,
+			Currency:            currency,
+		}
+		return nil
+	})
+	if err != nil {
+		return DashboardSummary{}, err
+	}
+	return ds, nil
 }

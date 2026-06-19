@@ -17,8 +17,14 @@ type Document struct {
 	PluginSlug string          `json:"plugin_slug"`
 	Collection string          `json:"collection"`
 	Data       json.RawMessage `json:"data"`
-	CreatedAt  time.Time       `json:"created_at"`
-	UpdatedAt  time.Time       `json:"updated_at"`
+	// TenantID is the owning shop tenant of the document, mirroring the
+	// plugins.collections.tenant_id column. A nil value means a NULL DB
+	// tenant_id, i.e. a platform-owned document. This is provenance, set by
+	// the read path, and is the trustworthy signal of ownership — never the
+	// document payload. A non-nil value identifies a specific shop's own row.
+	TenantID  *string   `json:"tenant_id,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Store defines the collection storage interface for plugin documents.

@@ -65,9 +65,17 @@ WHERE id = $1;
 -- ============================================================================
 
 -- name: CreateCommission :exec
+-- tenant_id self-stamped from the app.tenant_id GUC (sentinel '*' -> NULL
+-- platform-owned commission; shop GUC -> that shop's UUID), so the system
+-- RecordCommission path with no active shop yields the NULL the WITH CHECK
+-- permits, while a shop session can never write a foreign tenant_id. Do NOT
+-- pass tenant_id as a param.
 INSERT INTO reseller.commissions (
-    id, reseller_id, sale_id, amount, currency, status, created_at, paid_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+    id, reseller_id, sale_id, amount, currency, status, created_at, paid_at, tenant_id
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8,
+    NULLIF(current_setting('app.tenant_id', true), '*')::uuid
+);
 
 -- name: GetCommissionByID :one
 SELECT id, reseller_id, sale_id, amount, currency, status, created_at, paid_at
@@ -87,3 +95,17 @@ ORDER BY created_at DESC;
 UPDATE reseller.commissions
 SET status = $2, paid_at = $3
 WHERE id = $1;
+
+-- ============================================================================
+-- C4 tenant-scoped reads (implemented as raw-SQL consts in reseller_repo.go,
+-- NOT via sqlc: they rely on the active app.tenant_id GUC + RLS, and one joins
+-- across schemas, so they are kept as hand-written queries like
+-- getCommissionByIDForUpdateSQL). Documented here for discoverability.
+--
+-- ListCommissionsByTenant:
+--   SELECT id, reseller_id, sale_id, amount, currency, status, created_at, paid_at
+--   FROM reseller.commissions WHERE tenant_id = $1 ORDER BY created_at DESC;
+--
+-- ListCustomersByTenant: identity.platform_users WHERE tenant_id = $1, with
+--   per-user active-subscription count and summed commissions.
+-- ============================================================================

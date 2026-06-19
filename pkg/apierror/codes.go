@@ -152,6 +152,7 @@ var (
 	PluginWASMNotFound           = New("PLUGIN.WASM_NOT_FOUND", "WASM binary not found in content store", http.StatusNotFound)
 	PluginMissingConfig          = New("PLUGIN.MISSING_CONFIG", "plugin missing required configuration", http.StatusBadRequest)
 	PluginCannotUninstallBuiltIn = New("PLUGIN.CANNOT_UNINSTALL_BUILTIN", "cannot uninstall built-in plugin", http.StatusForbidden)
+	PluginCollectionReadOnly     = New("PLUGIN.COLLECTION_READ_ONLY", "use the plugin's own endpoints to modify its collections", http.StatusForbidden)
 )
 
 // IAM (account management & RBAC) error codes.
@@ -165,6 +166,7 @@ var (
 	IAMBindingNotFound    = New("IAM.BINDING_NOT_FOUND", "role binding not found", http.StatusNotFound)
 	IAMOwnerNotSpecified  = New("IAM.OWNER_NOT_SPECIFIED", "exactly one shop owner (existing user or invite email) must be specified", http.StatusBadRequest)
 	IAMOwnerAmbiguous     = New("IAM.OWNER_AMBIGUOUS", "only one of existing user or invite email may be specified", http.StatusBadRequest)
+	IAMTenantRequired     = New("IAM.TENANT_REQUIRED", "an active shop must be selected for this action", http.StatusForbidden)
 )
 
 // Routing error codes.

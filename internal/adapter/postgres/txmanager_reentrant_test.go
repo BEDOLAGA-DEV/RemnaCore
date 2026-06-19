@@ -33,7 +33,7 @@ import (
 // rolled back together — atomicity is preserved end-to-end.
 func TestTxManager_Reentrant(t *testing.T) {
 	// Apply only the identity migration: we only need a real table to write to.
-	pool := setupTestDBWith(t, "001_identity.sql")
+	pool, _ := setupTestDBWith(t, "001_identity.sql")
 	tm := postgres.NewTxManager(pool)
 	ctx := context.Background()
 

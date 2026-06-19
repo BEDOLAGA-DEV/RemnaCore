@@ -64,7 +64,15 @@ func NewDeprovisioningSaga(
 // event. Individual Remnawave failures are recorded on the binding but do not
 // abort the whole operation.
 func (s *DeprovisioningSaga) Deprovision(ctx context.Context, subscriptionID string) error {
-	bindings, err := s.bindings.GetActiveBySubscriptionID(ctx, subscriptionID)
+	// Narrow read tx so the RLS GUC (carried on ctx) is applied to this
+	// FORCE-RLS read; the tx commits before the per-binding loop begins so the
+	// Remnawave HTTP calls below run outside any open transaction.
+	var bindings []*aggregate.RemnawaveBinding
+	err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		var readErr error
+		bindings, readErr = s.bindings.GetActiveBySubscriptionID(txCtx, subscriptionID)
+		return readErr
+	})
 	if err != nil {
 		return fmt.Errorf("get active bindings: %w", err)
 	}
@@ -123,7 +131,13 @@ func (s *DeprovisioningSaga) deprovisionOne(ctx context.Context, binding *aggreg
 					slog.Any("error", failErr),
 				)
 			}
-			if updateErr := s.bindings.Update(ctx, binding); updateErr != nil {
+			// Per-step tx: persist the failure status independently and set the
+			// RLS GUC from the scope carried on ctx (gateway.DeleteUser above ran
+			// outside any tx).
+			updateErr := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+				return s.bindings.Update(txCtx, binding)
+			})
+			if updateErr != nil {
 				s.logger.Warn("failed to update binding after remnawave delete failure",
 					slog.String("binding_id", binding.ID),
 					slog.Any("error", updateErr),

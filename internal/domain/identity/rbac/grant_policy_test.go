@@ -40,8 +40,11 @@ func TestCanGrant(t *testing.T) {
 		require.NoError(t, rbac.CanGrant(admin, rbac.GrantTarget{RoleKey: rbac.RolePlatformAdmin, ScopeKind: rbac.ScopeGlobal}, nil))
 		require.NoError(t, rbac.CanGrant(admin, staffTarget(), &shopA))
 	})
-	t.Run("shop owner grants staff in own shop", func(t *testing.T) {
-		require.NoError(t, rbac.CanGrant(ownerActor(shopA), staffTarget(), &shopA))
+	t.Run("shop owner cannot grant staff (no users.assign_role)", func(t *testing.T) {
+		// As of C1.5 shop_owner is pruned of platform perms, including
+		// UsersAssignRole, so a shop principal never carries grant capability
+		// through its shop binding. CanGrant rejects at the Rule 2 check.
+		assert.ErrorIs(t, rbac.CanGrant(ownerActor(shopA), staffTarget(), &shopA), rbac.ErrGrantNotAllowed)
 	})
 	t.Run("shop owner cannot grant in a shop it is not a member of", func(t *testing.T) {
 		assert.ErrorIs(t, rbac.CanGrant(ownerActor(shopA), staffTarget(), &shopB), rbac.ErrGrantNotAllowed)

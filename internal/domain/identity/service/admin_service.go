@@ -9,6 +9,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/rbac"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
@@ -222,7 +223,13 @@ func (s *IdentityAdminService) AcceptInvitation(
 	}
 
 	var result *LoginResult
-	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+	// The public accept-invitation route carries no tenant context. The invitee's
+	// platform_users row is created tenant_id=NULL, so the shop_owner branch's
+	// UPDATE (setting tenant_id=shop) and CreateResellerAccount would be invisible
+	// under USING and rejected under WITH CHECK with an unset GUC. A shop-scoped
+	// GUC cannot help either, since the row is still NULL-tenant at update time;
+	// the platform sentinel is required to see and write the row.
+	if err := s.txRunner.RunInTx(tenantctx.WithPlatformScope(ctx), func(txCtx context.Context) error {
 		if err := s.repo.CreateUser(txCtx, user); err != nil {
 			return fmt.Errorf("persisting user: %w", err)
 		}

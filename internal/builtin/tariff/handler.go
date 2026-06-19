@@ -24,6 +24,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pluginstore"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
 )
 
 const (
@@ -33,6 +34,40 @@ const (
 	// CollectionName is the plugin collection where tariffs are stored.
 	CollectionName = "tariffs"
 )
+
+// isPlatformActor reports whether the request runs under the platform scope
+// (sentinel tenant), i.e. a platform admin with no active shop. Per the C0
+// ShopResolver redesign, a platform admin's active tenant is set to
+// tenantctx.PlatformScopeSentinel; a shop actor's is a shop UUID; an
+// unscoped request is the empty string. Template management (create/update/
+// delete of is_template documents) is restricted to platform actors.
+func (h *Handler) isPlatformActor(ctx context.Context) bool {
+	return tenantctx.TenantIDFromContext(ctx) == tenantctx.PlatformScopeSentinel
+}
+
+// errTemplateRequiresPlatform is returned by the template-write guard when a
+// non-platform actor attempts to mutate a stored template document.
+var errTemplateRequiresPlatform = errors.New("tariff template writes require platform scope")
+
+// guardTemplateWrite loads the stored document for tariffID and, if it is a
+// template (is_template=true), requires the request to run under platform
+// scope. It returns the loaded document so callers can avoid a second Get.
+// Returns pluginstore.ErrDocumentNotFound when the document is absent and
+// errTemplateRequiresPlatform when a shop actor targets a template.
+func (h *Handler) guardTemplateWrite(ctx context.Context, tariffID string) (*pluginstore.Document, error) {
+	doc, err := h.collections.GetDocument(ctx, PluginSlug, CollectionName, tariffID)
+	if err != nil {
+		return nil, err
+	}
+	var existing TariffInput
+	if err := json.Unmarshal(doc.Data, &existing); err != nil {
+		return nil, fmt.Errorf("decode stored tariff: %w", err)
+	}
+	if existing.IsTemplate && !h.isPlatformActor(ctx) {
+		return nil, errTemplateRequiresPlatform
+	}
+	return doc, nil
+}
 
 // Handler provides HTTP endpoints for tariff CRUD, pricing, promo codes,
 // A/B experiments, cohorts, analytics, and Remnawave data lookups.
@@ -92,12 +127,28 @@ func (h *Handler) remnawaveClientForPanel(ctx context.Context, panelID string) *
 // =====================================================================
 
 func (h *Handler) ListTariffs(w http.ResponseWriter, r *http.Request) {
-	docs, err := h.collections.ListDocuments(r.Context(), PluginSlug, CollectionName)
+	// C6: a request sees its own-tenant tariffs (normal RLS read under the
+	// request GUC) PLUS shared templates. Templates are platform-private rows
+	// (tenant_id NULL, is_template=true) and are NOT granted to shop GUCs by
+	// the 041 USING policy; we surface them with a SEPARATE read under the
+	// platform sentinel so the sentinel USING branch returns the NULL-tenant
+	// rows. The two reads are merged and deduped by document id (a platform
+	// actor's own read already includes templates).
+	ownDocs, err := h.collections.ListDocuments(r.Context(), PluginSlug, CollectionName)
 	if err != nil {
 		h.logger.Error("failed to list tariffs", slog.Any("error", err))
 		writeAPIError(w, apierror.Internal)
 		return
 	}
+	templateDocs, err := h.collections.ListDocuments(
+		tenantctx.WithPlatformScope(r.Context()), PluginSlug, CollectionName,
+	)
+	if err != nil {
+		h.logger.Error("failed to list tariff templates", slog.Any("error", err))
+		writeAPIError(w, apierror.Internal)
+		return
+	}
+	docs := mergeTariffDocs(ownDocs, templateDocs)
 
 	activeOnly := r.URL.Query().Get("active") == "true"
 	audience := r.URL.Query().Get("audience")
@@ -164,6 +215,13 @@ func (h *Handler) CreateTariff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Per-shop tariffs (C6): only a platform actor (sentinel scope) may stamp a
+	// shared template. A shop actor's tariff is always a shop tariff — its
+	// tenant_id is self-stamped by the collections layer (C2) from the GUC.
+	if !h.isPlatformActor(r.Context()) {
+		input.IsTemplate = false
+	}
+
 	data, err := json.Marshal(input)
 	if err != nil {
 		writeAPIError(w, apierror.Internal)
@@ -207,6 +265,24 @@ func (h *Handler) UpdateTariff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// C6: a stored template may only be updated by a platform actor.
+	if _, err := h.guardTemplateWrite(r.Context(), tariffID); err != nil {
+		if errors.Is(err, pluginstore.ErrDocumentNotFound) {
+			writeAPIError(w, apierror.NotFound)
+			return
+		}
+		if errors.Is(err, errTemplateRequiresPlatform) {
+			writeAPIError(w, apierror.Forbidden)
+			return
+		}
+		writeAPIError(w, apierror.Internal)
+		return
+	}
+	// A shop actor can never flip an existing shop tariff into a template.
+	if !h.isPlatformActor(r.Context()) {
+		input.IsTemplate = false
+	}
+
 	data, err := json.Marshal(input)
 	if err != nil {
 		writeAPIError(w, apierror.Internal)
@@ -248,10 +324,14 @@ func (h *Handler) DeleteTariff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	doc, err := h.collections.GetDocument(r.Context(), PluginSlug, CollectionName, tariffID)
+	doc, err := h.guardTemplateWrite(r.Context(), tariffID)
 	if err != nil {
 		if errors.Is(err, pluginstore.ErrDocumentNotFound) {
 			writeAPIError(w, apierror.NotFound)
+			return
+		}
+		if errors.Is(err, errTemplateRequiresPlatform) {
+			writeAPIError(w, apierror.Forbidden)
 			return
 		}
 		writeAPIError(w, apierror.Internal)
@@ -565,9 +645,19 @@ func (h *Handler) ImportTariffs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Per-shop tariffs (C6): only a platform actor (sentinel scope) may stamp a
+	// shared template. A shop actor's imported tariffs are always shop tariffs —
+	// force is_template=false so an imported payload can never inject a template
+	// (mirrors CreateTariff). Computed once for the whole batch.
+	isPlatform := h.isPlatformActor(r.Context())
+
 	imported := 0
 	errs := make([]string, 0)
 	for i, input := range inputs {
+		if !isPlatform {
+			input.IsTemplate = false
+		}
+
 		if err := validateTariffInputV2(&input); err != nil {
 			errs = append(errs, fmt.Sprintf("index %d: %s", i, err.Error()))
 			continue
@@ -830,6 +920,60 @@ func (h *Handler) ListPanelsForTariff(w http.ResponseWriter, r *http.Request) {
 // =====================================================================
 // Helpers
 // =====================================================================
+
+// isSharedTemplateDoc reports whether a row read under the platform sentinel is
+// a genuine shared template. C6: provenance (Document.TenantID), NOT the
+// attacker-controllable is_template payload flag, decides ownership. A shared
+// template is a PLATFORM-owned row (TenantID == nil — a NULL DB tenant_id)
+// whose payload also sets is_template=true. A row with a non-nil TenantID is
+// some shop's own document and must NEVER be surfaced as a shared template,
+// even if its payload claims is_template=true. A document whose payload cannot
+// be decoded is treated as a non-template so a malformed row can never leak.
+func isSharedTemplateDoc(d *pluginstore.Document) bool {
+	if d.TenantID != nil {
+		return false
+	}
+	var meta struct {
+		IsTemplate bool `json:"is_template"`
+	}
+	if err := json.Unmarshal(d.Data, &meta); err != nil {
+		return false
+	}
+	return meta.IsTemplate
+}
+
+// mergeTariffDocs concatenates own-tenant docs with the platform-scoped read,
+// deduping by document id. The platform-scoped read runs under the sentinel
+// GUC, whose RLS USING branch returns EVERY row (genuine platform templates
+// AND every shop's own tariffs), so only genuine SHARED templates are merged
+// in — see isSharedTemplateDoc: a row is admitted only when its provenance
+// (Document.TenantID) is platform-owned (nil) AND its payload sets
+// is_template=true. A shop's own row (non-nil TenantID) is dropped here even if
+// it carries is_template=true, so a shop can never see a foreign shop's tariff.
+// For a platform actor the own read already includes templates, so duplicates
+// are dropped by id and each template appears exactly once.
+func mergeTariffDocs(own, platformScoped []pluginstore.Document) []pluginstore.Document {
+	seen := make(map[string]struct{}, len(own)+len(platformScoped))
+	merged := make([]pluginstore.Document, 0, len(own)+len(platformScoped))
+	for _, d := range own {
+		if _, ok := seen[d.ID]; ok {
+			continue
+		}
+		seen[d.ID] = struct{}{}
+		merged = append(merged, d)
+	}
+	for _, d := range platformScoped {
+		if _, ok := seen[d.ID]; ok {
+			continue
+		}
+		if !isSharedTemplateDoc(&d) {
+			continue
+		}
+		seen[d.ID] = struct{}{}
+		merged = append(merged, d)
+	}
+	return merged
+}
 
 func documentToTariff(doc *pluginstore.Document) (*TariffResponse, error) {
 	var t TariffResponse

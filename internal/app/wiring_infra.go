@@ -12,6 +12,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/infra/health"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/infra/proxy"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/infra/speedtest"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
 // infraWiring provides infrastructure service lifecycle hooks: health monitor,
@@ -21,8 +22,8 @@ var infraWiring = fx.Options(
 	infra.Module,
 
 	// Data cleanup scheduler for cross-domain infrastructure data
-	fx.Provide(func(idempotency *postgres.IdempotencyRepository, bindings *postgres.BindingRepository, logger *slog.Logger) *infra.DataCleanupScheduler {
-		return infra.NewDataCleanupScheduler(idempotency, bindings, logger)
+	fx.Provide(func(idempotency *postgres.IdempotencyRepository, bindings *postgres.BindingRepository, runner txmanager.Runner, logger *slog.Logger) *infra.DataCleanupScheduler {
+		return infra.NewDataCleanupScheduler(idempotency, bindings, runner, logger)
 	}),
 
 	// Lifecycle hooks

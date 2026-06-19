@@ -18,6 +18,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/observability"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
 // Dead-letter queue and retry constants.
@@ -213,6 +214,7 @@ type BillingEventConsumer struct {
 	entityLocks    sync.Map // map[string]*entityLock — per-entity serialisation
 	inflightWg     sync.WaitGroup
 	seqTracker     *sequenceTracker
+	runner         txmanager.Runner
 }
 
 // NewBillingEventConsumer creates a BillingEventConsumer with the given
@@ -235,6 +237,7 @@ func NewBillingEventConsumer(
 	logger *slog.Logger,
 	clk clock.Clock,
 	metrics *observability.Metrics,
+	runner txmanager.Runner,
 	conn *nc.Conn,
 ) *BillingEventConsumer {
 	return &BillingEventConsumer{
@@ -252,6 +255,7 @@ func NewBillingEventConsumer(
 		natsConn:       conn,
 		messageTimeout: DefaultMessageProcessingTimeout,
 		seqTracker:     newSequenceTracker(logger, metrics),
+		runner:         runner,
 	}
 }
 

@@ -133,46 +133,109 @@ func (h *ResellerHandler) UpdateBranding(w http.ResponseWriter, r *http.Request)
 
 // --- Reseller Self-Service Endpoints ---
 
-// Dashboard handles GET /api/reseller/dashboard -- reseller's own dashboard.
-func (h *ResellerHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
+// Commissions handles GET /api/reseller/commissions -- the active shop's
+// commissions. The reseller account is resolved server-side from the JWT user
+// and the active shop (never from request input); rows are tenant-scoped via
+// RLS under RunInTx in the service.
+func (h *ResellerHandler) Commissions(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.ActiveTenantID(r.Context())
 	if tenantID == "" {
 		writeAPIError(w, apierror.Forbidden.WithDetails("active shop required (X-Shop-Id)"))
 		return
 	}
-	tenant, err := h.service.GetTenant(r.Context(), tenantID)
+	claims := middleware.GetClaims(r.Context())
+	if claims == nil {
+		writeAPIError(w, apierror.Forbidden.WithDetails("authentication required"))
+		return
+	}
+
+	commissions, err := h.service.ListCommissions(r.Context(), claims.UserID, tenantID)
 	if err != nil {
 		writeErrorFromDomain(w, err)
 		return
 	}
+
+	items := make([]map[string]any, 0, len(commissions))
+	for _, c := range commissions {
+		items = append(items, map[string]any{
+			"id":         c.ID,
+			"sale_id":    c.SaleID,
+			"amount":     c.Amount.Amount,
+			"currency":   string(c.Amount.Currency),
+			"status":     string(c.Status),
+			"created_at": c.CreatedAt,
+			"paid_at":    c.PaidAt,
+		})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"tenant_id":   tenant.ID,
-		"tenant_name": tenant.Name,
-		"branding":    tenant.BrandingConfig,
+		"tenant_id":   tenantID,
+		"commissions": items,
 	})
 }
 
-// Commissions handles GET /api/reseller/commissions -- reseller's commissions.
-func (h *ResellerHandler) Commissions(w http.ResponseWriter, r *http.Request) {
-	// For now, commissions endpoint returns a placeholder.
-	// Full implementation requires resolving the reseller account from the
-	// claims user ID and tenant context.
-	writeJSON(w, http.StatusOK, map[string]any{
-		"commissions": []any{},
-	})
-}
-
-// Customers handles GET /api/reseller/customers -- reseller's customers scoped by tenant.
+// Customers handles GET /api/reseller/customers -- the active shop's customers
+// (identity.platform_users tenant-scoped to the active shop).
 func (h *ResellerHandler) Customers(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.ActiveTenantID(r.Context())
 	if tenantID == "" {
 		writeAPIError(w, apierror.Forbidden.WithDetails("active shop required (X-Shop-Id)"))
 		return
 	}
-	// Customer listing scoped to the shop lands in Phase C; return the shell.
+	limit, offset := parsePagination(r)
+
+	customers, err := h.service.ListCustomers(r.Context(), tenantID, limit, offset)
+	if err != nil {
+		writeErrorFromDomain(w, err)
+		return
+	}
+
+	items := make([]map[string]any, 0, len(customers))
+	for _, c := range customers {
+		items = append(items, map[string]any{
+			"user_id":           c.UserID,
+			"email":             c.Email,
+			"display_name":      c.DisplayName,
+			"active_subs_count": c.ActiveSubsCount,
+			"created_at":        c.CreatedAt,
+		})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"tenant_id": tenantID,
-		"customers": []any{},
+		"customers": items,
+	})
+}
+
+// Dashboard handles GET /api/reseller/dashboard -- the active shop's dashboard:
+// branding plus purpose-built tenant-scoped aggregates (active customers,
+// active subscriptions, pending commission). NOT the platform /api/admin/stats.
+func (h *ResellerHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.ActiveTenantID(r.Context())
+	if tenantID == "" {
+		writeAPIError(w, apierror.Forbidden.WithDetails("active shop required (X-Shop-Id)"))
+		return
+	}
+
+	tenant, err := h.service.GetTenant(r.Context(), tenantID)
+	if err != nil {
+		writeErrorFromDomain(w, err)
+		return
+	}
+	summary, err := h.service.DashboardSummary(r.Context(), tenantID)
+	if err != nil {
+		writeErrorFromDomain(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"tenant_id":   tenant.ID,
+		"tenant_name": tenant.Name,
+		"branding":    tenant.BrandingConfig,
+		"summary": map[string]any{
+			"active_customers":     summary.ActiveCustomers,
+			"active_subscriptions": summary.ActiveSubscriptions,
+			"pending_commission":   summary.PendingCommission,
+			"currency":             summary.Currency,
+		},
 	})
 }
 

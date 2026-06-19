@@ -3,11 +3,18 @@
 -- ============================================================================
 
 -- name: CreateBinding :exec
+-- tenant_id self-stamped from the app.tenant_id GUC (sentinel '*' -> NULL
+-- platform row; shop GUC -> that shop's UUID), so a shop session can never
+-- write a foreign tenant_id and platform/sentinel writes yield the NULL the
+-- WITH CHECK permits. Do NOT pass tenant_id as a param.
 INSERT INTO multisub.remnawave_bindings (
     id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uuid,
     remnawave_username, purpose, status, traffic_limit_bytes,
-    allowed_nodes, inbound_tags, fail_reason, synced_at, created_at, updated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15);
+    allowed_nodes, inbound_tags, fail_reason, synced_at, created_at, updated_at, tenant_id
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+    NULLIF(current_setting('app.tenant_id', true), '*')::uuid
+);
 
 -- name: GetBindingByID :one
 SELECT id, subscription_id, platform_user_id, remnawave_uuid, remnawave_short_uuid,

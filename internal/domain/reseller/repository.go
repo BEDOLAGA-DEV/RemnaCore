@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/aggregate"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/service"
 )
 
 // TenantRepository defines the persistence operations for tenants.
@@ -38,7 +39,24 @@ type CommissionRepository interface {
 	// TOCTOU races during read-modify-write cycles.
 	GetCommissionByIDForUpdate(ctx context.Context, id string) (*aggregate.Commission, error)
 	GetPendingCommissions(ctx context.Context, resellerID string) ([]*aggregate.Commission, error)
+	// ListCommissionsByTenant returns a single reseller's commissions within the
+	// active shop, ordered newest-first. RLS on reseller.commissions (043) scopes
+	// rows to the shop; the resellerID argument additionally scopes them to the
+	// resolved account so co-tenant resellers cannot see each other's rows. The
+	// active app.tenant_id GUC must be set (call inside RunInTx).
+	ListCommissionsByTenant(ctx context.Context, tenantID, resellerID string) ([]*aggregate.Commission, error)
 	UpdateCommission(ctx context.Context, commission *aggregate.Commission) error
 
 	UpdateResellerBalance(ctx context.Context, resellerID string, balance int64) error
 }
+
+// CustomerSummary is re-exported from the reseller/service subpackage where it
+// is canonically defined (the service package cannot import this root without a
+// cycle). New code may reference reseller.CustomerSummary.
+type CustomerSummary = service.CustomerSummary
+
+// DashboardSummary is re-exported from the reseller/service subpackage.
+type DashboardSummary = service.DashboardSummary
+
+// CustomerRepository is re-exported from the reseller/service subpackage.
+type CustomerRepository = service.CustomerRepository

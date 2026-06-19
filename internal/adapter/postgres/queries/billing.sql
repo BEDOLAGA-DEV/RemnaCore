@@ -91,17 +91,29 @@ DELETE FROM billing.plan_addons WHERE plan_id = $1 AND id != ALL(sqlc.arg(ids)::
 -- ============================================================================
 
 -- name: CreateSubscription :exec
+-- tenant_id is self-stamped from the app.tenant_id GUC (sentinel '*' -> NULL
+-- platform row; shop GUC -> that shop's UUID), so a shop session can never
+-- write a foreign tenant_id and platform/sentinel writes yield the NULL the
+-- WITH CHECK permits. Do NOT pass tenant_id as a param.
 INSERT INTO billing.subscriptions (
     id, user_id, plan_id, status, period_start, period_end, period_interval,
     addon_ids, assigned_to, pending_plan_id, pending_original_plan_id, pending_requested_at,
-    cancelled_at, paused_at, created_at, updated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16);
+    cancelled_at, paused_at, created_at, updated_at, tenant_id
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+    NULLIF(current_setting('app.tenant_id', true), '*')::uuid
+);
 
 -- name: GetSubscriptionByID :one
+-- Belt-and-suspenders tenant predicate (spec §5.3) behind the RLS GUC, mirroring
+-- the GetSubscriptionByIDForUpdate guarded variant: sentinel '*' sees all, a shop
+-- GUC sees only its own row; no IS NULL fail-open branch.
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
        addon_ids, assigned_to, pending_plan_id, pending_original_plan_id, pending_requested_at,
        cancelled_at, paused_at, created_at, updated_at
-FROM billing.subscriptions WHERE id = $1;
+FROM billing.subscriptions
+WHERE id = $1
+  AND (tenant_id::text = current_setting('app.tenant_id', true) OR current_setting('app.tenant_id', true) = '*');
 
 -- name: GetSubscriptionByIDForUpdate :one
 SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
@@ -166,10 +178,14 @@ LIMIT $1 OFFSET $2;
 -- ============================================================================
 
 -- name: CreateInvoice :exec
+-- tenant_id self-stamped from the app.tenant_id GUC; see CreateSubscription.
 INSERT INTO billing.invoices (
     id, subscription_id, user_id, subtotal_amount, total_discount_amount,
-    total_amount, currency, pricing_reason, discounts, status, paid_at, created_at, updated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13);
+    total_amount, currency, pricing_reason, discounts, status, paid_at, created_at, updated_at, tenant_id
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+    NULLIF(current_setting('app.tenant_id', true), '*')::uuid
+);
 
 -- name: GetInvoiceByID :one
 SELECT id, subscription_id, user_id, subtotal_amount, total_discount_amount,
@@ -212,8 +228,12 @@ WHERE id = $1;
 -- ============================================================================
 
 -- name: CreateInvoiceLineItem :exec
-INSERT INTO billing.invoice_line_items (invoice_id, description, item_type, amount, currency, quantity)
-VALUES ($1, $2, $3, $4, $5, $6);
+-- tenant_id self-stamped from the app.tenant_id GUC; see CreateSubscription.
+INSERT INTO billing.invoice_line_items (invoice_id, description, item_type, amount, currency, quantity, tenant_id)
+VALUES (
+    $1, $2, $3, $4, $5, $6,
+    NULLIF(current_setting('app.tenant_id', true), '*')::uuid
+);
 
 -- name: GetLineItemsByInvoiceID :many
 SELECT id, invoice_id, description, item_type, amount, currency, quantity
@@ -231,8 +251,12 @@ DELETE FROM billing.invoice_line_items WHERE invoice_id = $1;
 -- ============================================================================
 
 -- name: CreateFamilyGroup :exec
-INSERT INTO billing.family_groups (id, owner_id, max_members, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5);
+-- tenant_id self-stamped from the app.tenant_id GUC; see CreateSubscription.
+INSERT INTO billing.family_groups (id, owner_id, max_members, created_at, updated_at, tenant_id)
+VALUES (
+    $1, $2, $3, $4, $5,
+    NULLIF(current_setting('app.tenant_id', true), '*')::uuid
+);
 
 -- name: GetFamilyGroupByID :one
 SELECT id, owner_id, max_members, created_at, updated_at
@@ -257,12 +281,20 @@ DELETE FROM billing.family_groups WHERE id = $1;
 -- ============================================================================
 
 -- name: CreateFamilyMember :exec
-INSERT INTO billing.family_members (family_group_id, user_id, role, nickname, joined_at)
-VALUES ($1, $2, $3, $4, $5);
+-- tenant_id self-stamped from the app.tenant_id GUC; see CreateSubscription.
+INSERT INTO billing.family_members (family_group_id, user_id, role, nickname, joined_at, tenant_id)
+VALUES (
+    $1, $2, $3, $4, $5,
+    NULLIF(current_setting('app.tenant_id', true), '*')::uuid
+);
 
 -- name: UpsertFamilyMember :exec
-INSERT INTO billing.family_members (family_group_id, user_id, role, nickname, joined_at)
-VALUES ($1, $2, $3, $4, $5)
+-- tenant_id self-stamped from the app.tenant_id GUC; see CreateSubscription.
+INSERT INTO billing.family_members (family_group_id, user_id, role, nickname, joined_at, tenant_id)
+VALUES (
+    $1, $2, $3, $4, $5,
+    NULLIF(current_setting('app.tenant_id', true), '*')::uuid
+)
 ON CONFLICT (family_group_id, user_id) DO UPDATE SET
     role     = EXCLUDED.role,
     nickname = EXCLUDED.nickname;
