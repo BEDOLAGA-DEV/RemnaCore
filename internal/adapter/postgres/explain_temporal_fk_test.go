@@ -50,6 +50,7 @@ var allMigrations = []string{
 	"021_schema_sync.sql",
 	"022_drop_temporal_fk.sql",
 	"023_bindings_status_index.sql",
+	"043_reseller_commissions_tenant.sql",
 }
 
 // temporalUniqueConstraintName is the unique constraint on subscriptions
