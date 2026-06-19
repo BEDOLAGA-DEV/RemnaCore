@@ -7,8 +7,10 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pgutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pluginstore"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
@@ -16,13 +18,13 @@ import (
 // Collection document SQL statements.
 const (
 	listDocumentsSQL = `
-		SELECT id, plugin_slug, collection, document, created_at, updated_at
+		SELECT id, plugin_slug, collection, document, tenant_id, created_at, updated_at
 		FROM plugins.collections
 		WHERE plugin_slug = $1 AND collection = $2
 		ORDER BY created_at DESC`
 
 	getDocumentSQL = `
-		SELECT id, plugin_slug, collection, document, created_at, updated_at
+		SELECT id, plugin_slug, collection, document, tenant_id, created_at, updated_at
 		FROM plugins.collections
 		WHERE plugin_slug = $1 AND collection = $2 AND id = $3`
 
@@ -78,9 +80,11 @@ func (r *CollectionsRepository) ListDocuments(ctx context.Context, pluginSlug, c
 
 		for rows.Next() {
 			var d pluginstore.Document
-			if err := rows.Scan(&d.ID, &d.PluginSlug, &d.Collection, &d.Data, &d.CreatedAt, &d.UpdatedAt); err != nil {
+			var tenantID pgtype.UUID
+			if err := rows.Scan(&d.ID, &d.PluginSlug, &d.Collection, &d.Data, &tenantID, &d.CreatedAt, &d.UpdatedAt); err != nil {
 				return fmt.Errorf("scan document: %w", err)
 			}
+			d.TenantID = pgutil.PgtypeUUIDToOptStr(tenantID)
 			docs = append(docs, d)
 		}
 		if err := rows.Err(); err != nil {
@@ -102,8 +106,9 @@ func (r *CollectionsRepository) GetDocument(ctx context.Context, pluginSlug, col
 	var d pluginstore.Document
 	err := r.runner.RunInTx(ctx, func(ctx context.Context) error {
 		db := DBFromContext(ctx, r.pool)
+		var tenantID pgtype.UUID
 		scanErr := db.QueryRow(ctx, getDocumentSQL, pluginSlug, collection, id).Scan(
-			&d.ID, &d.PluginSlug, &d.Collection, &d.Data, &d.CreatedAt, &d.UpdatedAt,
+			&d.ID, &d.PluginSlug, &d.Collection, &d.Data, &tenantID, &d.CreatedAt, &d.UpdatedAt,
 		)
 		if scanErr != nil {
 			if errors.Is(scanErr, pgx.ErrNoRows) {
@@ -111,6 +116,7 @@ func (r *CollectionsRepository) GetDocument(ctx context.Context, pluginSlug, col
 			}
 			return fmt.Errorf("get document: %w", scanErr)
 		}
+		d.TenantID = pgutil.PgtypeUUIDToOptStr(tenantID)
 		return nil
 	})
 	if err != nil {

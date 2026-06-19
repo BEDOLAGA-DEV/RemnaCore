@@ -645,9 +645,19 @@ func (h *Handler) ImportTariffs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Per-shop tariffs (C6): only a platform actor (sentinel scope) may stamp a
+	// shared template. A shop actor's imported tariffs are always shop tariffs —
+	// force is_template=false so an imported payload can never inject a template
+	// (mirrors CreateTariff). Computed once for the whole batch.
+	isPlatform := h.isPlatformActor(r.Context())
+
 	imported := 0
 	errs := make([]string, 0)
 	for i, input := range inputs {
+		if !isPlatform {
+			input.IsTemplate = false
+		}
+
 		if err := validateTariffInputV2(&input); err != nil {
 			errs = append(errs, fmt.Sprintf("index %d: %s", i, err.Error()))
 			continue
@@ -911,10 +921,18 @@ func (h *Handler) ListPanelsForTariff(w http.ResponseWriter, r *http.Request) {
 // Helpers
 // =====================================================================
 
-// isTemplateDoc reports whether a stored tariff document is a shared template
-// (is_template=true). A document whose payload cannot be decoded is treated as
-// a non-template so a malformed row can never be surfaced as a shared template.
-func isTemplateDoc(d *pluginstore.Document) bool {
+// isSharedTemplateDoc reports whether a row read under the platform sentinel is
+// a genuine shared template. C6: provenance (Document.TenantID), NOT the
+// attacker-controllable is_template payload flag, decides ownership. A shared
+// template is a PLATFORM-owned row (TenantID == nil — a NULL DB tenant_id)
+// whose payload also sets is_template=true. A row with a non-nil TenantID is
+// some shop's own document and must NEVER be surfaced as a shared template,
+// even if its payload claims is_template=true. A document whose payload cannot
+// be decoded is treated as a non-template so a malformed row can never leak.
+func isSharedTemplateDoc(d *pluginstore.Document) bool {
+	if d.TenantID != nil {
+		return false
+	}
 	var meta struct {
 		IsTemplate bool `json:"is_template"`
 	}
@@ -926,11 +944,14 @@ func isTemplateDoc(d *pluginstore.Document) bool {
 
 // mergeTariffDocs concatenates own-tenant docs with the platform-scoped read,
 // deduping by document id. The platform-scoped read runs under the sentinel
-// GUC, whose RLS USING branch returns EVERY row (templates AND other shops'
-// tariffs), so only its template rows (is_template=true) are merged in — a
-// shop must never see a foreign shop's non-template tariff. For a platform
-// actor the own read already includes templates, so duplicates are dropped by
-// id and each template appears exactly once.
+// GUC, whose RLS USING branch returns EVERY row (genuine platform templates
+// AND every shop's own tariffs), so only genuine SHARED templates are merged
+// in — see isSharedTemplateDoc: a row is admitted only when its provenance
+// (Document.TenantID) is platform-owned (nil) AND its payload sets
+// is_template=true. A shop's own row (non-nil TenantID) is dropped here even if
+// it carries is_template=true, so a shop can never see a foreign shop's tariff.
+// For a platform actor the own read already includes templates, so duplicates
+// are dropped by id and each template appears exactly once.
 func mergeTariffDocs(own, platformScoped []pluginstore.Document) []pluginstore.Document {
 	seen := make(map[string]struct{}, len(own)+len(platformScoped))
 	merged := make([]pluginstore.Document, 0, len(own)+len(platformScoped))
@@ -945,7 +966,7 @@ func mergeTariffDocs(own, platformScoped []pluginstore.Document) []pluginstore.D
 		if _, ok := seen[d.ID]; ok {
 			continue
 		}
-		if !isTemplateDoc(&d) {
+		if !isSharedTemplateDoc(&d) {
 			continue
 		}
 		seen[d.ID] = struct{}{}

@@ -152,6 +152,7 @@ var (
 	PluginWASMNotFound           = New("PLUGIN.WASM_NOT_FOUND", "WASM binary not found in content store", http.StatusNotFound)
 	PluginMissingConfig          = New("PLUGIN.MISSING_CONFIG", "plugin missing required configuration", http.StatusBadRequest)
 	PluginCannotUninstallBuiltIn = New("PLUGIN.CANNOT_UNINSTALL_BUILTIN", "cannot uninstall built-in plugin", http.StatusForbidden)
+	PluginCollectionReadOnly     = New("PLUGIN.COLLECTION_READ_ONLY", "use the plugin's own endpoints to modify its collections", http.StatusForbidden)
 )
 
 // IAM (account management & RBAC) error codes.
