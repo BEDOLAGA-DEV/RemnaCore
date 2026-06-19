@@ -221,3 +221,72 @@ func TestDeleteTariff_ShopActor_CannotDeleteTemplate(t *testing.T) {
 
 	assert.Equal(t, http.StatusForbidden, rec.Code)
 }
+
+// seedShopTariff inserts a non-template tariff and returns its ID.
+func seedShopTariff(t *testing.T, store *fakeStore, name string) string {
+	t.Helper()
+	in := defaultTariffInput()
+	in.Name = name
+	in.PriceCurrency = "USD"
+	in.DurationDays = 30
+	in.IsActive = true
+	in.IsTemplate = false
+	b, err := json.Marshal(in)
+	require.NoError(t, err)
+	doc, err := store.InsertDocument(context.Background(), PluginSlug, CollectionName, b)
+	require.NoError(t, err)
+	return doc.ID
+}
+
+func listTariffsNames(t *testing.T, h *Handler, ctx context.Context) []string {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/tariffs", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	h.ListTariffs(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got []TariffResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	names := make([]string, 0, len(got))
+	for _, tr := range got {
+		names = append(names, tr.Name)
+	}
+	return names
+}
+
+func countOccurrences(ss []string, want string) int {
+	n := 0
+	for _, s := range ss {
+		if s == want {
+			n++
+		}
+	}
+	return n
+}
+
+func TestListTariffs_Merge_PlatformReadDoesNotDoubleCount(t *testing.T) {
+	// fakeStore is tenancy-blind: every read returns every row. This test only
+	// proves the MERGE dedups by id (a platform actor's own read already
+	// includes templates, so the second platform-scoped read must not
+	// double-count). It does NOT prove template visibility — see the real-RLS
+	// integration test TestListTariffs_RLS_ShopSeesOwnPlusTemplates.
+	store := newFakeStore()
+	h := newTestHandler(store)
+	seedTemplate(t, store)             // "Shared Template" (is_template=true)
+	seedShopTariff(t, store, "Shop A") // own-tenant
+
+	platformCtx := tenantctx.WithTenantID(context.Background(), tenantctx.PlatformScopeSentinel)
+	names := listTariffsNames(t, h, platformCtx)
+	// Each name appears exactly once despite two reads over the same fakeStore.
+	assert.Equal(t, 1, countOccurrences(names, "Shared Template"))
+	assert.Equal(t, 1, countOccurrences(names, "Shop A"))
+}
+
+func TestListTariffs_Merge_OwnTariffPresent(t *testing.T) {
+	store := newFakeStore()
+	h := newTestHandler(store)
+	seedShopTariff(t, store, "Shop A")
+
+	shopCtx := tenantctx.WithTenantID(context.Background(), "11111111-1111-1111-1111-111111111111")
+	names := listTariffsNames(t, h, shopCtx)
+	assert.Contains(t, names, "Shop A")
+}

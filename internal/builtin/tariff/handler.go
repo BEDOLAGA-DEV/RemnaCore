@@ -127,12 +127,28 @@ func (h *Handler) remnawaveClientForPanel(ctx context.Context, panelID string) *
 // =====================================================================
 
 func (h *Handler) ListTariffs(w http.ResponseWriter, r *http.Request) {
-	docs, err := h.collections.ListDocuments(r.Context(), PluginSlug, CollectionName)
+	// C6: a request sees its own-tenant tariffs (normal RLS read under the
+	// request GUC) PLUS shared templates. Templates are platform-private rows
+	// (tenant_id NULL, is_template=true) and are NOT granted to shop GUCs by
+	// the 041 USING policy; we surface them with a SEPARATE read under the
+	// platform sentinel so the sentinel USING branch returns the NULL-tenant
+	// rows. The two reads are merged and deduped by document id (a platform
+	// actor's own read already includes templates).
+	ownDocs, err := h.collections.ListDocuments(r.Context(), PluginSlug, CollectionName)
 	if err != nil {
 		h.logger.Error("failed to list tariffs", slog.Any("error", err))
 		writeAPIError(w, apierror.Internal)
 		return
 	}
+	templateDocs, err := h.collections.ListDocuments(
+		tenantctx.WithPlatformScope(r.Context()), PluginSlug, CollectionName,
+	)
+	if err != nil {
+		h.logger.Error("failed to list tariff templates", slog.Any("error", err))
+		writeAPIError(w, apierror.Internal)
+		return
+	}
+	docs := mergeTariffDocs(ownDocs, templateDocs)
 
 	activeOnly := r.URL.Query().Get("active") == "true"
 	audience := r.URL.Query().Get("audience")
@@ -894,6 +910,49 @@ func (h *Handler) ListPanelsForTariff(w http.ResponseWriter, r *http.Request) {
 // =====================================================================
 // Helpers
 // =====================================================================
+
+// isTemplateDoc reports whether a stored tariff document is a shared template
+// (is_template=true). A document whose payload cannot be decoded is treated as
+// a non-template so a malformed row can never be surfaced as a shared template.
+func isTemplateDoc(d *pluginstore.Document) bool {
+	var meta struct {
+		IsTemplate bool `json:"is_template"`
+	}
+	if err := json.Unmarshal(d.Data, &meta); err != nil {
+		return false
+	}
+	return meta.IsTemplate
+}
+
+// mergeTariffDocs concatenates own-tenant docs with the platform-scoped read,
+// deduping by document id. The platform-scoped read runs under the sentinel
+// GUC, whose RLS USING branch returns EVERY row (templates AND other shops'
+// tariffs), so only its template rows (is_template=true) are merged in — a
+// shop must never see a foreign shop's non-template tariff. For a platform
+// actor the own read already includes templates, so duplicates are dropped by
+// id and each template appears exactly once.
+func mergeTariffDocs(own, platformScoped []pluginstore.Document) []pluginstore.Document {
+	seen := make(map[string]struct{}, len(own)+len(platformScoped))
+	merged := make([]pluginstore.Document, 0, len(own)+len(platformScoped))
+	for _, d := range own {
+		if _, ok := seen[d.ID]; ok {
+			continue
+		}
+		seen[d.ID] = struct{}{}
+		merged = append(merged, d)
+	}
+	for _, d := range platformScoped {
+		if _, ok := seen[d.ID]; ok {
+			continue
+		}
+		if !isTemplateDoc(&d) {
+			continue
+		}
+		seen[d.ID] = struct{}{}
+		merged = append(merged, d)
+	}
+	return merged
+}
 
 func documentToTariff(doc *pluginstore.Document) (*TariffResponse, error) {
 	var t TariffResponse
