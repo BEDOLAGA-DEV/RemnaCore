@@ -946,7 +946,7 @@ method   = "GET"
 path     = "/api/admin/plugins"
 function = "handle_list"
 `,
-			`routes[0].path "/api/admin/plugins" uses reserved prefix "/api/admin/"`,
+			`routes[0].path "/api/admin/plugins" uses reserved prefix "/api/admin"`,
 		},
 		{
 			"reserved path /api/auth/",
@@ -955,7 +955,7 @@ method   = "POST"
 path     = "/api/auth/login"
 function = "handle_login"
 `,
-			`routes[0].path "/api/auth/login" uses reserved prefix "/api/auth/"`,
+			`routes[0].path "/api/auth/login" uses reserved prefix "/api/auth"`,
 		},
 		{
 			"reserved path /api/me",
@@ -973,7 +973,7 @@ method   = "POST"
 path     = "/api/webhooks/custom"
 function = "handle_webhook"
 `,
-			`routes[0].path "/api/webhooks/custom" uses reserved prefix "/api/webhooks/"`,
+			`routes[0].path "/api/webhooks/custom" uses reserved prefix "/api/webhooks"`,
 		},
 		{
 			"missing function",
@@ -1068,4 +1068,25 @@ function = "handle_%d"
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrInvalidManifest)
 	assert.Contains(t, err.Error(), "too many routes")
+}
+
+func TestValidateManifestRoute_ReservedPrefixMatching(t *testing.T) {
+	reject := []string{
+		"/api/admin", "/api/admin/roles", "/api/Admin/roles",
+		"/api/auth", "/api/AUTH/login",
+		"/api/me", "/api/me/profile",
+		"/api/webhooks", "/api/webhooks/stripe",
+	}
+	accept := []string{
+		"/api/members", "/api/messages", "/api/metrics",
+		"/api/administrative-notes", "/api/plugin-foo",
+	}
+	for _, p := range reject {
+		err := validateManifestRoute(0, ManifestRoute{Method: "GET", Path: p, Function: "fn"})
+		require.ErrorIs(t, err, ErrInvalidManifest, "expected %q rejected as reserved", p)
+	}
+	for _, p := range accept {
+		err := validateManifestRoute(0, ManifestRoute{Method: "GET", Path: p, Function: "fn"})
+		require.NoError(t, err, "expected %q accepted", p)
+	}
 }

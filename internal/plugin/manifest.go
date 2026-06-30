@@ -28,13 +28,16 @@ var allowedRouteMethods = map[string]bool{
 	"PATCH":  true,
 }
 
-// reservedRoutePathPrefixes are path prefixes owned by the platform. Plugin
-// routes must not start with any of these.
+// reservedRoutePathPrefixes are path NAMESPACES owned by the platform, stored
+// as bare segment prefixes (no trailing slash). A plugin route is rejected when
+// its lowercased path equals a reserved prefix or begins with "<prefix>/", so
+// "/api/admin" and "/api/Admin/roles" are caught while siblings that merely
+// share a textual prefix (e.g. "/api/members" vs "/api/me") are allowed.
 var reservedRoutePathPrefixes = []string{
-	"/api/admin/",
-	"/api/auth/",
+	"/api/admin",
+	"/api/auth",
 	"/api/me",
-	"/api/webhooks/",
+	"/api/webhooks",
 }
 
 // AllowedHookPrefixes defines the valid namespace prefixes for plugin hooks.
@@ -314,8 +317,9 @@ func validateManifestRoute(index int, route ManifestRoute) error {
 		return fmt.Errorf("%w: routes[%d].path must start with %q, got %q",
 			ErrInvalidManifest, index, RoutePathPrefix, route.Path)
 	}
+	lowerPath := strings.ToLower(route.Path)
 	for _, reserved := range reservedRoutePathPrefixes {
-		if strings.HasPrefix(route.Path, reserved) {
+		if lowerPath == reserved || strings.HasPrefix(lowerPath, reserved+"/") {
 			return fmt.Errorf("%w: routes[%d].path %q uses reserved prefix %q",
 				ErrInvalidManifest, index, route.Path, reserved)
 		}
