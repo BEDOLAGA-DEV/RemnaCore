@@ -59,4 +59,3 @@ func TestGatewayAdapter_GetUser_StatusMapping(t *testing.T) {
 		srv.Close()
 	}
 }
-

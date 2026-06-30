@@ -34,9 +34,9 @@ const shortUUIDLength = 8
 // to WASM plugins. The plugin builds request specs; the host executes HTTP
 // with circuit breaker and retry.
 type pluginVPNProvider struct {
-	dispatcher           hookdispatch.Dispatcher
-	httpClient           sdk.VPNHTTPExecutor
-	logger               *slog.Logger
+	dispatcher            hookdispatch.Dispatcher
+	httpClient            sdk.VPNHTTPExecutor
+	logger                *slog.Logger
 	defaultInternalSquads []string
 }
 
@@ -48,9 +48,9 @@ func NewPluginVPNProvider(
 	defaultInternalSquads []string,
 ) multisub.VPNProvider {
 	return &pluginVPNProvider{
-		dispatcher:           dispatcher,
-		httpClient:           httpClient,
-		logger:               logger,
+		dispatcher:            dispatcher,
+		httpClient:            httpClient,
+		logger:                logger,
 		defaultInternalSquads: defaultInternalSquads,
 	}
 }

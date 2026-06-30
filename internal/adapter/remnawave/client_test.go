@@ -48,9 +48,9 @@ func TestClient_CreateUser(t *testing.T) {
 
 	client := NewClient(srv.URL, "test-token")
 	user, err := client.CreateUser(context.Background(), CreateUserRequest{
-		Username:       "p_testuser_main_0",
+		Username:          "p_testuser_main_0",
 		TrafficLimitBytes: 100,
-		ExpireAt:       now.Add(30 * 24 * time.Hour),
+		ExpireAt:          now.Add(30 * 24 * time.Hour),
 	})
 
 	require.NoError(t, err)
