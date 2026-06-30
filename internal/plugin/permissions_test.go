@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestHasPermission_DirectMatch(t *testing.T) {
@@ -126,4 +127,24 @@ func TestValidateHTTPRequest_EmptyAllowlist(t *testing.T) {
 func TestImpliesPermission_CrossResource(t *testing.T) {
 	// billing:write should NOT imply users:read.
 	assert.False(t, impliesPermission(PermBillingWrite, PermUsersRead))
+}
+
+// TestParsePermissions_NeverEmitsSubscriptionOrCheckout guards the honest-contract
+// invariant: no manifest permission field maps to a subscription:* or checkout:*
+// scope, so those scopes can never be granted and must not exist as constants.
+func TestParsePermissions_NeverEmitsSubscriptionOrCheckout(t *testing.T) {
+	m := &Manifest{Permissions: ManifestPermissions{
+		Billing:       PermValueWrite,
+		Payment:       PermValueWrite,
+		Users:         PermValueWrite,
+		Notifications: PermValueEmit,
+		Analytics:     PermValueWrite,
+		Storage:       PermValueReadWrite,
+		VPN:           PermValueWrite,
+		API:           PermValueRoutes,
+	}}
+	for _, s := range m.ParsePermissions() {
+		require.NotContains(t, string(s), "subscription:")
+		require.NotContains(t, string(s), "checkout:")
+	}
 }

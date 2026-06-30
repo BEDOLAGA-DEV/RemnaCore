@@ -116,6 +116,13 @@ func TestRoleShopOwner_IsCleanOfPlatformPerms(t *testing.T) {
 	assert.True(t, has[rbac.SubscriptionsManage])
 }
 
+func TestIsKnownPermission(t *testing.T) {
+	require.True(t, rbac.IsKnownPermission(rbac.TariffsWrite))
+	require.True(t, rbac.IsKnownPermission(rbac.UsersAssignRole))
+	require.False(t, rbac.IsKnownPermission(rbac.Permission("made.up")))
+	require.False(t, rbac.IsKnownPermission(rbac.Permission("")))
+}
+
 func TestSystemRoles_ShopScopedRolesHoldNoPlatformPerms(t *testing.T) {
 	checked := 0
 	for _, role := range rbac.SystemRoles() {

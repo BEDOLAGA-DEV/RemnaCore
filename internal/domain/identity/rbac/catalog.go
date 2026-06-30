@@ -107,6 +107,18 @@ func Catalog() []Definition {
 	}
 }
 
+// IsKnownPermission reports whether p is a permission defined in Catalog(). It
+// is the single source of truth for validating externally-supplied permission
+// strings (e.g. a plugin manifest's route required_permission).
+func IsKnownPermission(p Permission) bool {
+	for _, d := range Catalog() {
+		if d.Key == p {
+			return true
+		}
+	}
+	return false
+}
+
 // PermissionScope returns the enforcement scope of p by looking it up in the
 // catalog. It defaults to PermScopePlatform for an unknown permission, which is
 // fail-safe: an untagged capability is treated as the more restrictive
