@@ -38,8 +38,8 @@ const (
 const (
 	APIPathUsers   = "/api/users/"
 	APIPathNodes   = "/api/nodes/"
-	APIPathEnable  = "/enable"
-	APIPathDisable = "/disable"
+	APIPathEnable  = "enable"
+	APIPathDisable = "disable"
 )
 
 // Shared sub-path constants used across multiple resource clients.
@@ -180,7 +180,7 @@ func (c *Client) GetUserByUUID(ctx context.Context, uuid string) (*RemnawaveUser
 // UpdateUser modifies an existing VPN user in Remnawave.
 func (c *Client) UpdateUser(ctx context.Context, req UpdateUserRequest) (*RemnawaveUser, error) {
 	var resp APIResponse[RemnawaveUser]
-	if err := c.do(ctx, http.MethodPut, APIPathUsers, req, &resp); err != nil {
+	if err := c.do(ctx, http.MethodPatch, APIPathUsers, req, &resp); err != nil {
 		return nil, err
 	}
 	return &resp.Response, nil
@@ -193,12 +193,14 @@ func (c *Client) DeleteUser(ctx context.Context, uuid string) error {
 
 // EnableUser activates a VPN user in Remnawave.
 func (c *Client) EnableUser(ctx context.Context, uuid string) error {
-	return c.do(ctx, http.MethodPost, APIPathUsers+uuid+APIPathEnable, nil, nil)
+	path := fmt.Sprintf("%s%s%s%s", APIPathUsers, uuid, subPathActions, APIPathEnable)
+	return c.do(ctx, http.MethodPost, path, nil, nil)
 }
 
 // DisableUser deactivates a VPN user in Remnawave.
 func (c *Client) DisableUser(ctx context.Context, uuid string) error {
-	return c.do(ctx, http.MethodPost, APIPathUsers+uuid+APIPathDisable, nil, nil)
+	path := fmt.Sprintf("%s%s%s%s", APIPathUsers, uuid, subPathActions, APIPathDisable)
+	return c.do(ctx, http.MethodPost, path, nil, nil)
 }
 
 // GetNodes returns all proxy nodes registered in Remnawave.

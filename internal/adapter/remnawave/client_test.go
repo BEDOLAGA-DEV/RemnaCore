@@ -119,3 +119,32 @@ func TestClient_ErrorResponse(t *testing.T) {
 	assert.Contains(t, err.Error(), "status 404")
 	assert.Contains(t, err.Error(), "user not found")
 }
+
+func TestUpdateUser_UsesPatch(t *testing.T) {
+	var gotMethod, gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath = r.Method, r.URL.Path
+		_, _ = w.Write([]byte(`{"response":{"uuid":"u1"}}`))
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL, "tok")
+	_, err := c.UpdateUser(context.Background(), UpdateUserRequest{UUID: "u1"})
+	require.NoError(t, err)
+	require.Equal(t, http.MethodPatch, gotMethod)
+	require.Equal(t, "/api/users/", gotPath)
+}
+
+func TestEnableDisableUser_UseActionsPath(t *testing.T) {
+	var gotMethod, gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath = r.Method, r.URL.Path
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL, "tok")
+	require.NoError(t, c.EnableUser(context.Background(), "u1"))
+	require.Equal(t, http.MethodPost, gotMethod)
+	require.Equal(t, "/api/users/u1/actions/enable", gotPath)
+	require.NoError(t, c.DisableUser(context.Background(), "u1"))
+	require.Equal(t, "/api/users/u1/actions/disable", gotPath)
+}
