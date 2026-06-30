@@ -548,6 +548,17 @@ type ResellerResellerAccount struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
+type ResellerShopBot struct {
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	BotTokenEnc   string             `json:"bot_token_enc"`
+	WebhookSecret string             `json:"webhook_secret"`
+	CabinetUrl    string             `json:"cabinet_url"`
+	BotUsername   *string            `json:"bot_username"`
+	Enabled       bool               `json:"enabled"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
 type ResellerTenant struct {
 	ID             pgtype.UUID        `json:"id"`
 	Name           string             `json:"name"`
