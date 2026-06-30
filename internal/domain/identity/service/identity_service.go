@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,6 +13,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/telegramauth"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
@@ -419,5 +421,45 @@ func (s *Service) RegisterViaTelegram(ctx context.Context, telegramID int64, ten
 	if err != nil {
 		return nil, err
 	}
+	return result, nil
+}
+
+// LoginViaTelegramWebApp validates a Telegram Mini App initData payload, finds
+// or creates the Telegram user via RegisterViaTelegram, then issues a session
+// inside a tenant-scoped transaction. botToken is resolved by the gateway
+// (from the reseller/shop config) and passed in so that the identity domain does
+// not import the reseller domain.
+func (s *Service) LoginViaTelegramWebApp(ctx context.Context, initData, botToken, tenantID, ip, ua string) (*LoginResult, error) {
+	if botToken == "" {
+		return nil, ErrTelegramAuthUnavailable
+	}
+
+	tgUser, err := telegramauth.ValidateWebAppInitData(initData, botToken, s.clock.Now(), telegramauth.DefaultInitDataMaxAge)
+	if err != nil {
+		return nil, fmt.Errorf("validate telegram initData: %w", err)
+	}
+
+	displayName := strings.TrimSpace(tgUser.FirstName + " " + tgUser.LastName)
+	if displayName == "" {
+		displayName = tgUser.Username
+	}
+
+	user, err := s.RegisterViaTelegram(ctx, tgUser.ID, tenantID, displayName)
+	if err != nil {
+		return nil, fmt.Errorf("register telegram user: %w", err)
+	}
+
+	var result *LoginResult
+	if err := s.txRunner.RunInTx(tenantctx.WithTenantID(ctx, tenantID), func(txCtx context.Context) error {
+		r, ierr := s.issueSession(txCtx, user, ip, ua, s.clock.Now())
+		if ierr != nil {
+			return ierr
+		}
+		result = r
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
 	return result, nil
 }
