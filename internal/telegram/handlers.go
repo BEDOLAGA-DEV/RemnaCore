@@ -10,6 +10,19 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
+// displayNameFor derives a human display name from a Telegram user: first
+// (+ last) name, falling back to the username.
+func displayNameFor(u *models.User) string {
+	name := u.FirstName
+	if u.LastName != "" {
+		name += " " + u.LastName
+	}
+	if name == "" {
+		name = u.Username
+	}
+	return name
+}
+
 // handleStart handles the /start command.
 // If the Telegram user is linked to a platform account, it shows a welcome
 // message. Otherwise, it prompts the user to register or link their account.
@@ -24,10 +37,7 @@ func (b *Bot) handleStart(ctx context.Context, _ *tgbot.Bot, update *models.Upda
 		return
 	}
 
-	displayName := tgUser.FirstName
-	if tgUser.LastName != "" {
-		displayName += " " + tgUser.LastName
-	}
+	displayName := displayNameFor(tgUser)
 
 	// Check if the user has a linked platform account.
 	user, err := b.identity.GetByTelegramID(ctx, tgUser.ID)
