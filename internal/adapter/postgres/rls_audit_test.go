@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -45,6 +46,7 @@ var auditMigrations = []string{
 	"041_plugin_collections_tenant.sql",
 	"042_tier2_tenant_rls.sql",
 	"043_reseller_commissions_tenant.sql",
+	"044_rls_with_check_sentinel_null.sql",
 }
 
 // phaseCTenantTable identifies one table whose RLS the Phase-C audit covers,
@@ -280,4 +282,44 @@ func normalizeQual(qual string) string {
 	lowered := strings.ToLower(qual)
 	withoutCasts := castRE.ReplaceAllString(lowered, "")
 	return strings.Join(strings.Fields(withoutCasts), " ")
+}
+
+// TestRLSWithCheck_NullTenantRequiresSentinel asserts the 044 hardening: under a
+// shop GUC a NULL-tenant (platform) insert is rejected by WITH CHECK, while the
+// platform sentinel may still create NULL-tenant rows. plugins.collections is the
+// representative table (connectAsRLSApp grants only on schema plugins).
+//
+// Each case runs in its own transaction with set_config(..., true) so the GUC is
+// transaction-local and pinned to the same physical connection as the INSERT.
+// A pool-level SET would be racy: pgxpool acquires a (possibly different)
+// connection per Exec, so the GUC could be absent by the time the INSERT runs.
+func TestRLSWithCheck_NullTenantRequiresSentinel(t *testing.T) {
+	admin, connStr := setupTestDBWith(t, auditMigrations...)
+	ctx := context.Background()
+	app := connectAsRLSApp(t, admin, connStr)
+
+	shopID := uuid.Must(uuid.NewV7()).String()
+	const insertSQL = "INSERT INTO plugins.collections " +
+		"(plugin_slug, collection, document, tenant_id) VALUES ($1, $2, '{}'::jsonb, NULL)"
+
+	// Shop-GUC case: a NULL-tenant insert must be rejected by WITH CHECK.
+	// The INSERT errors and aborts the transaction; Rollback cleans up.
+	shopTx, err := app.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = shopTx.Rollback(ctx) }()
+	_, err = shopTx.Exec(ctx, "SELECT set_config('app.tenant_id', $1, true)", shopID)
+	require.NoError(t, err)
+	_, err = shopTx.Exec(ctx, insertSQL, testCollectionPlugin, testCollectionName)
+	require.Error(t, err, "shop GUC must not insert a NULL-tenant (platform) row")
+
+	// Sentinel case: the same NULL-tenant insert succeeds under PlatformScopeSentinel.
+	// A fresh transaction is required because the shop-GUC INSERT above aborted
+	// its transaction (WITH CHECK failure leaves it in an error state).
+	sentinelTx, err := app.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = sentinelTx.Rollback(ctx) }()
+	_, err = sentinelTx.Exec(ctx, "SELECT set_config('app.tenant_id', $1, true)", tenantctx.PlatformScopeSentinel)
+	require.NoError(t, err)
+	_, err = sentinelTx.Exec(ctx, insertSQL, testCollectionPlugin, testCollectionName)
+	require.NoError(t, err, "platform sentinel may insert a NULL-tenant row")
 }
