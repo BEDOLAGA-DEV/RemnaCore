@@ -26,14 +26,15 @@ func computeWASMHash(data []byte) string {
 // disable, uninstall, and configuration updates. It is the single source of
 // truth for plugin lifecycle operations.
 type LifecycleManager struct {
-	repo           PluginRepository
-	storage        StorageService
-	runtime        *RuntimePool
-	dispatcher     *HookDispatcher
-	hostFunctions  *HostFunctions
-	publisher      domainevent.Publisher
-	logger         *slog.Logger
-	clock          clock.Clock
+	repo                    PluginRepository
+	storage                 StorageService
+	runtime                 *RuntimePool
+	dispatcher              *HookDispatcher
+	hostFunctions           *HostFunctions
+	publisher               domainevent.Publisher
+	logger                  *slog.Logger
+	clock                   clock.Clock
+	routePermissionValidator RoutePermissionValidator
 }
 
 // NewLifecycleManager creates a LifecycleManager with all required
@@ -47,16 +48,18 @@ func NewLifecycleManager(
 	publisher domainevent.Publisher,
 	logger *slog.Logger,
 	clk clock.Clock,
+	routePermissionValidator RoutePermissionValidator,
 ) *LifecycleManager {
 	return &LifecycleManager{
-		repo:          repo,
-		storage:       storage,
-		runtime:       runtime,
-		dispatcher:    dispatcher,
-		hostFunctions: hostFunctions,
-		publisher:     publisher,
-		logger:        logger,
-		clock:         clk,
+		repo:                    repo,
+		storage:                 storage,
+		runtime:                 runtime,
+		dispatcher:              dispatcher,
+		hostFunctions:           hostFunctions,
+		publisher:               publisher,
+		logger:                  logger,
+		clock:                   clk,
+		routePermissionValidator: routePermissionValidator,
 	}
 }
 
@@ -66,6 +69,10 @@ func NewLifecycleManager(
 func (lm *LifecycleManager) Install(ctx context.Context, manifestBytes, wasmBytes []byte) (*Plugin, error) {
 	manifest, err := ParseManifest(manifestBytes)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := validateRoutePermissions(manifest, lm.routePermissionValidator); err != nil {
 		return nil, err
 	}
 
@@ -382,6 +389,10 @@ func (lm *LifecycleManager) HotReload(ctx context.Context, pluginID string, mani
 	newManifest, err := ParseManifest(manifestBytes)
 	if err != nil {
 		return fmt.Errorf("parse new manifest: %w", err)
+	}
+
+	if err := validateRoutePermissions(newManifest, lm.routePermissionValidator); err != nil {
+		return fmt.Errorf("validate route permissions: %w", err)
 	}
 
 	// 3. Verify SDK version compatibility of new manifest.

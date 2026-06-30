@@ -11,6 +11,7 @@ import (
 	pluginadapter "github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/plugin"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/rbac"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/hookdispatch"
@@ -23,6 +24,14 @@ import (
 var pluginWiring = fx.Options(
 	// Plugin domain module
 	plugin.Module,
+
+	// RoutePermissionValidator bridges rbac.IsKnownPermission into the plugin
+	// package without the plugin package importing the rbac domain.
+	fx.Provide(func() plugin.RoutePermissionValidator {
+		return func(permission string) bool {
+			return rbac.IsKnownPermission(rbac.Permission(permission))
+		}
+	}),
 
 	// Hook dispatcher -> interface binding (domain packages depend on the interface)
 	fx.Provide(func(d *plugin.HookDispatcher) hookdispatch.Dispatcher { return d }),

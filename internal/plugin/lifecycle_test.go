@@ -188,6 +188,10 @@ async = ["payment.completed"]
 `)
 
 func newTestLifecycleManager() (*LifecycleManager, *mockRepo, *mockStorage, *testPublisher) {
+	return newTestLifecycleManagerWith(func(string) bool { return true })
+}
+
+func newTestLifecycleManagerWith(routeValidator RoutePermissionValidator) (*LifecycleManager, *mockRepo, *mockStorage, *testPublisher) {
 	repo := newMockRepo()
 	storage := newMockStorage()
 	pub := &testPublisher{}
@@ -203,7 +207,7 @@ func newTestLifecycleManager() (*LifecycleManager, *mockRepo, *mockStorage, *tes
 	dispatcher := NewHookDispatcher(runtime, pub, nil, logger, clock.NewReal())
 	hostFuncs := NewHostFunctions(logger, clock.NewReal())
 
-	lm := NewLifecycleManager(repo, storage, runtime, dispatcher, hostFuncs, pub, logger, clock.NewReal())
+	lm := NewLifecycleManager(repo, storage, runtime, dispatcher, hostFuncs, pub, logger, clock.NewReal(), routeValidator)
 	return lm, repo, storage, pub
 }
 
@@ -528,7 +532,7 @@ func TestUpdateConfig_ReloadFailure_RollsBackConfig(t *testing.T) {
 	runtime := NewRuntimePool(logger, factory)
 	dispatcher := NewHookDispatcher(runtime, pub, nil, logger, clock.NewReal())
 	hostFuncs := NewHostFunctions(logger, clock.NewReal())
-	lm := NewLifecycleManager(repo, storage, runtime, dispatcher, hostFuncs, pub, logger, clock.NewReal())
+	lm := NewLifecycleManager(repo, storage, runtime, dispatcher, hostFuncs, pub, logger, clock.NewReal(), func(string) bool { return true })
 
 	manifestWithConfig := []byte(`
 [plugin]
@@ -1055,4 +1059,29 @@ func TestLoadAllEnabled_RecoverErrorPlugins(t *testing.T) {
 
 	slugs := freshRuntime.LoadedSlugs()
 	assert.Contains(t, slugs, "test-plugin")
+}
+
+var routePermManifestTOML = []byte(`
+[plugin]
+id = "route-perm-plugin"
+name = "Route Perm Plugin"
+version = "1.0.0"
+sdk_version = "1.0.0"
+
+[hooks]
+sync = ["user.created"]
+
+[[routes]]
+method = "GET"
+path = "/api/route-perm"
+function = "handle"
+admin_only = true
+required_permission = "made.up"
+`)
+
+func TestInstall_RejectsUnknownRoutePermission(t *testing.T) {
+	lm, _, _, _ := newTestLifecycleManagerWith(func(string) bool { return false })
+	ctx := context.Background()
+	_, err := lm.Install(ctx, routePermManifestTOML, []byte("fake-wasm"))
+	require.ErrorIs(t, err, ErrInvalidManifest)
 }
