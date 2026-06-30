@@ -13,6 +13,7 @@ import (
 	billingservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
 )
 
 // Bot wraps the Telegram bot instance and all domain services needed to handle
@@ -27,6 +28,9 @@ type Bot struct {
 	token      string
 	webhookURL string
 	cabinetURL string
+	tenantID      string
+	webhookSecret string
+	isShop        bool
 
 	identity *identity.Service
 	billing  *billingservice.BillingService
@@ -53,6 +57,8 @@ func NewBot(
 		token:      cfg.Telegram.BotToken.Expose(),
 		webhookURL: cfg.Telegram.WebhookURL,
 		cabinetURL: cfg.Telegram.CabinetURL,
+		tenantID:   tenantctx.PlatformScopeSentinel,
+		isShop:     false,
 
 		identity: identitySvc,
 		billing:  billingSvc,
@@ -64,43 +70,74 @@ func NewBot(
 	}
 }
 
-// Start initializes the Telegram bot and begins processing updates. If a
-// webhook URL is configured, the bot runs in webhook mode; otherwise it falls
-// back to long polling. Start blocks until ctx is cancelled.
-func (b *Bot) Start(ctx context.Context) error {
+// NewShopBot builds a per-shop bot that registers only /start (register +
+// cabinet WebApp button). Platform-only services are nil — a shop bot never
+// reaches the other command handlers.
+func NewShopBot(token, webhookURL, webhookSecret, tenantID, cabinetURL string, identitySvc *identity.Service, logger *slog.Logger) *Bot {
+	return &Bot{
+		token:         token,
+		webhookURL:    webhookURL,
+		webhookSecret: webhookSecret,
+		cabinetURL:    cabinetURL,
+		tenantID:      tenantID,
+		isShop:        true,
+		identity:      identitySvc,
+		logger:        logger.With(slog.String("component", "telegram_shop_bot"), slog.String("tenant", tenantID)),
+	}
+}
+
+// Init constructs the underlying tgbot.Bot and registers handlers. It makes no
+// network call (WithSkipGetMe), so the manager can build every bot synchronously
+// before serving webhooks. An empty token leaves the bot disabled (b.bot nil).
+func (b *Bot) Init(_ context.Context) error {
 	if b.token == "" {
-		b.logger.Warn("telegram bot token not configured, skipping bot startup")
+		b.logger.Warn("telegram bot token not configured, bot disabled")
 		return nil
 	}
-
 	opts := []tgbot.Option{
 		tgbot.WithSkipGetMe(),
 		tgbot.WithErrorsHandler(func(err error) {
 			b.logger.Error("telegram bot error", slog.Any("error", err))
 		}),
 	}
-
+	if b.webhookSecret != "" {
+		opts = append(opts, tgbot.WithWebhookSecretToken(b.webhookSecret))
+	}
 	tb, err := tgbot.New(b.token, opts...)
 	if err != nil {
 		return err
 	}
 	b.bot = tb
-
 	b.registerHandlers()
+	return nil
+}
 
+// Run sets the webhook (when configured) and processes updates until ctx is
+// cancelled. A disabled bot (b.bot nil) returns immediately.
+func (b *Bot) Run(ctx context.Context) error {
+	if b.bot == nil {
+		return nil
+	}
 	if b.webhookURL != "" {
 		b.logger.Info("starting telegram bot in webhook mode", slog.String("url", b.webhookURL))
-		_, err = tb.SetWebhook(ctx, &tgbot.SetWebhookParams{URL: b.webhookURL})
-		if err != nil {
+		if _, err := b.bot.SetWebhook(ctx, &tgbot.SetWebhookParams{URL: b.webhookURL, SecretToken: b.webhookSecret}); err != nil {
 			return err
 		}
-		tb.StartWebhook(ctx)
+		b.bot.StartWebhook(ctx)
 	} else {
 		b.logger.Info("starting telegram bot in long-polling mode")
-		tb.Start(ctx)
+		b.bot.Start(ctx)
 	}
-
 	return nil
+}
+
+// Start initialises and runs the bot (Init then Run). Retained for the
+// single-bot lifecycle; the BotManager calls Init and Run separately.
+func (b *Bot) Start(ctx context.Context) error {
+	if err := b.Init(ctx); err != nil {
+		return err
+	}
+	return b.Run(ctx)
 }
 
 // WebhookHandler returns an http.HandlerFunc that processes Telegram webhook
@@ -114,8 +151,14 @@ func (b *Bot) WebhookHandler() http.HandlerFunc {
 	return b.bot.WebhookHandler()
 }
 
-// registerHandlers wires all command and callback handlers to the bot.
+// registerHandlers wires handlers. Shop bots expose only /start (register +
+// cabinet button); the platform bot keeps the full command + callback set.
 func (b *Bot) registerHandlers() {
+	if b.isShop {
+		b.bot.RegisterHandler(tgbot.HandlerTypeMessageText, CmdStart, tgbot.MatchTypeCommand, b.handleShopStart)
+		return
+	}
+
 	// Command handlers
 	b.bot.RegisterHandler(tgbot.HandlerTypeMessageText, CmdStart, tgbot.MatchTypeCommand, b.handleStart)
 	b.bot.RegisterHandler(tgbot.HandlerTypeMessageText, CmdPlans, tgbot.MatchTypeCommand, b.handlePlans)
