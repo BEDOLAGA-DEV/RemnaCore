@@ -100,9 +100,10 @@ type JWTConfig struct {
 }
 
 type RemnawaveConfig struct {
-	URL           string       `koanf:"url"`
-	APIToken      SecretString `koanf:"api_token"`
-	WebhookSecret SecretString `koanf:"webhook_secret"`
+	URL                   string       `koanf:"url"`
+	APIToken              SecretString `koanf:"api_token"`
+	WebhookSecret         SecretString `koanf:"webhook_secret"`
+	DefaultInternalSquads []string     `koanf:"default_internal_squads"`
 }
 
 type BillingConfig struct {

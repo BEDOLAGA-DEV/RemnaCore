@@ -16,22 +16,28 @@ const DefaultBindingExpiryMonths = 1
 // domain port types and Remnawave client types. This is the Anti-Corruption
 // Layer boundary; no remnawave client types leak into the domain.
 type GatewayAdapter struct {
-	client *ResilientClient
-	clock  clock.Clock
+	client                *ResilientClient
+	clock                 clock.Clock
+	defaultInternalSquads []string
 }
 
 // NewGatewayAdapter creates a GatewayAdapter backed by the given resilient
-// client.
-func NewGatewayAdapter(client *ResilientClient, clk clock.Clock) *GatewayAdapter {
-	return &GatewayAdapter{client: client, clock: clk}
+// client. defaultInternalSquads is applied to every CreateUser call that does
+// not supply its own ActiveInternalSquads override.
+func NewGatewayAdapter(client *ResilientClient, clk clock.Clock, defaultInternalSquads []string) *GatewayAdapter {
+	return &GatewayAdapter{client: client, clock: clk, defaultInternalSquads: defaultInternalSquads}
 }
 
 // CreateUser provisions a VPN user in Remnawave, translating the domain
 // request into a Remnawave API call and mapping the result back.
 func (a *GatewayAdapter) CreateUser(ctx context.Context, req multisub.CreateRemnawaveUserRequest) (*multisub.RemnawaveUserResult, error) {
 	rwReq := CreateUserRequest{
-		Username:       req.Username,
+		Username:          req.Username,
 		TrafficLimitBytes: float64(req.TrafficLimitBytes),
+	}
+	rwReq.ActiveInternalSquads = req.ActiveInternalSquads
+	if len(rwReq.ActiveInternalSquads) == 0 {
+		rwReq.ActiveInternalSquads = a.defaultInternalSquads
 	}
 	if req.ExpireAt != nil {
 		rwReq.ExpireAt = *req.ExpireAt

@@ -51,7 +51,9 @@ var multisubWiring = fx.Options(
 	fx.Provide(func(repo *postgres.SagaRepository) multisub.SagaRepository { return repo }),
 
 	// Remnawave gateway -> interface binding
-	fx.Provide(remnawave.NewGatewayAdapter),
+	fx.Provide(func(client *remnawave.ResilientClient, clk clock.Clock, cfg *config.Config) *remnawave.GatewayAdapter {
+		return remnawave.NewGatewayAdapter(client, clk, cfg.Remnawave.DefaultInternalSquads)
+	}),
 	fx.Provide(func(adapter *remnawave.GatewayAdapter) multisub.RemnawaveGateway { return adapter }),
 
 	// MultiSub orchestrator -> billing event handler interface
