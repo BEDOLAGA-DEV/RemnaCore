@@ -51,7 +51,13 @@ var multisubWiring = fx.Options(
 	fx.Provide(func(repo *postgres.SagaRepository) multisub.SagaRepository { return repo }),
 
 	// Remnawave gateway -> interface binding
-	fx.Provide(remnawave.NewGatewayAdapter),
+	fx.Provide(func(client *remnawave.ResilientClient, clk clock.Clock, cfg *config.Config, logger *slog.Logger) *remnawave.GatewayAdapter {
+		if len(cfg.Remnawave.DefaultInternalSquads) == 0 {
+			logger.Warn("remnawave: no default internal squads configured; new VPN users will be provisioned without squads (empty/non-working subscriptions) unless a per-request override is supplied",
+				slog.String("config_key", "remnawave.default_internal_squads"))
+		}
+		return remnawave.NewGatewayAdapter(client, clk, cfg.Remnawave.DefaultInternalSquads)
+	}),
 	fx.Provide(func(adapter *remnawave.GatewayAdapter) multisub.RemnawaveGateway { return adapter }),
 
 	// MultiSub orchestrator -> billing event handler interface
@@ -114,11 +120,12 @@ func provideVPNProvider(
 	executor sdk.VPNHTTPExecutor,
 	dispatcher hookdispatch.Dispatcher,
 	logger *slog.Logger,
+	cfg *config.Config,
 ) multisub.VPNProvider {
 	if executor == nil {
 		return nil
 	}
-	return pluginadapter.NewPluginVPNProvider(dispatcher, executor, logger)
+	return pluginadapter.NewPluginVPNProvider(dispatcher, executor, logger, cfg.Remnawave.DefaultInternalSquads)
 }
 
 // startSyncService spawns the periodic Remnawave binding sync as a background

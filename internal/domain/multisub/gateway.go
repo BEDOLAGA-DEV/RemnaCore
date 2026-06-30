@@ -18,11 +18,12 @@ type RemnawaveGateway interface {
 
 // CreateRemnawaveUserRequest holds the data needed to create a Remnawave VPN user.
 type CreateRemnawaveUserRequest struct {
-	Username          string
-	TrafficLimitBytes int64
-	TrafficStrategy   string
-	ExpireAt          *time.Time
-	Tag               string
+	Username             string
+	TrafficLimitBytes    int64
+	TrafficStrategy      string
+	ExpireAt             *time.Time
+	Tag                  string
+	ActiveInternalSquads []string // empty -> adapter applies the configured default
 }
 
 // RemnawaveUserResult is the data returned after successfully creating a Remnawave user.

@@ -34,9 +34,10 @@ const shortUUIDLength = 8
 // to WASM plugins. The plugin builds request specs; the host executes HTTP
 // with circuit breaker and retry.
 type pluginVPNProvider struct {
-	dispatcher hookdispatch.Dispatcher
-	httpClient sdk.VPNHTTPExecutor
-	logger     *slog.Logger
+	dispatcher            hookdispatch.Dispatcher
+	httpClient            sdk.VPNHTTPExecutor
+	logger                *slog.Logger
+	defaultInternalSquads []string
 }
 
 // NewPluginVPNProvider creates a plugin-backed VPN provider.
@@ -44,12 +45,23 @@ func NewPluginVPNProvider(
 	dispatcher hookdispatch.Dispatcher,
 	httpClient sdk.VPNHTTPExecutor,
 	logger *slog.Logger,
+	defaultInternalSquads []string,
 ) multisub.VPNProvider {
 	return &pluginVPNProvider{
-		dispatcher: dispatcher,
-		httpClient: httpClient,
-		logger:     logger,
+		dispatcher:            dispatcher,
+		httpClient:            httpClient,
+		logger:                logger,
+		defaultInternalSquads: defaultInternalSquads,
 	}
+}
+
+// resolveInternalSquads returns the request's squads when non-empty, else the
+// configured default.
+func resolveInternalSquads(reqSquads, defaultSquads []string) []string {
+	if len(reqSquads) > 0 {
+		return reqSquads
+	}
+	return defaultSquads
 }
 
 // CreateUser provisions a VPN user through the plugin pipeline:
@@ -60,11 +72,12 @@ func NewPluginVPNProvider(
 func (p *pluginVPNProvider) CreateUser(ctx context.Context, req multisub.CreateVPNUserRequest) (*multisub.VPNUserResult, error) {
 	// 1. Dispatch vpn.user.creating -> plugin returns VPNRequest spec
 	hookReq := sdk.VPNUserCreatingRequest{
-		Username:          req.Username,
-		TrafficLimitBytes: req.TrafficLimitBytes,
-		TrafficStrategy:   req.TrafficStrategy,
-		Tag:               req.Tag,
-		BindingPurpose:    req.BindingPurpose,
+		Username:             req.Username,
+		TrafficLimitBytes:    req.TrafficLimitBytes,
+		TrafficStrategy:      req.TrafficStrategy,
+		Tag:                  req.Tag,
+		BindingPurpose:       req.BindingPurpose,
+		ActiveInternalSquads: resolveInternalSquads(req.ActiveInternalSquads, p.defaultInternalSquads),
 	}
 	if req.ExpireAt != nil {
 		hookReq.ExpireAt = req.ExpireAt.Format(time.RFC3339)

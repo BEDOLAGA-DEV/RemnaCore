@@ -58,12 +58,13 @@ type VPNResponse struct {
 
 // VPNUserCreatingRequest is the payload for vpn.user.creating.
 type VPNUserCreatingRequest struct {
-	Username          string `json:"username"`
-	TrafficLimitBytes int64  `json:"traffic_limit_bytes"`
-	TrafficStrategy   string `json:"traffic_strategy"`
-	ExpireAt          string `json:"expire_at,omitempty"`
-	Tag               string `json:"tag"`
-	BindingPurpose    string `json:"binding_purpose"`
+	Username             string   `json:"username"`
+	TrafficLimitBytes    int64    `json:"traffic_limit_bytes"`
+	TrafficStrategy      string   `json:"traffic_strategy"`
+	ExpireAt             string   `json:"expire_at,omitempty"`
+	Tag                  string   `json:"tag"`
+	BindingPurpose       string   `json:"binding_purpose"`
+	ActiveInternalSquads []string `json:"active_internal_squads,omitempty"`
 }
 
 // VPNUserCreatingResponse is the response from vpn.user.creating.
@@ -138,25 +139,34 @@ type VPNUserCreatedNotification struct {
 
 // remnawaveCreateUserRequest is the JSON body sent to POST /api/users/.
 type remnawaveCreateUserRequest struct {
-	Username           string  `json:"username"`
-	TrafficLimitBytes  float64 `json:"trafficLimitBytes"`
-	ExpireAt           string  `json:"expireAt,omitempty"`
-	ActiveUserInbounds []string `json:"activeUserInbounds,omitempty"`
+	Username             string   `json:"username"`
+	TrafficLimitBytes    float64  `json:"trafficLimitBytes"`
+	ExpireAt             string   `json:"expireAt,omitempty"`
+	ActiveInternalSquads []string `json:"activeInternalSquads,omitempty"`
 }
 
-// remnawaveAPIResponse is the generic envelope returned by Remnawave endpoints.
+// KNOWN ISSUE (2.8.0 users sub-project): this envelope ({success,message,data})
+// does NOT match Remnawave's real REST envelope, which is {response: <user>}
+// (see internal/adapter/remnawave APIResponse[T]). The plugin VPN-provider path
+// is feature-flag-off (HooksVPNProviderEnabled); before enabling it, align this
+// to the {response} envelope and verify against a live 2.8.0 panel.
 type remnawaveAPIResponse struct {
 	Success bool            `json:"success"`
 	Message string          `json:"message,omitempty"`
 	Data    json.RawMessage `json:"data"`
 }
 
+// remnawaveUserTraffic is the nested traffic object in the Remnawave user response.
+type remnawaveUserTraffic struct {
+	UsedTrafficBytes float64 `json:"usedTrafficBytes"`
+}
+
 // remnawaveUserWithTraffic is the user object returned by GET /api/users/{uuid}.
 type remnawaveUserWithTraffic struct {
-	UUID             string `json:"uuid"`
-	Username         string `json:"username"`
-	Status           string `json:"status"`
-	UsedTrafficBytes int64  `json:"usedTrafficBytes"`
+	UUID        string               `json:"uuid"`
+	Username    string               `json:"username"`
+	Status      string               `json:"status"`
+	UserTraffic remnawaveUserTraffic `json:"userTraffic"`
 }
 
 // --- Constants ---
@@ -171,8 +181,9 @@ const (
 // Remnawave API path constants (matching adapter/remnawave/client.go).
 const (
 	apiPathUsers   = "/api/users/"
-	apiPathEnable  = "/enable"
-	apiPathDisable = "/disable"
+	apiPathActions = "/actions/"
+	apiPathEnable  = "enable"
+	apiPathDisable = "disable"
 )
 
 // HTTP header constants for Remnawave API requests.
@@ -189,10 +200,10 @@ const (
 
 // Remnawave user status constants.
 const (
-	remnawaveStatusActive   = "active"
-	remnawaveStatusDisabled = "disabled"
-	remnawaveStatusExpired  = "expired"
-	remnawaveStatusLimited  = "limited"
+	remnawaveStatusActive   = "ACTIVE"
+	remnawaveStatusDisabled = "DISABLED"
+	remnawaveStatusExpired  = "EXPIRED"
+	remnawaveStatusLimited  = "LIMITED"
 )
 
 // defaultTimeoutMS is the default timeout for Remnawave API requests.
@@ -213,9 +224,10 @@ func handleUserCreating(input []byte) ([]byte, error) {
 	}
 
 	reqBody := remnawaveCreateUserRequest{
-		Username:          payload.Username,
-		TrafficLimitBytes: float64(payload.TrafficLimitBytes),
-		ExpireAt:          payload.ExpireAt,
+		Username:             payload.Username,
+		TrafficLimitBytes:    float64(payload.TrafficLimitBytes),
+		ExpireAt:             payload.ExpireAt,
+		ActiveInternalSquads: payload.ActiveInternalSquads,
 	}
 
 	body, err := json.Marshal(reqBody)
@@ -283,7 +295,7 @@ func handleUserEnabling(input []byte) ([]byte, error) {
 	result := VPNUserEnablingResponse{
 		EnableRequest: VPNRequest{
 			Method:  http.MethodPost,
-			Path:    apiPathUsers + payload.VPNUUID + apiPathEnable,
+			Path:    apiPathUsers + payload.VPNUUID + apiPathActions + apiPathEnable,
 			Headers: remnawaveHeaders(),
 			Timeout: defaultTimeoutMS,
 		},
@@ -311,7 +323,7 @@ func handleUserDisabling(input []byte) ([]byte, error) {
 	result := VPNUserDisablingResponse{
 		DisableRequest: VPNRequest{
 			Method:  http.MethodPost,
-			Path:    apiPathUsers + payload.VPNUUID + apiPathDisable,
+			Path:    apiPathUsers + payload.VPNUUID + apiPathActions + apiPathDisable,
 			Headers: remnawaveHeaders(),
 			Timeout: defaultTimeoutMS,
 		},
@@ -378,7 +390,7 @@ func handleUserFetched(input []byte) ([]byte, error) {
 		UUID:      user.UUID,
 		Enabled:   user.Status == remnawaveStatusActive,
 		Expired:   user.Status == remnawaveStatusExpired || user.Status == remnawaveStatusLimited,
-		UsedBytes: user.UsedTrafficBytes,
+		UsedBytes: int64(user.UserTraffic.UsedTrafficBytes),
 	}
 
 	return modifyResult(result)

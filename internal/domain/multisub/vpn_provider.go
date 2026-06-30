@@ -22,12 +22,13 @@ type VPNProvider interface {
 // plugin-backed VPN provider. Fields mirror the subset of
 // CreateRemnawaveUserRequest that is provider-agnostic.
 type CreateVPNUserRequest struct {
-	Username          string
-	TrafficLimitBytes int64
-	TrafficStrategy   string
-	ExpireAt          *time.Time
-	Tag               string
-	BindingPurpose    string
+	Username             string
+	TrafficLimitBytes    int64
+	TrafficStrategy      string
+	ExpireAt             *time.Time
+	Tag                  string
+	BindingPurpose       string
+	ActiveInternalSquads []string
 }
 
 // VPNUserResult is returned after a VPN user is successfully created.

@@ -38,7 +38,7 @@ func TestClient_CreateUser(t *testing.T) {
 			Response: RemnawaveUser{
 				UUID:     "uuid-123",
 				Username: req.Username,
-				Status:   "active",
+				Status:   "ACTIVE",
 			},
 		}
 		w.Header().Set(httpconst.HeaderContentType, httpconst.ContentTypeJSON)
@@ -48,15 +48,15 @@ func TestClient_CreateUser(t *testing.T) {
 
 	client := NewClient(srv.URL, "test-token")
 	user, err := client.CreateUser(context.Background(), CreateUserRequest{
-		Username:       "p_testuser_main_0",
+		Username:          "p_testuser_main_0",
 		TrafficLimitBytes: 100,
-		ExpireAt:       now.Add(30 * 24 * time.Hour),
+		ExpireAt:          now.Add(30 * 24 * time.Hour),
 	})
 
 	require.NoError(t, err)
 	assert.Equal(t, "uuid-123", user.UUID)
 	assert.Equal(t, "p_testuser_main_0", user.Username)
-	assert.Equal(t, "active", user.Status)
+	assert.Equal(t, "ACTIVE", user.Status)
 }
 
 func TestClient_GetNodes(t *testing.T) {
@@ -118,4 +118,33 @@ func TestClient_ErrorResponse(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "status 404")
 	assert.Contains(t, err.Error(), "user not found")
+}
+
+func TestUpdateUser_UsesPatch(t *testing.T) {
+	var gotMethod, gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath = r.Method, r.URL.Path
+		_, _ = w.Write([]byte(`{"response":{"uuid":"u1"}}`))
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL, "tok")
+	_, err := c.UpdateUser(context.Background(), UpdateUserRequest{UUID: "u1"})
+	require.NoError(t, err)
+	require.Equal(t, http.MethodPatch, gotMethod)
+	require.Equal(t, "/api/users/", gotPath)
+}
+
+func TestEnableDisableUser_UseActionsPath(t *testing.T) {
+	var gotMethod, gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath = r.Method, r.URL.Path
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL, "tok")
+	require.NoError(t, c.EnableUser(context.Background(), "u1"))
+	require.Equal(t, http.MethodPost, gotMethod)
+	require.Equal(t, "/api/users/u1/actions/enable", gotPath)
+	require.NoError(t, c.DisableUser(context.Background(), "u1"))
+	require.Equal(t, "/api/users/u1/actions/disable", gotPath)
 }
