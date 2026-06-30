@@ -138,6 +138,9 @@ type ManifestPlugin struct {
 }
 
 // ManifestPermissions declares what platform capabilities the plugin needs.
+// Note: only vpn/storage/notifications are enforced at runtime by a host
+// function; billing/payment/users/analytics/api are declarative metadata
+// recorded on the plugin (see PermissionScope doc in constants.go).
 type ManifestPermissions struct {
 	Billing       string   `toml:"billing"`
 	Payment       string   `toml:"payment"`

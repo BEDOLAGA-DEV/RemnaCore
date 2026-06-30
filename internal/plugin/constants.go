@@ -20,26 +20,34 @@ const (
 )
 
 // PermissionScope is a typed scope string that governs what a plugin may
-// access.
+// access. Scopes fall into two classes:
+//
+//   - Runtime-enforced: checked by PermissionChecker.HasPermission before a
+//     host function runs. For a sandboxed WASM guest only two host functions
+//     are registered (log, vpn_request — see extism_runner.go), so the only
+//     in-guest runtime-enforced scope is vpn:*; storage:* and
+//     notifications:emit gate host calls used by compiled-in builtins.
+//   - Declarative metadata: recorded on the plugin to express intent but NOT
+//     checked at runtime today — no host function consumes them. They may gate
+//     future host functions; do not assume they grant a capability.
 type PermissionScope string
 
 const (
-	PermBillingRead       PermissionScope = "billing:read"
-	PermBillingWrite      PermissionScope = "billing:write"
-	PermPaymentWrite      PermissionScope = "payment:write"
-	PermUsersRead         PermissionScope = "users:read"
-	PermUsersWrite        PermissionScope = "users:write"
+	// Runtime-enforced scopes (gate a host function via HasPermission).
 	PermNotificationsEmit PermissionScope = "notifications:emit"
-	PermAnalyticsWrite    PermissionScope = "analytics:write"
 	PermStorageRead       PermissionScope = "storage:read"
 	PermStorageWrite      PermissionScope = "storage:readwrite"
-	PermAPIRoutes         PermissionScope = "api:routes"
 	PermVPNRead           PermissionScope = "vpn:read"
 	PermVPNWrite          PermissionScope = "vpn:write"
-	PermSubscriptionRead  PermissionScope = "subscription:read"
-	PermSubscriptionWrite PermissionScope = "subscription:write"
-	PermCheckoutRead      PermissionScope = "checkout:read"
-	PermCheckoutWrite     PermissionScope = "checkout:write"
+
+	// Declarative metadata scopes (not runtime-enforced today).
+	PermBillingRead    PermissionScope = "billing:read"
+	PermBillingWrite   PermissionScope = "billing:write"
+	PermPaymentWrite   PermissionScope = "payment:write"
+	PermUsersRead      PermissionScope = "users:read"
+	PermUsersWrite     PermissionScope = "users:write"
+	PermAnalyticsWrite PermissionScope = "analytics:write"
+	PermAPIRoutes      PermissionScope = "api:routes"
 )
 
 // Default resource limits applied when a plugin manifest omits explicit values.
