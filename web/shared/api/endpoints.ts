@@ -19,6 +19,9 @@ export const ENDPOINTS = {
     resetPassword: "/api/auth/reset-password",
     // Public: invitation acceptance (Phase B). Rate-limited; no JWT required.
     acceptInvitation: "/api/auth/accept-invitation",
+    // Public: Telegram Mini App auto-login. shop_id is optional (resolved from
+    // the request domain server-side); the cabinet sends only init_data.
+    telegramWebApp: "/api/auth/telegram/webapp",
   },
 
   // ─── Plans (Public) ────────────────────────────────────────────────────

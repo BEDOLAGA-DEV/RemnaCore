@@ -12,6 +12,7 @@ import type {
   ResetPasswordRequest,
   UpdateProfileRequest,
   LinkTelegramRequest,
+  TelegramWebAppLoginRequest,
   StatusResponse,
   VerifyEmailRequest,
 } from "../types.js";
@@ -33,6 +34,20 @@ export function useLogin() {
   return useMutation({
     mutationFn: (data: LoginRequest) =>
       apiPost<LoginResponse>(ENDPOINTS.auth.login, data),
+    onSuccess: (result) => {
+      login(result.access_token, result.refresh_token, result.user);
+      queryClient.setQueryData(QUERY_KEYS.auth.me, result.user);
+    },
+  });
+}
+
+export function useTelegramWebAppLogin() {
+  const { login } = useAuthStore();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: TelegramWebAppLoginRequest) =>
+      apiPost<LoginResponse>(ENDPOINTS.auth.telegramWebApp, data),
     onSuccess: (result) => {
       login(result.access_token, result.refresh_token, result.user);
       queryClient.setQueryData(QUERY_KEYS.auth.me, result.user);

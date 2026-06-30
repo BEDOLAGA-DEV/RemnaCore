@@ -10,6 +10,14 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400;1,700&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
+    <!--
+      Telegram Mini App SDK. Loaded synchronously so window.Telegram.WebApp (and
+      its initData) is available before React mounts. No integrity hash is pinned
+      intentionally: Telegram serves this from a single mutable, versionless URL
+      it updates in place with no published SRI digest, so a hash would break the
+      Mini App on the next SDK update. Trust is anchored in TLS to telegram.org.
+    -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
   </head>
   <body>
     <div id="root"></div>

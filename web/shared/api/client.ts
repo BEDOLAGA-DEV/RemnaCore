@@ -65,11 +65,13 @@ export const apiClient: KyInstance = ky.create({
       async ({ request, response }) => {
         if (response.status !== 401) return response;
 
-        // Don't retry refresh or login endpoints
+        // Don't retry refresh or login endpoints (a 401 here is terminal, not a
+        // stale-token signal — a refresh attempt would be pointless).
         const url = new URL(request.url);
         if (
           url.pathname.includes("/auth/refresh") ||
-          url.pathname.includes("/auth/login")
+          url.pathname.includes("/auth/login") ||
+          url.pathname.includes("/auth/telegram/webapp")
         ) {
           return response;
         }

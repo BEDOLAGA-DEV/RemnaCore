@@ -4,6 +4,7 @@ import { ErrorBoundary } from "@remnacore/shared";
 import { router } from "./router.js";
 import { useEffect } from "react";
 import { useThemeStore } from "@remnacore/shared";
+import { TelegramAutoLogin } from "./components/TelegramAutoLogin.js";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,6 +27,7 @@ export function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
+        <TelegramAutoLogin />
         <RouterProvider router={router} />
       </QueryClientProvider>
     </ErrorBoundary>

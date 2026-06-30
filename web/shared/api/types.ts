@@ -46,6 +46,12 @@ export type LinkTelegramRequest = {
   telegram_id: number;
 };
 
+// Telegram Mini App auto-login. Only init_data is sent; the backend resolves
+// the shop from the request domain (shop_id is optional and omitted here).
+export type TelegramWebAppLoginRequest = {
+  init_data: string;
+};
+
 // ─── Billing Requests ───────────────────────────────────────────────────────
 
 export type CreateSubscriptionRequest = {
