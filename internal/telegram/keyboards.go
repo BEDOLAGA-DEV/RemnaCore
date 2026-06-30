@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/go-telegram/bot/models"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	msaggregate "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
+	"github.com/go-telegram/bot/models"
 )
 
 // PlansKeyboard builds an inline keyboard with one button per plan.

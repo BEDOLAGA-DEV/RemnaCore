@@ -24,10 +24,10 @@ import (
 // subscriptions, bindings). This follows the CQRS read path pattern -- reads
 // bypass the write-side services for performance and simplicity.
 type Bot struct {
-	bot        *tgbot.Bot
-	token      string
-	webhookURL string
-	cabinetURL string
+	bot           *tgbot.Bot
+	token         string
+	webhookURL    string
+	cabinetURL    string
 	tenantID      string
 	webhookSecret string
 	isShop        bool
@@ -41,8 +41,8 @@ type Bot struct {
 	logger   *slog.Logger
 }
 
-// NewBot creates a new Bot. The underlying tgbot.Bot is initialized lazily in
-// Start so that the constructor does not block on a network call.
+// NewBot creates the platform Bot. The underlying tgbot.Bot is initialized
+// lazily in Init so that the constructor does not block on a network call.
 func NewBot(
 	cfg *config.Config,
 	identitySvc *identity.Service,
@@ -129,15 +129,6 @@ func (b *Bot) Run(ctx context.Context) error {
 		b.bot.Start(ctx)
 	}
 	return nil
-}
-
-// Start initialises and runs the bot (Init then Run). Retained for the
-// single-bot lifecycle; the BotManager calls Init and Run separately.
-func (b *Bot) Start(ctx context.Context) error {
-	if err := b.Init(ctx); err != nil {
-		return err
-	}
-	return b.Run(ctx)
 }
 
 // WebhookHandler returns an http.HandlerFunc that processes Telegram webhook

@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,6 +14,8 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/vo"
 )
+
+var errStubLister = errors.New("stub lister failure")
 
 type stubLister struct {
 	bots []vo.ShopBotWithTenant
@@ -31,15 +34,35 @@ func newManagerForTest(lister ShopBotLister, webhookURL string) *BotManager {
 
 func TestBotManager_Load_BuildsEnabledShops(t *testing.T) {
 	lister := stubLister{bots: []vo.ShopBotWithTenant{
-		{TenantID: "tenant-a", Config: vo.ShopBotConfig{Token: config.NewSecretString("1:a"), CabinetURL: "https://a", Enabled: true}},
-		{TenantID: "tenant-b", Config: vo.ShopBotConfig{Token: config.NewSecretString("2:b"), CabinetURL: "https://b", Enabled: true}},
+		{TenantID: "tenant-a", Config: vo.ShopBotConfig{Token: config.NewSecretString("1:a"), WebhookSecret: "sec-a", CabinetURL: "https://a", Enabled: true}},
+		{TenantID: "tenant-b", Config: vo.ShopBotConfig{Token: config.NewSecretString("2:b"), WebhookSecret: "sec-b", CabinetURL: "https://b", Enabled: true}},
 	}}
 	m := newManagerForTest(lister, "https://host.example.com/webhooks/telegram")
 	require.NoError(t, m.Load(context.Background()))
 	assert.NotNil(t, m.shops["tenant-a"])
 	assert.NotNil(t, m.shops["tenant-b"])
-	// Webhook URL derived from origin + prefix + tenant.
+	// Webhook URL derived from origin + prefix + tenant (secret present → webhook mode).
 	assert.Equal(t, "https://host.example.com/webhooks/telegram/tenant-a", m.shops["tenant-a"].webhookURL)
+}
+
+func TestBotManager_Load_PropagatesListerError(t *testing.T) {
+	m := newManagerForTest(stubLister{err: errStubLister}, "")
+	err := m.Load(context.Background())
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errStubLister)
+	assert.Empty(t, m.shops)
+}
+
+func TestBotManager_Load_EmptyWebhookSecret_ForcesLongPoll(t *testing.T) {
+	// Webhook origin configured, but the shop has no secret → fail closed: the
+	// bot must not serve an unauthenticated webhook, so it falls back to long-poll.
+	lister := stubLister{bots: []vo.ShopBotWithTenant{
+		{TenantID: "tenant-a", Config: vo.ShopBotConfig{Token: config.NewSecretString("1:a"), CabinetURL: "https://a", Enabled: true}},
+	}}
+	m := newManagerForTest(lister, "https://host.example.com/webhooks/telegram")
+	require.NoError(t, m.Load(context.Background()))
+	require.NotNil(t, m.shops["tenant-a"])
+	assert.Empty(t, m.shops["tenant-a"].webhookURL)
 }
 
 func TestBotManager_Load_SkipsBadBotKeepsOthers(t *testing.T) {

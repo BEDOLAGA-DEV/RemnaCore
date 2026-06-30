@@ -83,9 +83,18 @@ func (m *BotManager) Load(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, entry := range list {
+		webhookURL := m.shopWebhookURL(entry.TenantID)
+		if webhookURL != "" && entry.Config.WebhookSecret == "" {
+			// Fail closed: an empty secret would leave the webhook endpoint
+			// unauthenticated (the library skips the secret-token check when the
+			// configured secret is ""). Fall back to long-polling instead of
+			// serving inbound updates without a gate.
+			m.logger.Warn("shop bot has no webhook secret; forcing long-poll", slog.String("tenant", entry.TenantID))
+			webhookURL = ""
+		}
 		bot := NewShopBot(
 			entry.Config.Token.Expose(),
-			m.shopWebhookURL(entry.TenantID),
+			webhookURL,
 			entry.Config.WebhookSecret,
 			entry.TenantID,
 			entry.Config.CabinetURL,
@@ -122,6 +131,9 @@ func (m *BotManager) Run(ctx context.Context) {
 
 // startLocked records a cancel func and launches the bot loop. Caller holds m.mu.
 func (m *BotManager) startLocked(ctx context.Context, key string, bot *Bot) {
+	if prev, ok := m.cancels[key]; ok {
+		prev() // cancel any prior loop for this key before replacing it (no goroutine leak)
+	}
 	botCtx, cancel := context.WithCancel(ctx)
 	m.cancels[key] = cancel
 	go func() {
