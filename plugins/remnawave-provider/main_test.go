@@ -173,7 +173,7 @@ func TestHandleUserEnabling(t *testing.T) {
 			name:       "enable user",
 			vpnUUID:    "uuid-enable-123",
 			wantMethod: http.MethodPost,
-			wantPath:   apiPathUsers + "uuid-enable-123" + apiPathEnable,
+			wantPath:   apiPathUsers + "uuid-enable-123" + apiPathActions + apiPathEnable,
 		},
 	}
 
@@ -217,7 +217,7 @@ func TestHandleUserDisabling(t *testing.T) {
 			name:       "disable user",
 			vpnUUID:    "uuid-disable-456",
 			wantMethod: http.MethodPost,
-			wantPath:   apiPathUsers + "uuid-disable-456" + apiPathDisable,
+			wantPath:   apiPathUsers + "uuid-disable-456" + apiPathActions + apiPathDisable,
 		},
 	}
 
@@ -330,10 +330,10 @@ func TestHandleUserFetched(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			userData, err := json.Marshal(remnawaveUserWithTraffic{
-				UUID:             "uuid-fetched-001",
-				Username:         "p_abc12345_base_0",
-				Status:           tc.status,
-				UsedTrafficBytes: 1073741824,
+				UUID:        "uuid-fetched-001",
+				Username:    "p_abc12345_base_0",
+				Status:      tc.status,
+				UserTraffic: remnawaveUserTraffic{UsedTrafficBytes: 1073741824},
 			})
 			require.NoError(t, err)
 
@@ -436,4 +436,36 @@ func TestRemnawaveHeaders(t *testing.T) {
 	assert.Equal(t, contentTypeJSON, headers[headerContentType])
 	assert.Equal(t, forwardedProtoHTTPS, headers[headerForwardedProto])
 	assert.Equal(t, forwardedLoopbackIP, headers[headerForwardedFor])
+}
+
+func TestHandleUserEnabling_ActionsPath(t *testing.T) {
+	payloadBytes, _ := json.Marshal(VPNUserEnablingRequest{VPNUUID: "u1"})
+	input, _ := json.Marshal(HookContext{HookName: "vpn.user.enabling", Payload: payloadBytes})
+	out, err := handleUserEnabling(input)
+	require.NoError(t, err)
+	var res HookResult
+	require.NoError(t, json.Unmarshal(out, &res))
+	var er VPNUserEnablingResponse
+	require.NoError(t, json.Unmarshal(res.Modified, &er))
+	require.Equal(t, "/api/users/u1/actions/enable", er.EnableRequest.Path)
+}
+
+func TestHandleUserFetched_NestedTrafficUppercaseStatus(t *testing.T) {
+	userData, _ := json.Marshal(remnawaveUserWithTraffic{
+		UUID:        "u1",
+		Status:      "LIMITED",
+		UserTraffic: remnawaveUserTraffic{UsedTrafficBytes: 2048},
+	})
+	apiResp, _ := json.Marshal(remnawaveAPIResponse{Success: true, Data: userData})
+	payloadBytes, _ := json.Marshal(VPNUserFetchedRequest{VPNUUID: "u1", RawResponse: VPNResponse{StatusCode: 200, Body: apiResp}})
+	input, _ := json.Marshal(HookContext{HookName: "vpn.user.fetched", Payload: payloadBytes})
+	out, err := handleUserFetched(input)
+	require.NoError(t, err)
+	var res HookResult
+	require.NoError(t, json.Unmarshal(out, &res))
+	var fr VPNUserFetchedResponse
+	require.NoError(t, json.Unmarshal(res.Modified, &fr))
+	require.Equal(t, int64(2048), fr.UsedBytes)
+	require.False(t, fr.Enabled)
+	require.True(t, fr.Expired)
 }
