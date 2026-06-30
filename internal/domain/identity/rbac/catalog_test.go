@@ -69,6 +69,7 @@ func TestCatalog_EveryEntryIsScoped(t *testing.T) {
 		rbac.CustomersRead: true, rbac.CustomersManage: true,
 		rbac.SubscriptionsRead: true, rbac.SubscriptionsManage: true,
 		rbac.BillingRead: true, rbac.DashboardRead: true, rbac.PluginsRead: true,
+		rbac.ShopSettingsManage: true,
 	}
 	for _, d := range rbac.Catalog() {
 		require.Contains(t, []rbac.PermScope{rbac.PermScopePlatform, rbac.PermScopeShop}, d.Scope,
@@ -114,6 +115,8 @@ func TestRoleShopOwner_IsCleanOfPlatformPerms(t *testing.T) {
 	// Retained shop perms.
 	assert.True(t, has[rbac.TariffsWrite])
 	assert.True(t, has[rbac.SubscriptionsManage])
+	// Added shop settings management.
+	assert.True(t, has[rbac.ShopSettingsManage])
 }
 
 func TestSystemRoles_ShopScopedRolesHoldNoPlatformPerms(t *testing.T) {
@@ -130,4 +133,12 @@ func TestSystemRoles_ShopScopedRolesHoldNoPlatformPerms(t *testing.T) {
 	}
 	// Guard against a vacuous pass if the shop roles were ever removed.
 	assert.Greater(t, checked, 0, "expected at least one ScopeShop system role")
+}
+
+func TestShopSettingsManage_InCatalogAndShopOwner(t *testing.T) {
+	require.True(t, rbac.IsKnownPermission(rbac.ShopSettingsManage))
+	require.Equal(t, rbac.PermScopeShop, rbac.PermissionScope(rbac.ShopSettingsManage))
+	sr, ok := rbac.SystemRoleByKey(rbac.RoleShopOwner)
+	require.True(t, ok)
+	require.Contains(t, sr.Permissions, rbac.ShopSettingsManage)
 }

@@ -46,6 +46,7 @@ const (
 	AnalyticsRead       Permission = "analytics.read"
 	SessionsRead        Permission = "sessions.read"
 	SettingsManage      Permission = "settings.manage"
+	ShopSettingsManage  Permission = "shop_settings.manage"
 	InfraRead           Permission = "infra.read"     // remnawave topology (platform-only)
 	InfraManage         Permission = "infra.manage"   // remnawave mutations (platform-only)
 	BillingManage       Permission = "billing.manage" // balance/financial ops (platform-only)
@@ -100,6 +101,7 @@ func Catalog() []Definition {
 		{AnalyticsRead, "View platform analytics and metrics", PermScopePlatform},
 		{SessionsRead, "View active sessions and the activity feed", PermScopePlatform},
 		{SettingsManage, "Change platform settings", PermScopePlatform},
+		{ShopSettingsManage, "Manage shop settings (Telegram bot, integrations)", PermScopeShop},
 		{InfraRead, "View Remnawave nodes, panels, and squads", PermScopePlatform},
 		{InfraManage, "Manage Remnawave nodes, panels, and squads (mutations)", PermScopePlatform},
 		{BillingManage, "Manage balances and financial operations (adjust, transfer, export)", PermScopePlatform},
@@ -118,6 +120,16 @@ func PermissionScope(p Permission) PermScope {
 		}
 	}
 	return PermScopePlatform
+}
+
+// IsKnownPermission returns true if p is a defined permission in the catalog.
+func IsKnownPermission(p Permission) bool {
+	for _, d := range Catalog() {
+		if d.Key == p {
+			return true
+		}
+	}
+	return false
 }
 
 // Scope kinds for roles and bindings.
@@ -173,6 +185,7 @@ func SystemRoles() []SystemRole {
 				CustomersRead, CustomersManage,
 				SubscriptionsRead, SubscriptionsManage,
 				BillingRead, DashboardRead, PluginsRead,
+				ShopSettingsManage,
 			},
 		},
 		{
