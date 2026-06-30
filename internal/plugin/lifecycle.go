@@ -26,14 +26,14 @@ func computeWASMHash(data []byte) string {
 // disable, uninstall, and configuration updates. It is the single source of
 // truth for plugin lifecycle operations.
 type LifecycleManager struct {
-	repo                    PluginRepository
-	storage                 StorageService
-	runtime                 *RuntimePool
-	dispatcher              *HookDispatcher
-	hostFunctions           *HostFunctions
-	publisher               domainevent.Publisher
-	logger                  *slog.Logger
-	clock                   clock.Clock
+	repo                     PluginRepository
+	storage                  StorageService
+	runtime                  *RuntimePool
+	dispatcher               *HookDispatcher
+	hostFunctions            *HostFunctions
+	publisher                domainevent.Publisher
+	logger                   *slog.Logger
+	clock                    clock.Clock
 	routePermissionValidator RoutePermissionValidator
 }
 
@@ -51,14 +51,14 @@ func NewLifecycleManager(
 	routePermissionValidator RoutePermissionValidator,
 ) *LifecycleManager {
 	return &LifecycleManager{
-		repo:                    repo,
-		storage:                 storage,
-		runtime:                 runtime,
-		dispatcher:              dispatcher,
-		hostFunctions:           hostFunctions,
-		publisher:               publisher,
-		logger:                  logger,
-		clock:                   clk,
+		repo:                     repo,
+		storage:                  storage,
+		runtime:                  runtime,
+		dispatcher:               dispatcher,
+		hostFunctions:            hostFunctions,
+		publisher:                publisher,
+		logger:                   logger,
+		clock:                    clk,
 		routePermissionValidator: routePermissionValidator,
 	}
 }
