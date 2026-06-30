@@ -33,6 +33,7 @@ func TestGatewayAdapter_CreateUser_AppliesSquads(t *testing.T) {
 	_, err = mk([]string{"default-sq"}).CreateUser(context.Background(), multisub.CreateRemnawaveUserRequest{Username: "u", ActiveInternalSquads: []string{"override-sq"}})
 	require.NoError(t, err)
 	require.Contains(t, string(sentBody), `"activeInternalSquads":["override-sq"]`)
+	require.NotContains(t, string(sentBody), `"default-sq"`)
 }
 
 func TestGatewayAdapter_GetUser_StatusMapping(t *testing.T) {

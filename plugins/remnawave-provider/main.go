@@ -64,7 +64,7 @@ type VPNUserCreatingRequest struct {
 	ExpireAt             string   `json:"expire_at,omitempty"`
 	Tag                  string   `json:"tag"`
 	BindingPurpose       string   `json:"binding_purpose"`
-	ActiveInternalSquads []string `json:"active_internal_squads"`
+	ActiveInternalSquads []string `json:"active_internal_squads,omitempty"`
 }
 
 // VPNUserCreatingResponse is the response from vpn.user.creating.
@@ -145,7 +145,11 @@ type remnawaveCreateUserRequest struct {
 	ActiveInternalSquads []string `json:"activeInternalSquads,omitempty"`
 }
 
-// remnawaveAPIResponse is the generic envelope returned by Remnawave endpoints.
+// KNOWN ISSUE (2.8.0 users sub-project): this envelope ({success,message,data})
+// does NOT match Remnawave's real REST envelope, which is {response: <user>}
+// (see internal/adapter/remnawave APIResponse[T]). The plugin VPN-provider path
+// is feature-flag-off (HooksVPNProviderEnabled); before enabling it, align this
+// to the {response} envelope and verify against a live 2.8.0 panel.
 type remnawaveAPIResponse struct {
 	Success bool            `json:"success"`
 	Message string          `json:"message,omitempty"`
