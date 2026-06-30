@@ -116,11 +116,12 @@ func provideVPNProvider(
 	executor sdk.VPNHTTPExecutor,
 	dispatcher hookdispatch.Dispatcher,
 	logger *slog.Logger,
+	cfg *config.Config,
 ) multisub.VPNProvider {
 	if executor == nil {
 		return nil
 	}
-	return pluginadapter.NewPluginVPNProvider(dispatcher, executor, logger)
+	return pluginadapter.NewPluginVPNProvider(dispatcher, executor, logger, cfg.Remnawave.DefaultInternalSquads)
 }
 
 // startSyncService spawns the periodic Remnawave binding sync as a background

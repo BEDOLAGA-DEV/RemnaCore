@@ -5,12 +5,13 @@ package sdk
 
 // VPNUserCreatingRequest is the payload sent to vpn.user.creating hook.
 type VPNUserCreatingRequest struct {
-	Username          string `json:"username"`
-	TrafficLimitBytes int64  `json:"traffic_limit_bytes"`
-	TrafficStrategy   string `json:"traffic_strategy"`
-	ExpireAt          string `json:"expire_at,omitempty"` // RFC3339
-	Tag               string `json:"tag"`
-	BindingPurpose    string `json:"binding_purpose"`
+	Username             string   `json:"username"`
+	TrafficLimitBytes    int64    `json:"traffic_limit_bytes"`
+	TrafficStrategy      string   `json:"traffic_strategy"`
+	ExpireAt             string   `json:"expire_at,omitempty"` // RFC3339
+	Tag                  string   `json:"tag"`
+	BindingPurpose       string   `json:"binding_purpose"`
+	ActiveInternalSquads []string `json:"active_internal_squads,omitempty"`
 }
 
 // VPNUserCreatingResponse is the response from vpn.user.creating hook.
