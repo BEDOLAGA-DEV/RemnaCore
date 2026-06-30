@@ -73,6 +73,7 @@ type RouterParams struct {
 	BuiltinRouteRegistry  *BuiltinRouteRegistry
 	PluginRepo            plugin.PluginRepository
 	TelegramBot           *telegram.Bot
+	TelegramAuthHandler   *handler.TelegramAuthHandler
 }
 
 // NewRouter creates and returns a fully-configured chi router with all
@@ -176,6 +177,9 @@ func NewRouter(p RouterParams) http.Handler {
 
 		// Public tariff routes are registered dynamically by the
 		// tariff-manager built-in plugin via RegisterPluginRoutes.
+
+		// Public Telegram Mini App auth (rate-limited as a login equivalent).
+		api.With(loginRL).Post("/auth/telegram/webapp", p.TelegramAuthHandler.WebAppLogin)
 
 		// Public password reset endpoints.
 		api.With(forgotPwdRL).Post("/auth/forgot-password", p.IdentityHandler.ForgotPassword)

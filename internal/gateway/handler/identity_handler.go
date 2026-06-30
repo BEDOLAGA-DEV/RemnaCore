@@ -98,11 +98,7 @@ func (h *IdentityHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"access_token":  result.AccessToken,
-		"refresh_token": result.RefreshToken,
-		"user":          userToResponse(result.User),
-	})
+	writeJSON(w, http.StatusOK, loginResultResponse(result))
 }
 
 // VerifyEmail handles POST /api/auth/verify-email.
@@ -297,6 +293,17 @@ func (h *IdentityHandler) ResetPassword(w http.ResponseWriter, r *http.Request) 
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "password reset successful"})
+}
+
+// loginResultResponse builds the JSON-serialisable map for a successful login.
+// Shared by Login and TelegramAuthHandler.WebAppLogin to keep the response
+// shape consistent without duplicating field names.
+func loginResultResponse(result *identity.LoginResult) map[string]any {
+	return map[string]any{
+		"access_token":  result.AccessToken,
+		"refresh_token": result.RefreshToken,
+		"user":          userToResponse(result.User),
+	}
 }
 
 // extractIP returns the client IP from the request, preferring X-Forwarded-For

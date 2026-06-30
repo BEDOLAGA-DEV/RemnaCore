@@ -34,5 +34,6 @@ var Module = fx.Module("gateway",
 	fx.Provide(handler.NewPluginRPCHandler),
 	fx.Provide(handler.NewPluginRouteHandler),
 	fx.Provide(handler.NewIAMHandler),
+	fx.Provide(handler.NewTelegramAuthHandler),
 	fx.Provide(NewRouter),
 )
