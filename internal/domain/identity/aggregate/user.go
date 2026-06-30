@@ -2,6 +2,7 @@ package aggregate
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"net/mail"
@@ -22,6 +23,14 @@ const (
 	PasswordResetTTL      = 1 * time.Hour
 	VerificationTokenLen  = 32 // bytes, hex-encoded = 64 chars
 	PasswordResetTokenLen = 32 // bytes, hex-encoded = 64 chars
+
+	// TelegramSyntheticEmailDomain is the domain used for synthetic emails
+	// generated for Telegram-native users. These emails are never disclosed or
+	// used for login — they exist solely to satisfy the globally-unique
+	// email_lower constraint.
+	TelegramSyntheticEmailDomain = "telegram.local"
+
+	randomPasswordBytes = 24 // produces a 32-char base64 string, well above MinPasswordLength
 )
 
 // PlatformUser is the aggregate root for a platform identity.
@@ -61,9 +70,11 @@ type EmailVerification struct {
 	CreatedAt time.Time
 }
 
-// NewPlatformUser validates inputs, hashes the password, and returns a new
-// PlatformUser with a generated UUID and RoleCustomer.
-func NewPlatformUser(email, password string, now time.Time) (*PlatformUser, error) {
+// newCustomer is the shared unexported constructor used by NewPlatformUser and
+// NewTelegramUser. It validates the email and password, hashes the password,
+// builds a PlatformUser with RoleCustomer, and records a UserRegisteredPayload
+// domain event.
+func newCustomer(email, password string, now time.Time) (*PlatformUser, error) {
 	if _, err := mail.ParseAddress(email); err != nil {
 		return nil, fmt.Errorf("invalid email: %w", err)
 	}
@@ -90,6 +101,51 @@ func NewPlatformUser(email, password string, now time.Time) (*PlatformUser, erro
 		UserID: user.ID,
 		Email:  user.Email,
 	}, now, user.ID))
+	return user, nil
+}
+
+// randomPassword generates a cryptographically random password that satisfies
+// ValidatePassword. The result is base64-encoded random bytes — it is never
+// disclosed and exists only to satisfy the password-not-null constraint for
+// Telegram-native users who authenticate via Telegram, not email/password.
+func randomPassword() (string, error) {
+	const maxAttempts = 10
+	for range maxAttempts {
+		b := make([]byte, randomPasswordBytes)
+		if _, err := rand.Read(b); err != nil {
+			return "", fmt.Errorf("generating random password: %w", err)
+		}
+		pw := base64.StdEncoding.EncodeToString(b)
+		if err := ValidatePassword(pw); err == nil {
+			return pw, nil
+		}
+	}
+	return "", fmt.Errorf("failed to generate a valid random password after %d attempts", maxAttempts)
+}
+
+// NewPlatformUser validates inputs, hashes the password, and returns a new
+// PlatformUser with a generated UUID and RoleCustomer.
+func NewPlatformUser(email, password string, now time.Time) (*PlatformUser, error) {
+	return newCustomer(email, password, now)
+}
+
+// NewTelegramUser builds a Telegram-native customer of a shop: a deterministic
+// synthetic email unique per (telegramID, tenantID), a random unusable password
+// (the user authenticates via Telegram, never the email/password form), with
+// TelegramID and TenantID set.
+func NewTelegramUser(telegramID int64, tenantID, displayName string, now time.Time) (*PlatformUser, error) {
+	email := fmt.Sprintf("tg-%d-%s@%s", telegramID, tenantID, TelegramSyntheticEmailDomain)
+	pw, err := randomPassword()
+	if err != nil {
+		return nil, err
+	}
+	user, err := newCustomer(email, pw, now)
+	if err != nil {
+		return nil, err
+	}
+	user.TelegramID = &telegramID
+	user.TenantID = &tenantID
+	user.DisplayName = displayName
 	return user, nil
 }
 
