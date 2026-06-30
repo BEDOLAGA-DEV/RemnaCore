@@ -72,7 +72,7 @@ type RouterParams struct {
 	PluginRouteHandler    *handler.PluginRouteHandler
 	BuiltinRouteRegistry  *BuiltinRouteRegistry
 	PluginRepo            plugin.PluginRepository
-	TelegramBot           *telegram.Bot
+	BotManager            *telegram.BotManager
 	TelegramAuthHandler   *handler.TelegramAuthHandler
 }
 
@@ -169,7 +169,8 @@ func NewRouter(p RouterParams) http.Handler {
 		// Public webhook endpoints (authenticated by their respective handlers).
 		api.Post("/webhooks/remnawave", p.WebhookHandler.ServeHTTP)
 		api.Post("/webhooks/payment/{provider}", p.PaymentWebhookHandler.HandlePaymentWebhook)
-		api.Post("/webhooks/telegram", p.TelegramBot.WebhookHandler())
+		api.Post("/webhooks/telegram", p.BotManager.PlatformWebhookHandler())
+		api.Post("/webhooks/telegram/{tenantID}", p.BotManager.ShopWebhookHandler())
 
 		// Public plans — accessible without authentication for landing pages.
 		api.Get("/plans", p.BillingHandler.GetPlans)
