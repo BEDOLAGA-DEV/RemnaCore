@@ -9,10 +9,10 @@ import (
 
 // Remnawave user status strings returned by the VPN panel API.
 const (
-	RemnawaveStatusActive   = "active"
-	RemnawaveStatusDisabled = "disabled"
-	RemnawaveStatusExpired  = "expired"
-	RemnawaveStatusLimited  = "limited"
+	RemnawaveStatusActive   = "ACTIVE"
+	RemnawaveStatusDisabled = "DISABLED"
+	RemnawaveStatusExpired  = "EXPIRED"
+	RemnawaveStatusLimited  = "LIMITED"
 )
 
 // CreateUserRequest is the payload sent to Remnawave to provision a new VPN user.

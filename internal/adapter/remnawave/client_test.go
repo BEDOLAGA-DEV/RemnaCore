@@ -38,7 +38,7 @@ func TestClient_CreateUser(t *testing.T) {
 			Response: RemnawaveUser{
 				UUID:     "uuid-123",
 				Username: req.Username,
-				Status:   "active",
+				Status:   "ACTIVE",
 			},
 		}
 		w.Header().Set(httpconst.HeaderContentType, httpconst.ContentTypeJSON)
@@ -56,7 +56,7 @@ func TestClient_CreateUser(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "uuid-123", user.UUID)
 	assert.Equal(t, "p_testuser_main_0", user.Username)
-	assert.Equal(t, "active", user.Status)
+	assert.Equal(t, "ACTIVE", user.Status)
 }
 
 func TestClient_GetNodes(t *testing.T) {

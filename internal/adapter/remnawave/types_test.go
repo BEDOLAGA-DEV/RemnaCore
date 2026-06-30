@@ -39,3 +39,10 @@ func TestUpdateUserRequest_ActiveInternalSquads(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, string(b2), "activeInternalSquads") // omitempty
 }
+
+func TestRemnawaveUserStatusConstants_UppercaseWireValues(t *testing.T) {
+	require.Equal(t, "ACTIVE", RemnawaveStatusActive)
+	require.Equal(t, "DISABLED", RemnawaveStatusDisabled)
+	require.Equal(t, "EXPIRED", RemnawaveStatusExpired)
+	require.Equal(t, "LIMITED", RemnawaveStatusLimited)
+}

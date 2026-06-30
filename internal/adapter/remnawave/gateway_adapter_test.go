@@ -2,6 +2,7 @@ package remnawave
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -33,3 +34,29 @@ func TestGatewayAdapter_CreateUser_AppliesSquads(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(sentBody), `"activeInternalSquads":["override-sq"]`)
 }
+
+func TestGatewayAdapter_GetUser_StatusMapping(t *testing.T) {
+	cases := []struct {
+		status      string
+		wantEnabled bool
+		wantExpired bool
+	}{
+		{RemnawaveStatusActive, true, false},
+		{RemnawaveStatusDisabled, false, false},
+		{RemnawaveStatusExpired, false, true},
+		{RemnawaveStatusLimited, false, true},
+	}
+	for _, tc := range cases {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, `{"response":{"uuid":"u1","status":%q,"userTraffic":{"usedTrafficBytes":1024}}}`, tc.status)
+		}))
+		a := NewGatewayAdapter(NewResilientClient(NewClient(srv.URL, "t"), circuitbreaker.DefaultConfig(), slog.Default()), clock.NewReal(), nil)
+		got, err := a.GetUser(context.Background(), "u1")
+		require.NoError(t, err)
+		require.Equal(t, tc.wantEnabled, got.Enabled, "status %s enabled", tc.status)
+		require.Equal(t, tc.wantExpired, got.Expired, "status %s expired", tc.status)
+		require.Equal(t, int64(1024), got.UsedBytes)
+		srv.Close()
+	}
+}
+
