@@ -7,8 +7,8 @@ import (
 	resellerservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/service"
 )
 
-// resellerWiring provides all reseller-domain bindings: tenant and commission
-// repository implementations.
+// resellerWiring provides all reseller-domain bindings: tenant, commission,
+// customer, and shop-bot repository implementations.
 var resellerWiring = fx.Options(
 	// Reseller domain service
 	fx.Provide(resellerservice.NewResellerService),
@@ -18,4 +18,8 @@ var resellerWiring = fx.Options(
 	fx.Provide(func(repo *postgres.ResellerRepository) resellerservice.TenantRepository { return repo }),
 	fx.Provide(func(repo *postgres.ResellerRepository) resellerservice.CommissionRepository { return repo }),
 	fx.Provide(func(repo *postgres.ResellerRepository) resellerservice.CustomerRepository { return repo }),
+
+	// Shop-bot repository (encrypted at rest via secretbox.Box from identity wiring)
+	fx.Provide(postgres.NewShopBotRepository),
+	fx.Provide(func(repo *postgres.ShopBotRepository) resellerservice.ShopBotRepository { return repo }),
 )
