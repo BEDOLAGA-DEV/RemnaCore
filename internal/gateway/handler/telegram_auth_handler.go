@@ -6,6 +6,7 @@ import (
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
 )
@@ -33,13 +34,15 @@ type telegramWebAppLoginRequest struct {
 // WebAppLogin handles POST /api/auth/telegram/webapp (public).
 //
 // Flow:
-//  1. Decode and validate the request body.
-//  2. Resolve the shop's bot token via reseller.GetShopBot under platform scope
+//  1. Decode the request body; init_data is required.
+//  2. Determine the shop: an explicit shop_id wins; otherwise fall back to the
+//     tenant resolved from the request domain (TenantResolver). 401 if neither.
+//  3. Resolve the shop's bot token via reseller.GetShopBot under platform scope
 //     (unauthenticated read; the GUC sentinel allows cross-tenant visibility).
-//  3. Return 401 if the shop has no configured or disabled bot.
-//  4. Call identity.LoginViaTelegramWebApp which verifies the HMAC and issues a session.
-//  5. Return 401 on any identity error (no detail leak).
-//  6. Return the standard login response (access_token, refresh_token, user).
+//  4. Return 401 if the shop has no configured or disabled bot.
+//  5. Call identity.LoginViaTelegramWebApp which verifies the HMAC and issues a session.
+//  6. Return 401 on any identity error (no detail leak).
+//  7. Return the standard login response (access_token, refresh_token, user).
 //     The bot token is never included in the response.
 func (h *TelegramAuthHandler) WebAppLogin(w http.ResponseWriter, r *http.Request) {
 	var req telegramWebAppLoginRequest
@@ -47,19 +50,34 @@ func (h *TelegramAuthHandler) WebAppLogin(w http.ResponseWriter, r *http.Request
 		writeValidationError(w, err)
 		return
 	}
-	if req.ShopID == "" || req.InitData == "" {
-		writeAPIError(w, apierror.ValidationFailed.WithDetails("shop_id and init_data are required"))
+	if req.InitData == "" {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("init_data is required"))
 		return
 	}
 
-	cfg, err := h.reseller.GetShopBot(tenantctx.WithPlatformScope(r.Context()), req.ShopID)
+	// shop_id is optional: when omitted, fall back to the tenant resolved from
+	// the request domain (TenantResolver runs on every /api route). This lets a
+	// shop's cabinet — served on the shop's own domain — authenticate without
+	// having to know its own tenant id. An explicit shop_id still takes priority.
+	shopID := req.ShopID
+	if shopID == "" {
+		if tenant := middleware.GetTenant(r.Context()); tenant != nil {
+			shopID = tenant.ID
+		}
+	}
+	if shopID == "" {
+		writeAPIError(w, apierror.Unauthorized.WithDetails("telegram authentication unavailable for this shop"))
+		return
+	}
+
+	cfg, err := h.reseller.GetShopBot(tenantctx.WithPlatformScope(r.Context()), shopID)
 	if err != nil || cfg == nil || !cfg.Enabled {
 		writeAPIError(w, apierror.Unauthorized.WithDetails("telegram authentication unavailable for this shop"))
 		return
 	}
 
 	result, err := h.identity.LoginViaTelegramWebApp(
-		r.Context(), req.InitData, cfg.Token.Expose(), req.ShopID, extractIP(r), r.UserAgent(),
+		r.Context(), req.InitData, cfg.Token.Expose(), shopID, extractIP(r), r.UserAgent(),
 	)
 	if err != nil {
 		writeAPIError(w, apierror.Unauthorized.WithDetails("invalid telegram session"))

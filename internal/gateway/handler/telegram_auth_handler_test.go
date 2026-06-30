@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -26,6 +27,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller"
 	resellerservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/vo"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
@@ -238,8 +240,9 @@ func TestWebAppLogin_TokenNeverInResponse(t *testing.T) {
 	assert.NotContains(t, rec.Body.String(), knownToken)
 }
 
-// TestWebAppLogin_MissingFields verifies that missing shop_id or init_data
-// returns a 422 Validation error.
+// TestWebAppLogin_MissingFields verifies the field semantics after shop_id was
+// made optional: init_data is always required (422 when absent); init_data
+// present but no shop resolvable (no shop_id and no domain tenant) → 401.
 func TestWebAppLogin_MissingFields(t *testing.T) {
 	botRepo := &botStubRepo{cfg: nil}
 	repo := new(identitytest.MockRepository)
@@ -248,10 +251,11 @@ func TestWebAppLogin_MissingFields(t *testing.T) {
 	tests := []struct {
 		name string
 		body string
+		code int
 	}{
-		{name: "missing shop_id", body: `{"init_data":"somedata"}`},
-		{name: "missing init_data", body: `{"shop_id":"shop-1"}`},
-		{name: "both empty", body: `{}`},
+		{name: "missing init_data", body: `{"shop_id":"shop-1"}`, code: http.StatusUnprocessableEntity},
+		{name: "both empty", body: `{}`, code: http.StatusUnprocessableEntity},
+		{name: "init_data present but no shop resolvable", body: `{"init_data":"somedata"}`, code: http.StatusUnauthorized},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -259,7 +263,53 @@ func TestWebAppLogin_MissingFields(t *testing.T) {
 			req.Header.Set(httpconst.HeaderContentType, httpconst.ContentTypeJSON)
 			rec := httptest.NewRecorder()
 			h.WebAppLogin(rec, req)
-			assert.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+			assert.Equal(t, tc.code, rec.Code)
 		})
 	}
+}
+
+// TestWebAppLogin_DomainResolvedShop verifies that when shop_id is omitted, the
+// handler falls back to the tenant resolved from the request domain (set in the
+// context by TenantResolver) and authenticates successfully.
+func TestWebAppLogin_DomainResolvedShop(t *testing.T) {
+	const (
+		botToken = "555000111:AADomainResolvedToken"
+		shopID   = "shop-from-domain"
+	)
+
+	fixedNow := time.Unix(1_700_000_000, 0)
+	clk := clock.NewMock(fixedNow)
+
+	userJSON := `{"id":77,"first_name":"Dom","username":"domuser"}`
+	initData := buildTelegramInitData(t, botToken, fixedNow.Unix()-10, userJSON)
+
+	repo := new(identitytest.MockRepository)
+	repo.On("GetUserByTelegramID", mock.Anything, int64(77)).Return(nil, identity.ErrNotFound)
+	repo.On("CreateUser", mock.Anything, mock.AnythingOfType("*aggregate.PlatformUser")).Return(nil)
+	repo.On("CreateSession", mock.Anything, mock.AnythingOfType("*aggregate.Session")).Return(nil)
+
+	botRepo := &botStubRepo{cfg: &vo.ShopBotConfig{Token: config.NewSecretString(botToken), Enabled: true}}
+	h, pub := newTestTelegramAuthHandler(t, botRepo, repo, clk)
+	pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
+
+	// No shop_id in the body — only init_data.
+	body, _ := json.Marshal(map[string]string{"init_data": initData})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/telegram/webapp", bytes.NewReader(body))
+	req.Header.Set(httpconst.HeaderContentType, httpconst.ContentTypeJSON)
+	// Simulate TenantResolver having resolved the shop from the request domain.
+	ctx := context.WithValue(req.Context(), middleware.TenantContextKey, &reseller.Tenant{ID: shopID, IsActive: true})
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	h.WebAppLogin(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var resp map[string]any
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	assert.NotEmpty(t, resp["access_token"])
+	assert.NotEmpty(t, resp["refresh_token"])
+	assert.NotContains(t, rec.Body.String(), botToken, "bot token must not leak into the response")
+
+	repo.AssertExpectations(t)
+	pub.AssertExpectations(t)
 }
