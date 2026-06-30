@@ -17,18 +17,19 @@ const (
 
 // CreateUserRequest is the payload sent to Remnawave to provision a new VPN user.
 type CreateUserRequest struct {
-	Username           string    `json:"username"`
-	TrafficLimitBytes  float64   `json:"trafficLimitBytes"`
-	ExpireAt           time.Time `json:"expireAt"`
-	ActiveUserInbounds []string  `json:"activeUserInbounds,omitempty"`
+	Username             string    `json:"username"`
+	TrafficLimitBytes    float64   `json:"trafficLimitBytes"`
+	ExpireAt             time.Time `json:"expireAt"`
+	ActiveInternalSquads []string  `json:"activeInternalSquads,omitempty"`
 }
 
 // UpdateUserRequest is the payload sent to Remnawave to modify an existing VPN user.
 type UpdateUserRequest struct {
-	UUID              string    `json:"uuid"`
-	Username          string    `json:"username,omitempty"`
-	TrafficLimitBytes float64   `json:"trafficLimitBytes,omitempty"`
-	ExpireAt          time.Time `json:"expireAt,omitempty"`
+	UUID                 string    `json:"uuid"`
+	Username             string    `json:"username,omitempty"`
+	TrafficLimitBytes    float64   `json:"trafficLimitBytes,omitempty"`
+	ExpireAt             time.Time `json:"expireAt,omitempty"`
+	ActiveInternalSquads []string  `json:"activeInternalSquads,omitempty"`
 }
 
 // APIResponse is the generic envelope returned by Remnawave REST endpoints.

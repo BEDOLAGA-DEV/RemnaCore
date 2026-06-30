@@ -18,3 +18,24 @@ func TestRemnawaveUserWithTraffic_NestedUserTraffic(t *testing.T) {
 	require.Nil(t, u.UserTraffic.OnlineAt)
 	require.Nil(t, u.UserTraffic.LastConnectedNodeUuid)
 }
+
+func TestCreateUserRequest_ActiveInternalSquads(t *testing.T) {
+	b, err := json.Marshal(CreateUserRequest{Username: "u", ActiveInternalSquads: []string{"sq1"}})
+	require.NoError(t, err)
+	require.Contains(t, string(b), `"activeInternalSquads":["sq1"]`)
+	require.NotContains(t, string(b), "activeUserInbounds")
+
+	b2, _ := json.Marshal(CreateUserRequest{Username: "u"})
+	require.NotContains(t, string(b2), "activeInternalSquads") // omitempty
+}
+
+func TestUpdateUserRequest_ActiveInternalSquads(t *testing.T) {
+	b, err := json.Marshal(UpdateUserRequest{UUID: "u1", ActiveInternalSquads: []string{"sq1"}})
+	require.NoError(t, err)
+	require.Contains(t, string(b), `"activeInternalSquads":["sq1"]`)
+	require.NotContains(t, string(b), "activeUserInbounds")
+
+	b2, err := json.Marshal(UpdateUserRequest{UUID: "u1"})
+	require.NoError(t, err)
+	require.NotContains(t, string(b2), "activeInternalSquads") // omitempty
+}
