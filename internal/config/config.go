@@ -121,6 +121,12 @@ type TelegramConfig struct {
 	CabinetURL string       `koanf:"cabinet_url"`
 }
 
+type SecurityConfig struct {
+	// EncryptionKey is a base64-encoded 32-byte AES key for at-rest secret
+	// encryption (e.g. per-shop bot tokens). Env: SECURITY_ENCRYPTION_KEY.
+	EncryptionKey SecretString `koanf:"encryption_key"`
+}
+
 // InfraConfig holds settings for in-process infrastructure services.
 type InfraConfig struct {
 	HealthCheckInterval   time.Duration `koanf:"health_check_interval"`
@@ -214,6 +220,7 @@ type Config struct {
 	Billing        BillingConfig        `koanf:"billing"`
 	Plugin         PluginConfig         `koanf:"plugin"`
 	Telegram       TelegramConfig       `koanf:"telegram"`
+	Security       SecurityConfig       `koanf:"security"`
 	Infra          InfraConfig          `koanf:"infra"`
 	Outbox         OutboxConfig         `koanf:"outbox"`
 	CORS           CORSConfig           `koanf:"cors"`
@@ -317,7 +324,7 @@ func Load() (*Config, error) {
 	}
 
 	// Load each prefix group from environment variables.
-	prefixes := []string{"APP_", "DATABASE_", "VALKEY_", "NATS_", "JWT_", "BILLING_", "PLUGIN_", "TELEGRAM_", "INFRA_", "OUTBOX_", "CORS_", "TRACING_", "RATELIMIT_", "FEATUREFLAGS_", "CIRCUITBREAKER_", "SMARTROUTER_", "SPEEDTEST_"}
+	prefixes := []string{"APP_", "DATABASE_", "VALKEY_", "NATS_", "JWT_", "BILLING_", "PLUGIN_", "TELEGRAM_", "SECURITY_", "INFRA_", "OUTBOX_", "CORS_", "TRACING_", "RATELIMIT_", "FEATUREFLAGS_", "CIRCUITBREAKER_", "SMARTROUTER_", "SPEEDTEST_"}
 	for _, prefix := range prefixes {
 		provider := env.Provider(prefix, ".", func(s string) string {
 			// Strip prefix then lowercase and replace _ with . for nesting

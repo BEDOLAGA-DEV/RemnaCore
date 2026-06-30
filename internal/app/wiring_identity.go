@@ -6,6 +6,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -24,6 +25,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/secretbox"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
@@ -35,6 +37,9 @@ var identityWiring = fx.Options(
 
 	// JWT issuer
 	fx.Provide(provideJWTIssuer),
+
+	// SecretBox — AES-256-GCM at-rest encryption for secrets (e.g. per-shop bot tokens)
+	fx.Provide(provideSecretBox),
 
 	// SessionIssuer — shared singleton consumed by both identity.Service and
 	// IdentityAdminService; handles all token generation and session persistence.
@@ -127,6 +132,24 @@ func provideJWTIssuer(cfg *config.Config, logger *slog.Logger) (*authutil.JWTIss
 	}
 
 	return authutil.NewJWTIssuer(ephemeral, &ephemeral.PublicKey), nil
+}
+
+// provideSecretBox base64-decodes the configured encryption key and returns an
+// AES-256-GCM Box. The encryption key is optional: when SECURITY_ENCRYPTION_KEY
+// is unset, the provider returns a nil *secretbox.Box and nil error, allowing the
+// app to boot. Per-shop-bot call sites must guard on nil and return a "not
+// configured" error if encryption is required. When the key is set but invalid
+// (bad base64 or wrong length), the provider errors and the app fails fast at boot.
+func provideSecretBox(cfg *config.Config) (*secretbox.Box, error) {
+	raw := cfg.Security.EncryptionKey.Expose()
+	if raw == "" {
+		return nil, nil // key is optional; callers must guard on a nil *secretbox.Box
+	}
+	decoded, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil {
+		return nil, fmt.Errorf("security.encryption_key: invalid base64: %w", err)
+	}
+	return secretbox.New(decoded)
 }
 
 // loadECDSAPrivateKey reads a PEM-encoded EC private key from disk.
