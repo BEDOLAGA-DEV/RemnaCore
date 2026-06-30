@@ -50,15 +50,30 @@ type RemnawaveUser struct {
 	ShortUUID         string    `json:"shortUuid"`
 }
 
+// RemnawaveUserTraffic is the nested traffic object on the 2.8.0 extended user
+// schema (GET /api/users/{uuid}, by-short-uuid, by-username, list).
+type RemnawaveUserTraffic struct {
+	UsedTrafficBytes         float64    `json:"usedTrafficBytes"`
+	LifetimeUsedTrafficBytes float64    `json:"lifetimeUsedTrafficBytes"`
+	OnlineAt                 *time.Time `json:"onlineAt"`
+	FirstConnectedAt         *time.Time `json:"firstConnectedAt"`
+	LastConnectedNodeUuid    *string    `json:"lastConnectedNodeUuid"`
+}
+
 // RemnawaveUserWithTraffic extends RemnawaveUser with traffic consumption data.
+// Traffic counters are nested under userTraffic; lastTrafficResetAt stays
+// top-level on the user object (nullable).
 type RemnawaveUserWithTraffic struct {
 	RemnawaveUser
-	UsedTrafficBytes   int64     `json:"usedTrafficBytes"`
-	DownloadBytes      int64     `json:"downloadBytes"`
-	UploadBytes        int64     `json:"uploadBytes"`
-	LifetimeUsedBytes  int64     `json:"lifetimeUsedTrafficBytes"`
-	LastTrafficResetAt time.Time `json:"lastTrafficResetAt"`
-	OnlineAt           time.Time `json:"onlineAt"`
+	UserTraffic        RemnawaveUserTraffic `json:"userTraffic"`
+	LastTrafficResetAt *time.Time           `json:"lastTrafficResetAt"`
+}
+
+// UsedTrafficBytesInt returns used traffic as int64 (bytes are whole numbers;
+// the wire type is a JSON number). Single conversion point for the float→int
+// domain boundary.
+func (u RemnawaveUserWithTraffic) UsedTrafficBytesInt() int64 {
+	return int64(u.UserTraffic.UsedTrafficBytes)
 }
 
 // RemnawaveNode represents a proxy node in the Remnawave infrastructure.

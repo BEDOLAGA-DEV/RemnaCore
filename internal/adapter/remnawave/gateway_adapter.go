@@ -62,7 +62,7 @@ func (a *GatewayAdapter) GetUser(ctx context.Context, remnawaveUUID string) (*mu
 		UUID:      user.UUID,
 		Enabled:   user.Status == RemnawaveStatusActive,
 		Expired:   user.Status == RemnawaveStatusExpired,
-		UsedBytes: user.UsedTrafficBytes,
+		UsedBytes: user.UsedTrafficBytesInt(),
 	}, nil
 }
 
