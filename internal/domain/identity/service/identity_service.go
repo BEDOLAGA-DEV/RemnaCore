@@ -12,6 +12,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
@@ -377,4 +378,46 @@ func NewTokenRefreshedEvent(userID string, now time.Time) domainevent.Event {
 	return domainevent.NewTyped(aggregate.TokenRefreshedPayload{
 		UserID: userID,
 	}, now, userID)
+}
+
+// RegisterViaTelegram finds-or-creates a Telegram-native customer for the given
+// shop. It MUST run inside RunInTx(WithTenantID) so the app.tenant_id GUC is set:
+// the GetUserByTelegramID read is then RLS-scoped to the tenant, and the insert's
+// tenant_id passes the platform_users RLS WITH CHECK.
+func (s *Service) RegisterViaTelegram(ctx context.Context, telegramID int64, tenantID, displayName string) (*aggregate.PlatformUser, error) {
+	var result *aggregate.PlatformUser
+	err := s.txRunner.RunInTx(tenantctx.WithTenantID(ctx, tenantID), func(txCtx context.Context) error {
+		existing, err := s.repo.GetUserByTelegramID(txCtx, telegramID)
+		if err == nil && existing != nil {
+			result = existing
+			return nil
+		}
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return fmt.Errorf("lookup telegram user: %w", err)
+		}
+		user, err := aggregate.NewTelegramUser(telegramID, tenantID, displayName, s.clock.Now())
+		if err != nil {
+			return fmt.Errorf("creating telegram user: %w", err)
+		}
+		if err := s.repo.CreateUser(txCtx, user); err != nil {
+			if errors.Is(err, ErrAlreadyExists) { // race: another /start created it
+				existing, gerr := s.repo.GetUserByTelegramID(txCtx, telegramID)
+				if gerr != nil {
+					return fmt.Errorf("refetch after race: %w", gerr)
+				}
+				result = existing
+				return nil
+			}
+			return fmt.Errorf("persisting telegram user: %w", err)
+		}
+		if err := domainevent.PublishAll(txCtx, s.publisher, user); err != nil {
+			return err
+		}
+		result = user
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
