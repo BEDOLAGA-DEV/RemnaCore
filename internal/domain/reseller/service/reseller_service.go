@@ -2,17 +2,31 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"regexp"
+	"strings"
 	"time"
 
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/vo"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pgutil"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
+
+// botTokenRe matches a valid Telegram bot token: <bot_id>:<random_suffix>.
+// The random suffix must be at least 35 characters from [A-Za-z0-9_-].
+// Note: getMe token-liveness validation is deferred to SP3 to keep SP1 network-free.
+var botTokenRe = regexp.MustCompile(`^\d+:[A-Za-z0-9_-]{35,}$`)
+
+// cabinetURLPrefix is the required scheme for cabinet URLs.
+const cabinetURLPrefix = "https://"
 
 // Deprecated: TenantRepository is kept for backward compatibility. The
 // canonical interface is defined in the reseller domain root (repository.go).
@@ -80,6 +94,28 @@ type CustomerRepository interface {
 	SumPendingCommissionByTenant(ctx context.Context, tenantID string) (amount int64, currency string, err error)
 }
 
+// ShopBotRepository persists per-shop Telegram bot configuration. Bot tokens
+// are encrypted at rest by the adapter; callers always supply and receive
+// plaintext (wrapped in config.SecretString). Structurally identical to
+// reseller.ShopBotRepository (defined at the domain root); this copy exists
+// here to avoid an import cycle — the reseller root imports this subpackage.
+type ShopBotRepository interface {
+	// Upsert inserts or updates the bot config for tenantID.
+	Upsert(ctx context.Context, tenantID string, cfg vo.ShopBotConfig) error
+	// GetByTenant returns the decrypted bot config for tenantID.
+	// Returns ErrShopBotNotFound when no row exists or RLS blocks access.
+	GetByTenant(ctx context.Context, tenantID string) (*vo.ShopBotConfig, error)
+	// ListEnabled returns all enabled bot configs under platform-sentinel scope.
+	ListEnabled(ctx context.Context) ([]vo.ShopBotWithTenant, error)
+}
+
+// SetShopBotInput is the input DTO for ResellerService.SetShopBot.
+type SetShopBotInput struct {
+	BotToken   string
+	CabinetURL string
+	Enabled    bool
+}
+
 // ResellerService implements the core reseller and white-label use-cases:
 // tenant management, reseller account creation, commission tracking, and
 // API key validation.
@@ -118,6 +154,7 @@ type ResellerService struct {
 	tenants     TenantRepository
 	commissions CommissionRepository
 	customers   CustomerRepository
+	shopBots    ShopBotRepository
 	publisher   domainevent.Publisher
 	logger      *slog.Logger
 	clock       clock.Clock
@@ -133,11 +170,13 @@ func NewResellerService(
 	logger *slog.Logger,
 	clk clock.Clock,
 	txRunner txmanager.Runner,
+	shopBots ShopBotRepository,
 ) *ResellerService {
 	return &ResellerService{
 		tenants:     tenants,
 		commissions: commissions,
 		customers:   customers,
+		shopBots:    shopBots,
 		publisher:   publisher,
 		logger:      logger,
 		clock:       clk,
@@ -450,4 +489,80 @@ func (s *ResellerService) DashboardSummary(ctx context.Context, tenantID string)
 		return DashboardSummary{}, err
 	}
 	return ds, nil
+}
+
+// SetShopBot validates and upserts the Telegram bot configuration for tenantID.
+// It rejects tokens that do not match the Telegram format (<id>:<suffix>) and
+// cabinet URLs that are not HTTPS. A cryptographically random webhook_secret is
+// generated on every call (rotated on update). Token liveness (getMe) is
+// deferred to SP3 to keep SP1 network-free.
+func (s *ResellerService) SetShopBot(ctx context.Context, tenantID string, in SetShopBotInput) error {
+	if !botTokenRe.MatchString(in.BotToken) {
+		return fmt.Errorf("set shop bot: %w", ErrShopBotInvalidToken)
+	}
+	if !strings.HasPrefix(in.CabinetURL, cabinetURLPrefix) {
+		return fmt.Errorf("set shop bot: %w", ErrShopBotInvalidCabinetURL)
+	}
+
+	secret, err := generateWebhookSecret()
+	if err != nil {
+		return fmt.Errorf("set shop bot: %w", err)
+	}
+
+	cfg := vo.ShopBotConfig{
+		Token:         config.NewSecretString(in.BotToken),
+		WebhookSecret: secret,
+		CabinetURL:    in.CabinetURL,
+		Enabled:       in.Enabled,
+	}
+	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		return s.shopBots.Upsert(txCtx, tenantID, cfg)
+	}); err != nil {
+		return fmt.Errorf("set shop bot: %w", err)
+	}
+	return nil
+}
+
+// GetShopBot retrieves the Telegram bot configuration for tenantID.
+// The adapter decrypts the stored token; callers receive plaintext in
+// cfg.Token.Expose(). Token redaction (for API responses) is the handler's
+// responsibility, not this method's.
+func (s *ResellerService) GetShopBot(ctx context.Context, tenantID string) (*vo.ShopBotConfig, error) {
+	var cfg *vo.ShopBotConfig
+	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		var err error
+		cfg, err = s.shopBots.GetByTenant(txCtx, tenantID)
+		return err
+	}); err != nil {
+		return nil, fmt.Errorf("get shop bot: %w", err)
+	}
+	return cfg, nil
+}
+
+// ListEnabledShopBots returns all enabled shop bot configurations across every
+// tenant. The call runs under platform-sentinel scope so the RLS policy allows
+// cross-tenant visibility; this is safe because the method is only invoked by
+// the internal bot manager on startup, never from a shop-scoped request path.
+func (s *ResellerService) ListEnabledShopBots(ctx context.Context) ([]vo.ShopBotWithTenant, error) {
+	pctx := tenantctx.WithPlatformScope(ctx)
+	var result []vo.ShopBotWithTenant
+	if err := s.txRunner.RunInTx(pctx, func(txCtx context.Context) error {
+		var err error
+		result, err = s.shopBots.ListEnabled(txCtx)
+		return err
+	}); err != nil {
+		return nil, fmt.Errorf("list enabled shop bots: %w", err)
+	}
+	return result, nil
+}
+
+// generateWebhookSecret returns a 64-character lower-case hex string derived
+// from 32 cryptographically random bytes. The result is used as the Telegram
+// webhook X-Telegram-Bot-Api-Secret-Token header value.
+func generateWebhookSecret() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generating webhook secret: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }

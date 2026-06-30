@@ -32,6 +32,10 @@ func MapToAPIError(err error) *apierror.Error {
 		return apierror.ResellerDuplicateDomain
 	case errors.Is(err, ErrNotFound):
 		return apierror.ResellerNotFound
+	case errors.Is(err, ErrShopBotInvalidToken):
+		return apierror.ValidationFailed
+	case errors.Is(err, ErrShopBotInvalidCabinetURL):
+		return apierror.ValidationFailed
 	default:
 		return nil
 	}

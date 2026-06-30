@@ -6,6 +6,7 @@ import (
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/service"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/vo"
 )
 
 // TenantRepository defines the persistence operations for tenants.
@@ -60,3 +61,20 @@ type DashboardSummary = service.DashboardSummary
 
 // CustomerRepository is re-exported from the reseller/service subpackage.
 type CustomerRepository = service.CustomerRepository
+
+// ShopBotRepository defines persistence operations for per-shop Telegram bot
+// configuration. Token values are encrypted at rest by the adapter; callers
+// always receive and supply plaintext (wrapped in config.SecretString).
+type ShopBotRepository interface {
+	// Upsert inserts or updates the bot config for tenantID. The adapter seals
+	// cfg.Token with AES-256-GCM before writing it to the database.
+	Upsert(ctx context.Context, tenantID string, cfg vo.ShopBotConfig) error
+
+	// GetByTenant returns the bot config for tenantID, decrypting the stored
+	// token. Returns ErrShopBotNotFound when no row exists or RLS blocks access.
+	GetByTenant(ctx context.Context, tenantID string) (*vo.ShopBotConfig, error)
+
+	// ListEnabled returns all enabled bot configs (platform-sentinel scope).
+	// Intended for the bot manager that needs to poll all active bots on startup.
+	ListEnabled(ctx context.Context) ([]vo.ShopBotWithTenant, error)
+}

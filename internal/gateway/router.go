@@ -285,6 +285,7 @@ func NewRouter(p RouterParams) http.Handler {
 				admin.With(perm(p.AccessService, rbac.ShopsRead)).Get("/tenants", p.ResellerHandler.ListTenants)
 				admin.With(perm(p.AccessService, rbac.ShopsRead)).Get("/tenants/{tenantID}", p.ResellerHandler.GetTenant)
 				admin.With(perm(p.AccessService, rbac.ShopsBranding)).Put("/tenants/{tenantID}/branding", p.ResellerHandler.UpdateBranding)
+				admin.With(perm(p.AccessService, rbac.ShopsManage)).Put("/tenants/{tenantID}/bot", p.ResellerHandler.UpdateTenantBot)
 
 				// Tariff management routes are registered dynamically by the
 				// tariff-manager built-in plugin via RegisterPluginRoutes.
@@ -300,6 +301,8 @@ func NewRouter(p RouterParams) http.Handler {
 				resellerRouter.With(perm(p.AccessService, rbac.DashboardRead)).Get("/dashboard", p.ResellerHandler.Dashboard)
 				resellerRouter.With(perm(p.AccessService, rbac.BillingRead)).Get("/commissions", p.ResellerHandler.Commissions)
 				resellerRouter.With(perm(p.AccessService, rbac.CustomersRead)).Get("/customers", p.ResellerHandler.Customers)
+				resellerRouter.With(perm(p.AccessService, rbac.ShopSettingsManage)).Put("/bot", p.ResellerHandler.SetResellerBot)
+				resellerRouter.With(perm(p.AccessService, rbac.ShopSettingsManage)).Get("/bot", p.ResellerHandler.GetResellerBot)
 			})
 		})
 	})

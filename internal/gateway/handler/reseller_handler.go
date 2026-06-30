@@ -2,11 +2,13 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller"
+	resellerservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pgutil"
@@ -38,6 +40,21 @@ type updateBrandingRequest struct {
 	AppName      string `json:"app_name"`
 	SupportEmail string `json:"support_email"`
 	SupportURL   string `json:"support_url"`
+}
+
+// setBotRequest is the request body for SetResellerBot and UpdateTenantBot.
+type setBotRequest struct {
+	BotToken   string `json:"bot_token"`
+	CabinetURL string `json:"cabinet_url"`
+	Enabled    bool   `json:"enabled"`
+}
+
+// getBotResponse is the safe GET response — token is NEVER included.
+type getBotResponse struct {
+	Enabled     bool   `json:"enabled"`
+	CabinetURL  string `json:"cabinet_url"`
+	BotUsername string `json:"bot_username"`
+	HasToken    bool   `json:"has_token"`
 }
 
 // --- Admin Endpoints ---
@@ -237,6 +254,98 @@ func (h *ResellerHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 			"currency":             summary.Currency,
 		},
 	})
+}
+
+// SetResellerBot handles PUT /api/reseller/bot -- upsert the active shop's
+// Telegram bot configuration. The caller must include a non-empty bot_token;
+// format validation and webhook-secret rotation are delegated to the service.
+func (h *ResellerHandler) SetResellerBot(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.ActiveTenantID(r.Context())
+	if tenantID == "" {
+		writeAPIError(w, apierror.Forbidden.WithDetails("active shop required (X-Shop-Id)"))
+		return
+	}
+
+	var req setBotRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeValidationError(w, err)
+		return
+	}
+	if req.BotToken == "" {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("bot_token is required"))
+		return
+	}
+
+	if err := h.service.SetShopBot(r.Context(), tenantID, resellerservice.SetShopBotInput{
+		BotToken:   req.BotToken,
+		CabinetURL: req.CabinetURL,
+		Enabled:    req.Enabled,
+	}); err != nil {
+		writeErrorFromDomain(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetResellerBot handles GET /api/reseller/bot -- the active shop's bot config.
+// The token is NEVER included in the response; callers receive only enabled,
+// cabinet_url, bot_username, and has_token (a boolean indicating whether a
+// token is stored). A missing config is returned as an all-false empty config.
+func (h *ResellerHandler) GetResellerBot(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.ActiveTenantID(r.Context())
+	if tenantID == "" {
+		writeAPIError(w, apierror.Forbidden.WithDetails("active shop required (X-Shop-Id)"))
+		return
+	}
+
+	cfg, err := h.service.GetShopBot(r.Context(), tenantID)
+	if err != nil {
+		if errors.Is(err, reseller.ErrShopBotNotFound) {
+			writeJSON(w, http.StatusOK, getBotResponse{})
+			return
+		}
+		writeErrorFromDomain(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, getBotResponse{
+		Enabled:     cfg.Enabled,
+		CabinetURL:  cfg.CabinetURL,
+		BotUsername: cfg.BotUsername,
+		HasToken:    cfg.Token.Expose() != "",
+	})
+}
+
+// UpdateTenantBot handles PUT /api/admin/tenants/{tenantID}/bot -- admin-level
+// upsert of any tenant's Telegram bot configuration.
+func (h *ResellerHandler) UpdateTenantBot(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	if tenantID == "" {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("tenant ID is required"))
+		return
+	}
+
+	var req setBotRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeValidationError(w, err)
+		return
+	}
+	if req.BotToken == "" {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("bot_token is required"))
+		return
+	}
+
+	if err := h.service.SetShopBot(r.Context(), tenantID, resellerservice.SetShopBotInput{
+		BotToken:   req.BotToken,
+		CabinetURL: req.CabinetURL,
+		Enabled:    req.Enabled,
+	}); err != nil {
+		writeErrorFromDomain(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // tenantToResponse converts a Tenant to a JSON-friendly map.

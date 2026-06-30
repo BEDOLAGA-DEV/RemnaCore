@@ -17,6 +17,12 @@ var (
 	ErrInvalidAPIKey         = service.ErrInvalidAPIKey
 	ErrTenantInactive        = service.ErrTenantInactive
 	ErrDuplicateDomain       = service.ErrDuplicateDomain
+
+	// ShopBot domain errors.
+	ErrShopBotNotFound          = service.ErrShopBotNotFound
+	ErrEncryptionNotConfigured  = service.ErrEncryptionNotConfigured
+	ErrShopBotInvalidToken      = service.ErrShopBotInvalidToken
+	ErrShopBotInvalidCabinetURL = service.ErrShopBotInvalidCabinetURL
 )
 
 // Aggregate-level error aliases re-exported for backward compatibility.

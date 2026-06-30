@@ -47,6 +47,7 @@ var auditMigrations = []string{
 	"042_tier2_tenant_rls.sql",
 	"043_reseller_commissions_tenant.sql",
 	"044_rls_with_check_sentinel_null.sql",
+	"045_shop_bots.sql",
 }
 
 // phaseCTenantTable identifies one table whose RLS the Phase-C audit covers,
@@ -81,6 +82,7 @@ var phaseCTenantTables = []phaseCTenantTable{
 	{"multisub", "remnawave_bindings", policyPrefix + "remnawave_bindings", "042"},
 	{"multisub", "binding_sync_log", policyPrefix + "binding_sync_log", "042"},
 	{"reseller", "commissions", policyPrefix + "commissions", "043"},
+	{"reseller", "shop_bots", policyPrefix + "shop_bots", "045"},
 }
 
 // phaseCSchemaSet returns the distinct schemas covered by phaseCTenantTables,
