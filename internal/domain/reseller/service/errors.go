@@ -23,4 +23,12 @@ var (
 	// *secretbox.Box is nil (SECURITY_ENCRYPTION_KEY is unset). The application
 	// still boots in this state but cannot seal or open bot tokens.
 	ErrEncryptionNotConfigured = errors.New("encryption not configured: SECURITY_ENCRYPTION_KEY is required for bot token storage")
+
+	// ErrShopBotInvalidToken is returned when the provided bot token does not
+	// match the Telegram format (<id>:<suffix> with suffix ≥35 chars from [A-Za-z0-9_-]).
+	ErrShopBotInvalidToken = errors.New("invalid bot token format: must match <id>:<suffix> with suffix ≥35 chars from [A-Za-z0-9_-]")
+
+	// ErrShopBotInvalidCabinetURL is returned when the cabinet URL does not use
+	// the HTTPS scheme.
+	ErrShopBotInvalidCabinetURL = errors.New("cabinet URL must use HTTPS scheme")
 )

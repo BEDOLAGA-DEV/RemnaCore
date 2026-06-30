@@ -498,10 +498,10 @@ func (s *ResellerService) DashboardSummary(ctx context.Context, tenantID string)
 // deferred to SP3 to keep SP1 network-free.
 func (s *ResellerService) SetShopBot(ctx context.Context, tenantID string, in SetShopBotInput) error {
 	if !botTokenRe.MatchString(in.BotToken) {
-		return fmt.Errorf("invalid bot token format: must match <id>:<suffix> with suffix ≥35 chars from [A-Za-z0-9_-]")
+		return fmt.Errorf("set shop bot: %w", ErrShopBotInvalidToken)
 	}
 	if !strings.HasPrefix(in.CabinetURL, cabinetURLPrefix) {
-		return fmt.Errorf("cabinet URL must start with %q", cabinetURLPrefix)
+		return fmt.Errorf("set shop bot: %w", ErrShopBotInvalidCabinetURL)
 	}
 
 	secret, err := generateWebhookSecret()
@@ -515,7 +515,9 @@ func (s *ResellerService) SetShopBot(ctx context.Context, tenantID string, in Se
 		CabinetURL:    in.CabinetURL,
 		Enabled:       in.Enabled,
 	}
-	if err := s.shopBots.Upsert(ctx, tenantID, cfg); err != nil {
+	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		return s.shopBots.Upsert(txCtx, tenantID, cfg)
+	}); err != nil {
 		return fmt.Errorf("set shop bot: %w", err)
 	}
 	return nil
@@ -526,8 +528,12 @@ func (s *ResellerService) SetShopBot(ctx context.Context, tenantID string, in Se
 // cfg.Token.Expose(). Token redaction (for API responses) is the handler's
 // responsibility, not this method's.
 func (s *ResellerService) GetShopBot(ctx context.Context, tenantID string) (*vo.ShopBotConfig, error) {
-	cfg, err := s.shopBots.GetByTenant(ctx, tenantID)
-	if err != nil {
+	var cfg *vo.ShopBotConfig
+	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		var err error
+		cfg, err = s.shopBots.GetByTenant(txCtx, tenantID)
+		return err
+	}); err != nil {
 		return nil, fmt.Errorf("get shop bot: %w", err)
 	}
 	return cfg, nil
@@ -539,8 +545,12 @@ func (s *ResellerService) GetShopBot(ctx context.Context, tenantID string) (*vo.
 // the internal bot manager on startup, never from a shop-scoped request path.
 func (s *ResellerService) ListEnabledShopBots(ctx context.Context) ([]vo.ShopBotWithTenant, error) {
 	pctx := tenantctx.WithPlatformScope(ctx)
-	result, err := s.shopBots.ListEnabled(pctx)
-	if err != nil {
+	var result []vo.ShopBotWithTenant
+	if err := s.txRunner.RunInTx(pctx, func(txCtx context.Context) error {
+		var err error
+		result, err = s.shopBots.ListEnabled(txCtx)
+		return err
+	}); err != nil {
 		return nil, fmt.Errorf("list enabled shop bots: %w", err)
 	}
 	return result, nil
