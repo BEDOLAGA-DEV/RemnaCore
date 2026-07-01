@@ -10,7 +10,7 @@ import (
 // provideShopBotConfigResolver adapts the reseller service to the narrow
 // ShopBotConfigResolver port the Telegram auth handler depends on. Keeping this
 // adapter in the module (not the handler) lets the handler stay within a single
-// domain context per the gateway single-context architecture rule.
+// domain service context per the gateway single-context architecture rule.
 func provideShopBotConfigResolver(s *reseller.ResellerService) handler.ShopBotConfigResolver {
 	return s
 }

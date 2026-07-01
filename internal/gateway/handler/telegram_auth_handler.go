@@ -16,7 +16,7 @@ import (
 // It is satisfied by *reseller.ResellerService. The handler depends on this
 // narrow port (returning only the reseller vo type) instead of importing the
 // reseller service package directly, so it stays within a single domain
-// context per the gateway single-context architecture rule.
+// service context per the gateway single-context architecture rule.
 type ShopBotConfigResolver interface {
 	GetShopBot(ctx context.Context, tenantID string) (*vo.ShopBotConfig, error)
 }

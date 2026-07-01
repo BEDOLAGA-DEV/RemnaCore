@@ -64,7 +64,7 @@ type CustomerRepository = service.CustomerRepository
 
 // ShopBotRepository defines persistence operations for per-shop Telegram bot
 // configuration. Token values are encrypted at rest by the adapter; callers
-// always receive and supply plaintext (wrapped in config.SecretString).
+// always receive and supply plaintext (wrapped in secret.String).
 type ShopBotRepository interface {
 	// Upsert inserts or updates the bot config for tenantID. The adapter seals
 	// cfg.Token with AES-256-GCM before writing it to the database.
