@@ -20,20 +20,22 @@ const samplebotWASMPath = "../../plugins/samplebot/samplebot.wasm"
 
 // TestWASMBotRoundTrip loads the committed sample WASM bot through a real
 // RuntimePool and invokes its handle_update export, asserting that the guest's
-// host_call requests reach the bothost op-registry: user.register then
-// cabinet.open, carrying the fields mapped from the update. This is the
-// end-to-end proof of the BP2 ABI — the guest's `//go:wasmimport
-// extism:host/user host_call` links to the host registration, the per-dispatch
-// op-host bridged via ctx is reachable, and effects flow through the registry.
+// host_call requests reach the bothost op-registry: user.register, cabinet.open,
+// plans.list, and telegram.send_text (with the first offer's name), carrying
+// the fields mapped from the update. This is the end-to-end proof of BP3 Task 6:
+// the guest decodes the {ok} envelope from plans.list, reads the offer name, and
+// routes it through a follow-up telegram.send_text — proving the discriminated
+// result envelope is usable for data-returning domain ops.
 func TestWASMBotRoundTrip(t *testing.T) {
 	wasmBytes, err := os.ReadFile(samplebotWASMPath)
 	require.NoError(t, err)
 
-	// Recording op-registry: capture the args of the two ops the guest calls.
-	// (The real std ops are unit-tested in bothost/ops_test.go; here we only
-	// need to prove the host_call requests arrive with the right shape.)
+	// Recording op-registry: capture the args of all ops the guest calls.
+	// (The real std/domain ops are unit-tested in bothost/*_test.go; here we only
+	// need to prove the host_call requests arrive with the right shape and that
+	// the guest can read the plans.list {ok} result and act on it.)
 	reg := bothost.NewRegistry()
-	var gotRegister, gotCabinet json.RawMessage
+	var gotRegister, gotCabinet, gotPlansList, gotSendText json.RawMessage
 	reg.Register(bothost.OpUserRegister, plugin.PermUsersWrite,
 		func(_ context.Context, _ *bothost.OpContext, args json.RawMessage) (json.RawMessage, error) {
 			gotRegister = args
@@ -44,8 +46,18 @@ func TestWASMBotRoundTrip(t *testing.T) {
 			gotCabinet = args
 			return nil, nil
 		})
+	reg.Register(bothost.OpPlansList, plugin.PermBillingRead,
+		func(_ context.Context, _ *bothost.OpContext, args json.RawMessage) (json.RawMessage, error) {
+			gotPlansList = args
+			return json.RawMessage(`[{"plan_id":"p-1","name":"Starter"}]`), nil
+		})
+	reg.Register(bothost.OpTelegramSendText, plugin.PermTelegramSend,
+		func(_ context.Context, _ *bothost.OpContext, args json.RawMessage) (json.RawMessage, error) {
+			gotSendText = args
+			return nil, nil
+		})
 	oc := &bothost.OpContext{TenantID: "tenant-1", CabinetURL: "https://cabinet.example"}
-	granted := bothost.NewPermSet(plugin.PermTelegramSend, plugin.PermUsersWrite)
+	granted := bothost.NewPermSet(plugin.PermTelegramSend, plugin.PermUsersWrite, plugin.PermBillingRead)
 	host := reg.Bind(oc, granted)
 
 	// Real extism runtime pool loading the committed fixture. HostFunctions must
@@ -82,6 +94,18 @@ func TestWASMBotRoundTrip(t *testing.T) {
 	var cabArgs map[string]any
 	require.NoError(t, json.Unmarshal(gotCabinet, &cabArgs))
 	require.EqualValues(t, 4242, cabArgs["chat_id"])
+
+	// plans.list reached — the guest called the domain op.
+	require.NotNil(t, gotPlansList, "plans.list must be called via host_call")
+
+	// telegram.send_text reached with the first offer's name — proving the guest
+	// decoded the {ok} envelope from plans.list, read the offer name, and acted
+	// on it. This is the load-bearing assertion of BP3 Task 6.
+	require.NotNil(t, gotSendText, "telegram.send_text must be called after plans.list returns offers")
+	var sendArgs map[string]any
+	require.NoError(t, json.Unmarshal(gotSendText, &sendArgs))
+	require.Equal(t, "Starter", sendArgs["text"], "send_text text must equal the first offer's name")
+	require.EqualValues(t, 4242, sendArgs["chat_id"], "send_text chat_id must match the update's chat_id")
 }
 
 // TestWASMBotRoundTrip_PermissionDenied proves the permission gate holds across

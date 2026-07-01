@@ -20,9 +20,13 @@ import (
 func hostCall(offset uint64) uint64
 
 // Op name constants — no string literals in business logic.
+// These must match the bothost.Op* consts in internal/telegram/bothost/ops.go
+// and internal/telegram/bothost/ops_domain.go.
 const (
-	opUserRegister = "user.register"
-	opCabinetOpen  = "cabinet.open"
+	opUserRegister     = "user.register"
+	opCabinetOpen      = "cabinet.open"
+	opPlansList        = "plans.list"
+	opTelegramSendText = "telegram.send_text"
 )
 
 // outputOK is the fixed output written on success.
@@ -92,6 +96,13 @@ func buildDisplayName(s Sender) string {
 	return name
 }
 
+// tariffOffer mirrors the fields of bothost.TariffOffer that the guest reads.
+// Only PlanID and Name are needed — the full struct lives on the host side.
+type tariffOffer struct {
+	PlanID string `json:"plan_id"`
+	Name   string `json:"name"`
+}
+
 // handle_update is the exported entry point called by the bot host dispatcher.
 // It reads a bothost.Update JSON from the Extism input, registers the user,
 // opens the cabinet, and sets the output to "ok".
@@ -119,6 +130,28 @@ func handle_update() int32 {
 	}); err != nil {
 		pdk.SetError(err)
 		return 1
+	}
+
+	raw, err := callHost(opPlansList, map[string]any{})
+	if err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+	var offers []tariffOffer
+	if err := json.Unmarshal(raw, &offers); err != nil {
+		pdk.SetError(fmt.Errorf("decode plans.list result: %w", err))
+		return 1
+	}
+	if len(offers) > 0 {
+		// Prove the guest READ the data: send the first offer's name back out
+		// through an observable effect.
+		if _, err := callHost(opTelegramSendText, map[string]any{
+			"chat_id": upd.ChatID,
+			"text":    offers[0].Name,
+		}); err != nil {
+			pdk.SetError(err)
+			return 1
+		}
 	}
 
 	pdk.OutputString(outputOK)
