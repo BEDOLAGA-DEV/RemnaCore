@@ -72,7 +72,7 @@ func ReplayDLQMessages(ctx context.Context, subscriber *EventSubscriber, publish
 		limit = unlimitedReplayBound
 	}
 
-	ch, err := subscriber.Subscribe(ctx, "dlq.>")
+	ch, err := subscriber.Subscribe(ctx, dlqSubscribeSubject)
 	if err != nil {
 		return ReplayResult{}, fmt.Errorf("subscribe to DLQ: %w", err)
 	}
@@ -105,7 +105,7 @@ type dlqPublisher interface {
 // testability. Both the production ReplayDLQMessages and the test helper
 // replayDLQFromChannel delegate to this function.
 func replayFromChannel(ctx context.Context, subscriber dlqSubscriber, publisher dlqPublisher, opts ReplayOptions, limit int) (ReplayResult, error) {
-	ch, err := subscriber.Subscribe(ctx, "dlq.>")
+	ch, err := subscriber.Subscribe(ctx, dlqSubscribeSubject)
 	if err != nil {
 		return ReplayResult{}, fmt.Errorf("subscribe to DLQ: %w", err)
 	}

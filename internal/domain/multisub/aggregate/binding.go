@@ -209,6 +209,13 @@ func (b *RemnawaveBinding) MarkProvisioned(remnawaveUUID, shortUUID string, now 
 	return nil
 }
 
+// IsProvisioned reports whether the binding has been provisioned in Remnawave,
+// i.e. it has a Remnawave UUID assigned. Prefer this over comparing
+// RemnawaveUUID against the empty string directly.
+func (b *RemnawaveBinding) IsProvisioned() bool {
+	return b.RemnawaveUUID != ""
+}
+
 // MarkFailed transitions the binding to the failed state with a reason.
 func (b *RemnawaveBinding) MarkFailed(reason string, now time.Time) error {
 	if err := b.transitionTo(BindingFailed, now); err != nil {

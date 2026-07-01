@@ -22,16 +22,19 @@ func Haversine(lat1, lng1, lat2, lng2 float64) float64 {
 	return EarthRadiusKm * c
 }
 
+// MaxGeoScore is the best (closest-distance) geo routing score.
+const MaxGeoScore = 100.0
+
 // GeoScore returns a 0-100 score inversely proportional to distance.
-// 0 km yields 100, MaxGeoDistanceKm or beyond yields 0.
+// 0 km yields MaxGeoScore, MaxGeoDistanceKm or beyond yields 0.
 func GeoScore(distanceKm float64) float64 {
 	if distanceKm <= 0 {
-		return 100
+		return MaxGeoScore
 	}
 	if distanceKm >= MaxGeoDistanceKm {
 		return 0
 	}
-	return 100 * (1 - distanceKm/MaxGeoDistanceKm)
+	return MaxGeoScore * (1 - distanceKm/MaxGeoDistanceKm)
 }
 
 func degreesToRadians(deg float64) float64 {

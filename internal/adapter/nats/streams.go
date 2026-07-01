@@ -108,7 +108,7 @@ func StreamConfigs() []jetstream.StreamConfig {
 			// Failed events that are not replayed within 30 days would be silently
 			// lost at domain stream retention. DLQ preserves them for investigation.
 			Name:       StreamDLQ,
-			Subjects:   []string{"dlq.>"},
+			Subjects:   []string{dlqSubscribeSubject},
 			Storage:    jetstream.FileStorage,
 			MaxAge:     RetentionQuarter,
 			Duplicates: DedupWindow,

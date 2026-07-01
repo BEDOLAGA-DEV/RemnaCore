@@ -327,6 +327,10 @@ type bulkGenerateRequest struct {
 	Template PromoCodeInput `json:"template"`
 }
 
+// maxPromoBatchCount is the maximum number of promo codes generatable in one
+// bulk request.
+const maxPromoBatchCount = 1000
+
 // BulkGeneratePromoCodes generates N unique promo codes with a shared template.
 func (h *Handler) BulkGeneratePromoCodes(w http.ResponseWriter, r *http.Request) {
 	var req bulkGenerateRequest
@@ -335,8 +339,8 @@ func (h *Handler) BulkGeneratePromoCodes(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if req.Count <= 0 || req.Count > 1000 {
-		writeAPIError(w, apierror.ValidationFailed.WithDetails("count must be between 1 and 1000"))
+	if req.Count <= 0 || req.Count > maxPromoBatchCount {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails(fmt.Sprintf("count must be between 1 and %d", maxPromoBatchCount)))
 		return
 	}
 	if req.Prefix == "" {

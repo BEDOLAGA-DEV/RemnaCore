@@ -15,6 +15,10 @@ import (
 
 // Collection constants defined in handler.go: CollectionWallets, CollectionLedger, CollectionTopUps
 
+// compactTimestampLayout is the Go time layout for the compact timestamp suffix
+// used in ledger reference IDs (e.g. adjust_20060102150405).
+const compactTimestampLayout = "20060102150405"
+
 func (h *Handler) AdminListWallets(w http.ResponseWriter, r *http.Request) {
 	docs, err := h.collections.ListDocuments(r.Context(), PluginSlug, CollectionWallets)
 	if err != nil {
@@ -72,7 +76,7 @@ func (h *Handler) AdminAdjust(w http.ResponseWriter, r *http.Request) {
 	entry := LedgerEntry{
 		UserID: userID, Wallet: WalletKind(req.WalletKind), AmountCents: req.AmountCents,
 		Kind: EntryAdjust, SourceType: "admin_adjust",
-		ReferenceID: "adjust_" + time.Now().Format("20060102150405"),
+		ReferenceID: "adjust_" + time.Now().Format(compactTimestampLayout),
 		Description: req.Description, CreatedAt: time.Now(), CreatedBy: "admin",
 	}
 	data, err := json.Marshal(entry)
@@ -112,7 +116,7 @@ func (h *Handler) AdminTransfer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
-	ref := "transfer_" + now.Format("20060102150405")
+	ref := "transfer_" + now.Format(compactTimestampLayout)
 	debit := LedgerEntry{
 		UserID: userID, Wallet: WalletKind(req.FromWallet), AmountCents: -req.AmountCents,
 		Kind: EntryTransfer, SourceType: "transfer", ReferenceID: ref + "_debit",

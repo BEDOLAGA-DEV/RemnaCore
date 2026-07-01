@@ -78,7 +78,7 @@ func (s *BindingLifecycleService) DisableAllForSubscription(ctx context.Context,
 	now := s.clock.Now()
 
 	for _, binding := range bindings {
-		if binding.RemnawaveUUID == "" {
+		if !binding.IsProvisioned() {
 			continue
 		}
 
@@ -134,7 +134,7 @@ func (s *BindingLifecycleService) EnableAllForSubscription(ctx context.Context, 
 		if binding.Status != multisubagg.BindingDisabled {
 			continue
 		}
-		if binding.RemnawaveUUID == "" {
+		if !binding.IsProvisioned() {
 			continue
 		}
 

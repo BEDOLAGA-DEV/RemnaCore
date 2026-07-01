@@ -122,7 +122,7 @@ func (s *DeprovisioningSaga) Deprovision(ctx context.Context, subscriptionID str
 func (s *DeprovisioningSaga) deprovisionOne(ctx context.Context, binding *aggregate.RemnawaveBinding) {
 	now := s.clock.Now()
 	// 1. Delete user in Remnawave
-	if binding.RemnawaveUUID != "" {
+	if binding.IsProvisioned() {
 		if err := s.gateway.DeleteUser(ctx, binding.RemnawaveUUID); err != nil {
 			// Mark binding as failed and persist — do not stop the saga.
 			if failErr := binding.MarkFailed(fmt.Sprintf("remnawave delete: %s", err.Error()), now); failErr != nil {

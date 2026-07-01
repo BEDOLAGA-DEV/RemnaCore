@@ -68,8 +68,8 @@ func (s *SyncSaga) SyncBinding(ctx context.Context, bindingID string) error {
 		return fmt.Errorf("get binding: %w", err)
 	}
 
-	// Only sync bindings that have a Remnawave UUID (i.e. have been provisioned).
-	if binding.RemnawaveUUID == "" {
+	// Only sync bindings that have been provisioned in Remnawave.
+	if !binding.IsProvisioned() {
 		return nil
 	}
 
