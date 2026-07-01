@@ -1,0 +1,13 @@
+[plugin]
+slug        = "samplebot"
+name        = "Sample Bot"
+version     = "1.0.0"
+sdk_version = "1.0.0"
+
+[telegram]
+provides_bot = true
+entry        = "handle_update"
+
+[permissions]
+telegram = "send"
+users    = "write"
