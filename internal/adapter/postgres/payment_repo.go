@@ -127,7 +127,7 @@ const getPaymentRecordByIDForUpdateSQL = `
 SELECT id, invoice_id, provider, external_id, amount, currency, status, created_at, updated_at
 FROM payment.payment_records
 WHERE id = $1
-  AND (tenant_id::text = current_setting('app.tenant_id', true) OR current_setting('app.tenant_id', true) = '*')
+  AND ` + rlsTenantGuard + `
 FOR UPDATE
 `
 
@@ -163,7 +163,7 @@ const getPaymentRecordByExternalIDForUpdateSQL = `
 SELECT id, invoice_id, provider, external_id, amount, currency, status, created_at, updated_at
 FROM payment.payment_records
 WHERE provider = $1 AND external_id = $2
-  AND (tenant_id::text = current_setting('app.tenant_id', true) OR current_setting('app.tenant_id', true) = '*')
+  AND ` + rlsTenantGuard + `
 FOR UPDATE
 `
 

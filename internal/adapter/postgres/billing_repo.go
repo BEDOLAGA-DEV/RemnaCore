@@ -521,7 +521,7 @@ SELECT id, user_id, plan_id, status, period_start, period_end, period_interval,
        cancelled_at, paused_at, created_at, updated_at
 FROM billing.subscriptions
 WHERE id = $1
-  AND (tenant_id::text = current_setting('app.tenant_id', true) OR current_setting('app.tenant_id', true) = '*')
+  AND ` + rlsTenantGuard + `
 FOR UPDATE
 `
 

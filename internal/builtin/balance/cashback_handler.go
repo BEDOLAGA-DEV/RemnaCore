@@ -6,15 +6,17 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/money"
 )
 
 // CashbackConfig holds cashback-related settings from plugin config.
 type CashbackConfig struct {
-	Enabled          bool
-	PercentBP        int64  // basis points (500 = 5%)
-	MinInvoiceCents  int64
-	ExcludedPlanIDs  []string
-	BonusExpiryDays  int
+	Enabled         bool
+	PercentBP       int64 // basis points (500 = 5%)
+	MinInvoiceCents int64
+	ExcludedPlanIDs []string
+	BonusExpiryDays int
 }
 
 // CashbackHandler listens for invoice.paid events and awards cashback.
@@ -55,7 +57,7 @@ func (h *CashbackHandler) OnInvoicePaid(ctx context.Context, evt InvoicePaidPayl
 		return nil
 	}
 
-	cashbackCents := evt.AmountCents * h.config.PercentBP / 10000
+	cashbackCents := evt.AmountCents * h.config.PercentBP / money.PercentBase
 	if cashbackCents <= 0 {
 		return nil
 	}

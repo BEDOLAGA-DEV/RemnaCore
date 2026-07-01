@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -139,7 +140,7 @@ func (h *IAMHandler) ListInvitations(w http.ResponseWriter, r *http.Request) {
 			Email:     inv.Email,
 			RoleKey:   inv.RoleKey,
 			TenantID:  inv.TenantID,
-			ExpiresAt: inv.ExpiresAt.Format("2006-01-02T15:04:05Z07:00"),
+			ExpiresAt: inv.ExpiresAt.Format(time.RFC3339),
 		})
 	}
 
@@ -402,4 +403,3 @@ func strPtrOrNil(p *string) *string {
 	}
 	return p
 }
-

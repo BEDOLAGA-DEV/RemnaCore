@@ -9,6 +9,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
 )
 
 // IdentityHandler exposes HTTP endpoints for user registration, login, email
@@ -309,7 +310,7 @@ func loginResultResponse(result *identity.LoginResult) map[string]any {
 // extractIP returns the client IP from the request, preferring X-Forwarded-For
 // and X-Real-IP proxy headers over RemoteAddr.
 func extractIP(r *http.Request) string {
-	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+	if forwarded := r.Header.Get(httpconst.HeaderForwardedFor); forwarded != "" {
 		// X-Forwarded-For may contain a comma-separated list; take the first.
 		return strings.TrimSpace(strings.Split(forwarded, ",")[0])
 	}

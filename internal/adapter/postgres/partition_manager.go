@@ -23,7 +23,7 @@ var partitionCountGauge prometheus.Gauge
 func initPartitionGauge() {
 	partitionGaugeOnce.Do(func() {
 		partitionCountGauge = prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: "platform",
+			Namespace: metricsNamespace,
 			Subsystem: "outbox",
 			Name:      "partition_count",
 			Help:      "Current number of outbox partitions.",

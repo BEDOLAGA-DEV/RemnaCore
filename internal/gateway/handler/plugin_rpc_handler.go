@@ -11,6 +11,7 @@ import (
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pluginstore"
 )
 
@@ -111,7 +112,7 @@ func (h *PluginRPCHandler) CallFunction(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(httpconst.HeaderContentType, httpconst.ContentTypeJSON)
 	w.WriteHeader(http.StatusOK)
 	// Write raw output — the plugin is responsible for valid JSON.
 	_, _ = w.Write(output)
@@ -283,4 +284,3 @@ func (h *PluginRPCHandler) DeleteDocument(w http.ResponseWriter, r *http.Request
 
 	w.WriteHeader(http.StatusNoContent)
 }
-

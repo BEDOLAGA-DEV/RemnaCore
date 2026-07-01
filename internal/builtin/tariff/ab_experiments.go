@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/money"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pluginstore"
 )
 
@@ -62,7 +63,7 @@ type ABExperimentResponse struct {
 func assignVariant(userID, experimentID string, variants []ABVariant) ABVariant {
 	h := fnv.New64a()
 	_, _ = h.Write([]byte(userID + experimentID))
-	bucket := h.Sum64() % 10000
+	bucket := h.Sum64() % money.PercentBase
 	cumulative := uint64(0)
 	for _, v := range variants {
 		cumulative += uint64(v.TrafficPct)
@@ -363,8 +364,8 @@ func validateABExperimentInput(input *ABExperimentInput) error {
 		}
 		totalPct += v.TrafficPct
 	}
-	if totalPct != 10000 {
-		return fmt.Errorf("variant traffic_pct must sum to 10000, got %d", totalPct)
+	if totalPct != money.PercentBase {
+		return fmt.Errorf("variant traffic_pct must sum to %d, got %d", money.PercentBase, totalPct)
 	}
 	if input.AssignmentStrategy == "" {
 		input.AssignmentStrategy = "hash_user_id"

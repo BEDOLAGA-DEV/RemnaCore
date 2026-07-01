@@ -48,11 +48,16 @@ func NewAccessService(repo rbac.Repository, now func() time.Time, ttl time.Durat
 	return &AccessService{repo: repo, now: now, ttl: ttl, cache: map[string]cacheEntry{}}
 }
 
+// cacheKeySep separates userID from tenant in the access-cache key. The key
+// builder (cacheKey) and the prefix-based Invalidate MUST use the same
+// separator, so it is defined once here.
+const cacheKeySep = "|"
+
 func cacheKey(userID string, tenantID *string) string {
 	if tenantID == nil {
-		return userID + "|"
+		return userID + cacheKeySep
 	}
-	return userID + "|" + *tenantID
+	return userID + cacheKeySep + *tenantID
 }
 
 // Resolve returns the EffectiveAccess for userID under the given active tenant
@@ -154,7 +159,7 @@ func (s *AccessService) Invalidate(userID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for k := range s.cache {
-		if strings.HasPrefix(k, userID+"|") {
+		if strings.HasPrefix(k, userID+cacheKeySep) {
 			delete(s.cache, k)
 		}
 	}

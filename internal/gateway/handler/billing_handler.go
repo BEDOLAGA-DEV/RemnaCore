@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -47,7 +48,7 @@ func toPlanResponse(p *aggregate.Plan) planResponse {
 
 	return planResponse{
 		ID:                   p.ID,
-		GroupID:               groupID,
+		GroupID:              groupID,
 		Name:                 p.Name,
 		Description:          p.Description,
 		BasePriceAmount:      p.BasePrice.Amount,
@@ -62,8 +63,8 @@ func toPlanResponse(p *aggregate.Plan) planResponse {
 		FamilyEnabled:        p.FamilyEnabled,
 		MaxFamilyMembers:     p.MaxFamilyMembers,
 		IsActive:             p.IsActive,
-		CreatedAt:            p.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:            p.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		CreatedAt:            p.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:            p.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -73,11 +74,11 @@ func toPlanResponse(p *aggregate.Plan) planResponse {
 // interfaces directly. Write operations for subscriptions (create, cancel) go
 // through BillingService, while addon operations go through AddonService.
 type BillingHandler struct {
-	service     *billingservice.BillingService
-	addonSvc    *billingservice.AddonService
-	plans       billing.PlanReader
-	subs        billing.SubscriptionReader
-	invoices    billing.InvoiceReader
+	service  *billingservice.BillingService
+	addonSvc *billingservice.AddonService
+	plans    billing.PlanReader
+	subs     billing.SubscriptionReader
+	invoices billing.InvoiceReader
 }
 
 // NewBillingHandler creates a BillingHandler backed by the billing service,

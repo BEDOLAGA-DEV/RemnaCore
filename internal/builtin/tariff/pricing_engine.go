@@ -1,6 +1,10 @@
 package tariff
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/money"
+)
 
 // PriceContext flows through the pricing pipeline, accumulating
 // modifications and producing a final price with full audit trail.
@@ -8,7 +12,7 @@ type PriceContext struct {
 	TariffID string `json:"tariff_id"`
 	UserID   string `json:"user_id"`
 	TenantID string `json:"tenant_id"`
-	Country  string `json:"country"`  // ISO-3166
+	Country  string `json:"country"` // ISO-3166
 	Currency string `json:"currency"`
 	Duration int    `json:"duration"` // days
 	Quantity int    `json:"quantity"` // seats (B2B)
@@ -95,7 +99,7 @@ const (
 
 // PricingRuleModifier is a single modifier entry inside a PricingRule.
 type PricingRuleModifier struct {
-	Type       string         `json:"type"`       // "geo", "loyalty", "bulk_duration", "quantity"
+	Type       string         `json:"type"` // "geo", "loyalty", "bulk_duration", "quantity"
 	Priority   int            `json:"priority"`
 	Conditions map[string]any `json:"conditions"`
 	Action     ModifierAction `json:"action"`
@@ -334,12 +338,12 @@ func applyModifierAction(currentPrice int64, action ModifierAction) int64 {
 	switch action.Op {
 	case ModifierPercentOff:
 		pct := action.Value
-		if pct > 10000 {
-			pct = 10000
+		if pct > money.PercentBase {
+			pct = money.PercentBase
 		}
-		return -(currentPrice * pct / 10000)
+		return -(currentPrice * pct / money.PercentBase)
 	case ModifierPercentUp:
-		return currentPrice * action.Value / 10000
+		return currentPrice * action.Value / money.PercentBase
 	case ModifierFixedOff:
 		return -action.Value
 	case ModifierFixedUp:
@@ -347,7 +351,7 @@ func applyModifierAction(currentPrice int64, action ModifierAction) int64 {
 	case ModifierReplacePrice:
 		return action.Value - currentPrice
 	case ModifierMultiply:
-		return currentPrice*action.Value/10000 - currentPrice
+		return currentPrice*action.Value/money.PercentBase - currentPrice
 	default:
 		return 0
 	}
@@ -358,10 +362,10 @@ func applyDiscountSpec(currentPrice int64, spec DiscountSpec) int64 {
 	switch ModifierOp(spec.Type) {
 	case ModifierPercentOff:
 		pct := spec.Value
-		if pct > 10000 {
-			pct = 10000
+		if pct > money.PercentBase {
+			pct = money.PercentBase
 		}
-		return -(currentPrice * pct / 10000)
+		return -(currentPrice * pct / money.PercentBase)
 	case ModifierFixedOff:
 		return -spec.Value
 	default:

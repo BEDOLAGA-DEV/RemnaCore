@@ -37,6 +37,15 @@ func NewTxManager(pool *pgxpool.Pool) *TxManager {
 // transaction only.
 const rlsTenantVariable = "app.tenant_id"
 
+// rlsTenantGuard is the row-level-security tenant predicate applied by hand-
+// written FOR UPDATE queries that bypass the sqlc-generated read path. It must
+// stay byte-identical to the RLS policy: a row is visible when its tenant_id
+// matches the current app.tenant_id GUC, or when the platform sentinel '*' is
+// set. Defined once here so the three guarded queries cannot drift apart and
+// silently weaken tenant isolation.
+const rlsTenantGuard = "(tenant_id::text = current_setting('" + rlsTenantVariable +
+	"', true) OR current_setting('" + rlsTenantVariable + "', true) = '*')"
+
 // RunInTx executes fn within a database transaction. The transaction is
 // committed if fn returns nil, rolled back otherwise. The pgx.Tx is stored in
 // the context passed to fn so that any code calling DBFromContext will use the

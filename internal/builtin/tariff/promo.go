@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/money"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pluginstore"
 )
 
@@ -393,8 +394,8 @@ func validatePromoCodeInput(input *PromoCodeInput) error {
 	if input.DiscountSpec.Value <= 0 {
 		return fmt.Errorf("discount_spec.value must be > 0")
 	}
-	if input.DiscountSpec.Type == "percent_off" && input.DiscountSpec.Value > 10000 {
-		return fmt.Errorf("discount_spec.value for percent_off must be <= 10000 (100%%)")
+	if input.DiscountSpec.Type == "percent_off" && input.DiscountSpec.Value > money.PercentBase {
+		return fmt.Errorf("discount_spec.value for percent_off must be <= %d (100%%)", money.PercentBase)
 	}
 	return nil
 }
