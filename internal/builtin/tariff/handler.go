@@ -792,13 +792,13 @@ func (h *Handler) GetPromoCodeStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"promo_code_id":    promoCodeID,
-		"code":             code.Code,
-		"uses_count":       code.Usage.UsesCount,
-		"unique_users":     code.Usage.UniqueUsersCount,
-		"max_uses_total":   code.Usage.MaxUsesTotal,
-		"is_active":        code.IsActive,
-		"remaining_uses":   max(0, code.Usage.MaxUsesTotal-code.Usage.UsesCount),
+		"promo_code_id":  promoCodeID,
+		"code":           code.Code,
+		"uses_count":     code.Usage.UsesCount,
+		"unique_users":   code.Usage.UniqueUsersCount,
+		"max_uses_total": code.Usage.MaxUsesTotal,
+		"is_active":      code.IsActive,
+		"remaining_uses": max(0, code.Usage.MaxUsesTotal-code.Usage.UsesCount),
 	})
 }
 
@@ -1035,11 +1035,9 @@ func (h *Handler) syncTariffToPlanWithError(ctx context.Context, docID string, i
 		}}
 	}
 
-	// Parse tariff UUID once; needed by deactivateOrphanedPlans below.
-	// DerivePlanID re-parses internally, but since we already validated here
-	// it will not fail for any period in the loop.
-	ns, parseErr := gouuid.Parse(docID)
-	if parseErr != nil {
+	// Validate the tariff UUID up front so DerivePlanID cannot fail for any
+	// period in the loop below (it re-parses internally).
+	if _, parseErr := gouuid.Parse(docID); parseErr != nil {
 		return fmt.Errorf("invalid tariff UUID %s: %w", docID, parseErr)
 	}
 
@@ -1116,7 +1114,7 @@ func (h *Handler) syncTariffToPlanWithError(ctx context.Context, docID string, i
 
 	// Deactivate orphaned plans: plans previously synced for this tariff
 	// that are no longer in the current periods list.
-	if err := h.deactivateOrphanedPlans(ctx, ns, docID, input, activePlanIDs, now); err != nil {
+	if err := h.deactivateOrphanedPlans(ctx, docID, input, activePlanIDs, now); err != nil {
 		slog.WarnContext(ctx, "deactivateOrphanedPlans", "tariff", docID, "error", err)
 	}
 
@@ -1127,17 +1125,21 @@ func (h *Handler) syncTariffToPlanWithError(ctx context.Context, docID string, i
 // created for this tariff but are no longer in the active periods set.
 func (h *Handler) deactivateOrphanedPlans(
 	ctx context.Context,
-	ns gouuid.UUID,
 	docID string,
 	input *TariffInput,
 	activePlanIDs map[string]bool,
 	now time.Time,
 ) error {
-	// Build candidate IDs: the base docID plus UUID v5 for all reasonable durations.
-	// We check the base ID and common period durations (1-730 days).
+	// Build candidate IDs: the base docID plus the derived per-period IDs for
+	// all reasonable durations (1-730 days), via the canonical DerivePlanID so
+	// the candidate set can never drift from the sync/read derivation.
 	candidates := []string{docID}
 	for _, days := range []int{1, 7, 14, 30, 60, 90, 120, 180, 270, 365, 730} {
-		candidates = append(candidates, gouuid.NewSHA1(ns, []byte(fmt.Sprintf("period_%d", days))).String())
+		candidateID, err := DerivePlanID(docID, days, true)
+		if err != nil {
+			return fmt.Errorf("derive candidate plan id for %s: %w", docID, err)
+		}
+		candidates = append(candidates, candidateID)
 	}
 	// Also include any periods that were in the previous pricing_periods
 	// by checking existing plans from these candidates.

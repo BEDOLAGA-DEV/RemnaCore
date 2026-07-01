@@ -32,9 +32,9 @@ type CohortSelector struct {
 
 // CohortRule is a single selection rule within a CohortSelector.
 type CohortRule struct {
-	Event      string `json:"event,omitempty"`      // e.g. "SubCancelled"
+	Event      string `json:"event,omitempty"` // e.g. "SubCancelled"
 	WithinDays int    `json:"within_days,omitempty"`
-	UserAttr   string `json:"user_attr,omitempty"`  // e.g. "lifetime_months"
+	UserAttr   string `json:"user_attr,omitempty"` // e.g. "lifetime_months"
 	Gte        int    `json:"gte,omitempty"`
 	Lte        int    `json:"lte,omitempty"`
 	Eq         string `json:"eq,omitempty"`

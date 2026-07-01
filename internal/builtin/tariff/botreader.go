@@ -3,6 +3,7 @@ package tariff
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/telegram/bothost"
 )
@@ -25,12 +26,13 @@ type visibleTariffLister interface {
 // adapter does not set the GUC itself.
 type TariffReaderAdapter struct {
 	tariffs visibleTariffLister
+	logger  *slog.Logger
 }
 
 // NewTariffReaderAdapter returns an adapter backed by lister.
 // In production, pass the *tariff.Handler directly.
-func NewTariffReaderAdapter(lister visibleTariffLister) *TariffReaderAdapter {
-	return &TariffReaderAdapter{tariffs: lister}
+func NewTariffReaderAdapter(lister visibleTariffLister, logger *slog.Logger) *TariffReaderAdapter {
+	return &TariffReaderAdapter{tariffs: lister, logger: logger}
 }
 
 // ListVisible implements bothost.TariffReader.
@@ -43,6 +45,10 @@ func (a *TariffReaderAdapter) ListVisible(ctx context.Context, channel string) (
 	for _, r := range resps {
 		offer, mapErr := tariffResponseToOffer(r)
 		if mapErr != nil {
+			// A corrupted document must not hide the rest of the catalog, but it
+			// must not vanish silently either.
+			a.logger.WarnContext(ctx, "skipping unmappable tariff in bot catalog",
+				slog.String("tariff", r.ID), slog.Any("error", mapErr))
 			continue
 		}
 		offers = append(offers, offer)
@@ -103,8 +109,10 @@ func tariffResponseToOffer(resp TariffResponse) (bothost.TariffOffer, error) {
 	for _, rp := range rawPeriods {
 		planID, err := DerivePlanID(resp.ID, rp.durationDays, multiPeriod)
 		if err != nil {
-			// Skip periods with unparseable IDs rather than surfacing a broken offer.
-			continue
+			// DerivePlanID fails only on an unparseable document ID, which breaks
+			// every period identically — surface it instead of emitting a broken
+			// offer with missing periods.
+			return bothost.TariffOffer{}, fmt.Errorf("derive plan id for tariff %s: %w", resp.ID, err)
 		}
 		prices = append(prices, bothost.TariffPrice{
 			Days:     rp.durationDays,

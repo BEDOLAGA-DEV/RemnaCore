@@ -2,6 +2,14 @@ package bothost
 
 import "context"
 
+// Sales channels a tariff can be visible in. Passed to TariffReader.ListVisible
+// and matched against the tariff's per-channel visibility flags.
+const (
+	ChannelTelegram = "telegram"
+	ChannelCabinet  = "cabinet"
+	ChannelPublic   = "public"
+)
+
 // TariffPrice is one subscription period option surfaced to a bot plugin.
 type TariffPrice struct {
 	Days     int    `json:"days"`
@@ -17,7 +25,7 @@ type TariffPrice struct {
 // carries its own per-period PlanID (which equals the document ID for
 // single-period tariffs and a derived UUIDv5 for multi-period ones).
 type TariffOffer struct {
-	PlanID      string        `json:"plan_id"`      // docID — whole-offer handle
+	PlanID      string        `json:"plan_id"` // docID — whole-offer handle
 	Name        string        `json:"name"`
 	Description string        `json:"description"`
 	Periods     []TariffPrice `json:"periods"`

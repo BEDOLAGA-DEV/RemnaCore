@@ -445,7 +445,7 @@ func TestApplyModifierAction_PercentOff(t *testing.T) {
 
 func TestApplyModifierAction_PercentOffClampAt100(t *testing.T) {
 	delta := applyModifierAction(1000, ModifierAction{Op: ModifierPercentOff, Value: 15000}) // >100%
-	assert.Equal(t, int64(-1000), delta) // clamped at 100%
+	assert.Equal(t, int64(-1000), delta)                                                     // clamped at 100%
 }
 
 func TestApplyModifierAction_PercentUp(t *testing.T) {
@@ -470,7 +470,7 @@ func TestApplyModifierAction_ReplacePrice(t *testing.T) {
 
 func TestApplyModifierAction_Multiply(t *testing.T) {
 	delta := applyModifierAction(1000, ModifierAction{Op: ModifierMultiply, Value: 7000}) // 0.7x
-	assert.Equal(t, int64(-300), delta) // 1000*0.7 - 1000 = -300
+	assert.Equal(t, int64(-300), delta)                                                   // 1000*0.7 - 1000 = -300
 }
 
 func TestApplyModifierAction_UnknownOp(t *testing.T) {

@@ -2,6 +2,8 @@ package tariff
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,6 +11,11 @@ import (
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/telegram/bothost"
 )
+
+// testLogger returns a logger that discards output.
+func testLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
 
 // stubVisibleLister is a test double for visibleTariffLister.
 type stubVisibleLister struct {
@@ -41,7 +48,7 @@ func TestTariffReaderAdapter_TwoPeriods_CorrectPlanIDs(t *testing.T) {
 		{DurationDays: 90, PriceAmount: 2499, Label: "3 months"},
 	}
 
-	adapter := NewTariffReaderAdapter(&stubVisibleLister{tariffs: []TariffResponse{resp}})
+	adapter := NewTariffReaderAdapter(&stubVisibleLister{tariffs: []TariffResponse{resp}}, testLogger())
 
 	// Compile-time interface check (also asserted by the var _ in botreader.go).
 	var _ bothost.TariffReader = adapter
@@ -86,7 +93,7 @@ func TestTariffReaderAdapter_SinglePeriod_UsesDocIDasPlanID(t *testing.T) {
 	resp.PriceAmount = 500
 	// no PricingPeriods → single-period tariff
 
-	adapter := NewTariffReaderAdapter(&stubVisibleLister{tariffs: []TariffResponse{resp}})
+	adapter := NewTariffReaderAdapter(&stubVisibleLister{tariffs: []TariffResponse{resp}}, testLogger())
 
 	offers, err := adapter.ListVisible(context.Background(), "telegram")
 	require.NoError(t, err)
@@ -115,7 +122,7 @@ func TestTariffReaderAdapter_Get_DelegatesAndMaps(t *testing.T) {
 	want30, err := DerivePlanID(docID, 30, true)
 	require.NoError(t, err)
 
-	adapter := NewTariffReaderAdapter(&stubVisibleLister{byPlan: &resp})
+	adapter := NewTariffReaderAdapter(&stubVisibleLister{byPlan: &resp}, testLogger())
 
 	offer, err := adapter.Get(context.Background(), want30)
 	require.NoError(t, err)

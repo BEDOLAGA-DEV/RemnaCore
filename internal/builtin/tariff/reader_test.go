@@ -63,8 +63,8 @@ func TestListVisibleTariffs_Telegram_FiltersActiveAndVisibility(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	seedTariff("Active+Visible", true, true)   // must appear
-	seedTariff("Active+Hidden", true, false)   // filtered: not visible in telegram
+	seedTariff("Active+Visible", true, true)    // must appear
+	seedTariff("Active+Hidden", true, false)    // filtered: not visible in telegram
 	seedTariff("Inactive+Visible", false, true) // filtered: not active
 
 	result, err := h.ListVisibleTariffs(context.Background(), "telegram")

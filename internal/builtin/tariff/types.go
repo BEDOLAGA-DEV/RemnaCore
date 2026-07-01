@@ -86,10 +86,10 @@ const (
 // each with its own price and optional discount.
 type PricingPeriod struct {
 	DurationDays int    `json:"duration_days"`
-	PriceAmount  int64  `json:"price_amount"`  // in cents
-	Label        string `json:"label"`         // "1 month", "3 months", "1 year"
-	SavePercent  int    `json:"save_percent"`  // 0, 10, 17 — discount vs monthly
-	IsDefault    bool   `json:"is_default"`    // highlighted in UI
+	PriceAmount  int64  `json:"price_amount"` // in cents
+	Label        string `json:"label"`        // "1 month", "3 months", "1 year"
+	SavePercent  int    `json:"save_percent"` // 0, 10, 17 — discount vs monthly
+	IsDefault    bool   `json:"is_default"`   // highlighted in UI
 }
 
 // EligibilityRules captures constraints that determine whether a user
@@ -112,21 +112,21 @@ type EligibilityRules struct {
 // metadata capabilities.
 type TariffInput struct {
 	// --- Core (original 13 fields) ---
-	Name                string   `json:"name"`
-	Description         string   `json:"description"`
-	PriceAmount         int64    `json:"price_amount"`
-	PriceCurrency       string   `json:"price_currency"`
-	DurationDays        int      `json:"duration_days"`
-	TrafficLimitGB      float64  `json:"traffic_limit_gb"`
-	DeviceLimit         int      `json:"device_limit"`
-	MaxPurchasesPerUser int      `json:"max_purchases_per_user"`
-	VPNPanelID             string   `json:"vpn_panel_id,omitempty"`
-	TrafficResetStrategy   string   `json:"traffic_reset_strategy,omitempty"`
-	InternalSquadUUIDs     []string `json:"internal_squad_uuids"`
-	ExternalSquadUUIDs     []string `json:"external_squad_uuids"`
-	Features            []string `json:"features"`
-	IsActive            bool     `json:"is_active"`
-	SortOrder           int      `json:"sort_order"`
+	Name                 string   `json:"name"`
+	Description          string   `json:"description"`
+	PriceAmount          int64    `json:"price_amount"`
+	PriceCurrency        string   `json:"price_currency"`
+	DurationDays         int      `json:"duration_days"`
+	TrafficLimitGB       float64  `json:"traffic_limit_gb"`
+	DeviceLimit          int      `json:"device_limit"`
+	MaxPurchasesPerUser  int      `json:"max_purchases_per_user"`
+	VPNPanelID           string   `json:"vpn_panel_id,omitempty"`
+	TrafficResetStrategy string   `json:"traffic_reset_strategy,omitempty"`
+	InternalSquadUUIDs   []string `json:"internal_squad_uuids"`
+	ExternalSquadUUIDs   []string `json:"external_squad_uuids"`
+	Features             []string `json:"features"`
+	IsActive             bool     `json:"is_active"`
+	SortOrder            int      `json:"sort_order"`
 
 	// --- Subscription periods ---
 	PricingPeriods []PricingPeriod `json:"pricing_periods,omitempty"`
@@ -224,14 +224,14 @@ func defaultTariffInput() TariffInput {
 	return TariffInput{
 		BillingModel:         string(BillingModelFixed),
 		TrafficResetStrategy: TrafficResetMonth,
-		AudienceSegment:    AudienceAll,
-		UpgradePolicy:      UpgradePolicyNextPeriod,
-		DowngradePolicy:    DowngradePolicyNextPeriod,
-		CancellationPolicy: CancellationPolicyEndOfPeriod,
-		PriceCharmStrategy: CharmStrategyNone,
-		OverageRounding:    OverageRoundingGB,
-		VisibleInPublic:    true,
-		VisibleInTelegram:  true,
-		VisibleInCabinet:   true,
+		AudienceSegment:      AudienceAll,
+		UpgradePolicy:        UpgradePolicyNextPeriod,
+		DowngradePolicy:      DowngradePolicyNextPeriod,
+		CancellationPolicy:   CancellationPolicyEndOfPeriod,
+		PriceCharmStrategy:   CharmStrategyNone,
+		OverageRounding:      OverageRoundingGB,
+		VisibleInPublic:      true,
+		VisibleInTelegram:    true,
+		VisibleInCabinet:     true,
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/telegram/bothost"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pluginstore"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
 )
@@ -77,13 +78,14 @@ func (h *Handler) ListVisibleTariffs(ctx context.Context, channel string) ([]Tar
 }
 
 // visibleInChannel reports whether a tariff is visible in the named channel.
+// Unknown channels fall back to the telegram flag (the bot-dispatch default).
 func visibleInChannel(t *TariffResponse, channel string) bool {
 	switch channel {
-	case "telegram":
+	case bothost.ChannelTelegram:
 		return t.VisibleInTelegram
-	case "cabinet":
+	case bothost.ChannelCabinet:
 		return t.VisibleInCabinet
-	case "public":
+	case bothost.ChannelPublic:
 		return t.VisibleInPublic
 	default:
 		return t.VisibleInTelegram
@@ -98,7 +100,7 @@ func visibleInChannel(t *TariffResponse, channel string) bool {
 // Returns pluginstore.ErrDocumentNotFound (wrapped) when no matching tariff is
 // found. ctx is forwarded to ListVisibleTariffs without modification.
 func (h *Handler) GetTariffByPlanID(ctx context.Context, planID string) (*TariffResponse, error) {
-	all, err := h.ListVisibleTariffs(ctx, "telegram")
+	all, err := h.ListVisibleTariffs(ctx, bothost.ChannelTelegram)
 	if err != nil {
 		return nil, err
 	}

@@ -65,7 +65,7 @@ func TestAssignVariant_TrafficDistribution(t *testing.T) {
 
 func TestAssignVariant_UnevenSplit(t *testing.T) {
 	variants := []ABVariant{
-		{Key: "control", PriceCents: 999, TrafficPct: 9000}, // 90%
+		{Key: "control", PriceCents: 999, TrafficPct: 9000},    // 90%
 		{Key: "treatment", PriceCents: 1299, TrafficPct: 1000}, // 10%
 	}
 
