@@ -72,6 +72,14 @@ func validateHookName(name string) error {
 		ErrInvalidManifest, name, AllowedHookPrefixes)
 }
 
+// ManifestTelegram declares that the plugin provides a Telegram bot and names
+// the WASM export the bot host calls for each incoming update. A nil pointer
+// means the plugin is not a bot.
+type ManifestTelegram struct {
+	ProvidesBot bool   `toml:"provides_bot"`
+	Entry       string `toml:"entry"`
+}
+
 // Manifest is the strongly-typed representation of a plugin.toml file.
 type Manifest struct {
 	Plugin      ManifestPlugin                 `toml:"plugin"`
@@ -81,6 +89,7 @@ type Manifest struct {
 	Limits      ManifestLimits                 `toml:"limits"`
 	Pages       []ManifestPage                 `toml:"pages"`
 	Routes      []ManifestRoute                `toml:"routes"`
+	Telegram    *ManifestTelegram              `toml:"telegram"`
 }
 
 // ManifestRoute declares an HTTP route provided by the plugin. The platform
@@ -154,6 +163,7 @@ type ManifestPermissions struct {
 	HTTP          []string `toml:"http"`
 	VPN           string   `toml:"vpn"`
 	API           string   `toml:"api"`
+	Telegram      string   `toml:"telegram"`
 }
 
 // ManifestHooks lists the hook points the plugin subscribes to.
@@ -221,7 +231,18 @@ func (m *Manifest) Validate() error {
 		return fmt.Errorf("%w: sdk_version is required", ErrInvalidManifest)
 	}
 	if len(m.Hooks.Sync) == 0 && len(m.Hooks.Async) == 0 {
-		return fmt.Errorf("%w: at least one hook (sync or async) is required", ErrInvalidManifest)
+		if m.Telegram == nil || !m.Telegram.ProvidesBot {
+			return fmt.Errorf("%w: at least one hook (sync or async) is required", ErrInvalidManifest)
+		}
+	}
+
+	if m.Telegram != nil && m.Telegram.ProvidesBot {
+		if m.Telegram.Entry == "" {
+			m.Telegram.Entry = DefaultBotEntry
+		} else if !routeFuncRe.MatchString(m.Telegram.Entry) {
+			return fmt.Errorf("%w: telegram entry %q is not a valid function name",
+				ErrInvalidManifest, m.Telegram.Entry)
+		}
 	}
 
 	for _, hook := range m.Hooks.Sync {
@@ -512,6 +533,10 @@ func (m *Manifest) ParsePermissions() []PermissionScope {
 
 	if m.Permissions.API == PermValueRoutes {
 		perms = append(perms, PermAPIRoutes)
+	}
+
+	if m.Permissions.Telegram == PermValueSend {
+		perms = append(perms, PermTelegramSend)
 	}
 
 	return perms

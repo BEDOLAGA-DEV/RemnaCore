@@ -113,7 +113,12 @@ const (
 	PermValueReadWrite = "readwrite"
 	PermValueEmit      = "emit"
 	PermValueRoutes    = "routes"
+	PermValueSend      = "send"
 )
+
+// DefaultBotEntry is the WASM export name used when a bot plugin manifest
+// omits the [telegram].entry field.
+const DefaultBotEntry = "handle_update"
 
 // Page validation constants.
 const (
