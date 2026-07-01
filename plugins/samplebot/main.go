@@ -43,17 +43,14 @@ type Sender struct {
 	Username  string `json:"username"`
 }
 
-// hostErrorEnvelope matches the error envelope the host writes back on failure.
-type hostErrorEnvelope struct {
-	Error string `json:"error"`
-}
-
 // callHost marshals {"op": op, "args": args}, sends it to the host via
-// host_call, and surfaces any error the host returns in its response envelope.
-func callHost(op string, args any) error {
+// host_call, and decodes the discriminated {ok}/{error} envelope the host
+// returns. retOffset==0 means success with no result; a non-zero offset
+// carries either {"ok": <result>} or {"error": "<msg>"}.
+func callHost(op string, args any) (json.RawMessage, error) {
 	payload, err := json.Marshal(map[string]any{"op": op, "args": args})
 	if err != nil {
-		return fmt.Errorf("marshal host call %s: %w", op, err)
+		return nil, fmt.Errorf("marshal host call %s: %w", op, err)
 	}
 
 	mem := pdk.AllocateBytes(payload)
@@ -61,18 +58,24 @@ func callHost(op string, args any) error {
 
 	retOffset := hostCall(mem.Offset())
 	if retOffset == 0 {
-		return nil
+		return nil, nil // success, no result
 	}
 
 	retMem := pdk.FindMemory(retOffset)
 	retBytes := retMem.ReadBytes()
 	retMem.Free()
 
-	var env hostErrorEnvelope
-	if jsonErr := json.Unmarshal(retBytes, &env); jsonErr == nil && env.Error != "" {
-		return fmt.Errorf("host error from %s: %s", op, env.Error)
+	var env struct {
+		OK    json.RawMessage `json:"ok"`
+		Error string          `json:"error"`
 	}
-	return nil
+	if uErr := json.Unmarshal(retBytes, &env); uErr != nil {
+		return nil, fmt.Errorf("decode host_call %s response: %w", op, uErr)
+	}
+	if env.Error != "" {
+		return nil, fmt.Errorf("host error from %s: %s", op, env.Error)
+	}
+	return env.OK, nil
 }
 
 // buildDisplayName derives the user's display name: FirstName, plus LastName
@@ -103,7 +106,7 @@ func handle_update() int32 {
 
 	name := buildDisplayName(upd.From)
 
-	if err := callHost(opUserRegister, map[string]any{
+	if _, err := callHost(opUserRegister, map[string]any{
 		"telegram_id":  upd.From.ID,
 		"display_name": name,
 	}); err != nil {
@@ -111,7 +114,7 @@ func handle_update() int32 {
 		return 1
 	}
 
-	if err := callHost(opCabinetOpen, map[string]any{
+	if _, err := callHost(opCabinetOpen, map[string]any{
 		"chat_id": upd.ChatID,
 	}); err != nil {
 		pdk.SetError(err)

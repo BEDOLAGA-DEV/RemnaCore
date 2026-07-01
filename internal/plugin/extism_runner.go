@@ -234,7 +234,14 @@ func buildExtismHostFunctions(hf *HostFunctions, slug string) []extism.HostFunct
 				return
 			}
 
-			outOffset, err := p.WriteBytes(out)
+			wrapped, err := json.Marshal(struct {
+				OK json.RawMessage `json:"ok"`
+			}{OK: out})
+			if err != nil {
+				writeErrorToGuest(p, stack, fmt.Errorf("wrap host_call response: %w", err))
+				return
+			}
+			outOffset, err := p.WriteBytes(wrapped)
 			if err != nil {
 				writeErrorToGuest(p, stack, fmt.Errorf("write host_call response: %w", err))
 				return
