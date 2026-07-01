@@ -31,8 +31,9 @@ type BalanceReaderAdapter struct {
 }
 
 // NewBalanceReaderAdapter returns a bothost.BalanceReader backed by svc.
-// In production, pass the *BalanceService directly.
-func NewBalanceReaderAdapter(svc *BalanceService) *BalanceReaderAdapter {
+// In production, pass the *BalanceService directly. Returning the interface
+// type (matching the sibling adapter constructors) is what the fx wiring binds.
+func NewBalanceReaderAdapter(svc *BalanceService) bothost.BalanceReader {
 	return &BalanceReaderAdapter{svc: svc}
 }
 

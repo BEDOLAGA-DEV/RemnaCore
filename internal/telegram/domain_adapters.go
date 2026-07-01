@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -163,6 +164,9 @@ func (a *checkoutStarterAdapter) Start(ctx context.Context, in bothost.CheckoutI
 	})
 	if err != nil {
 		return bothost.CheckoutResult{}, fmt.Errorf("checkout.start: %w", err)
+	}
+	if res == nil {
+		return bothost.CheckoutResult{}, errors.New("checkout.start: nil result without error")
 	}
 	return bothost.CheckoutResult{
 		CheckoutURL:    res.CheckoutURL,
