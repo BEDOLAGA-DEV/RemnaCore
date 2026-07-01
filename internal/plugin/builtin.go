@@ -12,6 +12,10 @@ type BuiltInPluginDef struct {
 	ConfigFields map[string]ManifestConfigField
 	Pages        []ManifestPage
 	Routes       []ManifestRoute
+	// ProvidesBot declares that this plugin implements a per-shop Telegram bot
+	// (a BotHandler registered in the BuiltinBotRegistry). Shops may select it
+	// via reseller.shop_bots.bot_plugin_slug.
+	ProvidesBot bool
 }
 
 // Built-in plugin slugs.

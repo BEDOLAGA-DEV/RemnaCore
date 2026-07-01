@@ -9,14 +9,15 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
 )
 
-// Op name constants — the string keys used by bot plugins when calling host ops.
+// Op name constants — the public op-catalog ABI. Bot plugins (built-in Go or
+// WASM) MUST reference these exported consts; never duplicate the raw strings.
 const (
-	opTelegramSendText       = "telegram.send_text"
-	opTelegramSendKeyboard   = "telegram.send_keyboard"
-	opTelegramAnswerCallback = "telegram.answer_callback"
-	opTelegramEditMessage    = "telegram.edit_message"
-	opCabinetOpen            = "cabinet.open"
-	opUserRegister           = "user.register"
+	OpTelegramSendText       = "telegram.send_text"
+	OpTelegramSendKeyboard   = "telegram.send_keyboard"
+	OpTelegramAnswerCallback = "telegram.answer_callback"
+	OpTelegramEditMessage    = "telegram.edit_message"
+	OpCabinetOpen            = "cabinet.open"
+	OpUserRegister           = "user.register"
 )
 
 // Cabinet UI copy constants. Defined here rather than imported from the parent
@@ -70,12 +71,12 @@ type registerResult struct {
 // RegisterStdOps installs the six standard host operations into r. Call once at
 // startup before any bot plugin dispatches an update.
 func RegisterStdOps(r *Registry) {
-	r.Register(opTelegramSendText, plugin.PermTelegramSend, handleSendText)
-	r.Register(opTelegramSendKeyboard, plugin.PermTelegramSend, handleSendKeyboard)
-	r.Register(opTelegramAnswerCallback, plugin.PermTelegramSend, handleAnswerCallback)
-	r.Register(opTelegramEditMessage, plugin.PermTelegramSend, handleEditMessage)
-	r.Register(opCabinetOpen, plugin.PermTelegramSend, handleCabinetOpen)
-	r.Register(opUserRegister, plugin.PermUsersWrite, handleUserRegister)
+	r.Register(OpTelegramSendText, plugin.PermTelegramSend, handleSendText)
+	r.Register(OpTelegramSendKeyboard, plugin.PermTelegramSend, handleSendKeyboard)
+	r.Register(OpTelegramAnswerCallback, plugin.PermTelegramSend, handleAnswerCallback)
+	r.Register(OpTelegramEditMessage, plugin.PermTelegramSend, handleEditMessage)
+	r.Register(OpCabinetOpen, plugin.PermTelegramSend, handleCabinetOpen)
+	r.Register(OpUserRegister, plugin.PermUsersWrite, handleUserRegister)
 }
 
 func handleSendText(ctx context.Context, oc *OpContext, args json.RawMessage) (json.RawMessage, error) {

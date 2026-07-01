@@ -129,7 +129,7 @@ func TestOp_SendText(t *testing.T) {
 	sender := &stubSender{}
 	oc := &OpContext{TenantID: "t1", CabinetURL: "https://cab.example.com", Sender: sender}
 
-	callStdOp(t, oc, plugin.PermTelegramSend, opTelegramSendText, sendTextArgs{
+	callStdOp(t, oc, plugin.PermTelegramSend, OpTelegramSendText, sendTextArgs{
 		ChatID: 42,
 		Text:   "hello world",
 	})
@@ -144,7 +144,7 @@ func TestOp_SendKeyboard(t *testing.T) {
 	oc := &OpContext{TenantID: "t1", Sender: sender}
 	kb := Keyboard{Rows: [][]Button{{{Text: "Go", CallbackData: "go:1"}}}}
 
-	callStdOp(t, oc, plugin.PermTelegramSend, opTelegramSendKeyboard, sendKeyboardArgs{
+	callStdOp(t, oc, plugin.PermTelegramSend, OpTelegramSendKeyboard, sendKeyboardArgs{
 		ChatID:   99,
 		Text:     "choose",
 		Keyboard: kb,
@@ -161,7 +161,7 @@ func TestOp_AnswerCallback(t *testing.T) {
 	sender := &stubSender{}
 	oc := &OpContext{TenantID: "t1", Sender: sender}
 
-	callStdOp(t, oc, plugin.PermTelegramSend, opTelegramAnswerCallback, answerCallbackArgs{
+	callStdOp(t, oc, plugin.PermTelegramSend, OpTelegramAnswerCallback, answerCallbackArgs{
 		CallbackID: "cq-123",
 		Text:       "acknowledged",
 	})
@@ -176,7 +176,7 @@ func TestOp_EditMessage(t *testing.T) {
 	oc := &OpContext{TenantID: "t1", Sender: sender}
 	kb := &Keyboard{Rows: [][]Button{{{Text: "X", URL: "https://x.com"}}}}
 
-	callStdOp(t, oc, plugin.PermTelegramSend, opTelegramEditMessage, editMessageArgs{
+	callStdOp(t, oc, plugin.PermTelegramSend, OpTelegramEditMessage, editMessageArgs{
 		ChatID:    7,
 		MessageID: 100,
 		Text:      "updated text",
@@ -205,7 +205,7 @@ func TestOp_CabinetOpen_HTTPS_WebAppButton(t *testing.T) {
 	}
 
 	// Omit text → defaultCabinetText must be used.
-	callStdOp(t, oc, plugin.PermTelegramSend, opCabinetOpen, cabinetOpenArgs{ChatID: 55})
+	callStdOp(t, oc, plugin.PermTelegramSend, OpCabinetOpen, cabinetOpenArgs{ChatID: 55})
 
 	require.Len(t, sender.sendKeyboardCalls, 1)
 	c := sender.sendKeyboardCalls[0]
@@ -229,7 +229,7 @@ func TestOp_CabinetOpen_HTTP_URLButton(t *testing.T) {
 		Sender:     sender,
 	}
 
-	callStdOp(t, oc, plugin.PermTelegramSend, opCabinetOpen, cabinetOpenArgs{
+	callStdOp(t, oc, plugin.PermTelegramSend, OpCabinetOpen, cabinetOpenArgs{
 		ChatID: 55,
 		Text:   "Custom message",
 	})
@@ -279,7 +279,7 @@ func TestOp_UserRegister(t *testing.T) {
 	out, err := r.Call(
 		context.Background(), oc,
 		NewPermSet(plugin.PermUsersWrite),
-		opUserRegister, raw,
+		OpUserRegister, raw,
 	)
 	require.NoError(t, err)
 	require.NotEmpty(t, capturedUserID, "CreateUser must have been called")

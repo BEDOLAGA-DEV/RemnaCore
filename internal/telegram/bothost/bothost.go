@@ -21,6 +21,20 @@ type User struct {
 	Username  string `json:"username"`
 }
 
+// DisplayName derives a human display name for a Telegram user: first name
+// (plus last name when present), falling back to the username. Shared by bot
+// plugins so the derivation is defined once.
+func DisplayName(u User) string {
+	name := u.FirstName
+	if u.LastName != "" {
+		name += " " + u.LastName
+	}
+	if name == "" {
+		name = u.Username
+	}
+	return name
+}
+
 // Update is the serializable inbound Telegram update a bot plugin handles.
 type Update struct {
 	ChatID       int64  `json:"chat_id"`
