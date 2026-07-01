@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 
 	"go.uber.org/fx"
@@ -38,23 +39,55 @@ func provideBotOps() *bothost.Registry {
 	return r
 }
 
-// botPluginValidator is the real BotPluginValidator backed by the BuiltinBotRegistry.
+// botPluginValidator is the real BotPluginValidator backed by both the
+// BuiltinBotRegistry (for native Go bot plugins) and a PluginReader (for
+// enabled WASM bot plugins whose manifest declares ProvidesBot=true).
 type botPluginValidator struct {
-	reg *BuiltinBotRegistry
+	reg     *BuiltinBotRegistry
+	plugins PluginReader
 }
 
-// IsValidBotPlugin reports whether slug names a registered built-in bot plugin.
-func (v *botPluginValidator) IsValidBotPlugin(_ context.Context, slug string) (bool, error) {
-	_, _, ok := v.reg.Lookup(slug)
-	return ok, nil
+// IsValidBotPlugin reports whether slug names either a registered built-in bot
+// plugin or an enabled WASM plugin whose manifest declares ProvidesBot=true.
+//
+// Resolution order:
+//  1. Check the built-in registry; if found, return (true, nil) immediately
+//     without consulting the plugin repo.
+//  2. Consult the plugin repo. A not-found result (errors.Is ErrPluginNotFound)
+//     is a clean rejection: (false, nil). Any other repo error is a real
+//     infrastructure failure: (false, err). A found plugin is accepted only when
+//     Status==StatusEnabled, Manifest!=nil, Manifest.Telegram!=nil, and
+//     Manifest.Telegram.ProvidesBot==true.
+func (v *botPluginValidator) IsValidBotPlugin(ctx context.Context, slug string) (bool, error) {
+	if _, _, ok := v.reg.Lookup(slug); ok {
+		return true, nil
+	}
+
+	p, err := v.plugins.GetBySlug(ctx, slug)
+	if err != nil {
+		if errors.Is(err, plugin.ErrPluginNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	if p == nil {
+		return false, nil
+	}
+	if p.Status != plugin.StatusEnabled {
+		return false, nil
+	}
+	if p.Manifest == nil || p.Manifest.Telegram == nil || !p.Manifest.Telegram.ProvidesBot {
+		return false, nil
+	}
+	return true, nil
 }
 
 // NewBotPluginValidator returns a resellerservice.BotPluginValidator backed by
-// the BuiltinBotRegistry. The reseller domain only imports this interface; the
-// telegram package imports the reseller service package for the type — not the
-// other way around — so there is no import cycle.
-func NewBotPluginValidator(reg *BuiltinBotRegistry) resellerservice.BotPluginValidator {
-	return &botPluginValidator{reg: reg}
+// the BuiltinBotRegistry and the PluginReader. The reseller domain only imports
+// this interface; the telegram package imports the reseller service package for
+// the type — not the other way around — so there is no import cycle.
+func NewBotPluginValidator(reg *BuiltinBotRegistry, plugins PluginReader) resellerservice.BotPluginValidator {
+	return &botPluginValidator{reg: reg, plugins: plugins}
 }
 
 // registerCabinetBot seeds the BuiltinBotRegistry with the cabinet-bot handler.
