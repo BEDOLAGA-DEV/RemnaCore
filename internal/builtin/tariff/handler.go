@@ -127,39 +127,21 @@ func (h *Handler) remnawaveClientForPanel(ctx context.Context, panelID string) *
 // =====================================================================
 
 func (h *Handler) ListTariffs(w http.ResponseWriter, r *http.Request) {
-	// C6: a request sees its own-tenant tariffs (normal RLS read under the
-	// request GUC) PLUS shared templates. Templates are platform-private rows
-	// (tenant_id NULL, is_template=true) and are NOT granted to shop GUCs by
-	// the 041 USING policy; we surface them with a SEPARATE read under the
-	// platform sentinel so the sentinel USING branch returns the NULL-tenant
-	// rows. The two reads are merged and deduped by document id (a platform
-	// actor's own read already includes templates).
-	ownDocs, err := h.collections.ListDocuments(r.Context(), PluginSlug, CollectionName)
+	// C6: a request sees its own-tenant tariffs PLUS shared templates.
+	// The dual-read + deduplicate logic is encapsulated in listMergedTariffs.
+	all, err := h.listMergedTariffs(r.Context())
 	if err != nil {
 		h.logger.Error("failed to list tariffs", slog.Any("error", err))
 		writeAPIError(w, apierror.Internal)
 		return
 	}
-	templateDocs, err := h.collections.ListDocuments(
-		tenantctx.WithPlatformScope(r.Context()), PluginSlug, CollectionName,
-	)
-	if err != nil {
-		h.logger.Error("failed to list tariff templates", slog.Any("error", err))
-		writeAPIError(w, apierror.Internal)
-		return
-	}
-	docs := mergeTariffDocs(ownDocs, templateDocs)
 
 	activeOnly := r.URL.Query().Get("active") == "true"
 	audience := r.URL.Query().Get("audience")
 	country := r.URL.Query().Get("country")
 
-	tariffs := make([]TariffResponse, 0, len(docs))
-	for _, doc := range docs {
-		t, convErr := documentToTariff(&doc)
-		if convErr != nil {
-			continue
-		}
+	tariffs := make([]TariffResponse, 0, len(all))
+	for _, t := range all {
 		if activeOnly && !t.IsActive {
 			continue
 		}
@@ -167,7 +149,7 @@ func (h *Handler) ListTariffs(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		_ = country // geo-filtering reserved for tariff.list_visible hook
-		tariffs = append(tariffs, *t)
+		tariffs = append(tariffs, t)
 	}
 
 	slices.SortFunc(tariffs, func(a, b TariffResponse) int {
@@ -1053,7 +1035,9 @@ func (h *Handler) syncTariffToPlanWithError(ctx context.Context, docID string, i
 		}}
 	}
 
-	// Parse tariff UUID once for deterministic ID generation.
+	// Parse tariff UUID once; needed by deactivateOrphanedPlans below.
+	// DerivePlanID re-parses internally, but since we already validated here
+	// it will not fail for any period in the loop.
 	ns, parseErr := gouuid.Parse(docID)
 	if parseErr != nil {
 		return fmt.Errorf("invalid tariff UUID %s: %w", docID, parseErr)
@@ -1063,13 +1047,15 @@ func (h *Handler) syncTariffToPlanWithError(ctx context.Context, docID string, i
 	activePlanIDs := make(map[string]bool, len(periods))
 
 	// Sync each period as a separate billing Plan.
-	// Plan ID: deterministic UUID v5 from tariff ID + duration (valid PG UUID).
-	// For single-period tariffs without pricing_periods, use docID directly.
+	// Plan IDs are derived via DerivePlanID (the canonical shared function)
+	// so that plans.list PlanIDs equal the PlanIDs checkout resolves.
 	for _, period := range periods {
-		planID := docID
+		planID, err := DerivePlanID(docID, period.DurationDays, len(input.PricingPeriods) > 0)
+		if err != nil {
+			return fmt.Errorf("derive plan ID for tariff %s period %d: %w", docID, period.DurationDays, err)
+		}
 		planName := input.Name
 		if len(input.PricingPeriods) > 0 {
-			planID = gouuid.NewSHA1(ns, []byte(fmt.Sprintf("period_%d", period.DurationDays))).String()
 			if period.Label != "" {
 				planName = fmt.Sprintf("%s — %s", input.Name, period.Label)
 			} else {
