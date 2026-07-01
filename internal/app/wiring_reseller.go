@@ -22,4 +22,9 @@ var resellerWiring = fx.Options(
 	// Shop-bot repository (encrypted at rest via secretbox.Box from identity wiring)
 	fx.Provide(postgres.NewShopBotRepository),
 	fx.Provide(func(repo *postgres.ShopBotRepository) resellerservice.ShopBotRepository { return repo }),
+
+	// STOPGAP (Task 8): AllowAllBotPlugins accepts every plugin slug without
+	// real validation. Task 8 must replace this provider with the real
+	// telegram-backed BotPluginValidator once the telegram registry is wired.
+	fx.Provide(func() resellerservice.BotPluginValidator { return resellerservice.AllowAllBotPlugins{} }),
 )

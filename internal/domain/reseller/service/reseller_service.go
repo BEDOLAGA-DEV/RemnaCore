@@ -109,11 +109,38 @@ type ShopBotRepository interface {
 	ListEnabled(ctx context.Context) ([]vo.ShopBotWithTenant, error)
 }
 
+// BotPluginValidator reports whether slug names an installed, enabled,
+// bot-capable plugin. Implemented in the wiring layer over the built-in bot
+// registry (BP1) and the plugin repo (BP2); kept as a port so the reseller
+// domain does not import internal/plugin or internal/telegram.
+type BotPluginValidator interface {
+	IsValidBotPlugin(ctx context.Context, slug string) (bool, error)
+}
+
+// AllowAllBotPlugins is a no-op BotPluginValidator that accepts every slug.
+//
+// STOPGAP: this is provided by the fx wiring until Task 8 wires the real
+// telegram-backed validator. Task 8 must replace the
+//
+//	fx.Provide(func() BotPluginValidator { return AllowAllBotPlugins{} })
+//
+// binding in internal/app/wiring_reseller.go with the real implementation.
+type AllowAllBotPlugins struct{}
+
+// IsValidBotPlugin always returns true; it is a placeholder for the real
+// validator wired in Task 8.
+func (AllowAllBotPlugins) IsValidBotPlugin(_ context.Context, _ string) (bool, error) {
+	return true, nil
+}
+
 // SetShopBotInput is the input DTO for ResellerService.SetShopBot.
 type SetShopBotInput struct {
 	BotToken   string
 	CabinetURL string
 	Enabled    bool
+	// BotPlugin is the slug of the bot plugin to associate with this shop's
+	// bot. An empty string selects the default cabinet-bot behaviour.
+	BotPlugin string
 }
 
 // ResellerService implements the core reseller and white-label use-cases:
@@ -155,6 +182,7 @@ type ResellerService struct {
 	commissions CommissionRepository
 	customers   CustomerRepository
 	shopBots    ShopBotRepository
+	botPlugins  BotPluginValidator
 	publisher   domainevent.Publisher
 	logger      *slog.Logger
 	clock       clock.Clock
@@ -171,12 +199,14 @@ func NewResellerService(
 	clk clock.Clock,
 	txRunner txmanager.Runner,
 	shopBots ShopBotRepository,
+	botPlugins BotPluginValidator,
 ) *ResellerService {
 	return &ResellerService{
 		tenants:     tenants,
 		commissions: commissions,
 		customers:   customers,
 		shopBots:    shopBots,
+		botPlugins:  botPlugins,
 		publisher:   publisher,
 		logger:      logger,
 		clock:       clk,
@@ -504,6 +534,16 @@ func (s *ResellerService) SetShopBot(ctx context.Context, tenantID string, in Se
 		return fmt.Errorf("set shop bot: %w", ErrShopBotInvalidCabinetURL)
 	}
 
+	if in.BotPlugin != "" {
+		ok, err := s.botPlugins.IsValidBotPlugin(ctx, in.BotPlugin)
+		if err != nil {
+			return fmt.Errorf("set shop bot: validate plugin: %w", err)
+		}
+		if !ok {
+			return fmt.Errorf("set shop bot: %w", ErrShopBotInvalidPlugin)
+		}
+	}
+
 	webhookSecret, err := generateWebhookSecret()
 	if err != nil {
 		return fmt.Errorf("set shop bot: %w", err)
@@ -514,6 +554,7 @@ func (s *ResellerService) SetShopBot(ctx context.Context, tenantID string, in Se
 		WebhookSecret: webhookSecret,
 		CabinetURL:    in.CabinetURL,
 		Enabled:       in.Enabled,
+		BotPluginSlug: in.BotPlugin,
 	}
 	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
 		return s.shopBots.Upsert(txCtx, tenantID, cfg)

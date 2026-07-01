@@ -86,6 +86,7 @@ func newTestTelegramAuthHandler(
 		nil,
 		txmanagertest.NoopTxRunner{},
 		botRepo,
+		resellerservice.AllowAllBotPlugins{},
 	)
 
 	pub := new(identitytest.MockPublisher)

@@ -32,7 +32,7 @@ func newTestService(t *testing.T) (
 	pub := new(resellertest.MockPublisher)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	svc := reseller.NewResellerService(tenantRepo, commissionRepo, customerRepo, pub, logger, clock.NewReal(), resellertest.NoopTxRunner{}, nil)
+	svc := reseller.NewResellerService(tenantRepo, commissionRepo, customerRepo, pub, logger, clock.NewReal(), resellertest.NoopTxRunner{}, nil, nil)
 	return svc, tenantRepo, commissionRepo, pub
 }
 
@@ -47,7 +47,7 @@ func newTestServiceWithCustomers(t *testing.T) (
 	customerRepo := new(resellertest.MockCustomerRepository)
 	pub := new(resellertest.MockPublisher)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	svc := reseller.NewResellerService(tenantRepo, commissionRepo, customerRepo, pub, logger, clock.NewReal(), resellertest.NoopTxRunner{}, nil)
+	svc := reseller.NewResellerService(tenantRepo, commissionRepo, customerRepo, pub, logger, clock.NewReal(), resellertest.NoopTxRunner{}, nil, nil)
 	return svc, commissionRepo, customerRepo
 }
 

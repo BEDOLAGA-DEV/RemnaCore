@@ -68,6 +68,7 @@ func newBotTestHandler(t *testing.T, repo resellerservice.ShopBotRepository) *Re
 		nil,
 		txmanagertest.NoopTxRunner{},
 		repo,
+		resellerservice.AllowAllBotPlugins{},
 	)
 	return NewResellerHandler(svc)
 }

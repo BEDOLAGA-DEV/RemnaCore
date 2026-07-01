@@ -47,6 +47,7 @@ type setBotRequest struct {
 	BotToken   string `json:"bot_token"`
 	CabinetURL string `json:"cabinet_url"`
 	Enabled    bool   `json:"enabled"`
+	BotPlugin  string `json:"bot_plugin"`
 }
 
 // getBotResponse is the safe GET response — token is NEVER included.
@@ -55,6 +56,7 @@ type getBotResponse struct {
 	CabinetURL  string `json:"cabinet_url"`
 	BotUsername string `json:"bot_username"`
 	HasToken    bool   `json:"has_token"`
+	BotPlugin   string `json:"bot_plugin"`
 }
 
 // --- Admin Endpoints ---
@@ -280,6 +282,7 @@ func (h *ResellerHandler) SetResellerBot(w http.ResponseWriter, r *http.Request)
 		BotToken:   req.BotToken,
 		CabinetURL: req.CabinetURL,
 		Enabled:    req.Enabled,
+		BotPlugin:  req.BotPlugin,
 	}); err != nil {
 		writeErrorFromDomain(w, err)
 		return
@@ -314,6 +317,7 @@ func (h *ResellerHandler) GetResellerBot(w http.ResponseWriter, r *http.Request)
 		CabinetURL:  cfg.CabinetURL,
 		BotUsername: cfg.BotUsername,
 		HasToken:    cfg.Token.Expose() != "",
+		BotPlugin:   cfg.BotPluginSlug,
 	})
 }
 
@@ -340,6 +344,7 @@ func (h *ResellerHandler) UpdateTenantBot(w http.ResponseWriter, r *http.Request
 		BotToken:   req.BotToken,
 		CabinetURL: req.CabinetURL,
 		Enabled:    req.Enabled,
+		BotPlugin:  req.BotPlugin,
 	}); err != nil {
 		writeErrorFromDomain(w, err)
 		return

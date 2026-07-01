@@ -31,4 +31,8 @@ var (
 	// ErrShopBotInvalidCabinetURL is returned when the cabinet URL does not use
 	// the HTTPS scheme.
 	ErrShopBotInvalidCabinetURL = errors.New("cabinet URL must use HTTPS scheme")
+
+	// ErrShopBotInvalidPlugin is returned when the provided BotPlugin slug does
+	// not name an installed, enabled, bot-capable plugin.
+	ErrShopBotInvalidPlugin = errors.New("shop bot plugin is not a valid enabled bot plugin")
 )

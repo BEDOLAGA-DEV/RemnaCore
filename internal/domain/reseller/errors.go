@@ -23,6 +23,7 @@ var (
 	ErrEncryptionNotConfigured  = service.ErrEncryptionNotConfigured
 	ErrShopBotInvalidToken      = service.ErrShopBotInvalidToken
 	ErrShopBotInvalidCabinetURL = service.ErrShopBotInvalidCabinetURL
+	ErrShopBotInvalidPlugin     = service.ErrShopBotInvalidPlugin
 )
 
 // Aggregate-level error aliases re-exported for backward compatibility.
