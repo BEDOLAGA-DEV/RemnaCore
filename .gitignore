@@ -4,6 +4,8 @@ dist/
 *.exe
 *.test
 *.wasm
+# Intentional committed WASM artifacts (plugin build fixtures)
+!plugins/samplebot/samplebot.wasm
 coverage.*
 /remnacore
 /vpn-platform
