@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/vo"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pgutil"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/secret"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
@@ -96,7 +96,7 @@ type CustomerRepository interface {
 
 // ShopBotRepository persists per-shop Telegram bot configuration. Bot tokens
 // are encrypted at rest by the adapter; callers always supply and receive
-// plaintext (wrapped in config.SecretString). Structurally identical to
+// plaintext (wrapped in secret.String). Structurally identical to
 // reseller.ShopBotRepository (defined at the domain root); this copy exists
 // here to avoid an import cycle — the reseller root imports this subpackage.
 type ShopBotRepository interface {
@@ -504,14 +504,14 @@ func (s *ResellerService) SetShopBot(ctx context.Context, tenantID string, in Se
 		return fmt.Errorf("set shop bot: %w", ErrShopBotInvalidCabinetURL)
 	}
 
-	secret, err := generateWebhookSecret()
+	webhookSecret, err := generateWebhookSecret()
 	if err != nil {
 		return fmt.Errorf("set shop bot: %w", err)
 	}
 
 	cfg := vo.ShopBotConfig{
-		Token:         config.NewSecretString(in.BotToken),
-		WebhookSecret: secret,
+		Token:         secret.NewString(in.BotToken),
+		WebhookSecret: webhookSecret,
 		CabinetURL:    in.CabinetURL,
 		Enabled:       in.Enabled,
 	}

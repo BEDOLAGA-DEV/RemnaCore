@@ -1,10 +1,19 @@
 package gateway
 
 import (
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/handler"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/health"
 	"go.uber.org/fx"
 )
+
+// provideShopBotConfigResolver adapts the reseller service to the narrow
+// ShopBotConfigResolver port the Telegram auth handler depends on. Keeping this
+// adapter in the module (not the handler) lets the handler stay within a single
+// domain context per the gateway single-context architecture rule.
+func provideShopBotConfigResolver(s *reseller.ResellerService) handler.ShopBotConfigResolver {
+	return s
+}
 
 // Module provides the HTTP gateway layer (handlers + router) to the Fx
 // dependency graph.
@@ -34,6 +43,7 @@ var Module = fx.Module("gateway",
 	fx.Provide(handler.NewPluginRPCHandler),
 	fx.Provide(handler.NewPluginRouteHandler),
 	fx.Provide(handler.NewIAMHandler),
+	fx.Provide(provideShopBotConfigResolver),
 	fx.Provide(handler.NewTelegramAuthHandler),
 	fx.Provide(NewRouter),
 )

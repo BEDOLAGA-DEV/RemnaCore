@@ -1,29 +1,38 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/vo"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/middleware"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/apierror"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
 )
 
-// TelegramAuthHandler handles Telegram Mini App (WebApp) authentication.
-// It composes the identity and reseller domains without coupling them:
-// the handler resolves the shop's bot token via the reseller service and
-// delegates HMAC validation + session issuance to the identity service.
-type TelegramAuthHandler struct {
-	identity *identity.Service
-	reseller *reseller.ResellerService
+// ShopBotConfigResolver resolves a shop's Telegram bot configuration by tenant.
+// It is satisfied by *reseller.ResellerService. The handler depends on this
+// narrow port (returning only the reseller vo type) instead of importing the
+// reseller service package directly, so it stays within a single domain
+// context per the gateway single-context architecture rule.
+type ShopBotConfigResolver interface {
+	GetShopBot(ctx context.Context, tenantID string) (*vo.ShopBotConfig, error)
 }
 
-// NewTelegramAuthHandler creates a TelegramAuthHandler backed by the given
-// identity and reseller services.
-func NewTelegramAuthHandler(identitySvc *identity.Service, resellerSvc *reseller.ResellerService) *TelegramAuthHandler {
-	return &TelegramAuthHandler{identity: identitySvc, reseller: resellerSvc}
+// TelegramAuthHandler handles Telegram Mini App (WebApp) authentication. It
+// resolves the shop's bot token via a ShopBotConfigResolver and delegates HMAC
+// validation + session issuance to the identity service.
+type TelegramAuthHandler struct {
+	identity *identity.Service
+	shopBots ShopBotConfigResolver
+}
+
+// NewTelegramAuthHandler creates a TelegramAuthHandler backed by the identity
+// service and a shop-bot-config resolver.
+func NewTelegramAuthHandler(identitySvc *identity.Service, shopBots ShopBotConfigResolver) *TelegramAuthHandler {
+	return &TelegramAuthHandler{identity: identitySvc, shopBots: shopBots}
 }
 
 type telegramWebAppLoginRequest struct {
@@ -70,7 +79,7 @@ func (h *TelegramAuthHandler) WebAppLogin(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	cfg, err := h.reseller.GetShopBot(tenantctx.WithPlatformScope(r.Context()), shopID)
+	cfg, err := h.shopBots.GetShopBot(tenantctx.WithPlatformScope(r.Context()), shopID)
 	if err != nil || cfg == nil || !cfg.Enabled {
 		writeAPIError(w, apierror.Unauthorized.WithDetails("telegram authentication unavailable for this shop"))
 		return

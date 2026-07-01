@@ -2,71 +2,29 @@ package config
 
 import (
 	"encoding/json"
-	"fmt"
-	"log/slog"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/secret"
 )
 
-func TestSecretString_Expose(t *testing.T) {
-	s := NewSecretString("super-secret")
-	assert.Equal(t, "super-secret", s.Expose())
+// SecretString is a type alias for secret.String; its full behavior is covered
+// by pkg/secret. These smoke tests confirm the alias and constructor wire up
+// correctly and that masking is preserved through the config entrypoints.
+
+func TestSecretString_IsSecretStringAlias(t *testing.T) {
+	var _ secret.String = NewSecretString("x") // compiles only if the alias holds
+	assert.Equal(t, "super-secret", NewSecretString("super-secret").Expose())
 }
 
-func TestSecretString_String(t *testing.T) {
-	s := NewSecretString("super-secret")
-	assert.Equal(t, "***", s.String())
-	assert.Equal(t, "***", fmt.Sprintf("%s", s))
-	assert.Equal(t, "***", fmt.Sprintf("%v", s))
-}
-
-func TestSecretString_GoString(t *testing.T) {
-	s := NewSecretString("super-secret")
-	assert.Equal(t, "config.SecretString{***}", fmt.Sprintf("%#v", s))
-}
-
-func TestSecretString_MarshalJSON(t *testing.T) {
-	s := NewSecretString("super-secret")
-	data, err := json.Marshal(s)
-	require.NoError(t, err)
-	assert.Equal(t, `"***"`, string(data))
-}
-
-func TestSecretString_MarshalJSON_InStruct(t *testing.T) {
+func TestSecretString_MasksThroughConfig(t *testing.T) {
 	type cfg struct {
 		Token SecretString `json:"token"`
 	}
-	c := cfg{Token: NewSecretString("super-secret")}
-	data, err := json.Marshal(c)
+	data, err := json.Marshal(cfg{Token: NewSecretString("super-secret")})
 	require.NoError(t, err)
 	assert.Equal(t, `{"token":"***"}`, string(data))
-}
-
-func TestSecretString_MarshalText(t *testing.T) {
-	s := NewSecretString("super-secret")
-	text, err := s.MarshalText()
-	require.NoError(t, err)
-	assert.Equal(t, "***", string(text))
-}
-
-func TestSecretString_UnmarshalText(t *testing.T) {
-	var s SecretString
-	err := s.UnmarshalText([]byte("from-env"))
-	require.NoError(t, err)
-	assert.Equal(t, "from-env", s.Expose())
-	assert.Equal(t, "***", s.String())
-}
-
-func TestSecretString_LogValue(t *testing.T) {
-	s := NewSecretString("super-secret")
-	val := s.LogValue()
-	assert.Equal(t, slog.StringValue("***"), val)
-}
-
-func TestSecretString_ZeroValue(t *testing.T) {
-	var s SecretString
-	assert.Equal(t, "", s.Expose())
-	assert.Equal(t, "***", s.String())
+	assert.Equal(t, "***", NewSecretString("super-secret").String())
 }

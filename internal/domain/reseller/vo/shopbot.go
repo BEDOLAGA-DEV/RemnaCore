@@ -1,11 +1,11 @@
 package vo
 
-import "github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
+import "github.com/BEDOLAGA-DEV/RemnaCore/pkg/secret"
 
 // ShopBotConfig is a shop's Telegram bot configuration. Token is held as a
-// SecretString in memory and is encrypted at rest by the adapter.
+// masked secret.String in memory and is encrypted at rest by the adapter.
 type ShopBotConfig struct {
-	Token         config.SecretString
+	Token         secret.String
 	WebhookSecret string
 	CabinetURL    string
 	BotUsername   string
