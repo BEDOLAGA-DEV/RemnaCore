@@ -36,6 +36,7 @@ type BotManager struct {
 
 	botRegistry *BuiltinBotRegistry
 	botOps      *bothost.Registry
+	wasmBots    WASMBotDispatcher
 	txRunner    txmanager.Runner
 
 	mu      sync.RWMutex
@@ -53,6 +54,7 @@ func NewBotManager(
 	botRegistry *BuiltinBotRegistry,
 	botOps *bothost.Registry,
 	txRunner txmanager.Runner,
+	wasmBots WASMBotDispatcher,
 	logger *slog.Logger,
 ) *BotManager {
 	origin := ""
@@ -68,6 +70,7 @@ func NewBotManager(
 		webhookOrigin: origin,
 		botRegistry:   botRegistry,
 		botOps:        botOps,
+		wasmBots:      wasmBots,
 		txRunner:      txRunner,
 		logger:        logger.With(slog.String("component", "telegram_bot_manager")),
 		shops:         make(map[string]*Bot),
@@ -121,6 +124,7 @@ func (m *BotManager) Load(ctx context.Context) error {
 			m.botRegistry,
 			m.botOps,
 			m.txRunner,
+			m.wasmBots,
 			m.logger,
 		)
 		if err := bot.Init(ctx); err != nil {

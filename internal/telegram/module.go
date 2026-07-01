@@ -21,6 +21,7 @@ var Module = fx.Module("telegram",
 	fx.Provide(NewBuiltinBotRegistry),
 	fx.Provide(provideBotOps),
 	fx.Provide(NewBotPluginValidator),
+	fx.Provide(NewWASMBotDispatcher),
 	fx.Invoke(registerCabinetBot),
 	fx.Provide(provideBotManager),
 )
@@ -66,7 +67,8 @@ func provideBotManager(
 	botRegistry *BuiltinBotRegistry,
 	botOps *bothost.Registry,
 	txRunner txmanager.Runner,
+	wasmBots WASMBotDispatcher,
 	logger *slog.Logger,
 ) *BotManager {
-	return NewBotManager(platform, identitySvc, resellerSvc, cfg, botRegistry, botOps, txRunner, logger)
+	return NewBotManager(platform, identitySvc, resellerSvc, cfg, botRegistry, botOps, txRunner, wasmBots, logger)
 }

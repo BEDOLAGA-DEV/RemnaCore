@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 
@@ -14,6 +15,7 @@ import (
 	billingservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/telegram/bothost"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
@@ -47,6 +49,7 @@ type Bot struct {
 	botPluginSlug string
 	botRegistry   *BuiltinBotRegistry
 	botOps        *bothost.Registry
+	wasmBots      WASMBotDispatcher
 	txRunner      txmanager.Runner
 }
 
@@ -80,8 +83,9 @@ func NewBot(
 }
 
 // NewShopBot builds a per-shop bot that dispatches all updates through the
-// BuiltinBotRegistry using the configured plugin slug (default: cabinet-bot).
-// Platform-only services are nil — a shop bot never reaches the other command handlers.
+// BuiltinBotRegistry (or a WASM plugin when wasmBots resolves the slug) using
+// the configured plugin slug (default: cabinet-bot). Platform-only services are
+// nil — a shop bot never reaches the other command handlers.
 func NewShopBot(
 	token, webhookURL, webhookSecret, tenantID, cabinetURL string,
 	identitySvc *identity.Service,
@@ -89,6 +93,7 @@ func NewShopBot(
 	botRegistry *BuiltinBotRegistry,
 	botOps *bothost.Registry,
 	txRunner txmanager.Runner,
+	wasmBots WASMBotDispatcher,
 	logger *slog.Logger,
 ) *Bot {
 	return &Bot{
@@ -102,6 +107,7 @@ func NewShopBot(
 		botPluginSlug: botPluginSlug,
 		botRegistry:   botRegistry,
 		botOps:        botOps,
+		wasmBots:      wasmBots,
 		txRunner:      txRunner,
 		logger:        logger.With(slog.String("component", "telegram_shop_bot"), slog.String("tenant", tenantID)),
 	}
@@ -232,9 +238,24 @@ func (b *Bot) answerCallback(ctx context.Context, callbackID, text string) {
 	}
 }
 
+// newOpContext builds the per-dispatch OpContext from the bot's bound fields.
+// Extracted to avoid duplicating the literal in both the built-in and WASM
+// dispatch paths.
+func (b *Bot) newOpContext() *bothost.OpContext {
+	return &bothost.OpContext{
+		TenantID:   b.tenantID,
+		CabinetURL: b.cabinetURL,
+		Sender:     b,
+		Identity:   b.identity,
+		TxRunner:   b.txRunner,
+	}
+}
+
 // dispatchUpdate is the default handler for shop bots. It maps the raw
-// go-telegram Update to a bothost.Update, resolves the plugin handler from
-// the BuiltinBotRegistry, and delegates execution to the plugin.
+// go-telegram Update to a bothost.Update, then tries (in order):
+//  1. The built-in BuiltinBotRegistry for the configured slug.
+//  2. The WASMBotDispatcher when the slug resolves to an enabled WASM bot plugin.
+//  3. The cabinet-bot fallback (always registered).
 func (b *Bot) dispatchUpdate(ctx context.Context, _ *tgbot.Bot, u *models.Update) {
 	upd, ok := toBotHostUpdate(u)
 	if !ok {
@@ -246,6 +267,23 @@ func (b *Bot) dispatchUpdate(ctx context.Context, _ *tgbot.Bot, u *models.Update
 	}
 	handler, perms, found := b.botRegistry.Lookup(slug)
 	if !found {
+		// Try the WASM dispatcher before falling back to the cabinet-bot.
+		if b.wasmBots != nil {
+			if wperms, entry, wasmOK := b.wasmBots.Resolve(ctx, slug); wasmOK {
+				host := b.botOps.Bind(b.newOpContext(), wperms)
+				env, err := json.Marshal(upd)
+				if err != nil {
+					b.logger.Error("wasm bot marshal update failed",
+						slog.String("tenant", b.tenantID), slog.String("slug", slug), slog.Any("error", err))
+					return
+				}
+				if err := b.wasmBots.Invoke(plugin.WithBotHost(ctx, host), slug, entry, env); err != nil {
+					b.logger.Error("wasm bot dispatch failed",
+						slog.String("tenant", b.tenantID), slog.String("slug", slug), slog.Any("error", err))
+				}
+				return
+			}
+		}
 		b.logger.Warn("bot plugin not found; falling back to cabinet-bot",
 			slog.String("tenant", b.tenantID), slog.String("slug", slug))
 		handler, perms, found = b.botRegistry.Lookup(cabinetbot.Slug)
@@ -254,14 +292,7 @@ func (b *Bot) dispatchUpdate(ctx context.Context, _ *tgbot.Bot, u *models.Update
 			return
 		}
 	}
-	oc := &bothost.OpContext{
-		TenantID:   b.tenantID,
-		CabinetURL: b.cabinetURL,
-		Sender:     b,
-		Identity:   b.identity,
-		TxRunner:   b.txRunner,
-	}
-	host := b.botOps.Bind(oc, perms)
+	host := b.botOps.Bind(b.newOpContext(), perms)
 	if err := handler(ctx, upd, host); err != nil {
 		b.logger.Error("bot plugin handler failed",
 			slog.String("tenant", b.tenantID), slog.String("slug", slug), slog.Any("error", err))

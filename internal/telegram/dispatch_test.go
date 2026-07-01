@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/go-telegram/bot/models"
@@ -9,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/builtin/cabinetbot"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/telegram/bothost"
 )
 
@@ -139,4 +141,79 @@ func TestToBotHostUpdate_Message(t *testing.T) {
 func TestToBotHostUpdate_EmptyUpdate(t *testing.T) {
 	_, ok := toBotHostUpdate(&models.Update{})
 	assert.False(t, ok)
+}
+
+// newShopBotWASM builds a minimal shop Bot with a WASMBotDispatcher for offline
+// dispatch tests. The botRegistry does NOT contain slug so Lookup fails, forcing
+// the WASM branch.
+func newShopBotWASM(slug string, reg *BuiltinBotRegistry, wasmBots WASMBotDispatcher) *Bot {
+	return &Bot{
+		isShop:        true,
+		tenantID:      "tenant-wasm",
+		cabinetURL:    "https://shop.example.com/cabinet",
+		botPluginSlug: slug,
+		botRegistry:   reg,
+		botOps:        botHostRegistryForTest(),
+		wasmBots:      wasmBots,
+		txRunner:      nil,
+		logger:        testLogger(),
+	}
+}
+
+// TestDispatch_WASMPlugin_InvokesDispatcherAndSkipsCabinetBot verifies that when
+// the builtin registry has no handler for slug but WASMBotDispatcher.Resolve
+// returns ok=true, dispatchUpdate calls Invoke with the marshalled update and
+// does NOT fall back to the cabinet-bot handler.
+func TestDispatch_WASMPlugin_InvokesDispatcherAndSkipsCabinetBot(t *testing.T) {
+	reg := NewBuiltinBotRegistry()
+
+	// Register a recording cabinet-bot handler so we can assert it is NOT called.
+	cabinetCalled := false
+	reg.Register(cabinetbot.Slug, bothost.NewPermSet(), func(_ context.Context, _ bothost.Update, _ bothost.Host) error {
+		cabinetCalled = true
+		return nil
+	})
+	// "wasmbot" is intentionally NOT registered in reg → Lookup will fail.
+
+	wasm := &fakeWASMDispatcher{
+		resolvePerms: bothost.NewPermSet(plugin.PermTelegramSend),
+		resolveEntry: plugin.DefaultBotEntry,
+		resolveOK:    true,
+	}
+
+	b := newShopBotWASM("wasmbot", reg, wasm)
+	u := syntheticMessageUpdate(9001, 4002, "Eve", "/start")
+
+	b.dispatchUpdate(context.Background(), nil, u)
+
+	require.True(t, wasm.invokeCalled, "WASM Invoke must be called")
+	assert.Equal(t, "wasmbot", wasm.invokeSlug)
+	assert.Equal(t, plugin.DefaultBotEntry, wasm.invokeEntry)
+	assert.False(t, cabinetCalled, "cabinet-bot fallback must NOT be called when WASM handles the update")
+
+	// Verify envelope round-trips back to the expected bothost.Update fields.
+	var got bothost.Update
+	require.NoError(t, json.Unmarshal(wasm.invokeEnv, &got))
+	assert.Equal(t, int64(9001), got.ChatID)
+	assert.Equal(t, int64(4002), got.From.ID)
+	assert.Equal(t, "Eve", got.From.FirstName)
+	assert.Equal(t, "/start", got.Text)
+}
+
+// TestDispatch_WASMPlugin_ResolveFalse_FallsBackToCabinetBot verifies that when
+// WASMBotDispatcher.Resolve returns ok=false, dispatch continues to the
+// cabinet-bot fallback handler.
+func TestDispatch_WASMPlugin_ResolveFalse_FallsBackToCabinetBot(t *testing.T) {
+	reg := NewBuiltinBotRegistry()
+
+	cabinetFake := &fakeHandler{}
+	reg.Register(cabinetbot.Slug, bothost.NewPermSet(), cabinetFake.handle)
+
+	wasm := &fakeWASMDispatcher{resolveOK: false}
+	b := newShopBotWASM("wasmbot", reg, wasm)
+
+	b.dispatchUpdate(context.Background(), nil, syntheticMessageUpdate(1, 2, "Frank", "/start"))
+
+	assert.False(t, wasm.invokeCalled, "WASM Invoke must NOT be called when Resolve is false")
+	assert.True(t, cabinetFake.called, "cabinet-bot fallback must run when WASM Resolve returns false")
 }

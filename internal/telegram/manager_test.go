@@ -30,7 +30,7 @@ func newManagerForTest(lister ShopBotLister, webhookURL string) *BotManager {
 	cfg := &config.Config{}
 	cfg.Telegram.WebhookURL = webhookURL
 	reg := NewBuiltinBotRegistry()
-	return NewBotManager(nil, nil, lister, cfg, reg, botHostRegistryForTest(), nil, testLogger())
+	return NewBotManager(nil, nil, lister, cfg, reg, botHostRegistryForTest(), nil, nil, testLogger())
 }
 
 func TestBotManager_Load_BuildsEnabledShops(t *testing.T) {
