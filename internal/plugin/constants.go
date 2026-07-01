@@ -43,12 +43,14 @@ const (
 	// Telegram bot host op scopes (runtime-enforced by the bothost Registry).
 	PermTelegramSend PermissionScope = "telegram:send"
 
-	// Declarative metadata scopes (not runtime-enforced today).
+	// Declarative metadata scopes (not runtime-enforced today), EXCEPT
+	// PermUsersWrite which is also runtime-enforced by the bothost Registry
+	// (it gates the user.register bot op).
 	PermBillingRead    PermissionScope = "billing:read"
 	PermBillingWrite   PermissionScope = "billing:write"
 	PermPaymentWrite   PermissionScope = "payment:write"
 	PermUsersRead      PermissionScope = "users:read"
-	PermUsersWrite     PermissionScope = "users:write"
+	PermUsersWrite     PermissionScope = "users:write" // runtime-enforced by bothost (user.register)
 	PermAnalyticsWrite PermissionScope = "analytics:write"
 	PermAPIRoutes      PermissionScope = "api:routes"
 )
@@ -93,7 +95,7 @@ const CurrentSDKVersion = "1.0.0"
 
 // Slug validation constraints.
 const (
-	MaxPluginSlugLen = 64
+	MaxPluginSlugLen  = 64
 	PluginSlugPattern = `^[a-z0-9][a-z0-9_-]*$`
 )
 

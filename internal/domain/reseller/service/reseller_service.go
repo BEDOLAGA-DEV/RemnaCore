@@ -117,18 +117,13 @@ type BotPluginValidator interface {
 	IsValidBotPlugin(ctx context.Context, slug string) (bool, error)
 }
 
-// AllowAllBotPlugins is a no-op BotPluginValidator that accepts every slug.
-//
-// STOPGAP: this is provided by the fx wiring until Task 8 wires the real
-// telegram-backed validator. Task 8 must replace the
-//
-//	fx.Provide(func() BotPluginValidator { return AllowAllBotPlugins{} })
-//
-// binding in internal/app/wiring_reseller.go with the real implementation.
+// AllowAllBotPlugins is a no-op BotPluginValidator that accepts every slug. It
+// is a test-only default so service unit tests can construct a ResellerService
+// without wiring a real validator. Production uses the telegram-backed
+// implementation (telegram.NewBotPluginValidator over the BuiltinBotRegistry).
 type AllowAllBotPlugins struct{}
 
-// IsValidBotPlugin always returns true; it is a placeholder for the real
-// validator wired in Task 8.
+// IsValidBotPlugin always returns true (test-only; see AllowAllBotPlugins).
 func (AllowAllBotPlugins) IsValidBotPlugin(_ context.Context, _ string) (bool, error) {
 	return true, nil
 }
