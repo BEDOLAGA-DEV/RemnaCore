@@ -29,7 +29,8 @@ func (s stubLister) ListEnabledShopBots(_ context.Context) ([]vo.ShopBotWithTena
 func newManagerForTest(lister ShopBotLister, webhookURL string) *BotManager {
 	cfg := &config.Config{}
 	cfg.Telegram.WebhookURL = webhookURL
-	return NewBotManager(nil, nil, lister, cfg, testLogger())
+	reg := NewBuiltinBotRegistry()
+	return NewBotManager(nil, nil, lister, cfg, reg, botHostRegistryForTest(), nil, testLogger())
 }
 
 func TestBotManager_Load_BuildsEnabledShops(t *testing.T) {

@@ -12,6 +12,8 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/vo"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/telegram/bothost"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
 // WebhookPathPrefix is the per-shop webhook path; the tenant id is appended.
@@ -32,6 +34,10 @@ type BotManager struct {
 	webhookOrigin string
 	logger        *slog.Logger
 
+	botRegistry *BuiltinBotRegistry
+	botOps      *bothost.Registry
+	txRunner    txmanager.Runner
+
 	mu      sync.RWMutex
 	shops   map[string]*Bot
 	cancels map[string]context.CancelFunc
@@ -39,7 +45,16 @@ type BotManager struct {
 
 // NewBotManager builds the manager. The per-shop webhook origin (scheme://host)
 // is derived from cfg.Telegram.WebhookURL; empty/unparseable → long-polling.
-func NewBotManager(platform *Bot, identitySvc *identity.Service, lister ShopBotLister, cfg *config.Config, logger *slog.Logger) *BotManager {
+func NewBotManager(
+	platform *Bot,
+	identitySvc *identity.Service,
+	lister ShopBotLister,
+	cfg *config.Config,
+	botRegistry *BuiltinBotRegistry,
+	botOps *bothost.Registry,
+	txRunner txmanager.Runner,
+	logger *slog.Logger,
+) *BotManager {
 	origin := ""
 	if raw := cfg.Telegram.WebhookURL; raw != "" {
 		if u, err := url.Parse(raw); err == nil && u.Scheme != "" && u.Host != "" {
@@ -51,6 +66,9 @@ func NewBotManager(platform *Bot, identitySvc *identity.Service, lister ShopBotL
 		identity:      identitySvc,
 		lister:        lister,
 		webhookOrigin: origin,
+		botRegistry:   botRegistry,
+		botOps:        botOps,
+		txRunner:      txRunner,
 		logger:        logger.With(slog.String("component", "telegram_bot_manager")),
 		shops:         make(map[string]*Bot),
 		cancels:       make(map[string]context.CancelFunc),
@@ -99,6 +117,10 @@ func (m *BotManager) Load(ctx context.Context) error {
 			entry.TenantID,
 			entry.Config.CabinetURL,
 			m.identity,
+			entry.Config.BotPluginSlug,
+			m.botRegistry,
+			m.botOps,
+			m.txRunner,
 			m.logger,
 		)
 		if err := bot.Init(ctx); err != nil {

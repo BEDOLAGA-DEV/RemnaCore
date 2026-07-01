@@ -204,28 +204,3 @@ func (b *Bot) handleReferral(ctx context.Context, _ *tgbot.Bot, update *models.U
 	b.sendText(ctx, chatID, "Referral program coming soon! Stay tuned.")
 }
 
-// handleShopStart handles /start on a per-shop bot: it registers the Telegram
-// user as a customer of this shop (idempotent; RegisterViaTelegram sets the
-// tenant GUC internally) and replies with a WebApp button to the shop cabinet.
-func (b *Bot) handleShopStart(ctx context.Context, _ *tgbot.Bot, update *models.Update) {
-	if update.Message == nil {
-		return
-	}
-	chatID := update.Message.Chat.ID
-	from := update.Message.From
-	if from == nil {
-		b.sendText(ctx, chatID, MsgCannotIdentify)
-		return
-	}
-	name := displayNameFor(from)
-	if _, err := b.identity.RegisterViaTelegram(ctx, from.ID, b.tenantID, name); err != nil {
-		b.logger.Error("telegram /start registration failed",
-			slog.Int64("telegram_id", from.ID),
-			slog.String("tenant", b.tenantID),
-			slog.Any("error", err),
-		)
-		b.sendText(ctx, chatID, MsgRegistrationFailed)
-		return
-	}
-	b.sendTextWithKeyboard(ctx, chatID, fmt.Sprintf(MsgWelcomeTemplate, name), CabinetKeyboard(b.cabinetURL))
-}

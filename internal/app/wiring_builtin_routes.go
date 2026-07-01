@@ -11,6 +11,7 @@ import (
 	// Built-in plugins self-register via init().
 	// Add a blank import for each new built-in plugin package here.
 	_ "github.com/BEDOLAGA-DEV/RemnaCore/internal/builtin/balance"
+	_ "github.com/BEDOLAGA-DEV/RemnaCore/internal/builtin/cabinetbot"
 	_ "github.com/BEDOLAGA-DEV/RemnaCore/internal/builtin/checkout"
 	_ "github.com/BEDOLAGA-DEV/RemnaCore/internal/builtin/remnawave"
 	_ "github.com/BEDOLAGA-DEV/RemnaCore/internal/builtin/tariff"

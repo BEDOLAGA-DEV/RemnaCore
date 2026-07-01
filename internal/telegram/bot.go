@@ -8,12 +8,15 @@ import (
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/builtin/cabinetbot"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing"
 	billingservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/telegram/bothost"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
 // Bot wraps the Telegram bot instance and all domain services needed to handle
@@ -39,6 +42,12 @@ type Bot struct {
 	plans    billing.PlanReader
 	subs     billing.SubscriptionReader
 	logger   *slog.Logger
+
+	// shop-bot dispatch fields (non-nil only when isShop is true)
+	botPluginSlug string
+	botRegistry   *BuiltinBotRegistry
+	botOps        *bothost.Registry
+	txRunner      txmanager.Runner
 }
 
 // NewBot creates the platform Bot. The underlying tgbot.Bot is initialized
@@ -70,10 +79,18 @@ func NewBot(
 	}
 }
 
-// NewShopBot builds a per-shop bot that registers only /start (register +
-// cabinet WebApp button). Platform-only services are nil — a shop bot never
-// reaches the other command handlers.
-func NewShopBot(token, webhookURL, webhookSecret, tenantID, cabinetURL string, identitySvc *identity.Service, logger *slog.Logger) *Bot {
+// NewShopBot builds a per-shop bot that dispatches all updates through the
+// BuiltinBotRegistry using the configured plugin slug (default: cabinet-bot).
+// Platform-only services are nil — a shop bot never reaches the other command handlers.
+func NewShopBot(
+	token, webhookURL, webhookSecret, tenantID, cabinetURL string,
+	identitySvc *identity.Service,
+	botPluginSlug string,
+	botRegistry *BuiltinBotRegistry,
+	botOps *bothost.Registry,
+	txRunner txmanager.Runner,
+	logger *slog.Logger,
+) *Bot {
 	return &Bot{
 		token:         token,
 		webhookURL:    webhookURL,
@@ -82,6 +99,10 @@ func NewShopBot(token, webhookURL, webhookSecret, tenantID, cabinetURL string, i
 		tenantID:      tenantID,
 		isShop:        true,
 		identity:      identitySvc,
+		botPluginSlug: botPluginSlug,
+		botRegistry:   botRegistry,
+		botOps:        botOps,
+		txRunner:      txRunner,
 		logger:        logger.With(slog.String("component", "telegram_shop_bot"), slog.String("tenant", tenantID)),
 	}
 }
@@ -102,6 +123,9 @@ func (b *Bot) Init(_ context.Context) error {
 	}
 	if b.webhookSecret != "" {
 		opts = append(opts, tgbot.WithWebhookSecretToken(b.webhookSecret))
+	}
+	if b.isShop {
+		opts = append(opts, tgbot.WithDefaultHandler(b.dispatchUpdate))
 	}
 	tb, err := tgbot.New(b.token, opts...)
 	if err != nil {
@@ -142,11 +166,11 @@ func (b *Bot) WebhookHandler() http.HandlerFunc {
 	return b.bot.WebhookHandler()
 }
 
-// registerHandlers wires handlers. Shop bots expose only /start (register +
-// cabinet button); the platform bot keeps the full command + callback set.
+// registerHandlers wires handlers. Shop bots dispatch all updates through the
+// catch-all default handler (dispatchUpdate, registered in Init); the platform
+// bot keeps the full command + callback set.
 func (b *Bot) registerHandlers() {
 	if b.isShop {
-		b.bot.RegisterHandler(tgbot.HandlerTypeMessageText, CmdStart, tgbot.MatchTypeCommand, b.handleShopStart)
 		return
 	}
 
@@ -205,6 +229,72 @@ func (b *Bot) answerCallback(ctx context.Context, callbackID, text string) {
 	})
 	if err != nil {
 		b.logger.Error("failed to answer callback query", slog.Any("error", err))
+	}
+}
+
+// dispatchUpdate is the default handler for shop bots. It maps the raw
+// go-telegram Update to a bothost.Update, resolves the plugin handler from
+// the BuiltinBotRegistry, and delegates execution to the plugin.
+func (b *Bot) dispatchUpdate(ctx context.Context, _ *tgbot.Bot, u *models.Update) {
+	upd, ok := toBotHostUpdate(u)
+	if !ok {
+		return
+	}
+	slug := b.botPluginSlug
+	if slug == "" {
+		slug = cabinetbot.Slug
+	}
+	handler, perms, found := b.botRegistry.Lookup(slug)
+	if !found {
+		b.logger.Warn("bot plugin not found; falling back to cabinet-bot",
+			slog.String("tenant", b.tenantID), slog.String("slug", slug))
+		handler, perms, found = b.botRegistry.Lookup(cabinetbot.Slug)
+		if !found {
+			b.logger.Error("cabinet-bot fallback not registered", slog.String("tenant", b.tenantID))
+			return
+		}
+	}
+	oc := &bothost.OpContext{
+		TenantID:   b.tenantID,
+		CabinetURL: b.cabinetURL,
+		Sender:     b,
+		Identity:   b.identity,
+		TxRunner:   b.txRunner,
+	}
+	host := b.botOps.Bind(oc, perms)
+	if err := handler(ctx, upd, host); err != nil {
+		b.logger.Error("bot plugin handler failed",
+			slog.String("tenant", b.tenantID), slog.String("slug", slug), slog.Any("error", err))
+	}
+}
+
+// toBotHostUpdate maps a go-telegram Update to the serializable bothost.Update.
+// Returns false for updates carrying neither a message nor a callback query.
+func toBotHostUpdate(u *models.Update) (bothost.Update, bool) {
+	switch {
+	case u.Message != nil && u.Message.From != nil:
+		m := u.Message
+		return bothost.Update{
+			ChatID:    m.Chat.ID,
+			From:      bothost.User{ID: m.From.ID, FirstName: m.From.FirstName, LastName: m.From.LastName, Username: m.From.Username},
+			Text:      m.Text,
+			MessageID: m.ID,
+		}, true
+	case u.CallbackQuery != nil:
+		cq := u.CallbackQuery
+		upd := bothost.Update{
+			From:         bothost.User{ID: cq.From.ID, FirstName: cq.From.FirstName, LastName: cq.From.LastName, Username: cq.From.Username},
+			IsCallback:   true,
+			CallbackID:   cq.ID,
+			CallbackData: cq.Data,
+		}
+		if cq.Message.Message != nil {
+			upd.ChatID = cq.Message.Message.Chat.ID
+			upd.MessageID = cq.Message.Message.ID
+		}
+		return upd, true
+	default:
+		return bothost.Update{}, false
 	}
 }
 

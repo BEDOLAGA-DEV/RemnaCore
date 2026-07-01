@@ -63,22 +63,6 @@ func ConfirmPurchaseKeyboard(planID string, addonIDs []string) *models.InlineKey
 	}
 }
 
-// CabinetKeyboard builds a one-button inline keyboard opening the shop's
-// personal cabinet. Telegram requires HTTPS for WebApp buttons, so an HTTPS
-// cabinet URL yields a WebApp button (carrying initData for SP4 auth); any
-// other scheme falls back to a plain URL button so the link still works.
-func CabinetKeyboard(cabinetURL string) *models.InlineKeyboardMarkup {
-	btn := models.InlineKeyboardButton{Text: CabinetButtonLabel}
-	if strings.HasPrefix(cabinetURL, CabinetURLHTTPSPrefix) {
-		btn.WebApp = &models.WebAppInfo{URL: cabinetURL}
-	} else {
-		btn.URL = cabinetURL
-	}
-	return &models.InlineKeyboardMarkup{
-		InlineKeyboard: [][]models.InlineKeyboardButton{{btn}},
-	}
-}
-
 // SubscriptionKeyboard builds an inline keyboard for a single subscription
 // showing its bindings and a cancel option.
 func SubscriptionKeyboard(sub *aggregate.Subscription, bindings []*msaggregate.RemnawaveBinding) *models.InlineKeyboardMarkup {
