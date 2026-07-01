@@ -11,6 +11,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller"
 	resellerservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/service"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/telegram/bothost"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
@@ -21,6 +22,9 @@ var Module = fx.Module("telegram",
 	fx.Provide(NewBuiltinBotRegistry),
 	fx.Provide(provideBotOps),
 	fx.Provide(NewBotPluginValidator),
+	// Adapt the full plugin repository down to the narrow PluginReader the WASM
+	// bot dispatcher depends on.
+	fx.Provide(func(r plugin.PluginRepository) PluginReader { return r }),
 	fx.Provide(NewWASMBotDispatcher),
 	fx.Invoke(registerCabinetBot),
 	fx.Provide(provideBotManager),

@@ -24,11 +24,19 @@ type WASMBotDispatcher interface {
 	Invoke(ctx context.Context, slug, entry string, envelope []byte) error
 }
 
+// PluginReader is the narrow slice of the plugin repository the WASM bot
+// dispatcher needs: resolving a plugin by slug. Depending on this instead of
+// the full plugin.PluginRepository keeps the dispatcher decoupled and its test
+// double to a single method.
+type PluginReader interface {
+	GetBySlug(ctx context.Context, slug string) (*plugin.Plugin, error)
+}
+
 // runtimePoolDispatcher is the production WASMBotDispatcher backed by the
 // plugin runtime pool and the plugin repository.
 type runtimePoolDispatcher struct {
 	pool    *plugin.RuntimePool
-	plugins plugin.PluginRepository
+	plugins PluginReader
 }
 
 // Resolve looks up slug in the plugin repository and returns its permission set
@@ -61,7 +69,8 @@ func (d *runtimePoolDispatcher) Invoke(ctx context.Context, slug, entry string, 
 }
 
 // NewWASMBotDispatcher wires the production runtimePoolDispatcher into the fx
-// dependency graph. pool and plugins are provided by the plugin module.
-func NewWASMBotDispatcher(pool *plugin.RuntimePool, plugins plugin.PluginRepository) WASMBotDispatcher {
+// dependency graph. pool and plugins are provided by the plugin module
+// (plugin.PluginRepository satisfies PluginReader).
+func NewWASMBotDispatcher(pool *plugin.RuntimePool, plugins PluginReader) WASMBotDispatcher {
 	return &runtimePoolDispatcher{pool: pool, plugins: plugins}
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,8 +12,8 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/telegram/bothost"
 )
 
-// stubPluginRepo is a minimal plugin.PluginRepository stub for Resolve unit tests.
-// Only GetBySlug is implemented; all other methods panic to catch unexpected calls.
+// stubPluginRepo is a PluginReader stub for Resolve unit tests — the dispatcher
+// depends only on GetBySlug, so that is all this needs to implement.
 type stubPluginRepo struct {
 	plugin *plugin.Plugin
 	err    error
@@ -22,50 +21,6 @@ type stubPluginRepo struct {
 
 func (s *stubPluginRepo) GetBySlug(_ context.Context, _ string) (*plugin.Plugin, error) {
 	return s.plugin, s.err
-}
-
-func (s *stubPluginRepo) Create(_ context.Context, _ *plugin.Plugin) error {
-	panic("not called in Resolve tests")
-}
-
-func (s *stubPluginRepo) GetByID(_ context.Context, _ string) (*plugin.Plugin, error) {
-	panic("not called in Resolve tests")
-}
-
-func (s *stubPluginRepo) GetAll(_ context.Context) ([]*plugin.Plugin, error) {
-	panic("not called in Resolve tests")
-}
-
-func (s *stubPluginRepo) GetEnabled(_ context.Context) ([]*plugin.Plugin, error) {
-	panic("not called in Resolve tests")
-}
-
-func (s *stubPluginRepo) GetByStatus(_ context.Context, _ plugin.PluginStatus) ([]*plugin.Plugin, error) {
-	panic("not called in Resolve tests")
-}
-
-func (s *stubPluginRepo) UpdateStatus(_ context.Context, _ string, _ plugin.PluginStatus, _ string, _ *time.Time) error {
-	panic("not called in Resolve tests")
-}
-
-func (s *stubPluginRepo) UpdateConfig(_ context.Context, _ string, _ map[string]string) error {
-	panic("not called in Resolve tests")
-}
-
-func (s *stubPluginRepo) UpdatePlugin(_ context.Context, _ *plugin.Plugin) error {
-	panic("not called in Resolve tests")
-}
-
-func (s *stubPluginRepo) Delete(_ context.Context, _ string) error {
-	panic("not called in Resolve tests")
-}
-
-func (s *stubPluginRepo) GetWASMByHash(_ context.Context, _ string) ([]byte, error) {
-	panic("not called in Resolve tests")
-}
-
-func (s *stubPluginRepo) StoreWASM(_ context.Context, _ string, _ []byte) error {
-	panic("not called in Resolve tests")
 }
 
 // botEnabledPlugin builds a minimal enabled bot plugin for testing Resolve.
