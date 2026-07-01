@@ -59,6 +59,7 @@ func (r *ShopBotRepository) Upsert(ctx context.Context, tenantID string, cfg vo.
 		CabinetUrl:    cfg.CabinetURL,
 		BotUsername:   pgutil.StrPtrOrNil(cfg.BotUsername),
 		Enabled:       cfg.Enabled,
+		BotPluginSlug: pgutil.StrPtrOrNil(cfg.BotPluginSlug),
 	})
 }
 
@@ -83,6 +84,7 @@ func (r *ShopBotRepository) GetByTenant(ctx context.Context, tenantID string) (*
 		CabinetURL:    row.CabinetUrl,
 		BotUsername:   pgutil.DerefStr(row.BotUsername),
 		Enabled:       row.Enabled,
+		BotPluginSlug: pgutil.DerefStr(row.BotPluginSlug),
 	}, nil
 }
 
@@ -121,6 +123,7 @@ func (r *ShopBotRepository) ListEnabled(ctx context.Context) ([]vo.ShopBotWithTe
 				CabinetURL:    row.CabinetUrl,
 				BotUsername:   pgutil.DerefStr(row.BotUsername),
 				Enabled:       row.Enabled,
+				BotPluginSlug: pgutil.DerefStr(row.BotPluginSlug),
 			},
 		})
 	}

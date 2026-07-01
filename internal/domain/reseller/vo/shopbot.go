@@ -10,6 +10,7 @@ type ShopBotConfig struct {
 	CabinetURL    string
 	BotUsername   string
 	Enabled       bool
+	BotPluginSlug string // empty = default cabinet-bot
 }
 
 // ShopBotWithTenant pairs a config with its owning tenant (for the bot manager).

@@ -557,6 +557,7 @@ type ResellerShopBot struct {
 	Enabled       bool               `json:"enabled"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	BotPluginSlug *string            `json:"bot_plugin_slug"`
 }
 
 type ResellerTenant struct {

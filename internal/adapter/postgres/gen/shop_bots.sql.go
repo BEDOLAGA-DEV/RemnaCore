@@ -12,13 +12,25 @@ import (
 )
 
 const getShopBotByTenant = `-- name: GetShopBotByTenant :one
-SELECT tenant_id, bot_token_enc, webhook_secret, cabinet_url, bot_username, enabled, created_at, updated_at
+SELECT tenant_id, bot_token_enc, webhook_secret, cabinet_url, bot_username, enabled, bot_plugin_slug, created_at, updated_at
 FROM reseller.shop_bots WHERE tenant_id = $1
 `
 
-func (q *Queries) GetShopBotByTenant(ctx context.Context, tenantID pgtype.UUID) (ResellerShopBot, error) {
+type GetShopBotByTenantRow struct {
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	BotTokenEnc   string             `json:"bot_token_enc"`
+	WebhookSecret string             `json:"webhook_secret"`
+	CabinetUrl    string             `json:"cabinet_url"`
+	BotUsername   *string            `json:"bot_username"`
+	Enabled       bool               `json:"enabled"`
+	BotPluginSlug *string            `json:"bot_plugin_slug"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetShopBotByTenant(ctx context.Context, tenantID pgtype.UUID) (GetShopBotByTenantRow, error) {
 	row := q.db.QueryRow(ctx, getShopBotByTenant, tenantID)
-	var i ResellerShopBot
+	var i GetShopBotByTenantRow
 	err := row.Scan(
 		&i.TenantID,
 		&i.BotTokenEnc,
@@ -26,6 +38,7 @@ func (q *Queries) GetShopBotByTenant(ctx context.Context, tenantID pgtype.UUID) 
 		&i.CabinetUrl,
 		&i.BotUsername,
 		&i.Enabled,
+		&i.BotPluginSlug,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -33,19 +46,31 @@ func (q *Queries) GetShopBotByTenant(ctx context.Context, tenantID pgtype.UUID) 
 }
 
 const listEnabledShopBots = `-- name: ListEnabledShopBots :many
-SELECT tenant_id, bot_token_enc, webhook_secret, cabinet_url, bot_username, enabled, created_at, updated_at
+SELECT tenant_id, bot_token_enc, webhook_secret, cabinet_url, bot_username, enabled, bot_plugin_slug, created_at, updated_at
 FROM reseller.shop_bots WHERE enabled = true
 `
 
-func (q *Queries) ListEnabledShopBots(ctx context.Context) ([]ResellerShopBot, error) {
+type ListEnabledShopBotsRow struct {
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	BotTokenEnc   string             `json:"bot_token_enc"`
+	WebhookSecret string             `json:"webhook_secret"`
+	CabinetUrl    string             `json:"cabinet_url"`
+	BotUsername   *string            `json:"bot_username"`
+	Enabled       bool               `json:"enabled"`
+	BotPluginSlug *string            `json:"bot_plugin_slug"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListEnabledShopBots(ctx context.Context) ([]ListEnabledShopBotsRow, error) {
 	rows, err := q.db.Query(ctx, listEnabledShopBots)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ResellerShopBot{}
+	items := []ListEnabledShopBotsRow{}
 	for rows.Next() {
-		var i ResellerShopBot
+		var i ListEnabledShopBotsRow
 		if err := rows.Scan(
 			&i.TenantID,
 			&i.BotTokenEnc,
@@ -53,6 +78,7 @@ func (q *Queries) ListEnabledShopBots(ctx context.Context) ([]ResellerShopBot, e
 			&i.CabinetUrl,
 			&i.BotUsername,
 			&i.Enabled,
+			&i.BotPluginSlug,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -67,14 +93,15 @@ func (q *Queries) ListEnabledShopBots(ctx context.Context) ([]ResellerShopBot, e
 }
 
 const upsertShopBot = `-- name: UpsertShopBot :exec
-INSERT INTO reseller.shop_bots (tenant_id, bot_token_enc, webhook_secret, cabinet_url, bot_username, enabled)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO reseller.shop_bots (tenant_id, bot_token_enc, webhook_secret, cabinet_url, bot_username, enabled, bot_plugin_slug)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT (tenant_id) DO UPDATE SET
     bot_token_enc = EXCLUDED.bot_token_enc,
     webhook_secret = EXCLUDED.webhook_secret,
     cabinet_url = EXCLUDED.cabinet_url,
     bot_username = EXCLUDED.bot_username,
-    enabled = EXCLUDED.enabled
+    enabled = EXCLUDED.enabled,
+    bot_plugin_slug = EXCLUDED.bot_plugin_slug
 `
 
 type UpsertShopBotParams struct {
@@ -84,6 +111,7 @@ type UpsertShopBotParams struct {
 	CabinetUrl    string      `json:"cabinet_url"`
 	BotUsername   *string     `json:"bot_username"`
 	Enabled       bool        `json:"enabled"`
+	BotPluginSlug *string     `json:"bot_plugin_slug"`
 }
 
 func (q *Queries) UpsertShopBot(ctx context.Context, arg UpsertShopBotParams) error {
@@ -94,6 +122,7 @@ func (q *Queries) UpsertShopBot(ctx context.Context, arg UpsertShopBotParams) er
 		arg.CabinetUrl,
 		arg.BotUsername,
 		arg.Enabled,
+		arg.BotPluginSlug,
 	)
 	return err
 }

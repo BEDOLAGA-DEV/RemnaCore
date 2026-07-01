@@ -49,6 +49,7 @@ var auditMigrations = []string{
 	"044_rls_with_check_sentinel_null.sql",
 	"045_shop_bots.sql",
 	"046_users_tenant_telegram_unique.sql",
+	"047_shop_bots_bot_plugin.sql",
 }
 
 // phaseCTenantTable identifies one table whose RLS the Phase-C audit covers,
