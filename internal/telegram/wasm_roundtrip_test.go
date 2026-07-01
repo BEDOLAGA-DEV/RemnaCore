@@ -83,3 +83,51 @@ func TestWASMBotRoundTrip(t *testing.T) {
 	require.NoError(t, json.Unmarshal(gotCabinet, &cabArgs))
 	require.EqualValues(t, 4242, cabArgs["chat_id"])
 }
+
+// TestWASMBotRoundTrip_PermissionDenied proves the permission gate holds across
+// the real WASM boundary: a plugin granted only telegram:send calls
+// user.register (which requires users:write); the registry denies it, the host
+// returns an error envelope, and the guest's handle_update fails — so CallHook
+// errors and cabinet.open is never reached. This is the end-to-end proof that
+// enforcement is the granted PermSet inside Registry.Call, not host_call import
+// visibility (host_call is registered for every plugin).
+func TestWASMBotRoundTrip_PermissionDenied(t *testing.T) {
+	wasmBytes, err := os.ReadFile(samplebotWASMPath)
+	require.NoError(t, err)
+
+	reg := bothost.NewRegistry()
+	var cabinetCalled bool
+	reg.Register(bothost.OpUserRegister, plugin.PermUsersWrite,
+		func(_ context.Context, _ *bothost.OpContext, _ json.RawMessage) (json.RawMessage, error) {
+			return json.RawMessage(`{"user_id":"u-1"}`), nil
+		})
+	reg.Register(bothost.OpCabinetOpen, plugin.PermTelegramSend,
+		func(_ context.Context, _ *bothost.OpContext, _ json.RawMessage) (json.RawMessage, error) {
+			cabinetCalled = true
+			return nil, nil
+		})
+	oc := &bothost.OpContext{TenantID: "tenant-1", CabinetURL: "https://cabinet.example"}
+	granted := bothost.NewPermSet(plugin.PermTelegramSend) // deliberately NOT users:write
+	host := reg.Bind(oc, granted)
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	hf := plugin.NewHostFunctions(logger, clock.NewReal())
+	pool := plugin.NewRuntimePool(logger, plugin.ExtismRunnerFactory(hf))
+
+	m := &plugin.Manifest{
+		Plugin:   plugin.ManifestPlugin{ID: "samplebot", Name: "Sample Bot", Version: "1.0.0", SDKVersion: plugin.CurrentSDKVersion},
+		Telegram: &plugin.ManifestTelegram{ProvidesBot: true, Entry: plugin.DefaultBotEntry},
+	}
+	p, err := plugin.NewPlugin(m, wasmBytes, time.Now())
+	require.NoError(t, err)
+	require.NoError(t, pool.LoadPlugin(p))
+
+	upd := bothost.Update{ChatID: 4242, From: bothost.User{ID: 77, FirstName: "Neo"}, Text: "/start"}
+	env, err := json.Marshal(upd)
+	require.NoError(t, err)
+	ctx := plugin.WithBotHost(context.Background(), host)
+	_, err = pool.CallHook(ctx, "samplebot", plugin.DefaultBotEntry, env)
+
+	require.Error(t, err, "user.register must be denied without the users:write grant")
+	require.False(t, cabinetCalled, "cabinet.open must not run after the denied user.register")
+}
