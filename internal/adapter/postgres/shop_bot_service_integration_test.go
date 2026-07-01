@@ -23,7 +23,7 @@ import (
 // noopEventPublisher discards all domain events; shop-bot methods don't publish.
 type noopEventPublisher struct{}
 
-func (noopEventPublisher) Publish(_ context.Context, _ domainevent.Event) error      { return nil }
+func (noopEventPublisher) Publish(_ context.Context, _ domainevent.Event) error        { return nil }
 func (noopEventPublisher) PublishBatch(_ context.Context, _ []domainevent.Event) error { return nil }
 
 // TestShopBotService_RunInTx_EndToEnd builds a real ResellerService (real
@@ -48,9 +48,9 @@ func TestShopBotService_RunInTx_EndToEnd(t *testing.T) {
 	require.NoError(t, err)
 
 	tm := postgres.NewTxManager(rlsPool)
-	repo := postgres.NewShopBotRepository(rlsPool, box)
-
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	repo := postgres.NewShopBotRepository(rlsPool, box, logger)
+
 	svc := service.NewResellerService(
 		nil, nil, nil,
 		noopEventPublisher{},

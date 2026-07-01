@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"testing"
 
 	"github.com/google/uuid"
@@ -99,7 +101,7 @@ func TestShopBotRepository_RLS(t *testing.T) {
 	require.NoError(t, err)
 
 	tm := postgres.NewTxManager(rlsPool)
-	repo := postgres.NewShopBotRepository(rlsPool, box)
+	repo := postgres.NewShopBotRepository(rlsPool, box, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	const plainToken = "123456:ABCDEF_test_token"
 	cfg := vo.ShopBotConfig{
@@ -173,12 +175,75 @@ func TestShopBotRepository_RLS(t *testing.T) {
 		"ListEnabled must return decrypted token")
 }
 
+// TestShopBotRepository_ListEnabled_SkipsUndecryptable verifies that ListEnabled
+// skips a shop whose stored token cannot be decrypted (key rotation mismatch or
+// corruption) and still returns the other decryptable shops, rather than
+// aborting the whole set on the first bad row (one corrupt blob must not take
+// down every shop bot).
+func TestShopBotRepository_ListEnabled_SkipsUndecryptable(t *testing.T) {
+	admin, connStr := setupTestDBWith(t, shopBotMigrations...)
+	ctx := context.Background()
+
+	rlsPool := connectAsRLSApp(t, admin, connStr)
+	grantShopBotSchemasToRLSApp(t, ctx, admin)
+
+	shopGood := uuid.Must(uuid.NewV7()).String()
+	shopBad := uuid.Must(uuid.NewV7()).String()
+	seedShopBotTenant(t, ctx, rlsPool, shopGood)
+	seedShopBotTenant(t, ctx, rlsPool, shopBad)
+
+	testKey := make([]byte, secretbox.KeySize)
+	box, err := secretbox.New(testKey)
+	require.NoError(t, err)
+
+	tm := postgres.NewTxManager(rlsPool)
+	repo := postgres.NewShopBotRepository(rlsPool, box, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	const goodToken = "123456:GOOD_token"
+	goodCfg := vo.ShopBotConfig{
+		Token:         config.NewSecretString(goodToken),
+		WebhookSecret: "whsec_good",
+		CabinetURL:    "https://good.example.com",
+		Enabled:       true,
+	}
+	badCfg := vo.ShopBotConfig{
+		Token:         config.NewSecretString("999:BAD_token"),
+		WebhookSecret: "whsec_bad",
+		CabinetURL:    "https://bad.example.com",
+		Enabled:       true,
+	}
+
+	require.NoError(t, tm.RunInTx(tenantctx.WithTenantID(ctx, shopGood), func(txCtx context.Context) error {
+		return repo.Upsert(txCtx, shopGood, goodCfg)
+	}))
+	require.NoError(t, tm.RunInTx(tenantctx.WithTenantID(ctx, shopBad), func(txCtx context.Context) error {
+		return repo.Upsert(txCtx, shopBad, badCfg)
+	}))
+
+	// Corrupt shop-bad's ciphertext directly so box.Open fails only for it.
+	_, err = admin.Exec(ctx,
+		`UPDATE reseller.shop_bots SET bot_token_enc = $1 WHERE tenant_id = $2`,
+		[]byte("this-is-not-a-valid-gcm-ciphertext"), shopBad)
+	require.NoError(t, err)
+
+	sentinelCtx := tenantctx.WithPlatformScope(ctx)
+	var listed []vo.ShopBotWithTenant
+	require.NoError(t, tm.RunInTx(sentinelCtx, func(txCtx context.Context) error {
+		var listErr error
+		listed, listErr = repo.ListEnabled(txCtx)
+		return listErr
+	}), "ListEnabled must not error on one undecryptable row")
+	require.Len(t, listed, 1, "the undecryptable shop must be skipped and the decryptable one kept")
+	assert.Equal(t, shopGood, listed[0].TenantID)
+	assert.Equal(t, goodToken, listed[0].Config.Token.Expose())
+}
+
 // TestShopBotRepository_NilBox verifies that a nil box returns
 // ErrEncryptionNotConfigured on every method without panicking.
 func TestShopBotRepository_NilBox(t *testing.T) {
 	// Use a minimal DB — we only need the pool for construction; no queries run.
 	pool, _ := setupTestDBWith(t, "001_identity.sql")
-	repo := postgres.NewShopBotRepository(pool, nil)
+	repo := postgres.NewShopBotRepository(pool, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	ctx := context.Background()
 
 	cfg := vo.ShopBotConfig{Token: config.NewSecretString("tok")}

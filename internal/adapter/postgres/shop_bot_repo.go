@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -23,15 +24,16 @@ import (
 // participate in any active transaction and respect the app.tenant_id GUC that
 // enforces row-level security.
 type ShopBotRepository struct {
-	pool *pgxpool.Pool
-	box  *secretbox.Box
+	pool   *pgxpool.Pool
+	box    *secretbox.Box
+	logger *slog.Logger
 }
 
 // NewShopBotRepository returns a ShopBotRepository. box may be nil; each method
 // that needs to seal or open will return ErrEncryptionNotConfigured rather than
 // panicking.
-func NewShopBotRepository(pool *pgxpool.Pool, box *secretbox.Box) *ShopBotRepository {
-	return &ShopBotRepository{pool: pool, box: box}
+func NewShopBotRepository(pool *pgxpool.Pool, box *secretbox.Box, logger *slog.Logger) *ShopBotRepository {
+	return &ShopBotRepository{pool: pool, box: box, logger: logger}
 }
 
 // q returns the sqlc Queries bound to the transaction from ctx (if any),
@@ -98,13 +100,21 @@ func (r *ShopBotRepository) ListEnabled(ctx context.Context) ([]vo.ShopBotWithTe
 	}
 	out := make([]vo.ShopBotWithTenant, 0, len(rows))
 	for _, row := range rows {
+		tenantID := pgutil.PgtypeToUUID(row.TenantID)
 		plain, openErr := r.box.Open(row.BotTokenEnc)
 		if openErr != nil {
-			return nil, fmt.Errorf("decrypt bot token for tenant %s: %w",
-				pgutil.PgtypeToUUID(row.TenantID), openErr)
+			// One shop's token can fail to decrypt (key rotation mismatch,
+			// corruption) without taking down every other shop bot: skip and
+			// log this row, and continue building the set. The token value is
+			// never logged.
+			r.logger.Warn("skipping shop bot with undecryptable token",
+				slog.String("tenant", tenantID),
+				slog.Any("error", openErr),
+			)
+			continue
 		}
 		out = append(out, vo.ShopBotWithTenant{
-			TenantID: pgutil.PgtypeToUUID(row.TenantID),
+			TenantID: tenantID,
 			Config: vo.ShopBotConfig{
 				Token:         config.NewSecretString(plain),
 				WebhookSecret: row.WebhookSecret,
