@@ -75,13 +75,18 @@ func callHost(op string, args any) error {
 	return nil
 }
 
-// buildDisplayName returns "FirstName LastName" when LastName is non-empty,
-// falling back to Username.
+// buildDisplayName derives the user's display name: FirstName, plus LastName
+// when present, falling back to Username only when the name is otherwise empty.
+// Mirrors bothost.DisplayName so the WASM and built-in bots behave identically.
 func buildDisplayName(s Sender) string {
+	name := s.FirstName
 	if s.LastName != "" {
-		return s.FirstName + " " + s.LastName
+		name += " " + s.LastName
 	}
-	return s.Username
+	if name == "" {
+		name = s.Username
+	}
+	return name
 }
 
 // handle_update is the exported entry point called by the bot host dispatcher.
