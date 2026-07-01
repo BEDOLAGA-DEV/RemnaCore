@@ -1,4 +1,4 @@
-import { apiGet, LoadingSpinner } from "@remnacore/shared";
+import { apiGet, ENDPOINTS, LoadingSpinner } from "@remnacore/shared";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, FileText } from "lucide-react";
 
@@ -14,7 +14,7 @@ export default function RemnawaveSubPageConfigs() {
 		isError,
 	} = useQuery({
 		queryKey: ["remnawave", "subscription-page-configs"],
-		queryFn: () => apiGet<ConfigEntry[]>("/api/remnawave/subscription-page-configs"),
+		queryFn: () => apiGet<ConfigEntry[]>(ENDPOINTS.remnawave.subPageConfigs),
 	});
 
 	if (isLoading) return <LoadingSpinner />;

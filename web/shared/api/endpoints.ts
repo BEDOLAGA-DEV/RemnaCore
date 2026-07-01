@@ -137,7 +137,17 @@ export const ENDPOINTS = {
     overview: "/api/remnawave/dashboard/overview",
     realtime: "/api/remnawave/dashboard/realtime",
     nodes: "/api/remnawave/nodes",
+    nodeAction: (panelID: string, nodeUUID: string, action: string) =>
+      `/api/remnawave/nodes/${panelID}/${nodeUUID}/${action}`,
     trafficByNode: "/api/remnawave/analytics/traffic-by-node",
+    panels: "/api/remnawave/panels",
+    hosts: "/api/remnawave/hosts",
+    users: "/api/remnawave/users",
+    squadsExternal: "/api/remnawave/squads/external",
+    squadsInternal: "/api/remnawave/squads/internal",
+    subPageConfigs: "/api/remnawave/subscription-page-configs",
+    configProfileInbounds: (panelID: string) =>
+      `/api/remnawave/config-profiles/${panelID}/inbounds`,
   },
 
   // ─── Plugin RPC & Collections ──────────────────────────────────────────

@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPost, apiPut, LoadingSpinner } from "@remnacore/shared";
+import { apiDelete, apiGet, apiPost, apiPut, ENDPOINTS, LoadingSpinner } from "@remnacore/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Boxes, Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
@@ -34,12 +34,12 @@ export default function RemnawaveSquadsExternal() {
 
 	const { data: squads, isLoading, isError } = useQuery({
 		queryKey: QUERY_KEY,
-		queryFn: () => apiGet<SquadEntry[]>("/api/remnawave/squads/external"),
+		queryFn: () => apiGet<SquadEntry[]>(ENDPOINTS.remnawave.squadsExternal),
 	});
 
 	const { data: panelsRaw } = useQuery({
 		queryKey: ["remnawave", "panels"],
-		queryFn: () => apiGet<PanelEntry[]>("/api/remnawave/panels"),
+		queryFn: () => apiGet<PanelEntry[]>(ENDPOINTS.remnawave.panels),
 	});
 	const panels = Array.isArray(panelsRaw) ? panelsRaw : [];
 

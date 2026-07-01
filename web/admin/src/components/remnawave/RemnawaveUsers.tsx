@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiGet, apiPost, cn, LoadingSpinner } from "@remnacore/shared";
+import { apiGet, apiPost, cn, ENDPOINTS, LoadingSpinner } from "@remnacore/shared";
 import {
   Loader2,
   Power,
@@ -96,7 +96,7 @@ function useRemnawaveUsers(search: string) {
   return useQuery({
     queryKey: [...QUERY_KEY, search],
     queryFn: () =>
-      apiGet<RemnawaveUserEntry[]>("/api/remnawave/users", searchParams),
+      apiGet<RemnawaveUserEntry[]>(ENDPOINTS.remnawave.users, searchParams),
   });
 }
 

@@ -71,11 +71,13 @@ const TIER_BADGE: Record<string, string> = {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
 function daysRemaining(periodEnd: string): number {
   const end = new Date(periodEnd).getTime();
   const now = Date.now();
   const diff = end - now;
-  return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+  return Math.max(0, Math.ceil(diff / MS_PER_DAY));
 }
 
 function trafficPercent(used: number, limit: number): number {

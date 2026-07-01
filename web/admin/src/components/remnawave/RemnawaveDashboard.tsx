@@ -1,4 +1,4 @@
-import { apiGet, cn, LoadingSpinner } from "@remnacore/shared";
+import { apiGet, cn, ENDPOINTS, formatBytes, LoadingSpinner } from "@remnacore/shared";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -12,14 +12,6 @@ import {
 import { StatusDot } from "../StatusDot.js";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  const val = bytes / Math.pow(1024, i);
-  return `${val.toFixed(i > 0 ? 1 : 0)} ${units[i] ?? "TB"}`;
-}
 
 const OVERVIEW_STALE_MS = 30_000;
 const REALTIME_STALE_MS = 10_000;
@@ -63,7 +55,7 @@ const QUERY_KEY_REALTIME = ["remnawave", "dashboard", "realtime"] as const;
 function useRemnawaveOverview() {
   return useQuery<OverviewResponse>({
     queryKey: [...QUERY_KEY_OVERVIEW],
-    queryFn: () => apiGet<OverviewResponse>("/api/remnawave/dashboard/overview"),
+    queryFn: () => apiGet<OverviewResponse>(ENDPOINTS.remnawave.overview),
     staleTime: OVERVIEW_STALE_MS,
   });
 }
@@ -71,7 +63,7 @@ function useRemnawaveOverview() {
 function useRemnawaveRealtime() {
   return useQuery<RealtimeResponse>({
     queryKey: [...QUERY_KEY_REALTIME],
-    queryFn: () => apiGet<RealtimeResponse>("/api/remnawave/dashboard/realtime"),
+    queryFn: () => apiGet<RealtimeResponse>(ENDPOINTS.remnawave.realtime),
     staleTime: REALTIME_STALE_MS,
     refetchInterval: REALTIME_REFETCH_MS,
   });

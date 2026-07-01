@@ -1,4 +1,4 @@
-import { apiGet, apiPost, cn } from "@remnacore/shared";
+import { apiGet, apiPost, cn, ENDPOINTS } from "@remnacore/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Power, PowerOff, RotateCcw, Server } from "lucide-react";
 import { useState } from "react";
@@ -31,7 +31,7 @@ function formatTrafficGB(bytes: number): string {
 }
 
 function buildActionUrl(panelID: string, nodeUUID: string, action: NodeAction): string {
-	return `/api/remnawave/nodes/${panelID}/${nodeUUID}/${action}`;
+	return ENDPOINTS.remnawave.nodeAction(panelID, nodeUUID, action);
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
@@ -45,7 +45,7 @@ function RemnawaveNodes() {
 		isError,
 	} = useQuery({
 		queryKey: NODES_QUERY_KEY,
-		queryFn: () => apiGet<RemnawaveNode[]>("/api/remnawave/nodes"),
+		queryFn: () => apiGet<RemnawaveNode[]>(ENDPOINTS.remnawave.nodes),
 	});
 
 	const [pendingAction, setPendingAction] = useState<string | null>(null);

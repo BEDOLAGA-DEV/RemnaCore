@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPatch, apiPost, cn, LoadingSpinner } from "@remnacore/shared";
+import { apiDelete, apiGet, apiPatch, apiPost, cn, ENDPOINTS, LoadingSpinner } from "@remnacore/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Pencil, Plus, Server, Trash2 } from "lucide-react";
 import { useState } from "react";
@@ -43,12 +43,12 @@ export default function RemnawaveHosts() {
 
 	const { data: hosts, isLoading, isError } = useQuery({
 		queryKey: QUERY_KEY,
-		queryFn: () => apiGet<HostEntry[]>("/api/remnawave/hosts"),
+		queryFn: () => apiGet<HostEntry[]>(ENDPOINTS.remnawave.hosts),
 	});
 
 	const { data: panelsRaw } = useQuery({
 		queryKey: ["remnawave", "panels"],
-		queryFn: () => apiGet<PanelEntry[]>("/api/remnawave/panels"),
+		queryFn: () => apiGet<PanelEntry[]>(ENDPOINTS.remnawave.panels),
 	});
 	const panels = Array.isArray(panelsRaw) ? panelsRaw : [];
 
@@ -74,7 +74,7 @@ export default function RemnawaveHosts() {
 	const { data: inboundsRaw } = useQuery({
 		queryKey: ["remnawave", "inbounds", panelID],
 		queryFn: () => apiGet<{ panel_id: string; inbounds: InboundEntry[] }>(
-			`/api/remnawave/config-profiles/${panelID}/inbounds`,
+			ENDPOINTS.remnawave.configProfileInbounds(panelID),
 		),
 		enabled: !!panelID && formMode === "create",
 	});
