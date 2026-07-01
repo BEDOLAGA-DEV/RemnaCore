@@ -37,11 +37,14 @@ var Module = fx.Module("telegram",
 	fx.Provide(provideBotManager),
 )
 
-// provideBotOps constructs a bothost.Registry pre-populated with the standard
-// host operations (telegram.send_*, cabinet.open, user.register).
+// provideBotOps constructs a bothost.Registry pre-populated with all host
+// operations: the standard set (telegram.send_*, cabinet.open, user.register)
+// and the seven domain ops (plans.*, subscriptions.*, invoices.*, balance.*,
+// checkout.*).
 func provideBotOps() *bothost.Registry {
 	r := bothost.NewRegistry()
 	bothost.RegisterStdOps(r)
+	bothost.RegisterDomainOps(r)
 	return r
 }
 
