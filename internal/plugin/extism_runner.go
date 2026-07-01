@@ -129,6 +129,7 @@ type logRequest struct {
 const (
 	hostFunctionNameLog        = "log"
 	hostFunctionNameVPNRequest = "vpn_request"
+	hostFunctionNameHostCall   = "host_call"
 )
 
 // maxLogPayloadBytes is the maximum size of a log payload from a WASM guest.
@@ -140,6 +141,11 @@ const maxLogPayloadBytes = 64 << 10 // 64 KB
 // a WASM guest. Requests larger than this are rejected with an error written
 // back to the guest.
 const maxVPNRequestPayloadBytes = 1 << 20 // 1 MB
+
+// maxHostCallPayloadBytes is the maximum size of a host_call payload from a
+// WASM guest. Requests larger than this are rejected with an error written
+// back to the guest.
+const maxHostCallPayloadBytes = 1 << 20 // 1 MB
 
 // buildExtismHostFunctions creates the Extism host function definitions bound
 // to a specific plugin slug. If hf is nil, no host functions are registered
@@ -203,7 +209,43 @@ func buildExtismHostFunctions(hf *HostFunctions, slug string) []extism.HostFunct
 		[]extism.ValueType{extism.ValueTypePTR},
 	)
 
-	return []extism.HostFunction{logFn, vpnRequestFn}
+	hostCallFn := extism.NewHostFunctionWithStack(
+		hostFunctionNameHostCall,
+		func(ctx context.Context, p *extism.CurrentPlugin, stack []uint64) {
+			offset := stack[0]
+			input, err := p.ReadBytes(offset)
+			if err != nil {
+				writeErrorToGuest(p, stack, fmt.Errorf("read host_call input: %w", err))
+				return
+			}
+			if len(input) > maxHostCallPayloadBytes {
+				writeErrorToGuest(p, stack, fmt.Errorf("host_call payload exceeds %d bytes", maxHostCallPayloadBytes))
+				return
+			}
+
+			out, err := handleHostCall(ctx, input)
+			if err != nil {
+				writeErrorToGuest(p, stack, err)
+				return
+			}
+
+			if len(out) == 0 {
+				stack[0] = 0
+				return
+			}
+
+			outOffset, err := p.WriteBytes(out)
+			if err != nil {
+				writeErrorToGuest(p, stack, fmt.Errorf("write host_call response: %w", err))
+				return
+			}
+			stack[0] = outOffset
+		},
+		[]extism.ValueType{extism.ValueTypePTR},
+		[]extism.ValueType{extism.ValueTypePTR},
+	)
+
+	return []extism.HostFunction{logFn, vpnRequestFn, hostCallFn}
 }
 
 // hostErrorResponse is the JSON envelope returned to a WASM guest when a host
