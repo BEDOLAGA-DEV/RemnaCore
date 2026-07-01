@@ -34,7 +34,7 @@ func TestBot_Init_WithToken_BuildsBot(t *testing.T) {
 // need Init/WebhookHandler behaviour and do not dispatch updates.
 func newShopBotForTest(token, webhookURL, webhookSecret, tenantID, cabinetURL string) *Bot {
 	reg := NewBuiltinBotRegistry()
-	return NewShopBot(token, webhookURL, webhookSecret, tenantID, cabinetURL, nil, "", reg, botHostRegistryForTest(), nil, nil, testLogger())
+	return NewShopBot(token, webhookURL, webhookSecret, tenantID, cabinetURL, nil, "", reg, botHostRegistryForTest(), nil, nil, DomainReaders{}, testLogger())
 }
 
 func testLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }

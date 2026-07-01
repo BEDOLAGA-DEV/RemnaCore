@@ -21,6 +21,18 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager"
 )
 
+// DomainReaders bundles the tenant-scoped domain read/act ports handed to
+// shop-bot op dispatch (bothost.OpContext). Nil fields disable their ops.
+// It is passed as one parameter so the Bot/BotManager constructors do not gain
+// five individual parameters each time a new reader is added.
+type DomainReaders struct {
+	Tariffs  bothost.TariffReader
+	Subs     bothost.SubscriptionReader
+	Invoices bothost.InvoiceReader
+	Balance  bothost.BalanceReader
+	Checkout bothost.CheckoutStarter
+}
+
 // Bot wraps the Telegram bot instance and all domain services needed to handle
 // commands and callback queries.
 //
@@ -51,6 +63,7 @@ type Bot struct {
 	botOps        *bothost.Registry
 	wasmBots      WASMBotDispatcher
 	txRunner      txmanager.Runner
+	readers       DomainReaders
 }
 
 // NewBot creates the platform Bot. The underlying tgbot.Bot is initialized
@@ -94,6 +107,7 @@ func NewShopBot(
 	botOps *bothost.Registry,
 	txRunner txmanager.Runner,
 	wasmBots WASMBotDispatcher,
+	readers DomainReaders,
 	logger *slog.Logger,
 ) *Bot {
 	return &Bot{
@@ -109,6 +123,7 @@ func NewShopBot(
 		botOps:        botOps,
 		wasmBots:      wasmBots,
 		txRunner:      txRunner,
+		readers:       readers,
 		logger:        logger.With(slog.String("component", "telegram_shop_bot"), slog.String("tenant", tenantID)),
 	}
 }
@@ -248,6 +263,11 @@ func (b *Bot) newOpContext() *bothost.OpContext {
 		Sender:     b,
 		Identity:   b.identity,
 		TxRunner:   b.txRunner,
+		Tariffs:    b.readers.Tariffs,
+		Subs:       b.readers.Subs,
+		Invoices:   b.readers.Invoices,
+		Balance:    b.readers.Balance,
+		Checkout:   b.readers.Checkout,
 	}
 }
 

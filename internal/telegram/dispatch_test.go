@@ -217,3 +217,42 @@ func TestDispatch_WASMPlugin_ResolveFalse_FallsBackToCabinetBot(t *testing.T) {
 	assert.False(t, wasm.invokeCalled, "WASM Invoke must NOT be called when Resolve is false")
 	assert.True(t, cabinetFake.called, "cabinet-bot fallback must run when WASM Resolve returns false")
 }
+
+// ── Domain-readers threading ──────────────────────────────────────────────────
+
+// stubTariffReader is a minimal bothost.TariffReader stub for threading tests.
+type stubTariffReader struct{}
+
+func (stubTariffReader) ListVisible(_ context.Context, _ string) ([]bothost.TariffOffer, error) {
+	return nil, nil
+}
+func (stubTariffReader) Get(_ context.Context, _ string) (*bothost.TariffOffer, error) {
+	return nil, nil
+}
+
+// TestNewOpContext_DomainReadersThreaded verifies that a shop bot constructed
+// with a non-nil DomainReaders.Tariffs surfaces that reader in OpContext.Tariffs,
+// while unset reader fields remain nil.
+func TestNewOpContext_DomainReadersThreaded(t *testing.T) {
+	stub := stubTariffReader{}
+	b := &Bot{
+		isShop:    true,
+		tenantID:  "tenant-readers-test",
+		cabinetURL: "https://example.com/cabinet",
+		identity:  nil,
+		txRunner:  nil,
+		botOps:    botHostRegistryForTest(),
+		logger:    testLogger(),
+		readers: DomainReaders{
+			Tariffs: stub,
+		},
+	}
+
+	oc := b.newOpContext()
+
+	assert.Equal(t, stub, oc.Tariffs, "Tariffs must be threaded from DomainReaders into OpContext")
+	assert.Nil(t, oc.Subs, "Subs must be nil when not set in DomainReaders")
+	assert.Nil(t, oc.Invoices, "Invoices must be nil when not set in DomainReaders")
+	assert.Nil(t, oc.Balance, "Balance must be nil when not set in DomainReaders")
+	assert.Nil(t, oc.Checkout, "Checkout must be nil when not set in DomainReaders")
+}

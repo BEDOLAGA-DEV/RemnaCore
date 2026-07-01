@@ -28,6 +28,12 @@ var Module = fx.Module("telegram",
 	fx.Provide(func(r plugin.PluginRepository) PluginReader { return r }),
 	fx.Provide(NewWASMBotDispatcher),
 	fx.Invoke(registerCabinetBot),
+	// Domain-reader adapters: billing-layer readers (from billing fx bindings).
+	fx.Provide(NewSubscriptionReaderAdapter),
+	fx.Provide(NewInvoiceReaderAdapter),
+	fx.Provide(NewCheckoutStarterAdapter),
+	// Bundle the five reader ports into one value for the bot stack.
+	fx.Provide(newDomainReaders),
 	fx.Provide(provideBotManager),
 )
 
@@ -95,6 +101,26 @@ func registerCabinetBot(reg *BuiltinBotRegistry) {
 	reg.Register(cabinetbot.Slug, cabinetbot.RequiredPerms(), cabinetbot.Handler)
 }
 
+// newDomainReaders bundles the five domain reader/starter ports into a single
+// DomainReaders value for injection into the bot stack. Each port is sourced
+// from its own fx-provided adapter so they can be replaced or extended
+// independently.
+func newDomainReaders(
+	tariffs bothost.TariffReader,
+	subs bothost.SubscriptionReader,
+	invoices bothost.InvoiceReader,
+	bal bothost.BalanceReader,
+	checkout bothost.CheckoutStarter,
+) DomainReaders {
+	return DomainReaders{
+		Tariffs:  tariffs,
+		Subs:     subs,
+		Invoices: invoices,
+		Balance:  bal,
+		Checkout: checkout,
+	}
+}
+
 // provideBotManager adapts the concrete reseller service to ShopBotLister.
 func provideBotManager(
 	platform *Bot,
@@ -105,7 +131,9 @@ func provideBotManager(
 	botOps *bothost.Registry,
 	txRunner txmanager.Runner,
 	wasmBots WASMBotDispatcher,
+	readers DomainReaders,
 	logger *slog.Logger,
 ) *BotManager {
-	return NewBotManager(platform, identitySvc, resellerSvc, cfg, botRegistry, botOps, txRunner, wasmBots, logger)
+	return NewBotManager(platform, identitySvc, resellerSvc, cfg, botRegistry, botOps, txRunner, wasmBots, readers, logger)
 }
+

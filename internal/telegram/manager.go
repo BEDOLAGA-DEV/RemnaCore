@@ -38,6 +38,7 @@ type BotManager struct {
 	botOps      *bothost.Registry
 	wasmBots    WASMBotDispatcher
 	txRunner    txmanager.Runner
+	readers     DomainReaders
 
 	mu      sync.RWMutex
 	shops   map[string]*Bot
@@ -55,6 +56,7 @@ func NewBotManager(
 	botOps *bothost.Registry,
 	txRunner txmanager.Runner,
 	wasmBots WASMBotDispatcher,
+	readers DomainReaders,
 	logger *slog.Logger,
 ) *BotManager {
 	origin := ""
@@ -72,6 +74,7 @@ func NewBotManager(
 		botOps:        botOps,
 		wasmBots:      wasmBots,
 		txRunner:      txRunner,
+		readers:       readers,
 		logger:        logger.With(slog.String("component", "telegram_bot_manager")),
 		shops:         make(map[string]*Bot),
 		cancels:       make(map[string]context.CancelFunc),
@@ -125,6 +128,7 @@ func (m *BotManager) Load(ctx context.Context) error {
 			m.botOps,
 			m.txRunner,
 			m.wasmBots,
+			m.readers,
 			m.logger,
 		)
 		if err := bot.Init(ctx); err != nil {

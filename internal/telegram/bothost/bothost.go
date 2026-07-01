@@ -77,14 +77,24 @@ type MessageSender interface {
 	EditMessage(ctx context.Context, chatID int64, messageID int, text string, kb *Keyboard) error
 }
 
-// OpContext carries the per-dispatch dependencies an op handler needs. Later
-// sub-projects (BP3) extend it with billing/subscription/balance readers.
+// OpContext carries the per-dispatch dependencies an op handler needs.
+//
+// The five domain-reader fields (Tariffs, Subs, Invoices, Balance, Checkout)
+// are nil for the platform bot — only shop bots dispatch through the op-registry.
+// Op handlers that use these fields MUST nil-check them before calling; a nil
+// reader means the underlying capability is not wired for this bot instance.
 type OpContext struct {
 	TenantID   string
 	CabinetURL string
 	Sender     MessageSender
 	Identity   *identity.Service
 	TxRunner   txmanager.Runner
+
+	Tariffs  TariffReader
+	Subs     SubscriptionReader
+	Invoices InvoiceReader
+	Balance  BalanceReader
+	Checkout CheckoutStarter
 }
 
 // OpHandler executes one op against the OpContext and returns its JSON result
