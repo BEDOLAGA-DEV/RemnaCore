@@ -40,6 +40,9 @@ const (
 	PermVPNRead           PermissionScope = "vpn:read"
 	PermVPNWrite          PermissionScope = "vpn:write"
 
+	// Telegram bot host op scopes (runtime-enforced by the bothost Registry).
+	PermTelegramSend PermissionScope = "telegram:send"
+
 	// Declarative metadata scopes (not runtime-enforced today).
 	PermBillingRead    PermissionScope = "billing:read"
 	PermBillingWrite   PermissionScope = "billing:write"
