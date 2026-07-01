@@ -7,6 +7,11 @@ import (
 	multisubdomain "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 )
 
+// emptySagaStateJSON is the initial serialized saga checkpoint state (empty JSON
+// object). Each saga constructor wraps it in a fresh []byte to avoid sharing a
+// mutable slice.
+const emptySagaStateJSON = "{}"
+
 // completeSaga marks a saga instance as completed. Best-effort: failures are
 // logged but do not affect the calling operation.
 func completeSaga(ctx context.Context, repo multisubdomain.SagaRepository, saga *multisubdomain.SagaInstance, logger *slog.Logger) {

@@ -143,7 +143,7 @@ func (s *ProvisioningSaga) Provision(ctx context.Context, req ProvisionRequest) 
 		Status:        multisubdomain.SagaStatusRunning,
 		CurrentStep:   0,
 		TotalSteps:    len(specs),
-		StateData:     []byte("{}"),
+		StateData:     []byte(emptySagaStateJSON),
 	})
 	if err != nil {
 		s.logger.Warn("failed to create saga instance, proceeding without persistence",

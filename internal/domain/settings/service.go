@@ -15,6 +15,10 @@ const weightMin = 0.0
 // weightMax is the maximum allowed value for a smart router weight.
 const weightMax = 1.0
 
+// emptyJSONObject is the serialized form of "no overrides": an empty blob or
+// this literal both mean the overrides document is absent/empty.
+const emptyJSONObject = "{}"
+
 // Service manages runtime configuration overrides. It reads the current
 // overrides from the database, merges incoming partial updates, persists
 // the merged result, and applies it via the ConfigApplier port.
@@ -48,7 +52,7 @@ func (s *Service) LoadOverrides(ctx context.Context) error {
 	}
 
 	// An empty blob or empty JSON object means no overrides.
-	if len(raw) == 0 || string(raw) == "{}" {
+	if len(raw) == 0 || string(raw) == emptyJSONObject {
 		s.logger.Info("no runtime settings overrides found")
 		return nil
 	}
@@ -85,7 +89,7 @@ func (s *Service) ApplyOverrides(ctx context.Context, partial SettingsUpdate) er
 	}
 
 	var existing SettingsUpdate
-	if len(raw) > 0 && string(raw) != "{}" {
+	if len(raw) > 0 && string(raw) != emptyJSONObject {
 		if err := json.Unmarshal(raw, &existing); err != nil {
 			return fmt.Errorf("unmarshal existing overrides: %w", err)
 		}

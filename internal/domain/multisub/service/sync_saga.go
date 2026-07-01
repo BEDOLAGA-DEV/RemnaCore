@@ -80,7 +80,7 @@ func (s *SyncSaga) SyncBinding(ctx context.Context, bindingID string) error {
 		Status:        multisubdomain.SagaStatusRunning,
 		CurrentStep:   0,
 		TotalSteps:    syncTotalSteps,
-		StateData:     []byte("{}"),
+		StateData:     []byte(emptySagaStateJSON),
 	})
 	if err != nil {
 		s.logger.Warn("failed to create sync saga instance, proceeding without persistence",
@@ -236,4 +236,3 @@ func (s *SyncSaga) HandleWebhookEvent(ctx context.Context, remnawaveUUID string,
 
 	return nil
 }
-

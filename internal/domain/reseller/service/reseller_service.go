@@ -559,8 +559,12 @@ func (s *ResellerService) ListEnabledShopBots(ctx context.Context) ([]vo.ShopBot
 // generateWebhookSecret returns a 64-character lower-case hex string derived
 // from 32 cryptographically random bytes. The result is used as the Telegram
 // webhook X-Telegram-Bot-Api-Secret-Token header value.
+// webhookSecretBytes is the number of cryptographically random bytes used to
+// derive a Telegram webhook secret (hex-encoded to a 64-character token).
+const webhookSecretBytes = 32
+
 func generateWebhookSecret() (string, error) {
-	b := make([]byte, 32)
+	b := make([]byte, webhookSecretBytes)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("generating webhook secret: %w", err)
 	}

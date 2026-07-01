@@ -46,7 +46,7 @@ func TestTrialManager_StartTrial(t *testing.T) {
 	assert.Equal(t, aggregate.StatusTrial, sub.Status)
 
 	// Period should span exactly trialDays
-	expectedDuration := time.Duration(DefaultTrialDays) * hoursPerDay * time.Hour
+	expectedDuration := time.Duration(DefaultTrialDays) * vo.HoursPerDay * time.Hour
 	actualDuration := sub.Period.End.Sub(sub.Period.Start)
 	assert.InDelta(t, expectedDuration.Hours(), actualDuration.Hours(), 1)
 }

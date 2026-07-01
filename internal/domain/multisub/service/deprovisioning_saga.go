@@ -84,7 +84,7 @@ func (s *DeprovisioningSaga) Deprovision(ctx context.Context, subscriptionID str
 		Status:        multisubdomain.SagaStatusRunning,
 		CurrentStep:   0,
 		TotalSteps:    len(bindings),
-		StateData:     []byte("{}"),
+		StateData:     []byte(emptySagaStateJSON),
 	})
 	if err != nil {
 		s.logger.Warn("failed to create saga instance, proceeding without persistence",
@@ -169,4 +169,3 @@ func (s *DeprovisioningSaga) deprovisionOne(ctx context.Context, binding *aggreg
 		)
 	}
 }
-

@@ -8,9 +8,6 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
 )
 
-// hoursPerDay is the number of hours in a calendar day, used for day calculations.
-const hoursPerDay = 24
-
 // ProrateCalculator computes prorated credits and costs for plan changes.
 type ProrateCalculator struct{}
 
@@ -69,6 +66,5 @@ func (pc *ProrateCalculator) CalculateUpgradeCost(
 // totalDaysInPeriod returns the whole number of days in a billing period.
 func totalDaysInPeriod(period vo.BillingPeriod) int {
 	hours := period.End.Sub(period.Start).Hours()
-	return int(hours / hoursPerDay)
+	return int(hours / vo.HoursPerDay)
 }
-
