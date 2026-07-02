@@ -19,6 +19,7 @@ export * from "./api/hooks/useBindings.js";
 export * from "./api/hooks/useCheckout.js";
 export * from "./api/hooks/useFamily.js";
 export * from "./api/hooks/useInvoices.js";
+export * from "./api/hooks/useMyShops.js";
 export * from "./api/hooks/usePlans.js";
 export * from "./api/hooks/usePluginPages.js";
 export * from "./api/hooks/usePlugins.js";
@@ -60,5 +61,6 @@ export {
 export { passwordSchema } from "./lib/validation.js";
 // Stores
 export { useAuthStore } from "./stores/authStore.js";
+export { useShopStore } from "./stores/shopStore.js";
 export { useThemeStore } from "./stores/themeStore.js";
 export * from "./types/index.js";

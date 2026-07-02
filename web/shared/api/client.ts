@@ -1,5 +1,6 @@
 import ky, { type KyInstance } from "ky";
 import { useAuthStore } from "../stores/authStore.js";
+import { useShopStore } from "../stores/shopStore.js";
 import { ENDPOINTS } from "./endpoints.js";
 
 /**
@@ -58,6 +59,13 @@ export const apiClient: KyInstance = ky.create({
         const { accessToken } = useAuthStore.getState();
         if (accessToken) {
           request.headers.set("Authorization", `Bearer ${accessToken}`);
+        }
+
+        // 2. Shop context for shop-scoped (reseller) endpoints. Membership is
+        // verified server-side per request; absent header = no active shop.
+        const { activeShopId } = useShopStore.getState();
+        if (activeShopId) {
+          request.headers.set("X-Shop-Id", activeShopId);
         }
       },
     ],

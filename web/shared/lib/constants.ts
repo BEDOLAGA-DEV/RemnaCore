@@ -10,6 +10,7 @@ export const PAGINATION_DEFAULTS = {
 } as const;
 
 export const TOKEN_STORAGE_KEY = "remnacore-auth" as const;
+export const SHOP_STORAGE_KEY = "remnacore-active-shop" as const;
 
 export const THEME_STORAGE_KEY = "remnacore-theme" as const;
 

@@ -5,6 +5,7 @@
 export const QUERY_KEYS = {
   auth: {
     me: ["auth", "me"] as const,
+    myShops: ["auth", "me", "shops"] as const,
   },
   plans: {
     all: ["plans"] as const,

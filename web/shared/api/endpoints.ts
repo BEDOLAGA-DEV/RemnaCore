@@ -34,6 +34,7 @@ export const ENDPOINTS = {
   me: {
     get: "/api/me",
     update: "/api/me",
+    shops: "/api/me/shops",
     linkTelegram: "/api/me/link-telegram",
     unlinkTelegram: "/api/me/link-telegram",
   },
