@@ -75,6 +75,7 @@ type RouterParams struct {
 	BotManager            *telegram.BotManager
 	TelegramAuthHandler   *handler.TelegramAuthHandler
 	BotCatalogHandler     *handler.BotCatalogHandler
+	MeShopsHandler        *handler.MeShopsHandler
 }
 
 // NewRouter creates and returns a fully-configured chi router with all
@@ -198,6 +199,7 @@ func NewRouter(p RouterParams) http.Handler {
 			// Identity / Profile
 			protected.Get("/me", p.IdentityHandler.Me)
 			protected.Put("/me", p.IdentityHandler.UpdateProfile)
+			protected.Get("/me/shops", p.MeShopsHandler.MyShops)
 			protected.Post("/me/link-telegram", p.IdentityHandler.LinkTelegram)
 			protected.Delete("/me/link-telegram", p.IdentityHandler.UnlinkTelegram)
 

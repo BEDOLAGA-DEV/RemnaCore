@@ -1,6 +1,10 @@
 package gateway
 
 import (
+	"context"
+	"log/slog"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/rbac"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/handler"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/telegram"
@@ -21,6 +25,32 @@ func provideShopBotConfigResolver(s *reseller.ResellerService) handler.ShopBotCo
 // adapter here lets the handler stay decoupled from the telegram concrete type.
 func provideBotPluginLister(c *telegram.BotPluginCatalog) handler.BotPluginLister {
 	return c
+}
+
+// shopNameGetterAdapter adapts *reseller.ResellerService to the narrow
+// handler.ShopNameGetter port. The reseller.tenants table carries no RLS, so
+// no platform-scope wrapping is required; a direct GetTenant call suffices.
+type shopNameGetterAdapter struct {
+	svc *reseller.ResellerService
+}
+
+// GetTenantName implements handler.ShopNameGetter.
+func (a *shopNameGetterAdapter) GetTenantName(ctx context.Context, id string) (string, error) {
+	t, err := a.svc.GetTenant(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	return t.Name, nil
+}
+
+// provideMeShopsHandler wires the MeShopsHandler by bridging rbac.Repository
+// and *reseller.ResellerService to the two narrow ports the handler depends on.
+func provideMeShopsHandler(
+	bindings rbac.Repository,
+	svc *reseller.ResellerService,
+	log *slog.Logger,
+) *handler.MeShopsHandler {
+	return handler.NewMeShopsHandler(bindings, &shopNameGetterAdapter{svc: svc}, log)
 }
 
 // Module provides the HTTP gateway layer (handlers + router) to the Fx
@@ -55,5 +85,6 @@ var Module = fx.Module("gateway",
 	fx.Provide(handler.NewTelegramAuthHandler),
 	fx.Provide(provideBotPluginLister),
 	fx.Provide(handler.NewBotCatalogHandler),
+	fx.Provide(provideMeShopsHandler),
 	fx.Provide(NewRouter),
 )
