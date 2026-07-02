@@ -3,7 +3,10 @@ import {
   formatDate,
   LoadingSpinner,
   useAdminTenant,
+  useBotPlugins,
+  useTenantBot,
   useUpdateBranding,
+  useUpdateTenantBot,
 } from "@remnacore/shared";
 import { Link, useParams } from "@tanstack/react-router";
 import { ArrowLeft, Check, Loader2 } from "lucide-react";
@@ -11,6 +14,7 @@ import type { ReactNode } from "react";
 import { useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
+import { ShopBotForm } from "@/components/shop-bot/ShopBotForm";
 import {
   PageHeader,
   Panel,
@@ -46,6 +50,9 @@ export function TenantDetailPage() {
   const { id } = useParams({ strict: false }) as { id: string };
   const { data: tenant, isLoading } = useAdminTenant(id);
   const updateBranding = useUpdateBranding();
+  const { data: botConfig } = useTenantBot(id);
+  const { data: botPlugins } = useBotPlugins();
+  const updateTenantBot = useUpdateTenantBot();
 
   const {
     register,
@@ -210,6 +217,18 @@ export function TenantDetailPage() {
             </p>
           )}
         </form>
+      </Panel>
+
+      {/* Telegram Bot panel */}
+      <Panel>
+        <PanelHeader title={t("admin.tenantBot.title")} />
+        <ShopBotForm
+          config={botConfig}
+          plugins={botPlugins}
+          onSubmit={(data) => updateTenantBot.mutate({ tenantId: id, data })}
+          isPending={updateTenantBot.isPending}
+          isSuccess={updateTenantBot.isSuccess}
+        />
       </Panel>
     </div>
   );

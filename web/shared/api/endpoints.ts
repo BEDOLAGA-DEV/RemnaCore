@@ -119,11 +119,13 @@ export const ENDPOINTS = {
       detail: (tenantId: string) => `/api/admin/tenants/${tenantId}`,
       updateBranding: (tenantId: string) =>
         `/api/admin/tenants/${tenantId}/branding`,
+      bot: (tenantId: string) => `/api/admin/tenants/${tenantId}/bot`,
     },
     // Shop provisioning: platform-admin only (shops.manage + service-level guard).
     shops: {
       create: "/api/admin/shops",
     },
+    botPlugins: "/api/admin/bot-plugins",
     pluginPages: "/api/admin/plugin-pages",
     sessions: "/api/admin/sessions",
     settings: "/api/admin/settings",

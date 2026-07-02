@@ -47,7 +47,9 @@ export const QUERY_KEYS = {
       all: (limit?: number, offset?: number) =>
         ["admin", "tenants", { limit, offset }] as const,
       detail: (id: string) => ["admin", "tenants", id] as const,
+      bot: (id: string) => ["admin", "tenants", id, "bot"] as const,
     },
+    botPlugins: ["admin", "bot-plugins"] as const,
     pluginPages: ["admin", "plugin-pages"] as const,
     sessions: ["admin", "sessions"] as const,
     settings: ["admin", "settings"] as const,

@@ -25,6 +25,7 @@ export * from "./api/hooks/usePlugins.js";
 export * from "./api/hooks/useRemnawave.js";
 export * from "./api/hooks/useSettings.js";
 export * from "./api/hooks/useSetup.js";
+export * from "./api/hooks/useShopBot.js";
 export * from "./api/hooks/useSubscriptions.js";
 export * from "./api/hooks/useSystemHealth.js";
 export * from "./api/hooks/useTenants.js";
