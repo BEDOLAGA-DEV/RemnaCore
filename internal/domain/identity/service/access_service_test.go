@@ -54,6 +54,17 @@ func (f *fakeRBACRepo) GetRole(_ context.Context, _ string) (rbac.Role, error) {
 }
 func (f *fakeRBACRepo) CountPlatformAdmins(_ context.Context) (int, error) { return 0, nil }
 
+func (f *fakeRBACRepo) CreateCustomRole(_ context.Context, _, _, _ string, _ *string, _ []rbac.Permission) (string, error) {
+	return "", nil
+}
+func (f *fakeRBACRepo) ListCustomRoles(_ context.Context, _ *string) ([]rbac.CustomRole, error) {
+	return nil, nil
+}
+func (f *fakeRBACRepo) GetCustomRole(_ context.Context, _ string) (rbac.CustomRole, error) {
+	return rbac.CustomRole{}, rbac.ErrRoleNotFound
+}
+func (f *fakeRBACRepo) DeleteCustomRole(_ context.Context, _ string) (int64, error) { return 0, nil }
+
 func clk() func() time.Time { return func() time.Time { return time.Unix(1_700_000_000, 0) } }
 
 func TestResolve_UnionsGlobalAndActiveShopOnly(t *testing.T) {

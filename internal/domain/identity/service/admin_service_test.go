@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"fmt"
 	"testing"
 	"time"
 
@@ -79,8 +80,8 @@ func (r *adminStubRepo) UpdateUser(_ context.Context, u *aggregate.PlatformUser)
 func (r *adminStubRepo) ListUsers(_ context.Context, _, _ int) ([]*aggregate.PlatformUser, error) {
 	return nil, nil
 }
-func (r *adminStubRepo) CountAdmins(_ context.Context) (int64, error)   { return 0, nil }
-func (r *adminStubRepo) AcquireBootstrapLock(_ context.Context) error    { return nil }
+func (r *adminStubRepo) CountAdmins(_ context.Context) (int64, error) { return 0, nil }
+func (r *adminStubRepo) AcquireBootstrapLock(_ context.Context) error { return nil }
 func (r *adminStubRepo) CreateSession(_ context.Context, s *aggregate.Session) error {
 	r.sessions = append(r.sessions, s)
 	return nil
@@ -88,8 +89,8 @@ func (r *adminStubRepo) CreateSession(_ context.Context, s *aggregate.Session) e
 func (r *adminStubRepo) GetSessionByRefreshToken(_ context.Context, _ string) (*aggregate.Session, error) {
 	return nil, service.ErrNotFound
 }
-func (r *adminStubRepo) DeleteSession(_ context.Context, _ string) error          { return nil }
-func (r *adminStubRepo) DeleteUserSessions(_ context.Context, _ string) error     { return nil }
+func (r *adminStubRepo) DeleteSession(_ context.Context, _ string) error      { return nil }
+func (r *adminStubRepo) DeleteUserSessions(_ context.Context, _ string) error { return nil }
 func (r *adminStubRepo) CreateEmailVerification(_ context.Context, _ *aggregate.EmailVerification) error {
 	return nil
 }
@@ -103,11 +104,11 @@ func (r *adminStubRepo) CreatePasswordReset(_ context.Context, _ *aggregate.Pass
 func (r *adminStubRepo) GetPasswordResetByToken(_ context.Context, _ string) (*aggregate.PasswordReset, error) {
 	return nil, service.ErrNotFound
 }
-func (r *adminStubRepo) DeletePasswordReset(_ context.Context, _ string) error         { return nil }
-func (r *adminStubRepo) DeleteUserPasswordResets(_ context.Context, _ string) error    { return nil }
-func (r *adminStubRepo) DeleteExpiredSessions(_ context.Context) (int64, error)        { return 0, nil }
-func (r *adminStubRepo) DeleteExpiredVerifications(_ context.Context) (int64, error)   { return 0, nil }
-func (r *adminStubRepo) DeleteExpiredPasswordResets(_ context.Context) (int64, error)  { return 0, nil }
+func (r *adminStubRepo) DeletePasswordReset(_ context.Context, _ string) error        { return nil }
+func (r *adminStubRepo) DeleteUserPasswordResets(_ context.Context, _ string) error   { return nil }
+func (r *adminStubRepo) DeleteExpiredSessions(_ context.Context) (int64, error)       { return 0, nil }
+func (r *adminStubRepo) DeleteExpiredVerifications(_ context.Context) (int64, error)  { return 0, nil }
+func (r *adminStubRepo) DeleteExpiredPasswordResets(_ context.Context) (int64, error) { return 0, nil }
 func (r *adminStubRepo) CreateInvitation(_ context.Context, inv *aggregate.Invitation) error {
 	r.createdInvitations = append(r.createdInvitations, inv)
 	r.invitations[inv.Token] = inv
@@ -173,6 +174,7 @@ type adminStubRBACRepo struct {
 	revokedRoles       []revokedRoleRecord
 	platformAdminCount int   // controlled per-test; defaults to 1
 	revokeRowsAffected int64 // rows returned by RevokeRole; defaults to 1
+	customRoles        map[string]rbac.CustomRole
 }
 
 type assignedRoleRecord struct {
@@ -244,6 +246,47 @@ func (r *adminStubRBACRepo) GetRole(_ context.Context, key string) (rbac.Role, e
 
 func (r *adminStubRBACRepo) CountPlatformAdmins(_ context.Context) (int, error) {
 	return r.platformAdminCount, nil
+}
+
+// ---- custom-role CRUD stub (Phase D) ----
+
+func (r *adminStubRBACRepo) CreateCustomRole(_ context.Context, name, description, scopeKind string, tenantID *string, perms []rbac.Permission) (string, error) {
+	if r.customRoles == nil {
+		r.customRoles = map[string]rbac.CustomRole{}
+	}
+	id := fmt.Sprintf("custom-%d", len(r.customRoles)+1)
+	r.customRoles[id] = rbac.CustomRole{
+		ID: id, Name: name, Description: description, ScopeKind: scopeKind, TenantID: tenantID, Permissions: perms,
+	}
+	return id, nil
+}
+
+func (r *adminStubRBACRepo) ListCustomRoles(_ context.Context, tenantID *string) ([]rbac.CustomRole, error) {
+	var out []rbac.CustomRole
+	for _, cr := range r.customRoles {
+		switch {
+		case tenantID == nil && cr.TenantID == nil:
+			out = append(out, cr)
+		case tenantID != nil && cr.TenantID != nil && *cr.TenantID == *tenantID:
+			out = append(out, cr)
+		}
+	}
+	return out, nil
+}
+
+func (r *adminStubRBACRepo) GetCustomRole(_ context.Context, roleID string) (rbac.CustomRole, error) {
+	if cr, ok := r.customRoles[roleID]; ok {
+		return cr, nil
+	}
+	return rbac.CustomRole{}, rbac.ErrRoleNotFound
+}
+
+func (r *adminStubRBACRepo) DeleteCustomRole(_ context.Context, roleID string) (int64, error) {
+	if _, ok := r.customRoles[roleID]; !ok {
+		return 0, nil
+	}
+	delete(r.customRoles, roleID)
+	return 1, nil
 }
 
 // ---- shop provisioner stub ----
@@ -1495,4 +1538,133 @@ func TestCreateShop_BothOwners(t *testing.T) {
 	assert.ErrorIs(t, err, service.ErrOwnerAmbiguous,
 		"both ExistingUserID and InviteEmail set must return ErrOwnerAmbiguous")
 	assert.Empty(t, shops.createTenantCalls, "CreateTenant must not be called when owner is over-specified")
+}
+
+// ============================================================
+// Tests: Custom-role CRUD (Phase D)
+// ============================================================
+
+func TestCreateCustomRole_PlatformAdmin_OK(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "admin-user-id"
+
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	rbacRepo.bindings = platformAdminBindings(actorID)
+	svc := buildAdminSvc(t, repo, rbacRepo, &adminStubShops{}, &noopPublisher{}, now)
+
+	roleID, err := svc.CreateCustomRole(context.Background(), actorID, service.CreateCustomRoleInput{
+		Name:        "Support Agent",
+		ScopeKind:   rbac.ScopeGlobal,
+		Permissions: []rbac.Permission{rbac.CustomersRead},
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, roleID)
+	require.Len(t, rbacRepo.customRoles, 1)
+}
+
+func TestCreateCustomRole_NonAdminGlobalScope_Denied(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "owner-user-id"
+	shopA := "11111111-1111-1111-1111-111111111111"
+
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	rbacRepo.bindings = shopOwnerBindings(actorID, shopA)
+	svc := buildAdminSvc(t, repo, rbacRepo, &adminStubShops{}, &noopPublisher{}, now)
+
+	_, err := svc.CreateCustomRole(context.Background(), actorID, service.CreateCustomRoleInput{
+		Name:        "Escalated",
+		ScopeKind:   rbac.ScopeGlobal,
+		Permissions: []rbac.Permission{rbac.CustomersRead},
+	})
+	require.ErrorIs(t, err, service.ErrGrantNotAllowed)
+	require.Empty(t, rbacRepo.customRoles)
+}
+
+func TestAssignCustomRole_PlatformAdmin_OK(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "admin-user-id"
+	targetID := "target-user-id"
+
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	rbacRepo.bindings = platformAdminBindings(actorID)
+	svc := buildAdminSvc(t, repo, rbacRepo, &adminStubShops{}, &noopPublisher{}, now)
+
+	roleID, err := svc.CreateCustomRole(context.Background(), actorID, service.CreateCustomRoleInput{
+		Name:        "Analyst",
+		ScopeKind:   rbac.ScopeGlobal,
+		Permissions: []rbac.Permission{rbac.DashboardRead},
+	})
+	require.NoError(t, err)
+
+	err = svc.AssignCustomRole(context.Background(), actorID, targetID, roleID, nil)
+	require.NoError(t, err)
+
+	require.Len(t, rbacRepo.assignedRoles, 1)
+	assert.Equal(t, roleID, rbacRepo.assignedRoles[0].RoleID)
+	assert.Equal(t, targetID, rbacRepo.assignedRoles[0].UserID)
+}
+
+func TestAssignCustomRole_NotFound(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "admin-user-id"
+
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	rbacRepo.bindings = platformAdminBindings(actorID)
+	svc := buildAdminSvc(t, repo, rbacRepo, &adminStubShops{}, &noopPublisher{}, now)
+
+	err := svc.AssignCustomRole(context.Background(), actorID, "target", "ghost-role", nil)
+	require.ErrorIs(t, err, rbac.ErrRoleNotFound)
+}
+
+func TestListCustomRoles_NonAdminForeignTenant_Denied(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "owner-user-id"
+	shopA := "11111111-1111-1111-1111-111111111111"
+	shopB := "22222222-2222-2222-2222-222222222222"
+
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	rbacRepo.bindings = shopOwnerBindings(actorID, shopA)
+	svc := buildAdminSvc(t, repo, rbacRepo, &adminStubShops{}, &noopPublisher{}, now)
+
+	_, err := svc.ListCustomRoles(context.Background(), actorID, &shopB)
+	require.ErrorIs(t, err, service.ErrGrantNotAllowed)
+}
+
+func TestDeleteCustomRole_PlatformAdmin_OK(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "admin-user-id"
+
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	rbacRepo.bindings = platformAdminBindings(actorID)
+	svc := buildAdminSvc(t, repo, rbacRepo, &adminStubShops{}, &noopPublisher{}, now)
+
+	roleID, err := svc.CreateCustomRole(context.Background(), actorID, service.CreateCustomRoleInput{
+		Name:        "Temp",
+		ScopeKind:   rbac.ScopeGlobal,
+		Permissions: []rbac.Permission{rbac.DashboardRead},
+	})
+	require.NoError(t, err)
+	require.Len(t, rbacRepo.customRoles, 1)
+
+	require.NoError(t, svc.DeleteCustomRole(context.Background(), actorID, roleID))
+	require.Empty(t, rbacRepo.customRoles)
+}
+
+func TestDeleteCustomRole_NotFound(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "admin-user-id"
+
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	rbacRepo.bindings = platformAdminBindings(actorID)
+	svc := buildAdminSvc(t, repo, rbacRepo, &adminStubShops{}, &noopPublisher{}, now)
+
+	err := svc.DeleteCustomRole(context.Background(), actorID, "ghost")
+	require.ErrorIs(t, err, rbac.ErrRoleNotFound)
 }

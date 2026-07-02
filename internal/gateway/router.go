@@ -212,6 +212,12 @@ func NewRouter(p RouterParams) http.Handler {
 			protected.With(perm(p.AccessService, rbac.UsersAssignRole)).Delete("/users/{userID}/roles", p.IdentityAdminHandler.RevokeRole)
 			protected.With(perm(p.AccessService, rbac.UsersRead)).Get("/users/{userID}/roles", p.IdentityAdminHandler.ListUserRoles)
 
+			// Custom-role CRUD (RBAC Phase D). Manage → create/delete; read → list.
+			protected.With(perm(p.AccessService, rbac.RolesManage)).Post("/roles", p.IdentityAdminHandler.CreateCustomRole)
+			protected.With(perm(p.AccessService, rbac.RolesRead)).Get("/roles", p.IdentityAdminHandler.ListCustomRoles)
+			protected.With(perm(p.AccessService, rbac.RolesManage)).Delete("/roles/{roleID}", p.IdentityAdminHandler.DeleteCustomRole)
+			protected.With(perm(p.AccessService, rbac.UsersAssignRole)).Post("/users/{userID}/roles/custom", p.IdentityAdminHandler.AssignCustomRole)
+
 			// Subscriptions
 			protected.Post("/subscriptions", p.BillingHandler.CreateSubscription)
 			protected.Get("/subscriptions", p.BillingHandler.GetMySubscriptions)

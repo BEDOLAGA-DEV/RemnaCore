@@ -200,5 +200,165 @@ func (r *RBACRepository) CountPlatformAdmins(ctx context.Context) (int, error) {
 	return int(count), nil
 }
 
+// --- Custom-role CRUD (Phase D) ---
+
+// optUUID builds a pgtype.UUID that is NULL when s is nil.
+func optUUID(s *string) pgtype.UUID {
+	if s == nil {
+		return pgtype.UUID{}
+	}
+	return pgutil.UUIDToPgtype(*s)
+}
+
+// CreateCustomRole inserts a non-system role plus its permission rows and returns
+// the new role ID. Must run inside a transaction (the service wraps it).
+func (r *RBACRepository) CreateCustomRole(ctx context.Context, name, description, scopeKind string, tenantID *string, perms []rbac.Permission) (string, error) {
+	db := DBFromContext(ctx, r.pool)
+	var id pgtype.UUID
+	err := db.QueryRow(ctx,
+		`INSERT INTO identity.roles (name, description, is_system, scope_kind, tenant_id)
+		 VALUES ($1, $2, false, $3, $4) RETURNING id`,
+		name, description, scopeKind, optUUID(tenantID),
+	).Scan(&id)
+	if err != nil {
+		return "", fmt.Errorf("insert custom role: %w", err)
+	}
+	roleID := pgutil.PgtypeToUUID(id)
+	for _, p := range perms {
+		if _, err := db.Exec(ctx,
+			`INSERT INTO identity.role_permissions (role_id, permission_key) VALUES ($1, $2)
+			 ON CONFLICT DO NOTHING`,
+			id, string(p),
+		); err != nil {
+			return "", fmt.Errorf("insert custom role permission %q: %w", p, err)
+		}
+	}
+	return roleID, nil
+}
+
+// permissionsByRole loads permission keys for the given role IDs, grouped by ID.
+func (r *RBACRepository) permissionsByRole(ctx context.Context, roleIDs []pgtype.UUID) (map[string][]rbac.Permission, error) {
+	out := make(map[string][]rbac.Permission)
+	if len(roleIDs) == 0 {
+		return out, nil
+	}
+	rows, err := DBFromContext(ctx, r.pool).Query(ctx,
+		`SELECT role_id, permission_key FROM identity.role_permissions WHERE role_id = ANY($1)`,
+		roleIDs,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list role permissions: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var rid pgtype.UUID
+		var key string
+		if err := rows.Scan(&rid, &key); err != nil {
+			return nil, fmt.Errorf("scan role permission: %w", err)
+		}
+		id := pgutil.PgtypeToUUID(rid)
+		out[id] = append(out[id], rbac.Permission(key))
+	}
+	return out, rows.Err()
+}
+
+// ListCustomRoles returns non-system roles for the given scope.
+func (r *RBACRepository) ListCustomRoles(ctx context.Context, tenantID *string) ([]rbac.CustomRole, error) {
+	rows, err := DBFromContext(ctx, r.pool).Query(ctx,
+		`SELECT id, name, description, scope_kind, tenant_id
+		 FROM identity.roles
+		 WHERE is_system = false
+		   AND (($1::uuid IS NULL AND tenant_id IS NULL) OR tenant_id = $1)
+		 ORDER BY name`,
+		optUUID(tenantID),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list custom roles: %w", err)
+	}
+	defer rows.Close()
+
+	var roles []rbac.CustomRole
+	var ids []pgtype.UUID
+	for rows.Next() {
+		var (
+			id       pgtype.UUID
+			name     string
+			desc     string
+			scope    string
+			tenantPg pgtype.UUID
+		)
+		if err := rows.Scan(&id, &name, &desc, &scope, &tenantPg); err != nil {
+			return nil, fmt.Errorf("scan custom role: %w", err)
+		}
+		roles = append(roles, rbac.CustomRole{
+			ID:          pgutil.PgtypeToUUID(id),
+			Name:        name,
+			Description: desc,
+			ScopeKind:   scope,
+			TenantID:    pgutil.PgtypeUUIDToOptStr(tenantPg),
+		})
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	permsByID, err := r.permissionsByRole(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range roles {
+		roles[i].Permissions = permsByID[roles[i].ID]
+	}
+	return roles, nil
+}
+
+// GetCustomRole returns a non-system role by ID.
+func (r *RBACRepository) GetCustomRole(ctx context.Context, roleID string) (rbac.CustomRole, error) {
+	db := DBFromContext(ctx, r.pool)
+	var (
+		id       pgtype.UUID
+		name     string
+		desc     string
+		scope    string
+		tenantPg pgtype.UUID
+	)
+	err := db.QueryRow(ctx,
+		`SELECT id, name, description, scope_kind, tenant_id
+		 FROM identity.roles WHERE id = $1 AND is_system = false`,
+		pgutil.UUIDToPgtype(roleID),
+	).Scan(&id, &name, &desc, &scope, &tenantPg)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return rbac.CustomRole{}, fmt.Errorf("get custom role %q: %w", roleID, rbac.ErrRoleNotFound)
+		}
+		return rbac.CustomRole{}, fmt.Errorf("get custom role %q: %w", roleID, err)
+	}
+	permsByID, err := r.permissionsByRole(ctx, []pgtype.UUID{id})
+	if err != nil {
+		return rbac.CustomRole{}, err
+	}
+	return rbac.CustomRole{
+		ID:          pgutil.PgtypeToUUID(id),
+		Name:        name,
+		Description: desc,
+		ScopeKind:   scope,
+		TenantID:    pgutil.PgtypeUUIDToOptStr(tenantPg),
+		Permissions: permsByID[pgutil.PgtypeToUUID(id)],
+	}, nil
+}
+
+// DeleteCustomRole removes a non-system role by ID. Permission rows and
+// assignments cascade via FK. Returns rows removed.
+func (r *RBACRepository) DeleteCustomRole(ctx context.Context, roleID string) (int64, error) {
+	tag, err := DBFromContext(ctx, r.pool).Exec(ctx,
+		`DELETE FROM identity.roles WHERE id = $1 AND is_system = false`,
+		pgutil.UUIDToPgtype(roleID),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("delete custom role %q: %w", roleID, err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 // Compile-time check that the adapter satisfies the port.
 var _ rbac.Repository = (*RBACRepository)(nil)
