@@ -259,8 +259,8 @@ func (h *ResellerHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 // SetResellerBot handles PUT /api/reseller/bot -- upsert the active shop's
-// Telegram bot configuration. The caller must include a non-empty bot_token;
-// format validation and webhook-secret rotation are delegated to the service.
+// Telegram bot configuration. An empty bot_token means "keep the stored token";
+// format validation and webhook-secret generation are delegated to the service.
 func (h *ResellerHandler) SetResellerBot(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.ActiveTenantID(r.Context())
 	if tenantID == "" {
@@ -271,10 +271,6 @@ func (h *ResellerHandler) SetResellerBot(w http.ResponseWriter, r *http.Request)
 	var req setBotRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeValidationError(w, err)
-		return
-	}
-	if req.BotToken == "" {
-		writeAPIError(w, apierror.ValidationFailed.WithDetails("bot_token is required"))
 		return
 	}
 
@@ -322,7 +318,8 @@ func (h *ResellerHandler) GetResellerBot(w http.ResponseWriter, r *http.Request)
 }
 
 // UpdateTenantBot handles PUT /api/admin/tenants/{tenantID}/bot -- admin-level
-// upsert of any tenant's Telegram bot configuration.
+// upsert of any tenant's Telegram bot configuration. An empty bot_token means
+// "keep the stored token"; format validation is delegated to the service.
 func (h *ResellerHandler) UpdateTenantBot(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	if tenantID == "" {
@@ -333,10 +330,6 @@ func (h *ResellerHandler) UpdateTenantBot(w http.ResponseWriter, r *http.Request
 	var req setBotRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeValidationError(w, err)
-		return
-	}
-	if req.BotToken == "" {
-		writeAPIError(w, apierror.ValidationFailed.WithDetails("bot_token is required"))
 		return
 	}
 

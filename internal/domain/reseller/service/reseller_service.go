@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -517,18 +518,23 @@ func (s *ResellerService) DashboardSummary(ctx context.Context, tenantID string)
 }
 
 // SetShopBot validates and upserts the Telegram bot configuration for tenantID.
-// It rejects tokens that do not match the Telegram format (<id>:<suffix>) and
-// cabinet URLs that are not HTTPS. A cryptographically random webhook_secret is
-// generated on every call (rotated on update). Token liveness (getMe) is
-// deferred to SP3 to keep SP1 network-free.
+// It rejects cabinet URLs that are not HTTPS and plugin slugs that are not
+// installed and enabled.
+//
+// Token handling:
+//   - Non-empty BotToken: must match the Telegram format (<id>:<suffix>); a fresh
+//     cryptographically random webhook_secret is generated and both values are
+//     stored.
+//   - Empty BotToken: the stored token and webhook_secret are preserved (read and
+//     write happen atomically in one transaction); all other fields are updated.
+//     Returns ErrShopBotInvalidToken when no config exists yet (an empty token
+//     is only valid as "keep the existing token", not as an initial value).
+//
+// Token liveness (getMe) is deferred to SP3 to keep SP1 network-free.
 func (s *ResellerService) SetShopBot(ctx context.Context, tenantID string, in SetShopBotInput) error {
-	if !botTokenRe.MatchString(in.BotToken) {
-		return fmt.Errorf("set shop bot: %w", ErrShopBotInvalidToken)
-	}
 	if !strings.HasPrefix(in.CabinetURL, cabinetURLPrefix) {
 		return fmt.Errorf("set shop bot: %w", ErrShopBotInvalidCabinetURL)
 	}
-
 	if in.BotPlugin != "" {
 		ok, err := s.botPlugins.IsValidBotPlugin(ctx, in.BotPlugin)
 		if err != nil {
@@ -539,19 +545,48 @@ func (s *ResellerService) SetShopBot(ctx context.Context, tenantID string, in Se
 		}
 	}
 
-	webhookSecret, err := generateWebhookSecret()
-	if err != nil {
-		return fmt.Errorf("set shop bot: %w", err)
+	if in.BotToken != "" {
+		if !botTokenRe.MatchString(in.BotToken) {
+			return fmt.Errorf("set shop bot: %w", ErrShopBotInvalidToken)
+		}
+		webhookSecret, err := generateWebhookSecret()
+		if err != nil {
+			return fmt.Errorf("set shop bot: %w", err)
+		}
+		cfg := vo.ShopBotConfig{
+			Token:         secret.NewString(in.BotToken),
+			WebhookSecret: webhookSecret,
+			CabinetURL:    in.CabinetURL,
+			Enabled:       in.Enabled,
+			BotPluginSlug: in.BotPlugin,
+		}
+		if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+			return s.shopBots.Upsert(txCtx, tenantID, cfg)
+		}); err != nil {
+			return fmt.Errorf("set shop bot: %w", err)
+		}
+		return nil
 	}
 
-	cfg := vo.ShopBotConfig{
-		Token:         secret.NewString(in.BotToken),
-		WebhookSecret: webhookSecret,
-		CabinetURL:    in.CabinetURL,
-		Enabled:       in.Enabled,
-		BotPluginSlug: in.BotPlugin,
-	}
+	// Empty token path: read the existing config and preserve its token and
+	// webhook secret while applying the new CabinetURL, Enabled, and BotPlugin.
+	// GetByTenant and Upsert are wrapped in a single transaction to make the
+	// read-then-write atomic.
 	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		existing, err := s.shopBots.GetByTenant(txCtx, tenantID)
+		if err != nil {
+			if errors.Is(err, ErrShopBotNotFound) {
+				return ErrShopBotInvalidToken
+			}
+			return fmt.Errorf("get existing config: %w", err)
+		}
+		cfg := vo.ShopBotConfig{
+			Token:         existing.Token,
+			WebhookSecret: existing.WebhookSecret,
+			CabinetURL:    in.CabinetURL,
+			Enabled:       in.Enabled,
+			BotPluginSlug: in.BotPlugin,
+		}
 		return s.shopBots.Upsert(txCtx, tenantID, cfg)
 	}); err != nil {
 		return fmt.Errorf("set shop bot: %w", err)

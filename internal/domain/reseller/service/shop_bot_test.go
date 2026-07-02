@@ -12,11 +12,15 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/vo"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/secret"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager/txmanagertest"
 )
 
 // stubShopBotRepo is a minimal in-memory ShopBotRepository for unit tests.
+// Set storedCfg to simulate an existing persisted config; leave it nil to
+// simulate the "no config" case (GetByTenant returns ErrShopBotNotFound).
 type stubShopBotRepo struct {
+	storedCfg   *vo.ShopBotConfig
 	lastUpsert  vo.ShopBotConfig
 	upsertCalls int
 }
@@ -28,7 +32,10 @@ func (s *stubShopBotRepo) Upsert(_ context.Context, _ string, cfg vo.ShopBotConf
 }
 
 func (s *stubShopBotRepo) GetByTenant(_ context.Context, _ string) (*vo.ShopBotConfig, error) {
-	return nil, service.ErrShopBotNotFound
+	if s.storedCfg == nil {
+		return nil, service.ErrShopBotNotFound
+	}
+	return s.storedCfg, nil
 }
 
 func (s *stubShopBotRepo) ListEnabled(_ context.Context) ([]vo.ShopBotWithTenant, error) {
@@ -140,4 +147,106 @@ func TestSetShopBot_BotPluginValidation(t *testing.T) {
 	// empty plugin slug → default behaviour, upsert with empty BotPluginSlug
 	require.NoError(t, svc.SetShopBot(ctx, "t-1", base))
 	require.Equal(t, "", repo.lastUpsert.BotPluginSlug)
+}
+
+// storedWebhookSecret is a fixed 64-character hex string used in tests that
+// prime the stub with a pre-existing webhook secret.
+const storedWebhookSecret = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+
+// storedBotToken is the pre-existing token used in stub configs for
+// empty-token-path tests. It satisfies the Telegram token regex.
+const storedBotToken = "789:DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"
+
+// TestSetShopBot_EmptyToken_ExistingConfig verifies that an empty BotToken
+// preserves the stored token and webhook secret while applying the new
+// CabinetURL, Enabled, and BotPluginSlug from the input.
+func TestSetShopBot_EmptyToken_ExistingConfig(t *testing.T) {
+	ctx := context.Background()
+	svc, repo := newServiceWithStubBots(t)
+
+	repo.storedCfg = &vo.ShopBotConfig{
+		Token:         secret.NewString(storedBotToken),
+		WebhookSecret: storedWebhookSecret,
+		CabinetURL:    "https://old.example.com",
+		BotPluginSlug: "old-plugin",
+	}
+
+	err := svc.SetShopBot(ctx, "t1", service.SetShopBotInput{
+		BotToken:   "",
+		CabinetURL: "https://new.example.com",
+		Enabled:    true,
+		BotPlugin:  "cabinet-bot",
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, repo.upsertCalls)
+	require.Equal(t, storedBotToken, repo.lastUpsert.Token.Expose(), "stored token must be preserved")
+	require.Equal(t, storedWebhookSecret, repo.lastUpsert.WebhookSecret, "stored webhook secret must be preserved")
+	require.Equal(t, "cabinet-bot", repo.lastUpsert.BotPluginSlug, "new plugin must be applied")
+	require.Equal(t, "https://new.example.com", repo.lastUpsert.CabinetURL, "new cabinet URL must be applied")
+	require.True(t, repo.lastUpsert.Enabled, "new enabled flag must be applied")
+}
+
+// TestSetShopBot_EmptyToken_NoConfig verifies that an empty BotToken when no
+// config exists returns ErrShopBotInvalidToken and never calls Upsert.
+func TestSetShopBot_EmptyToken_NoConfig(t *testing.T) {
+	ctx := context.Background()
+	svc, repo := newServiceWithStubBots(t)
+	// storedCfg is nil → GetByTenant returns ErrShopBotNotFound
+
+	err := svc.SetShopBot(ctx, "t1", service.SetShopBotInput{
+		BotToken:   "",
+		CabinetURL: "https://example.com",
+		Enabled:    true,
+	})
+	require.ErrorIs(t, err, service.ErrShopBotInvalidToken)
+	require.Equal(t, 0, repo.upsertCalls)
+}
+
+// TestSetShopBot_NonEmptyToken_FreshSecret is a regression test verifying that
+// a non-empty BotToken always generates a fresh webhook secret, even when a
+// stored config with a known secret already exists.
+func TestSetShopBot_NonEmptyToken_FreshSecret(t *testing.T) {
+	ctx := context.Background()
+	svc, repo := newServiceWithStubBots(t)
+
+	repo.storedCfg = &vo.ShopBotConfig{
+		Token:         secret.NewString(storedBotToken),
+		WebhookSecret: storedWebhookSecret,
+		CabinetURL:    "https://old.example.com",
+	}
+
+	const newToken = "456:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
+	err := svc.SetShopBot(ctx, "t1", service.SetShopBotInput{
+		BotToken:   newToken,
+		CabinetURL: "https://new.example.com",
+		Enabled:    true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, newToken, repo.lastUpsert.Token.Expose(), "new token must be applied")
+	require.NotEmpty(t, repo.lastUpsert.WebhookSecret, "webhook secret must not be empty")
+	require.NotEqual(t, storedWebhookSecret, repo.lastUpsert.WebhookSecret, "non-empty token must regenerate the webhook secret")
+}
+
+// TestSetShopBot_EmptyToken_InvalidPlugin verifies that plugin validation runs
+// on the empty-token path and rejects an invalid plugin without calling Upsert,
+// even when an existing config is present.
+func TestSetShopBot_EmptyToken_InvalidPlugin(t *testing.T) {
+	ctx := context.Background()
+	svc, repo, validator := newResellerServiceWithStubs(t)
+
+	repo.storedCfg = &vo.ShopBotConfig{
+		Token:         secret.NewString(storedBotToken),
+		WebhookSecret: storedWebhookSecret,
+		CabinetURL:    "https://example.com",
+	}
+	validator.valid = false
+
+	err := svc.SetShopBot(ctx, "t1", service.SetShopBotInput{
+		BotToken:   "",
+		CabinetURL: "https://example.com",
+		BotPlugin:  "ghost-bot",
+		Enabled:    true,
+	})
+	require.ErrorIs(t, err, service.ErrShopBotInvalidPlugin)
+	require.Equal(t, 0, repo.upsertCalls, "no upsert must occur when plugin is invalid")
 }
