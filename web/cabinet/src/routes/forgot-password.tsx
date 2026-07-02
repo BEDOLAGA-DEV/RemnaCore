@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 import { z } from "zod";
 
 const forgotSchema = z.object({
-  email: z.string().email(),
+  email: z.email(),
 });
 
 type ForgotFormValues = z.infer<typeof forgotSchema>;

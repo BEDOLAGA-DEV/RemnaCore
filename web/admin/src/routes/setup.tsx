@@ -20,7 +20,7 @@ import { markSetupComplete } from "@/lib/setupGate";
 // server validation never drift.
 const setupSchema = z
   .object({
-    email: z.string().email(),
+    email: z.email(),
     password: passwordSchema,
     confirm: z.string(),
   })

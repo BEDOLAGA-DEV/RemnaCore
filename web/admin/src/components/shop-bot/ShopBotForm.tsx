@@ -15,7 +15,7 @@ import { TermInput } from "@/components/ui/TermInput";
 
 const botSchema = z.object({
   bot_token: z.string(),
-  cabinet_url: z.string().url().startsWith("https://").or(z.literal("")),
+  cabinet_url: z.url({ protocol: /^https$/ }).or(z.literal("")),
   bot_plugin: z.string(),
   enabled: z.boolean(),
 });

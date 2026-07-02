@@ -9,7 +9,7 @@ import { z } from "zod";
 
 const registerSchema = z
   .object({
-    email: z.string().email(),
+    email: z.email(),
     password: passwordSchema,
     confirmPassword: z.string().min(1),
   })
