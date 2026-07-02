@@ -1,7 +1,11 @@
 import ky, { type KyInstance } from "ky";
 import { useAuthStore } from "../stores/authStore.js";
 import { useShopStore } from "../stores/shopStore.js";
+
 import { ENDPOINTS } from "./endpoints.js";
+
+// Reseller API prefix: the only route family that consumes X-Shop-Id.
+const RESELLER_API_PREFIX = "/api/reseller/";
 
 /**
  * API base URL. Reads from env at runtime (Vite injects import.meta.env).
@@ -61,11 +65,16 @@ export const apiClient: KyInstance = ky.create({
           request.headers.set("Authorization", `Bearer ${accessToken}`);
         }
 
-        // 2. Shop context for shop-scoped (reseller) endpoints. Membership is
+        // 2. Shop context — ONLY for reseller endpoints. Membership is
         // verified server-side per request; absent header = no active shop.
-        const { activeShopId } = useShopStore.getState();
-        if (activeShopId) {
-          request.headers.set("X-Shop-Id", activeShopId);
+        // Deliberately path-gated: admin routes take tenant ids from the URL,
+        // and a stray X-Shop-Id would shop-scope a hybrid admin's RLS-backed
+        // admin views (ShopResolver honors the header for platform admins).
+        if (new URL(request.url).pathname.startsWith(RESELLER_API_PREFIX)) {
+          const { activeShopId } = useShopStore.getState();
+          if (activeShopId) {
+            request.headers.set("X-Shop-Id", activeShopId);
+          }
         }
       },
     ],
