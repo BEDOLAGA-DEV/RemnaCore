@@ -1,5 +1,5 @@
 [plugin]
-slug        = "samplebot"
+id          = "samplebot"
 name        = "Sample Bot"
 version     = "1.0.0"
 sdk_version = "1.0.0"
@@ -11,3 +11,4 @@ entry        = "handle_update"
 [permissions]
 telegram = "send"
 users    = "write"
+billing  = "read" # plans.list requires billing:read

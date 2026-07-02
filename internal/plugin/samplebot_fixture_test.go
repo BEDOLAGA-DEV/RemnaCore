@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	extism "github.com/extism/go-sdk"
@@ -45,4 +46,30 @@ func TestSampleBotFixture(t *testing.T) {
 
 	assert.True(t, p.FunctionExists("handle_update"),
 		"samplebot.wasm must export handle_update")
+}
+
+// TestSampleBotManifest parses the committed plugins/samplebot/plugin.toml and
+// verifies it is a valid bot manifest whose declared permissions actually cover
+// every op the guest calls (telegram.send_* / user.register / plans.list) — a
+// manifest-installed samplebot must not be denied its own operations.
+func TestSampleBotManifest(t *testing.T) {
+	raw, err := os.ReadFile("../../plugins/samplebot/plugin.toml")
+	require.NoError(t, err)
+
+	m, err := ParseManifest(raw)
+	require.NoError(t, err)
+
+	require.Equal(t, "samplebot", m.Plugin.ID)
+	require.NotNil(t, m.Telegram)
+	assert.True(t, m.Telegram.ProvidesBot)
+	assert.Equal(t, DefaultBotEntry, m.Telegram.Entry)
+
+	perms := m.ParsePermissions()
+	granted := make(map[PermissionScope]bool, len(perms))
+	for _, p := range perms {
+		granted[p] = true
+	}
+	assert.True(t, granted[PermTelegramSend], "guest calls telegram.send_text/cabinet.open")
+	assert.True(t, granted[PermUsersWrite], "guest calls user.register")
+	assert.True(t, granted[PermBillingRead], "guest calls plans.list")
 }
