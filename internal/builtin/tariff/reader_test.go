@@ -8,6 +8,8 @@ import (
 	gouuid "github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pluginstore"
 )
 
 // ── DerivePlanID ──────────────────────────────────────────────────────────────
@@ -91,4 +93,60 @@ func TestListVisibleTariffs_UnknownChannel_DefaultsToTelegram(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, result, 1)
 	assert.Equal(t, "TelegramOnly", result[0].Name)
+}
+
+// ── GetTariffByPlanID ─────────────────────────────────────────────────────────
+
+func TestGetTariffByPlanID_SinglePeriod_DocIDIsPlanID(t *testing.T) {
+	store := newFakeStore()
+	h := newTestHandler(store)
+
+	in := defaultTariffInput()
+	in.Name = "Solo"
+	in.IsActive = true
+	in.VisibleInTelegram = true
+	in.DurationDays = 30
+	b, err := json.Marshal(in)
+	require.NoError(t, err)
+	doc, err := store.InsertDocument(context.Background(), PluginSlug, CollectionName, b)
+	require.NoError(t, err)
+
+	got, err := h.GetTariffByPlanID(context.Background(), doc.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "Solo", got.Name)
+}
+
+func TestGetTariffByPlanID_MultiPeriod_DerivedPlanID(t *testing.T) {
+	store := newFakeStore()
+	h := newTestHandler(store)
+
+	in := defaultTariffInput()
+	in.Name = "Multi"
+	in.IsActive = true
+	in.VisibleInTelegram = true
+	in.PricingPeriods = []PricingPeriod{{DurationDays: 30}, {DurationDays: 90}}
+	b, err := json.Marshal(in)
+	require.NoError(t, err)
+
+	// DerivePlanID requires a UUID document ID; the fakeStore generates
+	// non-UUID IDs, so seed the document under a fixed UUID key directly.
+	const multiID = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+	store.docs[multiID] = &pluginstore.Document{
+		ID: multiID, PluginSlug: PluginSlug, Collection: CollectionName, Data: b,
+	}
+
+	derived, err := DerivePlanID(multiID, 90, true)
+	require.NoError(t, err)
+
+	got, err := h.GetTariffByPlanID(context.Background(), derived)
+	require.NoError(t, err)
+	assert.Equal(t, "Multi", got.Name)
+}
+
+func TestGetTariffByPlanID_NotFound_WrapsErrDocumentNotFound(t *testing.T) {
+	store := newFakeStore()
+	h := newTestHandler(store)
+
+	_, err := h.GetTariffByPlanID(context.Background(), "00000000-0000-0000-0000-000000000000")
+	require.ErrorIs(t, err, pluginstore.ErrDocumentNotFound)
 }
