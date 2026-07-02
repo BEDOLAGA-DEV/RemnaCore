@@ -107,3 +107,19 @@ type CheckoutStarter interface {
 	// Returns the checkout URL and identifiers for the caller to redirect the user.
 	Start(ctx context.Context, in CheckoutInput) (CheckoutResult, error)
 }
+
+// SubscriptionMutator is the write surface for subscription lifecycle mutations
+// (cancel, upgrade) exposed to bot plugins via the OpContext.
+//
+// Tenant scoping is the caller's responsibility. Like CheckoutStarter, the
+// underlying BillingService methods self-wrap their own RunInTx, so callers must
+// pass a tenant-annotated ctx (WithTenantID) but must NOT wrap these calls in an
+// outer RunInTx.
+type SubscriptionMutator interface {
+	// Cancel cancels the subscription. reason is optional (may be nil).
+	Cancel(ctx context.Context, subID string, reason *string) error
+	// Upgrade moves the subscription to newPlanID (with proration handled by the
+	// billing service). The caller must first verify newPlanID is visible to the
+	// tenant.
+	Upgrade(ctx context.Context, subID, newPlanID string) error
+}

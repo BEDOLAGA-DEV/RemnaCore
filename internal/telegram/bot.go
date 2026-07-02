@@ -26,11 +26,12 @@ import (
 // It is passed as one parameter so the Bot/BotManager constructors do not gain
 // five individual parameters each time a new reader is added.
 type DomainReaders struct {
-	Tariffs  bothost.TariffReader
-	Subs     bothost.SubscriptionReader
-	Invoices bothost.InvoiceReader
-	Balance  bothost.BalanceReader
-	Checkout bothost.CheckoutStarter
+	Tariffs    bothost.TariffReader
+	Subs       bothost.SubscriptionReader
+	Invoices   bothost.InvoiceReader
+	Balance    bothost.BalanceReader
+	Checkout   bothost.CheckoutStarter
+	SubMutator bothost.SubscriptionMutator
 }
 
 // Bot wraps the Telegram bot instance and all domain services needed to handle
@@ -288,6 +289,7 @@ func (b *Bot) newOpContext() *bothost.OpContext {
 		Invoices:   b.readers.Invoices,
 		Balance:    b.readers.Balance,
 		Checkout:   b.readers.Checkout,
+		SubMutator: b.readers.SubMutator,
 	}
 }
 

@@ -24,13 +24,15 @@ var (
 // Domain op name constants — the public op-catalog ABI. Bot plugins MUST
 // reference these exported consts; never duplicate the raw strings.
 const (
-	OpPlansList         = "plans.list"
-	OpPlansGet          = "plans.get"
-	OpSubscriptionsMine = "subscriptions.mine"
-	OpSubscriptionsGet  = "subscriptions.get"
-	OpInvoicesPending   = "invoices.pending"
-	OpBalanceGet        = "balance.get"
-	OpCheckoutCreate    = "checkout.create"
+	OpPlansList            = "plans.list"
+	OpPlansGet             = "plans.get"
+	OpSubscriptionsMine    = "subscriptions.mine"
+	OpSubscriptionsGet     = "subscriptions.get"
+	OpSubscriptionsCancel  = "subscriptions.cancel"
+	OpSubscriptionsUpgrade = "subscriptions.upgrade"
+	OpInvoicesPending      = "invoices.pending"
+	OpBalanceGet           = "balance.get"
+	OpCheckoutCreate       = "checkout.create"
 )
 
 // --- Argument structs ---
@@ -50,6 +52,18 @@ type subscriptionsMineArgs struct {
 type subscriptionsGetArgs struct {
 	TelegramID int64  `json:"telegram_id"`
 	ID         string `json:"id"`
+}
+
+type subscriptionsCancelArgs struct {
+	TelegramID int64   `json:"telegram_id"`
+	ID         string  `json:"id"`
+	Reason     *string `json:"reason,omitempty"`
+}
+
+type subscriptionsUpgradeArgs struct {
+	TelegramID int64  `json:"telegram_id"`
+	ID         string `json:"id"`
+	NewPlanID  string `json:"new_plan_id"`
 }
 
 type invoicesPendingArgs struct {
@@ -107,6 +121,8 @@ func RegisterDomainOps(r *Registry) {
 	r.Register(OpPlansGet, plugin.PermBillingRead, handlePlansGet)
 	r.Register(OpSubscriptionsMine, plugin.PermBillingRead, handleSubscriptionsMine)
 	r.Register(OpSubscriptionsGet, plugin.PermBillingRead, handleSubscriptionsGet)
+	r.Register(OpSubscriptionsCancel, plugin.PermBillingWrite, handleSubscriptionsCancel)
+	r.Register(OpSubscriptionsUpgrade, plugin.PermBillingWrite, handleSubscriptionsUpgrade)
 	r.Register(OpInvoicesPending, plugin.PermBillingRead, handleInvoicesPending)
 	r.Register(OpBalanceGet, plugin.PermBillingRead, handleBalanceGet)
 	r.Register(OpCheckoutCreate, plugin.PermPaymentWrite, handleCheckoutCreate)
@@ -202,6 +218,76 @@ func handleSubscriptionsGet(ctx context.Context, oc *OpContext, args json.RawMes
 		return nil, ErrForbidden
 	}
 	return json.Marshal(sub)
+}
+
+// verifyOwnership resolves the caller and confirms they own subscription subID.
+// The ownership read runs inside a tenant tx (Subs.Get needs the shop GUC).
+// Returns ErrForbidden on mismatch. The subscription reader must be wired.
+func verifyOwnership(ctx context.Context, oc *OpContext, telegramID int64, subID string) error {
+	if oc.Subs == nil {
+		return ErrCapabilityUnavailable
+	}
+	userID, err := resolveUser(ctx, oc, telegramID)
+	if err != nil {
+		return err
+	}
+	var ownerID string
+	if err := inTenantTx(ctx, oc, func(txCtx context.Context) error {
+		_, ownerID, err = oc.Subs.Get(txCtx, subID)
+		return err
+	}); err != nil {
+		return err
+	}
+	if ownerID != userID {
+		return ErrForbidden
+	}
+	return nil
+}
+
+func handleSubscriptionsCancel(ctx context.Context, oc *OpContext, args json.RawMessage) (json.RawMessage, error) {
+	var a subscriptionsCancelArgs
+	if err := json.Unmarshal(args, &a); err != nil {
+		return nil, fmt.Errorf("%s: decode args: %w", OpSubscriptionsCancel, err)
+	}
+	if oc.SubMutator == nil {
+		return nil, ErrCapabilityUnavailable
+	}
+	if err := verifyOwnership(ctx, oc, a.TelegramID, a.ID); err != nil {
+		return nil, fmt.Errorf("%s: %w", OpSubscriptionsCancel, err)
+	}
+	// Cancel self-wraps its own RunInTx; pass a tenant-annotated ctx (so its
+	// writes stamp the shop tenant) but do NOT wrap in an outer RunInTx.
+	if err := oc.SubMutator.Cancel(tenantctx.WithTenantID(ctx, oc.TenantID), a.ID, a.Reason); err != nil {
+		return nil, fmt.Errorf("%s: %w", OpSubscriptionsCancel, err)
+	}
+	return json.Marshal(map[string]string{"id": a.ID, "status": "cancelled"})
+}
+
+func handleSubscriptionsUpgrade(ctx context.Context, oc *OpContext, args json.RawMessage) (json.RawMessage, error) {
+	var a subscriptionsUpgradeArgs
+	if err := json.Unmarshal(args, &a); err != nil {
+		return nil, fmt.Errorf("%s: decode args: %w", OpSubscriptionsUpgrade, err)
+	}
+	if oc.SubMutator == nil || oc.Tariffs == nil {
+		return nil, ErrCapabilityUnavailable
+	}
+	if err := verifyOwnership(ctx, oc, a.TelegramID, a.ID); err != nil {
+		return nil, fmt.Errorf("%s: %w", OpSubscriptionsUpgrade, err)
+	}
+	// Tenant-visibility guard: the target plan must be visible to THIS shop
+	// (plans resolve from a global catalog; without this a forged new_plan_id
+	// could upgrade to another shop's plan). Tariffs.Get is tenant-scoped.
+	if err := inTenantTx(ctx, oc, func(txCtx context.Context) error {
+		_, err := oc.Tariffs.Get(txCtx, a.NewPlanID)
+		return err
+	}); err != nil {
+		return nil, fmt.Errorf("%s: %w", OpSubscriptionsUpgrade, err)
+	}
+	// Upgrade self-wraps its own RunInTx; pass tenant-annotated ctx, no outer wrap.
+	if err := oc.SubMutator.Upgrade(tenantctx.WithTenantID(ctx, oc.TenantID), a.ID, a.NewPlanID); err != nil {
+		return nil, fmt.Errorf("%s: %w", OpSubscriptionsUpgrade, err)
+	}
+	return json.Marshal(map[string]string{"id": a.ID, "status": "upgraded", "plan_id": a.NewPlanID})
 }
 
 func handleInvoicesPending(ctx context.Context, oc *OpContext, args json.RawMessage) (json.RawMessage, error) {

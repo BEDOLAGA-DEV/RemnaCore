@@ -3,6 +3,7 @@ package bothost
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/mock"
@@ -540,4 +541,136 @@ func TestDomainOp_PermissionGating_PaymentWriteRequired(t *testing.T) {
 	// payment:write is required
 	_, err = r.Call(context.Background(), oc, NewPermSet(plugin.PermPaymentWrite), OpCheckoutCreate, raw)
 	require.NoError(t, err)
+}
+
+// ─── subscriptions.cancel / subscriptions.upgrade ────────────────────────────
+
+// stubSubscriptionMutator records mutation calls for assertion.
+type stubSubscriptionMutator struct {
+	lastCtx      context.Context
+	cancelCalls  int
+	upgradeCalls int
+	lastReason   *string
+	lastPlanID   string
+	err          error
+}
+
+func (s *stubSubscriptionMutator) Cancel(ctx context.Context, _ string, reason *string) error {
+	s.lastCtx = ctx
+	s.cancelCalls++
+	s.lastReason = reason
+	return s.err
+}
+
+func (s *stubSubscriptionMutator) Upgrade(ctx context.Context, _, newPlanID string) error {
+	s.lastCtx = ctx
+	s.upgradeCalls++
+	s.lastPlanID = newPlanID
+	return s.err
+}
+
+func TestDomainOp_SubscriptionsCancel_OwnerMatch(t *testing.T) {
+	const (
+		tenant = "shop-c"
+		tgID   = int64(501)
+		userID = "u-owner"
+		subID  = "sub-c1"
+	)
+	repo := new(identitytest.MockRepository)
+	repo.On("GetUserByTelegramID", mock.Anything, tgID).Return(&identity.PlatformUser{ID: userID}, nil)
+
+	subs := &stubSubscriptionReader{getSub: &Subscription{ID: subID}, getOwnerID: userID}
+	mut := &stubSubscriptionMutator{}
+	oc := newOCWithIdentity(t, tenant, repo)
+	oc.Subs = subs
+	oc.SubMutator = mut
+
+	out, err := callDomainOp(t, oc, plugin.PermBillingWrite, OpSubscriptionsCancel, subscriptionsCancelArgs{TelegramID: tgID, ID: subID})
+	require.NoError(t, err)
+
+	require.Equal(t, 1, mut.cancelCalls)
+	require.Equal(t, tenant, tenantctx.TenantIDFromContext(mut.lastCtx))
+	var res map[string]string
+	require.NoError(t, json.Unmarshal(out, &res))
+	require.Equal(t, "cancelled", res["status"])
+}
+
+func TestDomainOp_SubscriptionsCancel_OwnerMismatch_NoMutation(t *testing.T) {
+	const (
+		tenant = "shop-c"
+		tgID   = int64(502)
+		userID = "u-requester"
+		subID  = "sub-c2"
+	)
+	repo := new(identitytest.MockRepository)
+	repo.On("GetUserByTelegramID", mock.Anything, tgID).Return(&identity.PlatformUser{ID: userID}, nil)
+
+	subs := &stubSubscriptionReader{getSub: &Subscription{ID: subID}, getOwnerID: "u-other"}
+	mut := &stubSubscriptionMutator{}
+	oc := newOCWithIdentity(t, tenant, repo)
+	oc.Subs = subs
+	oc.SubMutator = mut
+
+	_, err := callDomainOp(t, oc, plugin.PermBillingWrite, OpSubscriptionsCancel, subscriptionsCancelArgs{TelegramID: tgID, ID: subID})
+	require.ErrorIs(t, err, ErrForbidden)
+	require.Equal(t, 0, mut.cancelCalls, "must not cancel a subscription the caller does not own")
+}
+
+func TestDomainOp_SubscriptionsCancel_NilMutator(t *testing.T) {
+	oc := &OpContext{TenantID: "shop-c", TxRunner: txmanagertest.NoopTxRunner{}, Subs: &stubSubscriptionReader{}}
+	_, err := callDomainOp(t, oc, plugin.PermBillingWrite, OpSubscriptionsCancel, subscriptionsCancelArgs{TelegramID: 1, ID: "s"})
+	require.ErrorIs(t, err, ErrCapabilityUnavailable)
+}
+
+func TestDomainOp_SubscriptionsUpgrade_OwnerMatch_PlanVisible(t *testing.T) {
+	const (
+		tenant = "shop-u"
+		tgID   = int64(601)
+		userID = "u-owner"
+		subID  = "sub-u1"
+		newPln = "plan-pro"
+	)
+	repo := new(identitytest.MockRepository)
+	repo.On("GetUserByTelegramID", mock.Anything, tgID).Return(&identity.PlatformUser{ID: userID}, nil)
+
+	subs := &stubSubscriptionReader{getSub: &Subscription{ID: subID}, getOwnerID: userID}
+	tariffs := &stubTariffReader{getOffer: &TariffOffer{PlanID: newPln, Name: "Pro"}}
+	mut := &stubSubscriptionMutator{}
+	oc := newOCWithIdentity(t, tenant, repo)
+	oc.Subs = subs
+	oc.Tariffs = tariffs
+	oc.SubMutator = mut
+
+	out, err := callDomainOp(t, oc, plugin.PermBillingWrite, OpSubscriptionsUpgrade, subscriptionsUpgradeArgs{TelegramID: tgID, ID: subID, NewPlanID: newPln})
+	require.NoError(t, err)
+	require.Equal(t, 1, mut.upgradeCalls)
+	require.Equal(t, newPln, mut.lastPlanID)
+	require.Equal(t, tenant, tenantctx.TenantIDFromContext(mut.lastCtx))
+	var res map[string]string
+	require.NoError(t, json.Unmarshal(out, &res))
+	require.Equal(t, "upgraded", res["status"])
+}
+
+func TestDomainOp_SubscriptionsUpgrade_PlanNotVisible_NoMutation(t *testing.T) {
+	const (
+		tenant = "shop-u"
+		tgID   = int64(602)
+		userID = "u-owner"
+		subID  = "sub-u2"
+	)
+	repo := new(identitytest.MockRepository)
+	repo.On("GetUserByTelegramID", mock.Anything, tgID).Return(&identity.PlatformUser{ID: userID}, nil)
+
+	subs := &stubSubscriptionReader{getSub: &Subscription{ID: subID}, getOwnerID: userID}
+	// Tariffs.Get returns an error → plan not visible to this shop.
+	tariffs := &stubTariffReader{getErr: errors.New("not found")}
+	mut := &stubSubscriptionMutator{}
+	oc := newOCWithIdentity(t, tenant, repo)
+	oc.Subs = subs
+	oc.Tariffs = tariffs
+	oc.SubMutator = mut
+
+	_, err := callDomainOp(t, oc, plugin.PermBillingWrite, OpSubscriptionsUpgrade, subscriptionsUpgradeArgs{TelegramID: tgID, ID: subID, NewPlanID: "foreign-plan"})
+	require.Error(t, err)
+	require.Equal(t, 0, mut.upgradeCalls, "must not upgrade to a plan not visible to this shop")
 }

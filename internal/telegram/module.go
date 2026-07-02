@@ -36,6 +36,7 @@ var Module = fx.Module("telegram",
 	fx.Provide(NewSubscriptionReaderAdapter),
 	fx.Provide(NewInvoiceReaderAdapter),
 	fx.Provide(NewCheckoutStarterAdapter),
+	fx.Provide(NewSubscriptionMutatorAdapter),
 	// Bundle the five reader ports into one value for the bot stack.
 	fx.Provide(newDomainReaders),
 	fx.Provide(provideBotManager),
@@ -118,13 +119,15 @@ func newDomainReaders(
 	invoices bothost.InvoiceReader,
 	bal bothost.BalanceReader,
 	checkout bothost.CheckoutStarter,
+	subMutator bothost.SubscriptionMutator,
 ) DomainReaders {
 	return DomainReaders{
-		Tariffs:  tariffs,
-		Subs:     subs,
-		Invoices: invoices,
-		Balance:  bal,
-		Checkout: checkout,
+		Tariffs:    tariffs,
+		Subs:       subs,
+		Invoices:   invoices,
+		Balance:    bal,
+		Checkout:   checkout,
+		SubMutator: subMutator,
 	}
 }
 
