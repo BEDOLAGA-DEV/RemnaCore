@@ -107,3 +107,32 @@ func TestCreateNodeRequest_2_8_0Fields(t *testing.T) {
 	assert.NotContains(t, s, "excludedInbounds")
 	assert.NotContains(t, s, "externalRawConfig")
 }
+
+// TestHWIDDevice_2_8_0Shape verifies hwid/userId identity and the delete/create
+// request wire shapes match the 2.8.0 contract.
+func TestHWIDDevice_2_8_0Shape(t *testing.T) {
+	// Response parse: hwid + numeric userId.
+	var dev HWIDDevice
+	require.NoError(t, json.Unmarshal([]byte(`{"uuid":"d-1","hwid":"HW-ABC","userId":42,"createdAt":"2026-07-01T00:00:00Z"}`), &dev))
+	assert.Equal(t, "HW-ABC", dev.Hwid)
+	assert.Equal(t, int64(42), dev.UserID)
+
+	// List envelope {total, devices[]}.
+	var list HWIDDeviceList
+	require.NoError(t, json.Unmarshal([]byte(`{"total":1,"devices":[{"uuid":"d-1","hwid":"HW-ABC","userId":42}]}`), &list))
+	assert.Equal(t, 1, list.Total)
+	require.Len(t, list.Devices, 1)
+
+	// Create/delete request wire shapes.
+	cb, err := json.Marshal(CreateHWIDDeviceRequest{Hwid: "HW-ABC", UserUUID: "u-1"})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"hwid":"HW-ABC","userUuid":"u-1"}`, string(cb))
+
+	db, err := json.Marshal(DeleteHWIDDeviceRequest{Hwid: "HW-ABC", UserUUID: "u-1"})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"hwid":"HW-ABC","userUuid":"u-1"}`, string(db))
+
+	dab, err := json.Marshal(DeleteAllHWIDDevicesRequest{UserUUID: "u-1"})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"userUuid":"u-1"}`, string(dab))
+}
