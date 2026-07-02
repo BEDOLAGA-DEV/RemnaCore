@@ -1,7 +1,6 @@
 package remnawave
 
 import (
-	"encoding/json"
 	"time"
 )
 
@@ -65,35 +64,41 @@ type UsersListResponse struct {
 
 // --- Node types ---
 
+// NodeConfigProfile is the 2.8.0 config-profile reference on a node. It replaced
+// the removed excludedInbounds/externalRawConfig keys; ActiveInbounds lists the
+// config-profile inbound UUIDs the node serves.
+type NodeConfigProfile struct {
+	ActiveConfigProfileUuid string   `json:"activeConfigProfileUuid"`
+	ActiveInbounds          []string `json:"activeInbounds"`
+}
+
 // CreateNodeRequest is the payload for creating a new proxy node.
 type CreateNodeRequest struct {
-	Name               string          `json:"name"`
-	Address            string          `json:"address"`
-	Port               int             `json:"port"`
-	IsTrafficTrackable bool            `json:"isTrafficTrackingActive"`
-	TrafficLimitBytes  int64           `json:"trafficLimitBytes,omitempty"`
-	NotifyPercent      int             `json:"notifyPercent,omitempty"`
-	TrafficResetDay    int             `json:"trafficResetDay,omitempty"`
-	ExcludedInbounds   []string        `json:"excludedInbounds,omitempty"`
-	CountryCode        string          `json:"countryCode,omitempty"`
-	ConsumptionFactor  float64         `json:"consumptionFactor,omitempty"`
-	ExternalRawConfig  json.RawMessage `json:"externalRawConfig,omitempty"`
+	Name                  string             `json:"name"`
+	Address               string             `json:"address"`
+	Port                  int                `json:"port"`
+	IsTrafficTrackable    bool               `json:"isTrafficTrackingActive"`
+	TrafficLimitBytes     int64              `json:"trafficLimitBytes,omitempty"`
+	NotifyPercent         int                `json:"notifyPercent,omitempty"`
+	TrafficResetDay       int                `json:"trafficResetDay,omitempty"`
+	CountryCode           string             `json:"countryCode,omitempty"`
+	ConsumptionMultiplier float64            `json:"consumptionMultiplier,omitempty"`
+	ConfigProfile         *NodeConfigProfile `json:"configProfile,omitempty"`
 }
 
 // UpdateNodeRequest is the payload for modifying an existing node.
 type UpdateNodeRequest struct {
-	UUID               string          `json:"uuid"`
-	Name               string          `json:"name,omitempty"`
-	Address            string          `json:"address,omitempty"`
-	Port               *int            `json:"port,omitempty"`
-	IsTrafficTrackable *bool           `json:"isTrafficTrackingActive,omitempty"`
-	TrafficLimitBytes  *int64          `json:"trafficLimitBytes,omitempty"`
-	NotifyPercent      *int            `json:"notifyPercent,omitempty"`
-	TrafficResetDay    *int            `json:"trafficResetDay,omitempty"`
-	ExcludedInbounds   []string        `json:"excludedInbounds,omitempty"`
-	CountryCode        string          `json:"countryCode,omitempty"`
-	ConsumptionFactor  *float64        `json:"consumptionFactor,omitempty"`
-	ExternalRawConfig  json.RawMessage `json:"externalRawConfig,omitempty"`
+	UUID                  string             `json:"uuid"`
+	Name                  string             `json:"name,omitempty"`
+	Address               string             `json:"address,omitempty"`
+	Port                  *int               `json:"port,omitempty"`
+	IsTrafficTrackable    *bool              `json:"isTrafficTrackingActive,omitempty"`
+	TrafficLimitBytes     *int64             `json:"trafficLimitBytes,omitempty"`
+	NotifyPercent         *int               `json:"notifyPercent,omitempty"`
+	TrafficResetDay       *int               `json:"trafficResetDay,omitempty"`
+	CountryCode           string             `json:"countryCode,omitempty"`
+	ConsumptionMultiplier *float64           `json:"consumptionMultiplier,omitempty"`
+	ConfigProfile         *NodeConfigProfile `json:"configProfile,omitempty"`
 }
 
 // ReorderRequest is a request body for reordering items by their UUIDs.

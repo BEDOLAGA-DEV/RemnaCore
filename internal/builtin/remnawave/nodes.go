@@ -75,7 +75,8 @@ func (h *Handler) RestartNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := client.RestartNode(r.Context(), nodeUUID); err != nil {
+	forceRestart := r.URL.Query().Get("force") == "true"
+	if err := client.RestartNode(r.Context(), nodeUUID, forceRestart); err != nil {
 		h.logger.Error("failed to restart node", slog.Any("error", err))
 		writeAPIError(w, apierror.Internal)
 		return
@@ -242,7 +243,7 @@ func (h *Handler) BulkNodeAction(w http.ResponseWriter, r *http.Request) {
 		var actionErr error
 		switch req.Action {
 		case "restart":
-			actionErr = client.RestartNode(r.Context(), uuid)
+			actionErr = client.RestartNode(r.Context(), uuid, false)
 		case "enable":
 			actionErr = client.EnableNode(r.Context(), uuid)
 		case "disable":
@@ -370,7 +371,8 @@ func (h *Handler) RestartAllNodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := client.RestartAllNodes(r.Context()); err != nil {
+	forceRestart := r.URL.Query().Get("force") == "true"
+	if err := client.RestartAllNodes(r.Context(), forceRestart); err != nil {
 		writeAPIError(w, apierror.Internal)
 		return
 	}

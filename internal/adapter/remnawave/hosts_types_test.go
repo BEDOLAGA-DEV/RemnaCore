@@ -71,3 +71,39 @@ func TestUpdateHostRequest_InboundOptional(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(withInbound), `"inbound":{"configProfileUuid":"cp-2","configProfileInboundUuid":null}`)
 }
+
+// TestNodeRestartRequest_AlwaysSendsForceRestart locks the 2.8.0 restart body:
+// forceRestart is required and must always be present (no omitempty).
+func TestNodeRestartRequest_AlwaysSendsForceRestart(t *testing.T) {
+	b, err := json.Marshal(NodeRestartRequest{ForceRestart: false})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"forceRestart":false}`, string(b))
+
+	b, err = json.Marshal(NodeRestartRequest{ForceRestart: true})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"forceRestart":true}`, string(b))
+}
+
+// TestCreateNodeRequest_2_8_0Fields verifies the node create payload uses
+// consumptionMultiplier and configProfile, and drops the removed keys.
+func TestCreateNodeRequest_2_8_0Fields(t *testing.T) {
+	req := CreateNodeRequest{
+		Name:                  "n-1",
+		Address:               "1.2.3.4",
+		Port:                  8443,
+		ConsumptionMultiplier: 1.5,
+		ConfigProfile: &NodeConfigProfile{
+			ActiveConfigProfileUuid: "cp-1",
+			ActiveInbounds:          []string{"in-1", "in-2"},
+		},
+	}
+	b, err := json.Marshal(req)
+	require.NoError(t, err)
+	s := string(b)
+
+	assert.Contains(t, s, `"consumptionMultiplier":1.5`)
+	assert.Contains(t, s, `"configProfile":{"activeConfigProfileUuid":"cp-1","activeInbounds":["in-1","in-2"]}`)
+	assert.NotContains(t, s, "consumptionFactor")
+	assert.NotContains(t, s, "excludedInbounds")
+	assert.NotContains(t, s, "externalRawConfig")
+}
