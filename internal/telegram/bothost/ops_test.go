@@ -237,6 +237,8 @@ func TestOp_CabinetOpen_HTTP_URLButton(t *testing.T) {
 	require.Len(t, sender.sendKeyboardCalls, 1)
 	c := sender.sendKeyboardCalls[0]
 	require.Equal(t, "Custom message", c.Text)
+	require.Len(t, c.KB.Rows, 1)
+	require.Len(t, c.KB.Rows[0], 1)
 	btn := c.KB.Rows[0][0]
 	require.Equal(t, cabinetButtonLabel, btn.Text)
 	require.Equal(t, "http://cabinet.local/shop", btn.URL)
@@ -289,4 +291,30 @@ func TestOp_UserRegister(t *testing.T) {
 	require.Equal(t, capturedUserID, res.UserID)
 
 	repo.AssertExpectations(t)
+}
+
+// TestStdOps_DecodeArgsError verifies every std op rejects malformed args JSON
+// with its "<op>: decode args" error path.
+func TestStdOps_DecodeArgsError(t *testing.T) {
+	r := NewRegistry()
+	RegisterStdOps(r)
+	oc := &OpContext{TenantID: "t1", CabinetURL: "https://cab.example.com", Sender: &stubSender{}}
+
+	ops := []struct {
+		op   string
+		perm plugin.PermissionScope
+	}{
+		{OpTelegramSendText, plugin.PermTelegramSend},
+		{OpTelegramSendKeyboard, plugin.PermTelegramSend},
+		{OpTelegramAnswerCallback, plugin.PermTelegramSend},
+		{OpTelegramEditMessage, plugin.PermTelegramSend},
+		{OpCabinetOpen, plugin.PermTelegramSend},
+		{OpUserRegister, plugin.PermUsersWrite},
+	}
+	for _, tc := range ops {
+		t.Run(tc.op, func(t *testing.T) {
+			_, err := r.Call(context.Background(), oc, NewPermSet(tc.perm), tc.op, json.RawMessage(`{invalid`))
+			require.ErrorContains(t, err, "decode args")
+		})
+	}
 }
