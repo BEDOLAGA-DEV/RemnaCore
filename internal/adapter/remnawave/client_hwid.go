@@ -11,23 +11,24 @@ const APIPathHWID = "/api/hwid/devices/"
 // HWID endpoint path segments.
 const (
 	hwidPathDelete    = "delete"
-	hwidPathDeleteAll = "delete-all/"
+	hwidPathDeleteAll = "delete-all"
 	hwidPathStats     = "stats"
 	hwidPathTopUsers  = "top-users"
 )
 
 // GetAllHWIDDevices returns all registered HWID devices.
 func (c *Client) GetAllHWIDDevices(ctx context.Context) ([]HWIDDevice, error) {
-	var resp APIResponse[[]HWIDDevice]
+	var resp APIResponse[HWIDDeviceList]
 	if err := c.do(ctx, http.MethodGet, APIPathHWID, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Response, nil
+	return resp.Response.Devices, nil
 }
 
-// CreateHWIDDevice registers a new HWID device for a user.
-func (c *Client) CreateHWIDDevice(ctx context.Context, req CreateHWIDDeviceRequest) (*HWIDDevice, error) {
-	var resp APIResponse[HWIDDevice]
+// CreateHWIDDevice registers a new HWID device for a user. The 2.8.0 response is
+// the {total, devices[]} envelope for the user's devices, not a single device.
+func (c *Client) CreateHWIDDevice(ctx context.Context, req CreateHWIDDeviceRequest) (*HWIDDeviceList, error) {
+	var resp APIResponse[HWIDDeviceList]
 	if err := c.do(ctx, http.MethodPost, APIPathHWID, req, &resp); err != nil {
 		return nil, err
 	}
@@ -36,21 +37,24 @@ func (c *Client) CreateHWIDDevice(ctx context.Context, req CreateHWIDDeviceReque
 
 // GetUserHWIDDevices returns all HWID devices for a specific user.
 func (c *Client) GetUserHWIDDevices(ctx context.Context, userUUID string) ([]HWIDDevice, error) {
-	var resp APIResponse[[]HWIDDevice]
+	var resp APIResponse[HWIDDeviceList]
 	if err := c.do(ctx, http.MethodGet, APIPathHWID+userUUID, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Response, nil
+	return resp.Response.Devices, nil
 }
 
-// DeleteHWIDDevice removes a specific HWID device.
+// DeleteHWIDDevice removes a specific HWID device (POST /devices/delete with a
+// {hwid, userUuid} body per the 2.8.0 contract).
 func (c *Client) DeleteHWIDDevice(ctx context.Context, req DeleteHWIDDeviceRequest) error {
-	return c.do(ctx, http.MethodDelete, APIPathHWID+hwidPathDelete, req, nil)
+	return c.do(ctx, http.MethodPost, APIPathHWID+hwidPathDelete, req, nil)
 }
 
-// DeleteAllHWIDDevices removes all HWID devices for a specific user.
+// DeleteAllHWIDDevices removes all HWID devices for a specific user
+// (POST /devices/delete-all with a {userUuid} body).
 func (c *Client) DeleteAllHWIDDevices(ctx context.Context, userUUID string) error {
-	return c.do(ctx, http.MethodDelete, APIPathHWID+hwidPathDeleteAll+userUUID, nil, nil)
+	body := DeleteAllHWIDDevicesRequest{UserUUID: userUUID}
+	return c.do(ctx, http.MethodPost, APIPathHWID+hwidPathDeleteAll, body, nil)
 }
 
 // GetHWIDStats returns aggregate HWID statistics.
@@ -64,9 +68,9 @@ func (c *Client) GetHWIDStats(ctx context.Context) (*HWIDStats, error) {
 
 // GetTopHWIDUsers returns users with the most registered HWID devices.
 func (c *Client) GetTopHWIDUsers(ctx context.Context) ([]TopHWIDUser, error) {
-	var resp APIResponse[[]TopHWIDUser]
+	var resp APIResponse[TopHWIDUsersResponse]
 	if err := c.do(ctx, http.MethodGet, APIPathHWID+hwidPathTopUsers, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Response, nil
+	return resp.Response.Users, nil
 }

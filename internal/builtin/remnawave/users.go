@@ -227,7 +227,7 @@ func (h *Handler) DeleteUserHWID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := client.DeleteHWIDDevice(r.Context(), rwclient.DeleteHWIDDeviceRequest{
-		UUID:     hwidID,
+		Hwid:     hwidID,
 		UserUUID: userUUID,
 	}); err != nil {
 		writeAPIError(w, apierror.Internal)
@@ -414,12 +414,13 @@ func (h *Handler) CreateHWIDDevice(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, apierror.ValidationFailed.WithDetails("invalid request body"))
 		return
 	}
-	device, err := client.CreateHWIDDevice(r.Context(), req)
+	// 2.8.0 returns the user's full {total, devices[]} list, not a single device.
+	result, err := client.CreateHWIDDevice(r.Context(), req)
 	if err != nil {
 		writeAPIError(w, apierror.Internal)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"panel_id": panelID, "device": device})
+	writeJSON(w, http.StatusCreated, map[string]any{"panel_id": panelID, "devices": result})
 }
 
 // DeleteAllUserHWID wipes all HWID devices for a user.
