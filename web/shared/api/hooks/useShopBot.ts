@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { QUERY_KEYS } from "../../lib/queryKeys.js";
+import { useShopStore } from "../../stores/shopStore.js";
 import { apiGet, apiPutVoid } from "../client.js";
 import { ENDPOINTS } from "../endpoints.js";
 
@@ -56,5 +57,40 @@ export function useBotPlugins() {
   return useQuery({
     queryKey: QUERY_KEYS.admin.botPlugins,
     queryFn: () => apiGet<BotPluginInfo[]>(ENDPOINTS.admin.botPlugins),
+  });
+}
+
+// ─── Reseller (shop-scoped via X-Shop-Id) ────────────────────────────────────
+
+export function useResellerBot(shopId: string | null) {
+  return useQuery({
+    queryKey: QUERY_KEYS.reseller.bot(shopId ?? ""),
+    queryFn: () => apiGet<ShopBotConfig>(ENDPOINTS.reseller.bot),
+    enabled: !!shopId,
+  });
+}
+
+export function useUpdateResellerBot() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: UpdateShopBotInput) =>
+      apiPutVoid(ENDPOINTS.reseller.bot, data),
+    onSuccess: () => {
+      const shopId = useShopStore.getState().activeShopId;
+      if (shopId) {
+        queryClient.invalidateQueries({
+          queryKey: QUERY_KEYS.reseller.bot(shopId),
+        });
+      }
+    },
+  });
+}
+
+export function useResellerBotPlugins(shopId: string | null) {
+  return useQuery({
+    queryKey: QUERY_KEYS.reseller.botPlugins(shopId ?? ""),
+    queryFn: () => apiGet<BotPluginInfo[]>(ENDPOINTS.reseller.botPlugins),
+    enabled: !!shopId,
   });
 }

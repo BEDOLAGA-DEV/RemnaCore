@@ -16,6 +16,8 @@ import { PluginDetailPage } from "./routes/plugins/[id].js";
 import { PluginsPage } from "./routes/plugins/index.js";
 import { InstallPluginPage } from "./routes/plugins/install.js";
 import { PluginPageView } from "./routes/plugins/page.js";
+import { ResellerLayout } from "./routes/reseller/_layout.js";
+import { ResellerBotPage } from "./routes/reseller/bot.js";
 import { SettingsPage } from "./routes/settings.js";
 import { AdminSetupPage } from "./routes/setup.js";
 import { AdminSubscriptionDetailPage } from "./routes/subscriptions/[id].js";
@@ -47,8 +49,26 @@ async function requireGuest() {
     throw redirect({ to: "/setup" });
   }
   const { isAuthenticated, user } = useAuthStore.getState();
-  if (isAuthenticated && user?.role === USER_ROLES.admin) {
-    throw redirect({ to: "/" });
+  if (isAuthenticated) {
+    if (user?.role === USER_ROLES.admin) {
+      throw redirect({ to: "/" });
+    }
+    if (user?.role === USER_ROLES.reseller) {
+      throw redirect({ to: "/reseller/bot" });
+    }
+  }
+}
+
+async function requireReseller() {
+  if (await checkSetupNeeded()) {
+    throw redirect({ to: "/setup" });
+  }
+  const { isAuthenticated, user } = useAuthStore.getState();
+  if (!isAuthenticated) {
+    throw redirect({ to: "/login" });
+  }
+  if (user?.role !== USER_ROLES.admin && user?.role !== USER_ROLES.reseller) {
+    throw redirect({ to: "/login" });
   }
 }
 
@@ -168,6 +188,21 @@ const settingsRoute = createRoute({
   component: SettingsPage,
 });
 
+// ─── Protected (reseller layout) ──────────────────────────────────────────
+
+const resellerLayoutRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: "reseller-layout",
+  beforeLoad: requireReseller,
+  component: ResellerLayout,
+});
+
+const resellerBotRoute = createRoute({
+  getParentRoute: () => resellerLayoutRoute,
+  path: "/reseller/bot",
+  component: ResellerBotPage,
+});
+
 // ─── Tree ───────────────────────────────────────────────────────────────────
 
 const routeTree = rootRoute.addChildren([
@@ -189,6 +224,7 @@ const routeTree = rootRoute.addChildren([
     nodesRoute,
     settingsRoute,
   ]),
+  resellerLayoutRoute.addChildren([resellerBotRoute]),
 ]);
 
 export const router = createRouter({ routeTree });

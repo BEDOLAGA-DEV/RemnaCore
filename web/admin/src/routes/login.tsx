@@ -36,12 +36,16 @@ export function AdminLoginPage() {
       { email: data.email, password: data.password },
       {
         onSuccess: (result) => {
-          if (result.user.role !== USER_ROLES.admin) {
-            logout();
-            setAccessDenied(true);
+          if (result.user.role === USER_ROLES.admin) {
+            navigate({ to: "/" });
             return;
           }
-          navigate({ to: "/" });
+          if (result.user.role === USER_ROLES.reseller) {
+            navigate({ to: "/reseller/bot" });
+            return;
+          }
+          logout();
+          setAccessDenied(true);
         },
       },
     );

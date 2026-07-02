@@ -315,6 +315,14 @@ const en = {
     tenants: "Tenants",
     nodes: "Nodes",
   },
+  reseller: {
+    bot: {
+      title: "Bot Settings",
+      shopPicker: "Shop",
+      selectShop: "Select a shop",
+      noShops: "No shops available.",
+    },
+  },
 };
 
 const ru: typeof en = {
@@ -631,6 +639,14 @@ const ru: typeof en = {
     plugins: "Плагины",
     tenants: "Тенанты",
     nodes: "Ноды",
+  },
+  reseller: {
+    bot: {
+      title: "Настройки бота",
+      shopPicker: "Магазин",
+      selectShop: "Выберите магазин",
+      noShops: "Нет доступных магазинов.",
+    },
   },
 };
 

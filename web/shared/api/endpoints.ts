@@ -166,6 +166,12 @@ export const ENDPOINTS = {
     },
   },
 
+  // ─── Reseller ──────────────────────────────────────────────────────────
+  reseller: {
+    bot: "/api/reseller/bot",
+    botPlugins: "/api/reseller/bot/plugins",
+  },
+
   // ─── Routing (Protected) ───────────────────────────────────────────────
   routing: {
     selectNode: "/api/routing/select",
