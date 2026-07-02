@@ -41,13 +41,13 @@ func (s *stubTariffReader) Get(ctx context.Context, _ string) (*TariffOffer, err
 
 // stubSubscriptionReader is a test double for SubscriptionReader.
 type stubSubscriptionReader struct {
-	lastCtx      context.Context
-	lastUserID   string
-	activeSubs   []Subscription
-	activeErr    error
-	getSub       *Subscription
-	getOwnerID   string
-	getErr       error
+	lastCtx    context.Context
+	lastUserID string
+	activeSubs []Subscription
+	activeErr  error
+	getSub     *Subscription
+	getOwnerID string
+	getErr     error
 }
 
 func (s *stubSubscriptionReader) ActiveByUser(ctx context.Context, userID string) ([]Subscription, error) {
@@ -255,6 +255,13 @@ func TestDomainOp_SubscriptionsMine_ReturnsSubs(t *testing.T) {
 	repo.AssertExpectations(t)
 }
 
+func TestDomainOp_SubscriptionsMine_NilSubs(t *testing.T) {
+	oc := &OpContext{TenantID: "shop-subs", TxRunner: txmanagertest.NoopTxRunner{}}
+
+	_, err := callDomainOp(t, oc, plugin.PermBillingRead, OpSubscriptionsMine, subscriptionsMineArgs{TelegramID: 1})
+	require.ErrorIs(t, err, ErrCapabilityUnavailable)
+}
+
 // ─── subscriptions.get ───────────────────────────────────────────────────────
 
 func TestDomainOp_SubscriptionsGet_OwnerMatch(t *testing.T) {
@@ -319,6 +326,13 @@ func TestDomainOp_SubscriptionsGet_OwnerMismatch(t *testing.T) {
 	repo.AssertExpectations(t)
 }
 
+func TestDomainOp_SubscriptionsGet_NilSubs(t *testing.T) {
+	oc := &OpContext{TenantID: "shop-subs", TxRunner: txmanagertest.NoopTxRunner{}}
+
+	_, err := callDomainOp(t, oc, plugin.PermBillingRead, OpSubscriptionsGet, subscriptionsGetArgs{TelegramID: 1, ID: "s1"})
+	require.ErrorIs(t, err, ErrCapabilityUnavailable)
+}
+
 // ─── invoices.pending ────────────────────────────────────────────────────────
 
 func TestDomainOp_InvoicesPending_ReturnsInvoices(t *testing.T) {
@@ -350,6 +364,13 @@ func TestDomainOp_InvoicesPending_ReturnsInvoices(t *testing.T) {
 	repo.AssertExpectations(t)
 }
 
+func TestDomainOp_InvoicesPending_NilInvoices(t *testing.T) {
+	oc := &OpContext{TenantID: "shop-inv", TxRunner: txmanagertest.NoopTxRunner{}}
+
+	_, err := callDomainOp(t, oc, plugin.PermBillingRead, OpInvoicesPending, invoicesPendingArgs{TelegramID: 1})
+	require.ErrorIs(t, err, ErrCapabilityUnavailable)
+}
+
 // ─── balance.get ─────────────────────────────────────────────────────────────
 
 func TestDomainOp_BalanceGet_ReturnsWallets(t *testing.T) {
@@ -379,6 +400,13 @@ func TestDomainOp_BalanceGet_ReturnsWallets(t *testing.T) {
 
 	require.Equal(t, tenant, tenantctx.TenantIDFromContext(balStub.lastCtx))
 	repo.AssertExpectations(t)
+}
+
+func TestDomainOp_BalanceGet_NilBalance(t *testing.T) {
+	oc := &OpContext{TenantID: "shop-bal", TxRunner: txmanagertest.NoopTxRunner{}}
+
+	_, err := callDomainOp(t, oc, plugin.PermBillingRead, OpBalanceGet, balanceGetArgs{TelegramID: 1})
+	require.ErrorIs(t, err, ErrCapabilityUnavailable)
 }
 
 // ─── checkout.create ─────────────────────────────────────────────────────────
