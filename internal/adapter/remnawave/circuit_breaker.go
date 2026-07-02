@@ -19,13 +19,13 @@ const CBName = "remnawave"
 // is allowed to take before the context is cancelled. These are applied on
 // top of the global http.Client timeout as a tighter per-call constraint.
 const (
-	TimeoutCreateUser = 5 * time.Second
-	TimeoutDeleteUser = 5 * time.Second
-	TimeoutEnableUser = 3 * time.Second
+	TimeoutCreateUser  = 5 * time.Second
+	TimeoutDeleteUser  = 5 * time.Second
+	TimeoutEnableUser  = 3 * time.Second
 	TimeoutDisableUser = 3 * time.Second
-	TimeoutGetUser    = 5 * time.Second
-	TimeoutUpdateUser = 5 * time.Second
-	TimeoutGetNodes   = 10 * time.Second
+	TimeoutGetUser     = 5 * time.Second
+	TimeoutUpdateUser  = 5 * time.Second
+	TimeoutGetNodes    = 10 * time.Second
 )
 
 // Prometheus metric constants for the circuit breaker.

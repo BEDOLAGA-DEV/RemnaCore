@@ -10,7 +10,7 @@ const APIPathConfigProfiles = "/api/config-profiles/"
 
 // Config profile sub-path constants.
 const (
-	subPathInbounds = "/inbounds"
+	subPathInbounds    = "/inbounds"
 	subPathAllInbounds = "inbounds"
 )
 

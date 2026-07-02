@@ -67,33 +67,33 @@ type UsersListResponse struct {
 
 // CreateNodeRequest is the payload for creating a new proxy node.
 type CreateNodeRequest struct {
-	Name                string          `json:"name"`
-	Address             string          `json:"address"`
-	Port                int             `json:"port"`
-	IsTrafficTrackable  bool            `json:"isTrafficTrackingActive"`
-	TrafficLimitBytes   int64           `json:"trafficLimitBytes,omitempty"`
-	NotifyPercent       int             `json:"notifyPercent,omitempty"`
-	TrafficResetDay     int             `json:"trafficResetDay,omitempty"`
-	ExcludedInbounds    []string        `json:"excludedInbounds,omitempty"`
-	CountryCode         string          `json:"countryCode,omitempty"`
-	ConsumptionFactor   float64         `json:"consumptionFactor,omitempty"`
-	ExternalRawConfig   json.RawMessage `json:"externalRawConfig,omitempty"`
+	Name               string          `json:"name"`
+	Address            string          `json:"address"`
+	Port               int             `json:"port"`
+	IsTrafficTrackable bool            `json:"isTrafficTrackingActive"`
+	TrafficLimitBytes  int64           `json:"trafficLimitBytes,omitempty"`
+	NotifyPercent      int             `json:"notifyPercent,omitempty"`
+	TrafficResetDay    int             `json:"trafficResetDay,omitempty"`
+	ExcludedInbounds   []string        `json:"excludedInbounds,omitempty"`
+	CountryCode        string          `json:"countryCode,omitempty"`
+	ConsumptionFactor  float64         `json:"consumptionFactor,omitempty"`
+	ExternalRawConfig  json.RawMessage `json:"externalRawConfig,omitempty"`
 }
 
 // UpdateNodeRequest is the payload for modifying an existing node.
 type UpdateNodeRequest struct {
-	UUID                string          `json:"uuid"`
-	Name                string          `json:"name,omitempty"`
-	Address             string          `json:"address,omitempty"`
-	Port                *int            `json:"port,omitempty"`
-	IsTrafficTrackable  *bool           `json:"isTrafficTrackingActive,omitempty"`
-	TrafficLimitBytes   *int64          `json:"trafficLimitBytes,omitempty"`
-	NotifyPercent       *int            `json:"notifyPercent,omitempty"`
-	TrafficResetDay     *int            `json:"trafficResetDay,omitempty"`
-	ExcludedInbounds    []string        `json:"excludedInbounds,omitempty"`
-	CountryCode         string          `json:"countryCode,omitempty"`
-	ConsumptionFactor   *float64        `json:"consumptionFactor,omitempty"`
-	ExternalRawConfig   json.RawMessage `json:"externalRawConfig,omitempty"`
+	UUID               string          `json:"uuid"`
+	Name               string          `json:"name,omitempty"`
+	Address            string          `json:"address,omitempty"`
+	Port               *int            `json:"port,omitempty"`
+	IsTrafficTrackable *bool           `json:"isTrafficTrackingActive,omitempty"`
+	TrafficLimitBytes  *int64          `json:"trafficLimitBytes,omitempty"`
+	NotifyPercent      *int            `json:"notifyPercent,omitempty"`
+	TrafficResetDay    *int            `json:"trafficResetDay,omitempty"`
+	ExcludedInbounds   []string        `json:"excludedInbounds,omitempty"`
+	CountryCode        string          `json:"countryCode,omitempty"`
+	ConsumptionFactor  *float64        `json:"consumptionFactor,omitempty"`
+	ExternalRawConfig  json.RawMessage `json:"externalRawConfig,omitempty"`
 }
 
 // ReorderRequest is a request body for reordering items by their UUIDs.
@@ -103,63 +103,64 @@ type ReorderRequest struct {
 
 // --- Host types ---
 
+// HostInbound is the nested inbound reference on a host. Remnawave 2.8.0
+// replaced the flat top-level inboundUuid with this object; it points at a
+// config-profile inbound. Pointer fields distinguish absent from empty.
+type HostInbound struct {
+	ConfigProfileUuid        *string `json:"configProfileUuid"`
+	ConfigProfileInboundUuid *string `json:"configProfileInboundUuid"`
+}
+
 // RemnawaveHost represents a host (inbound connection endpoint) in Remnawave.
 type RemnawaveHost struct {
-	UUID            string          `json:"uuid"`
-	Remark          string          `json:"remark"`
-	Address         string          `json:"address"`
-	Port            int             `json:"port"`
-	InboundUUID     string          `json:"inboundUuid"`
-	IsDisabled      bool            `json:"isDisabled"`
-	SecurityLayer   string          `json:"securityLayer,omitempty"`
-	Fingerprint     string          `json:"fingerprint,omitempty"`
-	ALPN            string          `json:"alpn,omitempty"`
-	AllowInsecure   bool            `json:"allowInsecure"`
-	SNI             string          `json:"sni,omitempty"`
-	Path            string          `json:"path,omitempty"`
-	Host            string          `json:"host,omitempty"`
-	RequestHeader   json.RawMessage `json:"requestHeader,omitempty"`
-	ResponseHeader  json.RawMessage `json:"responseHeader,omitempty"`
-	ExternalConfig  json.RawMessage `json:"externalConfig,omitempty"`
-	CreatedAt       time.Time       `json:"createdAt"`
-	UpdatedAt       time.Time       `json:"updatedAt"`
+	UUID          string      `json:"uuid"`
+	Remark        string      `json:"remark"`
+	Address       string      `json:"address"`
+	Port          int         `json:"port"`
+	Inbound       HostInbound `json:"inbound"`
+	IsDisabled    bool        `json:"isDisabled"`
+	SecurityLayer string      `json:"securityLayer,omitempty"`
+	Fingerprint   string      `json:"fingerprint,omitempty"`
+	ALPN          string      `json:"alpn,omitempty"`
+	SNI           string      `json:"sni,omitempty"`
+	Path          string      `json:"path,omitempty"`
+	Host          string      `json:"host,omitempty"`
+	Tags          []string    `json:"tags,omitempty"`
+	CreatedAt     time.Time   `json:"createdAt"`
+	UpdatedAt     time.Time   `json:"updatedAt"`
 }
 
-// CreateHostRequest is the payload for creating a new host.
+// CreateHostRequest is the payload for creating a new host. The nested inbound
+// object is REQUIRED by the 2.8.0 contract (no omitempty).
 type CreateHostRequest struct {
-	Remark          string          `json:"remark"`
-	Address         string          `json:"address"`
-	Port            int             `json:"port"`
-	InboundUUID     string          `json:"inboundUuid"`
-	IsDisabled      bool            `json:"isDisabled,omitempty"`
-	SecurityLayer   string          `json:"securityLayer,omitempty"`
-	Fingerprint     string          `json:"fingerprint,omitempty"`
-	ALPN            string          `json:"alpn,omitempty"`
-	AllowInsecure   bool            `json:"allowInsecure,omitempty"`
-	SNI             string          `json:"sni,omitempty"`
-	Path            string          `json:"path,omitempty"`
-	Host            string          `json:"host,omitempty"`
-	RequestHeader   json.RawMessage `json:"requestHeader,omitempty"`
-	ResponseHeader  json.RawMessage `json:"responseHeader,omitempty"`
-	ExternalConfig  json.RawMessage `json:"externalConfig,omitempty"`
+	Remark        string      `json:"remark"`
+	Address       string      `json:"address"`
+	Port          int         `json:"port"`
+	Inbound       HostInbound `json:"inbound"`
+	IsDisabled    bool        `json:"isDisabled,omitempty"`
+	SecurityLayer string      `json:"securityLayer,omitempty"`
+	Fingerprint   string      `json:"fingerprint,omitempty"`
+	ALPN          string      `json:"alpn,omitempty"`
+	SNI           string      `json:"sni,omitempty"`
+	Path          string      `json:"path,omitempty"`
+	Host          string      `json:"host,omitempty"`
+	Tags          []string    `json:"tags,omitempty"`
 }
 
-// UpdateHostRequest is the payload for modifying an existing host.
+// UpdateHostRequest is the payload for modifying an existing host. Inbound is a
+// pointer so a partial update can omit it.
 type UpdateHostRequest struct {
-	UUID            string          `json:"uuid"`
-	Remark          string          `json:"remark,omitempty"`
-	Address         string          `json:"address,omitempty"`
-	Port            *int            `json:"port,omitempty"`
-	InboundUUID     string          `json:"inboundUuid,omitempty"`
-	IsDisabled      *bool           `json:"isDisabled,omitempty"`
-	SecurityLayer   string          `json:"securityLayer,omitempty"`
-	Fingerprint     string          `json:"fingerprint,omitempty"`
-	ALPN            string          `json:"alpn,omitempty"`
-	AllowInsecure   *bool           `json:"allowInsecure,omitempty"`
-	SNI             string          `json:"sni,omitempty"`
-	Path            string          `json:"path,omitempty"`
-	Host            string          `json:"host,omitempty"`
-	RequestHeader   json.RawMessage `json:"requestHeader,omitempty"`
-	ResponseHeader  json.RawMessage `json:"responseHeader,omitempty"`
-	ExternalConfig  json.RawMessage `json:"externalConfig,omitempty"`
+	UUID          string       `json:"uuid"`
+	Remark        string       `json:"remark,omitempty"`
+	Address       string       `json:"address,omitempty"`
+	Port          *int         `json:"port,omitempty"`
+	Inbound       *HostInbound `json:"inbound,omitempty"`
+	IsDisabled    *bool        `json:"isDisabled,omitempty"`
+	SecurityLayer string       `json:"securityLayer,omitempty"`
+	Fingerprint   string       `json:"fingerprint,omitempty"`
+	ALPN          string       `json:"alpn,omitempty"`
+	SNI           string       `json:"sni,omitempty"`
+	Path          string       `json:"path,omitempty"`
+	Host          string       `json:"host,omitempty"`
+	Tags          []string     `json:"tags,omitempty"`
 }

@@ -11,7 +11,7 @@ const APIPathSubscriptions = "/api/subscriptions/"
 // Subscription lookup sub-path constants.
 const (
 	subPathByUsername  = "by-username/"
-	subPathByUUID     = "by-uuid/"
+	subPathByUUID      = "by-uuid/"
 	subPathByShortUUID = "by-short-uuid/"
 )
 

@@ -18,11 +18,11 @@ type SystemMetadata struct {
 
 // SystemStats contains high-level system statistics.
 type SystemStats struct {
-	TotalUsers      int   `json:"totalUsers"`
-	ActiveUsers     int   `json:"activeUsers"`
-	TotalNodes      int   `json:"totalNodes"`
-	ConnectedNodes  int   `json:"connectedNodes"`
-	TotalTraffic    int64 `json:"totalTraffic"`
+	TotalUsers     int   `json:"totalUsers"`
+	ActiveUsers    int   `json:"activeUsers"`
+	TotalNodes     int   `json:"totalNodes"`
+	ConnectedNodes int   `json:"connectedNodes"`
+	TotalTraffic   int64 `json:"totalTraffic"`
 }
 
 // BandwidthSystemStats contains bandwidth-specific system statistics.
@@ -41,21 +41,21 @@ type NodesSystemStats struct {
 
 // NodeMetrics represents metrics for a single node.
 type NodeMetrics struct {
-	UUID              string  `json:"uuid"`
-	Name              string  `json:"name"`
-	IsConnected       bool    `json:"isConnected"`
-	UploadSpeedBytes  float64 `json:"uploadSpeedBytes"`
+	UUID               string  `json:"uuid"`
+	Name               string  `json:"name"`
+	IsConnected        bool    `json:"isConnected"`
+	UploadSpeedBytes   float64 `json:"uploadSpeedBytes"`
 	DownloadSpeedBytes float64 `json:"downloadSpeedBytes"`
-	ActiveConnections int     `json:"activeConnections"`
+	ActiveConnections  int     `json:"activeConnections"`
 }
 
 // StatsRecap contains a recap/summary of system statistics.
 type StatsRecap struct {
-	TotalUsers      int   `json:"totalUsers"`
-	ActiveUsers     int   `json:"activeUsers"`
-	TotalNodes      int   `json:"totalNodes"`
-	TotalTraffic    int64 `json:"totalTraffic"`
-	NewUsersToday   int   `json:"newUsersToday"`
+	TotalUsers    int   `json:"totalUsers"`
+	ActiveUsers   int   `json:"activeUsers"`
+	TotalNodes    int   `json:"totalNodes"`
+	TotalTraffic  int64 `json:"totalTraffic"`
+	NewUsersToday int   `json:"newUsersToday"`
 }
 
 // IPFetchJob represents an asynchronous IP fetch job.
