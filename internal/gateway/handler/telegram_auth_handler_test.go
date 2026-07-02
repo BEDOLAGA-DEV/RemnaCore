@@ -3,17 +3,11 @@ package handler
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
-	"sort"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -31,41 +25,10 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/httpconst"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/telegramauth/telegramauthtest"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/txmanager/txmanagertest"
 	"github.com/stretchr/testify/mock"
 )
-
-// buildTelegramInitData constructs a valid Telegram WebApp initData payload
-// signed with the given bot token. The auth_date is set to authDate (Unix seconds).
-func buildTelegramInitData(t *testing.T, botToken string, authDate int64, userJSON string) string {
-	t.Helper()
-	v := url.Values{}
-	v.Set("auth_date", strconv.FormatInt(authDate, 10))
-	v.Set("user", userJSON)
-
-	keys := make([]string, 0, len(v))
-	for k := range v {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	var b strings.Builder
-	for i, k := range keys {
-		if i > 0 {
-			b.WriteByte('\n')
-		}
-		b.WriteString(k + "=" + v.Get(k))
-	}
-
-	secretMAC := hmac.New(sha256.New, []byte("WebAppData"))
-	secretMAC.Write([]byte(botToken))
-	secret := secretMAC.Sum(nil)
-
-	dataMAC := hmac.New(sha256.New, secret)
-	dataMAC.Write([]byte(b.String()))
-	v.Set("hash", hex.EncodeToString(dataMAC.Sum(nil)))
-	return v.Encode()
-}
 
 // newTestTelegramAuthHandler builds a TelegramAuthHandler wired with:
 //   - a ResellerService backed by botRepo (other repo deps nil; bot ops don't touch them)
@@ -116,7 +79,7 @@ func TestWebAppLogin_HappyPath(t *testing.T) {
 	clk := clock.NewMock(fixedNow)
 
 	userJSON := `{"id":99,"first_name":"Bob","last_name":"Test","username":"bobtest"}`
-	initData := buildTelegramInitData(t, botToken, fixedNow.Unix()-10, userJSON)
+	initData := telegramauthtest.BuildInitData(t, botToken, fixedNow.Unix()-10, userJSON)
 
 	repo := new(identitytest.MockRepository)
 	repo.On("GetUserByTelegramID", mock.Anything, int64(99)).Return(nil, identity.ErrNotFound)
@@ -282,7 +245,7 @@ func TestWebAppLogin_DomainResolvedShop(t *testing.T) {
 	clk := clock.NewMock(fixedNow)
 
 	userJSON := `{"id":77,"first_name":"Dom","username":"domuser"}`
-	initData := buildTelegramInitData(t, botToken, fixedNow.Unix()-10, userJSON)
+	initData := telegramauthtest.BuildInitData(t, botToken, fixedNow.Unix()-10, userJSON)
 
 	repo := new(identitytest.MockRepository)
 	repo.On("GetUserByTelegramID", mock.Anything, int64(77)).Return(nil, identity.ErrNotFound)
