@@ -8,6 +8,8 @@ import (
 
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
+
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
 )
 
 // displayNameFor derives a human display name from a Telegram user: first
@@ -39,8 +41,13 @@ func (b *Bot) handleStart(ctx context.Context, _ *tgbot.Bot, update *models.Upda
 
 	displayName := displayNameFor(tgUser)
 
-	// Check if the user has a linked platform account.
-	user, err := b.identity.GetByTelegramID(ctx, tgUser.ID)
+	// Check if the user has a linked platform account (RLS read — needs scope).
+	var user *identity.PlatformUser
+	err := b.withScope(ctx, func(txCtx context.Context) error {
+		var scopeErr error
+		user, scopeErr = b.identity.GetByTelegramID(txCtx, tgUser.ID)
+		return scopeErr
+	})
 	if err != nil || user == nil {
 		msg := fmt.Sprintf(
 			"Welcome, %s!\n\nTo get started, register at %s and link your Telegram account.\n\nUse /plans to see available VPN plans.",
@@ -123,38 +130,61 @@ func (b *Bot) handleMy(ctx context.Context, _ *tgbot.Bot, update *models.Update)
 		return
 	}
 
-	user, err := b.identity.GetByTelegramID(ctx, tgUser.ID)
-	if err != nil || user == nil {
-		b.sendText(ctx, chatID, "Your Telegram account is not linked. Please register at "+b.cabinetURL)
-		return
+	// All reads below hit RLS-protected tables — run them under this bot's
+	// scope in one transaction; Telegram sends happen after the tx ends so
+	// network calls never hold it open.
+	type subView struct {
+		text string
+		kb   *models.InlineKeyboardMarkup
 	}
-
-	subs, err := b.subs.GetByUserID(ctx, user.ID)
-	if err != nil {
-		b.logger.Error("failed to get subscriptions", slog.Any("error", err))
+	var (
+		user    *identity.PlatformUser
+		views   []subView
+		subsErr error
+	)
+	err := b.withScope(ctx, func(txCtx context.Context) error {
+		var scopeErr error
+		user, scopeErr = b.identity.GetByTelegramID(txCtx, tgUser.ID)
+		if scopeErr != nil || user == nil {
+			user = nil // reported as "not linked" below; do not fail the tx
+			return nil
+		}
+		subs, err := b.subs.GetByUserID(txCtx, user.ID)
+		if err != nil {
+			subsErr = err
+			return nil
+		}
+		for _, sub := range subs {
+			planName := sub.PlanID
+			if plan, planErr := b.plans.GetByID(txCtx, sub.PlanID); planErr == nil {
+				planName = plan.Name
+			}
+			bindings, bindErr := b.bindings.GetBySubscriptionID(txCtx, sub.ID)
+			if bindErr != nil {
+				b.logger.Error("failed to get bindings", slog.String("sub_id", sub.ID), slog.Any("error", bindErr))
+			}
+			views = append(views, subView{
+				text: FormatSubscription(sub, planName, bindings),
+				kb:   SubscriptionKeyboard(sub, bindings),
+			})
+		}
+		return nil
+	})
+	if err != nil || subsErr != nil {
+		b.logger.Error("failed to get subscriptions", slog.Any("error", err), slog.Any("subs_error", subsErr))
 		b.sendText(ctx, chatID, "Failed to load subscriptions. Please try again later.")
 		return
 	}
-
-	if len(subs) == 0 {
+	if user == nil {
+		b.sendText(ctx, chatID, "Your Telegram account is not linked. Please register at "+b.cabinetURL)
+		return
+	}
+	if len(views) == 0 {
 		b.sendText(ctx, chatID, "You have no subscriptions yet. Use /plans to get started.")
 		return
 	}
-
-	for _, sub := range subs {
-		planName := sub.PlanID
-		plan, planErr := b.plans.GetByID(ctx, sub.PlanID)
-		if planErr == nil {
-			planName = plan.Name
-		}
-
-		bindings, bindErr := b.bindings.GetBySubscriptionID(ctx, sub.ID)
-		if bindErr != nil {
-			b.logger.Error("failed to get bindings", slog.String("sub_id", sub.ID), slog.Any("error", bindErr))
-		}
-
-		text := FormatSubscription(sub, planName, bindings)
-		b.sendTextWithKeyboard(ctx, chatID, text, SubscriptionKeyboard(sub, bindings))
+	for _, v := range views {
+		b.sendTextWithKeyboard(ctx, chatID, v.text, v.kb)
 	}
 }
 
@@ -170,20 +200,38 @@ func (b *Bot) handleTraffic(ctx context.Context, _ *tgbot.Bot, update *models.Up
 		return
 	}
 
-	user, err := b.identity.GetByTelegramID(ctx, tgUser.ID)
-	if err != nil || user == nil {
+	// Identity + bindings are RLS-protected reads — one scoped transaction.
+	var (
+		user        *identity.PlatformUser
+		trafficText string
+		bindErr     error
+	)
+	err := b.withScope(ctx, func(txCtx context.Context) error {
+		var scopeErr error
+		user, scopeErr = b.identity.GetByTelegramID(txCtx, tgUser.ID)
+		if scopeErr != nil || user == nil {
+			user = nil // reported as "not linked" below; do not fail the tx
+			return nil
+		}
+		bindings, err := b.bindings.GetByPlatformUserID(txCtx, user.ID)
+		if err != nil {
+			bindErr = err
+			return nil
+		}
+		trafficText = FormatTrafficUsage(bindings)
+		return nil
+	})
+	if err != nil || bindErr != nil {
+		b.logger.Error("failed to get bindings", slog.Any("error", err), slog.Any("bindings_error", bindErr))
+		b.sendText(ctx, chatID, "Failed to load traffic data. Please try again later.")
+		return
+	}
+	if user == nil {
 		b.sendText(ctx, chatID, "Your Telegram account is not linked. Please register at "+b.cabinetURL)
 		return
 	}
 
-	bindings, err := b.bindings.GetByPlatformUserID(ctx, user.ID)
-	if err != nil {
-		b.logger.Error("failed to get bindings", slog.Any("error", err))
-		b.sendText(ctx, chatID, "Failed to load traffic data. Please try again later.")
-		return
-	}
-
-	b.sendText(ctx, chatID, FormatTrafficUsage(bindings))
+	b.sendText(ctx, chatID, trafficText)
 }
 
 // handleSupport handles the /support command.

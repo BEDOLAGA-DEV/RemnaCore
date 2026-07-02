@@ -76,6 +76,7 @@ func NewBot(
 	bindingRepo multisub.BindingRepository,
 	planRepo billing.PlanReader,
 	subRepo billing.SubscriptionReader,
+	txRunner txmanager.Runner,
 	logger *slog.Logger,
 ) *Bot {
 	return &Bot{
@@ -83,6 +84,7 @@ func NewBot(
 		webhookURL: cfg.Telegram.WebhookURL,
 		cabinetURL: cfg.Telegram.CabinetURL,
 		tenantID:   tenantctx.PlatformScopeSentinel,
+		txRunner:   txRunner,
 
 		identity: identitySvc,
 		billing:  billingSvc,
@@ -211,7 +213,18 @@ func (b *Bot) registerHandlers() {
 }
 
 // sendText is a convenience wrapper for sending a plain-text message.
+// withScope runs fn inside a transaction carrying this bot's tenant scope
+// (the platform sentinel for the platform bot), so RLS-protected reads see
+// the rows they are entitled to. Repos never set the GUC themselves.
+func (b *Bot) withScope(ctx context.Context, fn func(ctx context.Context) error) error {
+	return b.txRunner.RunInTx(tenantctx.WithTenantID(ctx, b.tenantID), fn)
+}
+
 func (b *Bot) sendText(ctx context.Context, chatID int64, text string) {
+	if b.bot == nil {
+		b.logger.Warn("sendText before Init", slog.Int64("chat_id", chatID))
+		return
+	}
 	_, err := b.bot.SendMessage(ctx, &tgbot.SendMessageParams{
 		ChatID:    chatID,
 		Text:      text,
@@ -227,6 +240,10 @@ func (b *Bot) sendText(ctx context.Context, chatID int64, text string) {
 
 // sendTextWithKeyboard sends an HTML message with an inline keyboard.
 func (b *Bot) sendTextWithKeyboard(ctx context.Context, chatID int64, text string, kb *models.InlineKeyboardMarkup) {
+	if b.bot == nil {
+		b.logger.Warn("sendTextWithKeyboard before Init", slog.Int64("chat_id", chatID))
+		return
+	}
 	_, err := b.bot.SendMessage(ctx, &tgbot.SendMessageParams{
 		ChatID:      chatID,
 		Text:        text,
@@ -243,6 +260,10 @@ func (b *Bot) sendTextWithKeyboard(ctx context.Context, chatID int64, text strin
 
 // answerCallback acknowledges a callback query with an optional toast.
 func (b *Bot) answerCallback(ctx context.Context, callbackID, text string) {
+	if b.bot == nil {
+		b.logger.Warn("answerCallback before Init")
+		return
+	}
 	_, err := b.bot.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
 		CallbackQueryID: callbackID,
 		Text:            text,
@@ -351,6 +372,10 @@ func toBotHostUpdate(u *models.Update) (bothost.Update, bool) {
 // editMessageText replaces the text of an existing message (used for inline
 // keyboard interactions).
 func (b *Bot) editMessageText(ctx context.Context, chatID int64, messageID int, text string, kb *models.InlineKeyboardMarkup) {
+	if b.bot == nil {
+		b.logger.Warn("editMessageText before Init", slog.Int64("chat_id", chatID))
+		return
+	}
 	params := &tgbot.EditMessageTextParams{
 		ChatID:    chatID,
 		MessageID: messageID,
