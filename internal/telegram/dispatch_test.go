@@ -236,13 +236,13 @@ func (stubTariffReader) Get(_ context.Context, _ string) (*bothost.TariffOffer, 
 func TestNewOpContext_DomainReadersThreaded(t *testing.T) {
 	stub := stubTariffReader{}
 	b := &Bot{
-		isShop:    true,
-		tenantID:  "tenant-readers-test",
+		isShop:     true,
+		tenantID:   "tenant-readers-test",
 		cabinetURL: "https://example.com/cabinet",
-		identity:  nil,
-		txRunner:  nil,
-		botOps:    botHostRegistryForTest(),
-		logger:    testLogger(),
+		identity:   nil,
+		txRunner:   nil,
+		botOps:     botHostRegistryForTest(),
+		logger:     testLogger(),
 		readers: DomainReaders{
 			Tariffs: stub,
 		},

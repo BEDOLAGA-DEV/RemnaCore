@@ -143,4 +143,3 @@ func provideBotManager(
 ) *BotManager {
 	return NewBotManager(platform, identitySvc, resellerSvc, cfg, botRegistry, botOps, txRunner, wasmBots, readers, logger)
 }
-

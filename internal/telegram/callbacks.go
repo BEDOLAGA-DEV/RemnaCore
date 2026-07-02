@@ -9,7 +9,10 @@ import (
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	billingaggregate "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	billingservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/service"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
 )
 
 // handlePlanCallback handles callback queries with the "plan:" prefix.
@@ -107,14 +110,22 @@ func (b *Bot) handleConfirmCallback(ctx context.Context, _ *tgbot.Bot, update *m
 	chatID, messageID := callbackChatAndMessage(cb)
 	tgUserID := cb.From.ID
 
-	user, err := b.identity.GetByTelegramID(ctx, tgUserID)
+	// Identity is an RLS-protected read — scope it.
+	var user *identity.PlatformUser
+	err := b.withScope(ctx, func(txCtx context.Context) error {
+		var scopeErr error
+		user, scopeErr = b.identity.GetByTelegramID(txCtx, tgUserID)
+		return scopeErr
+	})
 	if err != nil || user == nil {
 		b.editMessageText(ctx, chatID, messageID, "Please link your Telegram account at "+b.cabinetURL+" first.", nil)
 		b.answerCallback(ctx, cb.ID, "Account not linked.")
 		return
 	}
 
-	result, err := b.checkout.StartCheckout(ctx, billingservice.CheckoutRequest{
+	// StartCheckout self-wraps its own RunInTx — pass the scoped ctx WITHOUT
+	// another RunInTx (double-wrap breaks the tx re-entrancy/GUC contract).
+	result, err := b.checkout.StartCheckout(tenantctx.WithTenantID(ctx, b.tenantID), billingservice.CheckoutRequest{
 		UserID:    user.ID,
 		UserEmail: user.Email,
 		PlanID:    planID,
@@ -152,8 +163,34 @@ func (b *Bot) handleCancelCallback(ctx context.Context, _ *tgbot.Bot, update *mo
 		return
 	}
 
-	err := b.billing.CancelSubscription(ctx, subID, nil)
-	if err != nil {
+	// Ownership check: subID comes from attacker-forgeable callback data, and
+	// CancelSubscription performs no ownership check of its own. Resolve the
+	// caller and confirm they own the subscription before cancelling, so a user
+	// cannot cancel someone else's subscription by guessing its ID. Both reads
+	// run under this bot's scope (RLS-protected tables).
+	tgUser := cb.From
+	var (
+		user *identity.PlatformUser
+		sub  *billingaggregate.Subscription
+	)
+	if err := b.withScope(ctx, func(txCtx context.Context) error {
+		var scopeErr error
+		user, scopeErr = b.identity.GetByTelegramID(txCtx, tgUser.ID)
+		if scopeErr != nil || user == nil {
+			return scopeErr
+		}
+		sub, scopeErr = b.subs.GetByID(txCtx, subID)
+		return scopeErr
+	}); err != nil || user == nil || sub == nil || sub.UserID != user.ID {
+		b.logger.Warn("cancel subscription denied",
+			slog.String("sub_id", subID), slog.Int64("telegram_id", tgUser.ID), slog.Any("error", err))
+		b.answerCallback(ctx, cb.ID, "Failed to cancel subscription.")
+		return
+	}
+
+	// CancelSubscription self-wraps its own RunInTx — pass the scoped ctx
+	// WITHOUT another RunInTx.
+	if err := b.billing.CancelSubscription(tenantctx.WithTenantID(ctx, b.tenantID), subID, nil); err != nil {
 		b.logger.Error("cancel subscription failed", slog.String("sub_id", subID), slog.Any("error", err))
 		b.answerCallback(ctx, cb.ID, "Failed to cancel subscription.")
 		return
