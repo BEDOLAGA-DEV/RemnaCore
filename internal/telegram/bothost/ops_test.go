@@ -294,26 +294,17 @@ func TestOp_UserRegister(t *testing.T) {
 }
 
 // TestStdOps_DecodeArgsError verifies every std op rejects malformed args JSON
-// with its "<op>: decode args" error path.
+// with its "<op>: decode args" error path. The op list comes from the live
+// registry, so an op added to RegisterStdOps is covered automatically.
 func TestStdOps_DecodeArgsError(t *testing.T) {
 	r := NewRegistry()
 	RegisterStdOps(r)
 	oc := &OpContext{TenantID: "t1", CabinetURL: "https://cab.example.com", Sender: &stubSender{}}
 
-	ops := []struct {
-		op   string
-		perm plugin.PermissionScope
-	}{
-		{OpTelegramSendText, plugin.PermTelegramSend},
-		{OpTelegramSendKeyboard, plugin.PermTelegramSend},
-		{OpTelegramAnswerCallback, plugin.PermTelegramSend},
-		{OpTelegramEditMessage, plugin.PermTelegramSend},
-		{OpCabinetOpen, plugin.PermTelegramSend},
-		{OpUserRegister, plugin.PermUsersWrite},
-	}
-	for _, tc := range ops {
-		t.Run(tc.op, func(t *testing.T) {
-			_, err := r.Call(context.Background(), oc, NewPermSet(tc.perm), tc.op, json.RawMessage(`{invalid`))
+	require.NotEmpty(t, r.ops)
+	for op, reg := range r.ops {
+		t.Run(op, func(t *testing.T) {
+			_, err := r.Call(context.Background(), oc, NewPermSet(reg.perm), op, json.RawMessage(`{invalid`))
 			require.ErrorContains(t, err, "decode args")
 		})
 	}

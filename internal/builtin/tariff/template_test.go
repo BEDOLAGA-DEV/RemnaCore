@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	gouuid "github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -56,7 +57,6 @@ func TestHandler_isPlatformActor(t *testing.T) {
 type fakeStore struct {
 	inserted []json.RawMessage
 	docs     map[string]*pluginstore.Document // id -> doc (for Get/Update)
-	nextID   int
 }
 
 func newFakeStore() *fakeStore {
@@ -81,8 +81,9 @@ func (f *fakeStore) GetDocument(_ context.Context, _, _, id string) (*pluginstor
 
 func (f *fakeStore) InsertDocument(_ context.Context, pluginSlug, collection string, doc json.RawMessage) (*pluginstore.Document, error) {
 	f.inserted = append(f.inserted, doc)
-	f.nextID++
-	id := "doc-" + string(rune('0'+f.nextID))
+	// Real store IDs are UUIDs; mirror that so DerivePlanID-based paths are
+	// testable through the normal InsertDocument API.
+	id := gouuid.NewString()
 	d := &pluginstore.Document{ID: id, PluginSlug: pluginSlug, Collection: collection, Data: doc}
 	f.docs[id] = d
 	return d, nil
