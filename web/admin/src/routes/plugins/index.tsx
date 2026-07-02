@@ -1,19 +1,19 @@
-import { useTranslation } from "react-i18next";
-import { Link, useNavigate } from "@tanstack/react-router";
-import {
-  usePlugins,
-  useEnablePlugin,
-  useDisablePlugin,
-  LoadingSpinner,
-} from "@remnacore/shared";
 import type { Plugin, PluginStatus } from "@remnacore/shared";
 import {
-  PageHeader,
-  DataTable,
+  LoadingSpinner,
+  useDisablePlugin,
+  useEnablePlugin,
+  usePlugins,
+} from "@remnacore/shared";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
+import {
   type Column,
+  DataTable,
+  PageHeader,
   StatusPill,
-  type Tone,
   TermButton,
+  type Tone,
 } from "@/components/ui";
 
 function statusTone(status: PluginStatus): Tone {
@@ -58,6 +58,7 @@ export function PluginsPage() {
             {p.name.charAt(0)}
           </span>
           <span className="text-t2">{p.name}</span>
+          {p.provides_bot && <StatusPill label="BOT" tone="ok" />}
         </span>
       ),
     },
@@ -74,7 +75,10 @@ export function PluginsPage() {
       key: "status",
       header: t("common.status"),
       render: (p) => (
-        <StatusPill label={p.status.toUpperCase()} tone={statusTone(p.status)} />
+        <StatusPill
+          label={p.status.toUpperCase()}
+          tone={statusTone(p.status)}
+        />
       ),
     },
     {
@@ -100,9 +104,7 @@ export function PluginsPage() {
               }
             }}
           >
-            {isEnabled
-              ? t("admin.plugins.disable")
-              : t("admin.plugins.enable")}
+            {isEnabled ? t("admin.plugins.disable") : t("admin.plugins.enable")}
           </TermButton>
         );
       },
@@ -128,7 +130,9 @@ export function PluginsPage() {
         rows={plugins ?? []}
         cols="1.6fr 1.2fr .9fr .9fr"
         rowKey={(p) => p.id}
-        onRowClick={(p) => navigate({ to: "/plugins/$id", params: { id: p.id } })}
+        onRowClick={(p) =>
+          navigate({ to: "/plugins/$id", params: { id: p.id } })
+        }
         empty={t("admin.plugins.noPlugins").toUpperCase()}
       />
     </div>

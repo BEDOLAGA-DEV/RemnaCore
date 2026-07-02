@@ -80,6 +80,7 @@ type pluginResponse struct {
 	License     string               `json:"license"`
 	Status      string               `json:"status"`
 	IsBuiltIn   bool                 `json:"is_builtin"`
+	ProvidesBot bool                 `json:"provides_bot"`
 	Config      map[string]string    `json:"config"`
 	Pages       []pluginPageResponse `json:"pages"`
 	ErrorLog    string               `json:"error_log,omitempty"`
@@ -98,6 +99,7 @@ func toPluginResponse(p *plugin.Plugin) pluginResponse {
 		License:     p.License,
 		Status:      string(p.Status),
 		IsBuiltIn:   p.IsBuiltIn,
+		ProvidesBot: p.Manifest != nil && p.Manifest.Telegram != nil && p.Manifest.Telegram.ProvidesBot,
 		Config:      p.RedactedConfig(),
 		Pages:       toPluginPageResponses(p),
 		ErrorLog:    p.ErrorLog,
