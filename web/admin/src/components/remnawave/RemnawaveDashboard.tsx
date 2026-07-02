@@ -1,4 +1,10 @@
-import { apiGet, cn, ENDPOINTS, formatBytes, LoadingSpinner } from "@remnacore/shared";
+import {
+  apiGet,
+  cn,
+  ENDPOINTS,
+  formatBytes,
+  LoadingSpinner,
+} from "@remnacore/shared";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -313,9 +319,7 @@ function PanelRow({ panel }: PanelRowProps) {
     <div className="flex items-center justify-between rounded-lg bg-secondary p-3">
       <div className="flex items-center gap-2.5">
         <StatusDot status={isUp ? "healthy" : "unhealthy"} />
-        <span className="font-mono text-xs text-foreground">
-          {label}
-        </span>
+        <span className="font-mono text-xs text-foreground">{label}</span>
       </div>
       <span
         className={cn(

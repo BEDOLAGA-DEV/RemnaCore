@@ -1,11 +1,11 @@
-import { useState } from "react";
-import { useTranslation } from "react-i18next";
-import { Link } from "@tanstack/react-router";
-import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { passwordSchema, useRegister } from "@remnacore/shared";
+import { Link } from "@tanstack/react-router";
+import { Loader2, Mail, Shield } from "lucide-react";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { useTranslation } from "react-i18next";
 import { z } from "zod";
-import { Loader2, Shield, Mail } from "lucide-react";
-import { useRegister, passwordSchema } from "@remnacore/shared";
 
 const registerSchema = z
   .object({

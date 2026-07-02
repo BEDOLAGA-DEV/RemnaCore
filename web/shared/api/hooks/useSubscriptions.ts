@@ -1,13 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { QUERY_KEYS } from "../../lib/queryKeys.js";
-import { ENDPOINTS } from "../endpoints.js";
-import { apiGet, apiPost, apiDelete } from "../client.js";
 import type { Subscription } from "../../types/index.js";
+import { apiDelete, apiGet, apiPost } from "../client.js";
+import { ENDPOINTS } from "../endpoints.js";
 import type {
-  CreateSubscriptionRequest,
-  StatusResponse,
-  CreateSubscriptionResponse,
   AddAddonRequest,
+  CreateSubscriptionRequest,
+  CreateSubscriptionResponse,
+  StatusResponse,
 } from "../types.js";
 
 export function useSubscriptions() {

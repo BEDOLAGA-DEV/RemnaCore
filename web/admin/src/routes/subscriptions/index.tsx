@@ -1,15 +1,15 @@
+import type { Subscription, SubscriptionStatus } from "@remnacore/shared";
+import { formatDate, useAdminSubscriptions } from "@remnacore/shared";
+import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "@tanstack/react-router";
-import { useAdminSubscriptions, formatDate } from "@remnacore/shared";
-import type { Subscription, SubscriptionStatus } from "@remnacore/shared";
 import {
-  PageHeader,
-  DataTable,
   type Column,
+  DataTable,
+  PageHeader,
   StatusPill,
-  type Tone,
   TermButton,
+  type Tone,
 } from "@/components/ui";
 
 function statusTone(status: SubscriptionStatus): Tone {
@@ -57,7 +57,10 @@ export function AdminSubscriptionsPage() {
       key: "status",
       header: t("common.status"),
       render: (s) => (
-        <StatusPill label={s.status.toUpperCase()} tone={statusTone(s.status)} />
+        <StatusPill
+          label={s.status.toUpperCase()}
+          tone={statusTone(s.status)}
+        />
       ),
     },
     {
@@ -90,7 +93,9 @@ export function AdminSubscriptionsPage() {
         onRowClick={(s) =>
           navigate({ to: "/subscriptions/$id", params: { id: s.id } })
         }
-        empty={isLoading ? t("common.loading").toUpperCase() : "NO SUBSCRIPTIONS"}
+        empty={
+          isLoading ? t("common.loading").toUpperCase() : "NO SUBSCRIPTIONS"
+        }
       />
 
       <div className="flex items-center justify-end gap-2">

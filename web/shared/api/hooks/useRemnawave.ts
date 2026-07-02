@@ -1,12 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { ENDPOINTS } from "../endpoints.js";
-import { apiGet } from "../client.js";
 import type {
+  RemnawaveNodeRow,
   RemnawaveOverview,
   RemnawaveRealtime,
-  RemnawaveNodeRow,
   TrafficByNode,
 } from "../../types/index.js";
+import { apiGet } from "../client.js";
+import { ENDPOINTS } from "../endpoints.js";
 
 const REMNAWAVE_STALE_TIME_MS = 30_000;
 

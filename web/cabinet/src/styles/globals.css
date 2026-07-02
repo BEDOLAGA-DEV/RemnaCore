@@ -18,7 +18,7 @@
     --destructive: #ef4444;
     --destructive-foreground: #ffffff;
     --border: rgba(26, 22, 19, 0.08);
-    --input: rgba(26, 22, 19, 0.10);
+    --input: rgba(26, 22, 19, 0.1);
     --ring: #0d9488;
     --radius: 14px;
     --warm: #c4956a;
@@ -167,7 +167,8 @@
     inset: 0;
     pointer-events: none;
     z-index: 0;
-    background: radial-gradient(
+    background:
+      radial-gradient(
         ellipse 700px 500px at 15% 25%,
         rgba(196, 149, 106, 0.04),
         transparent

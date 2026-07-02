@@ -1,8 +1,7 @@
-import { useTranslation } from "react-i18next";
-import { useStartCheckout } from "@remnacore/shared";
-import { formatMoney } from "@remnacore/shared";
-import { Loader2 } from "lucide-react";
 import type { Plan } from "@remnacore/shared";
+import { formatMoney, useStartCheckout } from "@remnacore/shared";
+import { Loader2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 type CheckoutFormProps = {
   plan: Plan;
@@ -86,9 +85,7 @@ export function CheckoutForm({ plan, selectedAddonIds }: CheckoutFormProps) {
       </button>
 
       {checkout.isError && (
-        <p className="mt-3 text-sm text-destructive">
-          {t("common.error")}
-        </p>
+        <p className="mt-3 text-sm text-destructive">{t("common.error")}</p>
       )}
     </div>
   );

@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { QUERY_KEYS } from "../../lib/queryKeys.js";
-import { ENDPOINTS } from "../endpoints.js";
-import { apiGet } from "../client.js";
 import type { Binding } from "../../types/index.js";
+import { apiGet } from "../client.js";
+import { ENDPOINTS } from "../endpoints.js";
 
 export function useBindings() {
   return useQuery({
@@ -14,8 +14,7 @@ export function useBindings() {
 export function useSubscriptionBindings(subId: string) {
   return useQuery({
     queryKey: QUERY_KEYS.subscriptions.bindings(subId),
-    queryFn: () =>
-      apiGet<Binding[]>(ENDPOINTS.subscriptions.bindings(subId)),
+    queryFn: () => apiGet<Binding[]>(ENDPOINTS.subscriptions.bindings(subId)),
     enabled: !!subId,
   });
 }

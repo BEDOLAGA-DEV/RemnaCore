@@ -29,7 +29,9 @@ export function PanelHeader({
 }) {
   return (
     <div className="flex items-center justify-between border-b border-line px-4 py-3">
-      <div className="text-[11px] uppercase tracking-[2px] text-t6">{title}</div>
+      <div className="text-[11px] uppercase tracking-[2px] text-t6">
+        {title}
+      </div>
       {right}
     </div>
   );

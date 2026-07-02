@@ -1,5 +1,5 @@
-import { type ReactNode } from "react";
 import { Navigate } from "@tanstack/react-router";
+import type { ReactNode } from "react";
 import { useAuthStore } from "../stores/authStore.js";
 import type { UserRole } from "../types/index.js";
 

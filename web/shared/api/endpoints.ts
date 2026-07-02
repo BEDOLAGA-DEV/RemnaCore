@@ -81,7 +81,8 @@ export const ENDPOINTS = {
     invitations: {
       list: "/api/users/invitations",
       create: "/api/users/invitations",
-      revoke: (invitationId: string) => `/api/users/invitations/${invitationId}`,
+      revoke: (invitationId: string) =>
+        `/api/users/invitations/${invitationId}`,
     },
     roles: {
       list: (userId: string) => `/api/users/${userId}/roles`,

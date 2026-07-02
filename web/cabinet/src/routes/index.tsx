@@ -1,30 +1,30 @@
-import { useTranslation } from "react-i18next";
-import { Link } from "@tanstack/react-router";
+import type { InvoiceStatus, SubscriptionStatus } from "@remnacore/shared";
 import {
-  Package,
-  Wifi,
-  WifiOff,
-  ChevronRight,
-  Sparkles,
-  ArrowUpRight,
-  Monitor,
-  Smartphone,
-  Tablet,
-  Shield,
-} from "lucide-react";
+  cn,
+  formatBytes,
+  formatDate,
+  formatMoney,
+  LoadingSpinner,
+  useBindings,
+  useInvoices,
+  useMe,
+  useSubscriptions,
+} from "@remnacore/shared";
+import { Link } from "@tanstack/react-router";
 import type { LucideIcon } from "lucide-react";
 import {
-  useSubscriptions,
-  useInvoices,
-  useBindings,
-  useMe,
-  LoadingSpinner,
-  formatDate,
-  formatBytes,
-  formatMoney,
-  cn,
-} from "@remnacore/shared";
-import type { SubscriptionStatus, InvoiceStatus } from "@remnacore/shared";
+  ArrowUpRight,
+  ChevronRight,
+  Monitor,
+  Package,
+  Shield,
+  Smartphone,
+  Sparkles,
+  Tablet,
+  Wifi,
+  WifiOff,
+} from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 /* ─── Status helpers ────────────────────────────────────────────────── */
 
@@ -62,7 +62,10 @@ function ConnectionRing({ isActive }: { isActive: boolean }) {
   const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
   return (
-    <div className="relative flex items-center justify-center mx-auto" style={{ width: RING_SIZE, height: RING_SIZE }}>
+    <div
+      className="relative flex items-center justify-center mx-auto"
+      style={{ width: RING_SIZE, height: RING_SIZE }}
+    >
       <svg
         width={RING_SIZE}
         height={RING_SIZE}
@@ -99,10 +102,12 @@ function ConnectionRing({ isActive }: { isActive: boolean }) {
         {!isActive && (
           <span className="block h-2 w-2 rounded-full bg-muted-foreground" />
         )}
-        <span className={cn(
-          "text-[11px] font-semibold tracking-wide uppercase",
-          isActive ? "text-primary" : "text-muted-foreground",
-        )}>
+        <span
+          className={cn(
+            "text-[11px] font-semibold tracking-wide uppercase",
+            isActive ? "text-primary" : "text-muted-foreground",
+          )}
+        >
           {isActive ? "ON" : "OFF"}
         </span>
       </div>
@@ -135,7 +140,10 @@ export function DashboardPage() {
 
   const activeSubs = allSubs.filter((s) => s.status === "active");
   const syncedBindings = allBindings.filter((b) => b.status === "synced");
-  const totalTrafficBytes = allBindings.reduce((sum, b) => sum + b.traffic_limit_bytes, 0);
+  const totalTrafficBytes = allBindings.reduce(
+    (sum, b) => sum + b.traffic_limit_bytes,
+    0,
+  );
   const BYTES_PER_GB = 1_073_741_824;
   const totalTrafficGB = (totalTrafficBytes / BYTES_PER_GB).toFixed(1);
   const isVpnActive = syncedBindings.length > 0;
@@ -171,7 +179,13 @@ export function DashboardPage() {
   /* ── Determine greeting based on hour ── */
   const hour = new Date().getHours();
   const greetingKey =
-    hour < 6 ? "night" : hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening";
+    hour < 6
+      ? "night"
+      : hour < 12
+        ? "morning"
+        : hour < 18
+          ? "afternoon"
+          : "evening";
   const greetingMap: Record<string, string> = {
     night: t("common.goodNight"),
     morning: t("common.goodMorning"),
@@ -189,8 +203,11 @@ export function DashboardPage() {
             className="font-bold leading-[1.05] tracking-tight text-foreground"
             style={{ fontSize: "clamp(32px, 5vw, 56px)" }}
           >
-            {t("common.dashboard")}{"\n"}
-            <span className="italic text-primary">{t("nav.traffic").toLowerCase()}.</span>
+            {t("common.dashboard")}
+            {"\n"}
+            <span className="italic text-primary">
+              {t("nav.traffic").toLowerCase()}.
+            </span>
           </h1>
           {user && (
             <p className="mt-3 text-sm text-muted-foreground">
@@ -198,7 +215,8 @@ export function DashboardPage() {
               <span className="font-semibold text-foreground">
                 {user.display_name ?? user.email}
               </span>{" "}
-              — {activeSubs.length} {t("subscriptions.status.active").toLowerCase()}{" "}
+              — {activeSubs.length}{" "}
+              {t("subscriptions.status.active").toLowerCase()}{" "}
               {t("nav.subscriptions").toLowerCase()}
             </p>
           )}
@@ -216,7 +234,9 @@ export function DashboardPage() {
           <span
             className={cn(
               "block h-2 w-2 rounded-full",
-              isVpnActive ? "bg-primary animate-pulse-glow" : "bg-muted-foreground",
+              isVpnActive
+                ? "bg-primary animate-pulse-glow"
+                : "bg-muted-foreground",
             )}
           />
           {isVpnActive ? t("common.vpnActive") : t("common.vpnOffline")}
@@ -237,7 +257,9 @@ export function DashboardPage() {
             <p className="mt-1.5 text-2xl font-bold text-foreground font-mono animate-count-up">
               {kpi.value}
             </p>
-            <p className="mt-0.5 text-xs font-mono text-muted-foreground">{kpi.sub}</p>
+            <p className="mt-0.5 text-xs font-mono text-muted-foreground">
+              {kpi.sub}
+            </p>
             {/* glow orb */}
             <div className={cn("kpi-glow", kpi.glowColor)} />
           </div>
@@ -250,7 +272,10 @@ export function DashboardPage() {
         <div className="space-y-6">
           {/* Subscriptions section */}
           {allSubs.length > 0 ? (
-            <div className="glass-card p-5 animate-fade-up" style={{ animationDelay: "320ms" }}>
+            <div
+              className="glass-card p-5 animate-fade-up"
+              style={{ animationDelay: "320ms" }}
+            >
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2.5">
                   <h2 className="text-sm font-semibold text-foreground">
@@ -332,7 +357,9 @@ export function DashboardPage() {
                         {subBindings.length > 0 && (
                           <div className="flex items-center gap-1 mt-1.5">
                             {subBindings.slice(0, 3).map((b, i) => {
-                              const Icon = DEVICE_ICONS[i % DEVICE_ICONS.length] ?? Monitor;
+                              const Icon =
+                                DEVICE_ICONS[i % DEVICE_ICONS.length] ??
+                                Monitor;
                               return (
                                 <div
                                   key={b.id}

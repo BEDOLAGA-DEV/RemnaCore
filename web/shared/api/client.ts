@@ -118,10 +118,7 @@ export async function apiGet<T>(
 /**
  * Typed JSON POST request.
  */
-export async function apiPost<T>(
-  endpoint: string,
-  body?: unknown,
-): Promise<T> {
+export async function apiPost<T>(endpoint: string, body?: unknown): Promise<T> {
   const baseUrl = getBaseUrl();
   return apiClient.post(`${baseUrl}${endpoint}`, { json: body }).json<T>();
 }
@@ -129,10 +126,7 @@ export async function apiPost<T>(
 /**
  * Typed JSON PUT request.
  */
-export async function apiPut<T>(
-  endpoint: string,
-  body?: unknown,
-): Promise<T> {
+export async function apiPut<T>(endpoint: string, body?: unknown): Promise<T> {
   const baseUrl = getBaseUrl();
   return apiClient.put(`${baseUrl}${endpoint}`, { json: body }).json<T>();
 }
@@ -156,9 +150,7 @@ export async function apiDelete<T>(
   searchParams?: Record<string, string>,
 ): Promise<T> {
   const baseUrl = getBaseUrl();
-  return apiClient
-    .delete(`${baseUrl}${endpoint}`, { searchParams })
-    .json<T>();
+  return apiClient.delete(`${baseUrl}${endpoint}`, { searchParams }).json<T>();
 }
 
 /**
@@ -175,9 +167,7 @@ export async function apiPutVoid(
 /**
  * DELETE request that expects no response body (204 No Content).
  */
-export async function apiDeleteVoid(
-  endpoint: string,
-): Promise<void> {
+export async function apiDeleteVoid(endpoint: string): Promise<void> {
   const baseUrl = getBaseUrl();
   await apiClient.delete(`${baseUrl}${endpoint}`);
 }

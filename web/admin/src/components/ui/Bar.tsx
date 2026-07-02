@@ -11,7 +11,10 @@ export function Bar({
       className="block h-[5px] flex-1"
       style={{ background: "rgba(255,255,255,.07)" }}
     >
-      <span className="block h-full" style={{ width: `${w}%`, background: color }} />
+      <span
+        className="block h-full"
+        style={{ width: `${w}%`, background: color }}
+      />
     </span>
   );
 }

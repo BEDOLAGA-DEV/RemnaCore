@@ -1,8 +1,8 @@
-import type { ReactNode } from "react";
-import { useTranslation } from "react-i18next";
+import { formatDate, LoadingSpinner, useAdminUser } from "@remnacore/shared";
 import { Link, useParams } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-import { useAdminUser, LoadingSpinner, formatDate } from "@remnacore/shared";
+import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import {
   PageHeader,
   Panel,
@@ -91,10 +91,14 @@ export function UserDetailPage() {
               </span>
             </Row>
             <Row label={t("common.createdAt")}>
-              <span className="tabular-nums">{formatDate(user.created_at)}</span>
+              <span className="tabular-nums">
+                {formatDate(user.created_at)}
+              </span>
             </Row>
             <Row label={t("common.updatedAt")}>
-              <span className="tabular-nums">{formatDate(user.updated_at)}</span>
+              <span className="tabular-nums">
+                {formatDate(user.updated_at)}
+              </span>
             </Row>
           </div>
         </Panel>

@@ -1,11 +1,11 @@
-import { useState } from "react";
-import { useTranslation } from "react-i18next";
-import { Link } from "@tanstack/react-router";
-import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
+import { passwordSchema, useResetPassword } from "@remnacore/shared";
+import { Link } from "@tanstack/react-router";
 import { Loader2, Shield } from "lucide-react";
-import { useResetPassword, passwordSchema } from "@remnacore/shared";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { useTranslation } from "react-i18next";
+import { z } from "zod";
 
 const resetSchema = z.object({
   token: z.string().min(1),
@@ -48,7 +48,9 @@ export function ResetPasswordPage() {
           <div className="mb-8 flex flex-col items-center gap-3">
             <div
               className="flex h-10 w-10 items-center justify-center rounded-xl"
-              style={{ background: "linear-gradient(135deg, #2dd4bf, #0d9488)" }}
+              style={{
+                background: "linear-gradient(135deg, #2dd4bf, #0d9488)",
+              }}
             >
               <Shield size={20} className="text-[#110f0d]" />
             </div>
@@ -56,7 +58,10 @@ export function ResetPasswordPage() {
               {t("auth.resetSuccess")}
             </h1>
             <p className="text-sm text-muted-foreground text-center">
-              {t("auth.resetSuccessDescription", "Your password has been updated")}
+              {t(
+                "auth.resetSuccessDescription",
+                "Your password has been updated",
+              )}
             </p>
           </div>
 

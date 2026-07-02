@@ -1,21 +1,25 @@
-import { useState } from "react";
-import { useTranslation } from "react-i18next";
-import { useNavigate } from "@tanstack/react-router";
-import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { Plus, Loader2 } from "lucide-react";
-import { useAdminTenants, useCreateTenant, formatDate } from "@remnacore/shared";
 import type { Tenant } from "@remnacore/shared";
 import {
+  formatDate,
+  useAdminTenants,
+  useCreateTenant,
+} from "@remnacore/shared";
+import { useNavigate } from "@tanstack/react-router";
+import { Loader2, Plus } from "lucide-react";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { useTranslation } from "react-i18next";
+import { z } from "zod";
+import {
+  type Column,
+  DataTable,
   PageHeader,
   Panel,
   PanelHeader,
-  DataTable,
-  type Column,
   StatusPill,
-  TermInput,
   TermButton,
+  TermInput,
 } from "@/components/ui";
 
 const createTenantSchema = z.object({
@@ -70,7 +74,10 @@ export function TenantsPage() {
       header: t("common.status"),
       render: (tn) =>
         tn.is_active ? (
-          <StatusPill label={t("admin.tenants.active").toUpperCase()} tone="ok" />
+          <StatusPill
+            label={t("admin.tenants.active").toUpperCase()}
+            tone="ok"
+          />
         ) : (
           <StatusPill
             label={t("admin.tenants.inactive").toUpperCase()}
@@ -131,7 +138,11 @@ export function TenantsPage() {
               <TermInput
                 id="owner_user_id"
                 label={t("admin.tenants.ownerUserId")}
-                error={errors.owner_user_id ? t("admin.tenants.ownerUserId") : undefined}
+                error={
+                  errors.owner_user_id
+                    ? t("admin.tenants.ownerUserId")
+                    : undefined
+                }
                 {...register("owner_user_id")}
               />
             </div>
@@ -159,7 +170,11 @@ export function TenantsPage() {
         onRowClick={(tn) =>
           navigate({ to: "/tenants/$id", params: { id: tn.id } })
         }
-        empty={isLoading ? t("common.loading").toUpperCase() : t("common.noResults").toUpperCase()}
+        empty={
+          isLoading
+            ? t("common.loading").toUpperCase()
+            : t("common.noResults").toUpperCase()
+        }
       />
 
       <div className="flex items-center justify-end gap-2">

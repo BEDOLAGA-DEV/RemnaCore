@@ -1,9 +1,9 @@
+import { ErrorBoundary } from "@remnacore/shared";
 import { Outlet } from "@tanstack/react-router";
 import { useState } from "react";
-import { ErrorBoundary } from "@remnacore/shared";
-import { Sidebar } from "../components/shell/Sidebar.js";
-import { Header } from "../components/shell/Header.js";
 import { CommandPalette } from "../components/shell/CommandPalette.js";
+import { Header } from "../components/shell/Header.js";
+import { Sidebar } from "../components/shell/Sidebar.js";
 
 export function AdminLayout() {
   const [cmdOpen, setCmdOpen] = useState(false);

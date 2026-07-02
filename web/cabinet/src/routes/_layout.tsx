@@ -1,5 +1,5 @@
-import { Outlet } from "@tanstack/react-router";
 import { ErrorBoundary } from "@remnacore/shared";
+import { Outlet } from "@tanstack/react-router";
 import { Navbar } from "../components/Navbar.js";
 
 export function Layout() {

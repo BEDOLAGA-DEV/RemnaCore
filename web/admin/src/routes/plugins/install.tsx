@@ -1,10 +1,10 @@
-import { useTranslation } from "react-i18next";
-import { Link, useNavigate } from "@tanstack/react-router";
-import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { ArrowLeft, Loader2 } from "lucide-react";
 import { useInstallPlugin } from "@remnacore/shared";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { ArrowLeft, Loader2 } from "lucide-react";
+import { useForm } from "react-hook-form";
+import { useTranslation } from "react-i18next";
+import { z } from "zod";
 import { PageHeader, Panel, PanelHeader, TermButton } from "@/components/ui";
 
 const installSchema = z.object({
@@ -55,10 +55,7 @@ export function InstallPluginPage() {
 
       <Panel className="mx-auto max-w-2xl">
         <PanelHeader title="CREATE ITEM" />
-        <form
-          onSubmit={handleSubmit(onSubmit)}
-          className="space-y-4 px-4 py-5"
-        >
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 px-4 py-5">
           <div>
             <label
               htmlFor="manifest"

@@ -1,9 +1,15 @@
-import { useTranslation } from "react-i18next";
+import type { BillingInterval, Plan } from "@remnacore/shared";
+import {
+  cn,
+  formatBytes,
+  formatMoney,
+  LoadingSpinner,
+  usePlans,
+} from "@remnacore/shared";
 import { useNavigate } from "@tanstack/react-router";
-import { usePlans, LoadingSpinner, cn, formatMoney, formatBytes } from "@remnacore/shared";
-import type { Plan, BillingInterval } from "@remnacore/shared";
-import { Check, Zap, Crown, Shield } from "lucide-react";
+import { Check, Crown, Shield, Zap } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -139,7 +145,8 @@ function PlanGroupCard({
   });
 
   const selectedPlan = group.plans[selectedIdx] ?? group.plans[0]!;
-  const isPopular = selectedPlan.tier === "standard" || selectedPlan.tier === "premium";
+  const isPopular =
+    selectedPlan.tier === "standard" || selectedPlan.tier === "premium";
   const TierIcon = tierIcon(selectedPlan.tier);
 
   return (
@@ -209,7 +216,10 @@ function PlanGroupCard({
       <div className="mb-5">
         <div className="flex items-baseline gap-1">
           <span className="font-mono text-3xl font-bold text-foreground">
-            {formatMoney(selectedPlan.base_price_amount, selectedPlan.base_price_currency)}
+            {formatMoney(
+              selectedPlan.base_price_amount,
+              selectedPlan.base_price_currency,
+            )}
           </span>
           <span className="text-sm text-muted-foreground">
             {intervalLabel(selectedPlan.billing_interval)}
@@ -221,11 +231,15 @@ function PlanGroupCard({
       <ul className="mb-6 flex flex-col gap-2.5">
         <li className="flex items-center gap-2.5 text-sm text-foreground">
           <Check size={15} className="shrink-0 text-primary" />
-          {t("plans.traffic")}: {selectedPlan.traffic_limit_bytes > 0 ? formatBytes(selectedPlan.traffic_limit_bytes) : t("plans.unlimited")}
+          {t("plans.traffic")}:{" "}
+          {selectedPlan.traffic_limit_bytes > 0
+            ? formatBytes(selectedPlan.traffic_limit_bytes)
+            : t("plans.unlimited")}
         </li>
         <li className="flex items-center gap-2.5 text-sm text-foreground">
           <Check size={15} className="shrink-0 text-primary" />
-          {t("plans.devices")}: {selectedPlan.device_limit || t("plans.unlimited")}
+          {t("plans.devices")}:{" "}
+          {selectedPlan.device_limit || t("plans.unlimited")}
         </li>
         <li className="flex items-center gap-2.5 text-sm text-foreground">
           <Check size={15} className="shrink-0 text-primary" />
@@ -234,7 +248,8 @@ function PlanGroupCard({
         {selectedPlan.family_enabled && (
           <li className="flex items-center gap-2.5 text-sm text-foreground">
             <Zap size={15} className="shrink-0 text-primary" />
-            {t("plans.familySharing")} — {t("plans.upToMembers", { count: selectedPlan.max_family_members })}
+            {t("plans.familySharing")} —{" "}
+            {t("plans.upToMembers", { count: selectedPlan.max_family_members })}
           </li>
         )}
       </ul>

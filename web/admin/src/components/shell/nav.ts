@@ -29,7 +29,11 @@ export type NavGroup = { name: string; items: NavItem[] };
 export const STATIC_NAV: NavItem[] = [
   { to: "/", icon: LayoutDashboard, labelKey: "admin.dashboard.title" },
   { to: "/users", icon: Users, labelKey: "admin.users.title" },
-  { to: "/subscriptions", icon: CreditCard, labelKey: "admin.subscriptions.title" },
+  {
+    to: "/subscriptions",
+    icon: CreditCard,
+    labelKey: "admin.subscriptions.title",
+  },
   { to: "/invoices", icon: FileText, labelKey: "admin.invoices.title" },
   { to: "/plugins", icon: Puzzle, labelKey: "admin.plugins.title" },
   { to: "/nodes", icon: Globe, labelKey: "admin.nodes.title" },

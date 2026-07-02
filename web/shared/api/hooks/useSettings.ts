@@ -1,6 +1,6 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiGet, apiPut } from "../client.js";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { QUERY_KEYS } from "../../lib/queryKeys.js";
+import { apiGet, apiPut } from "../client.js";
 import { ENDPOINTS } from "../endpoints.js";
 
 export type CircuitBreakerConfig = {

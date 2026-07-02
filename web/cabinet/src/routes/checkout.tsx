@@ -1,7 +1,7 @@
-import { useTranslation } from "react-i18next";
+import { LoadingSpinner, usePlan } from "@remnacore/shared";
 import { Link, useSearch } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-import { usePlan, LoadingSpinner } from "@remnacore/shared";
+import { useTranslation } from "react-i18next";
 import { CheckoutForm } from "../components/CheckoutForm.js";
 
 export function CheckoutPage() {

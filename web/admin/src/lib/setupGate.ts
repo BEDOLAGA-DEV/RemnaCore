@@ -1,5 +1,5 @@
-import { apiGet, ENDPOINTS } from "@remnacore/shared";
 import type { SetupStatusResponse } from "@remnacore/shared";
+import { apiGet, ENDPOINTS } from "@remnacore/shared";
 
 // The status only flips once (when the first admin is created), so the result
 // is cached for the session to avoid a network call on every navigation.

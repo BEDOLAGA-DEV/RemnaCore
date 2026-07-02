@@ -128,7 +128,8 @@ export function CommandPalette({
                 onClick={() => select(i)}
                 className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[12px] tracking-[.5px]"
                 style={{
-                  background: i === active ? "rgba(255,255,255,.04)" : "transparent",
+                  background:
+                    i === active ? "rgba(255,255,255,.04)" : "transparent",
                   color: i === active ? "var(--accent)" : "var(--t3)",
                 }}
               >

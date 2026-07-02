@@ -1,6 +1,6 @@
-import { useTranslation } from "react-i18next";
+import { LoadingSpinner, useSubscriptions } from "@remnacore/shared";
 import { Link } from "@tanstack/react-router";
-import { useSubscriptions, LoadingSpinner } from "@remnacore/shared";
+import { useTranslation } from "react-i18next";
 import { SubscriptionCard } from "../../components/SubscriptionCard.js";
 
 export function SubscriptionsPage() {

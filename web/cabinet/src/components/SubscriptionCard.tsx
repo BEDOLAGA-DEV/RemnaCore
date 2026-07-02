@@ -1,31 +1,31 @@
-import { useState, useMemo } from "react";
-import { Link } from "@tanstack/react-router";
-import { useTranslation } from "react-i18next";
-import {
-  ChevronDown,
-  Shield,
-  Crown,
-  Zap,
-  Smartphone,
-  ArrowUpRight,
-  Calendar,
-  Clock,
-  Activity,
-} from "lucide-react";
+import type {
+  BillingInterval,
+  PlanAddon,
+  PlanTier,
+  Subscription,
+  SubscriptionStatus,
+} from "@remnacore/shared";
 import {
   cn,
-  formatDate,
   formatBytes,
+  formatDate,
   formatMoney,
   usePlans,
 } from "@remnacore/shared";
-import type {
-  Subscription,
-  SubscriptionStatus,
-  PlanTier,
-  BillingInterval,
-  PlanAddon,
-} from "@remnacore/shared";
+import { Link } from "@tanstack/react-router";
+import {
+  Activity,
+  ArrowUpRight,
+  Calendar,
+  ChevronDown,
+  Clock,
+  Crown,
+  Shield,
+  Smartphone,
+  Zap,
+} from "lucide-react";
+import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
@@ -169,11 +169,7 @@ function TrafficBar({
   const { t } = useTranslation();
   const pct = trafficPercentage(usedBytes, totalBytes);
   const barColor =
-    pct >= 90
-      ? "bg-destructive"
-      : pct >= 70
-        ? "bg-[#f59e0b]"
-        : "bg-primary";
+    pct >= 90 ? "bg-destructive" : pct >= 70 ? "bg-[#f59e0b]" : "bg-primary";
 
   return (
     <div className="space-y-2">
@@ -185,12 +181,17 @@ function TrafficBar({
       </div>
       <div className="h-2 w-full overflow-hidden rounded-full bg-[rgba(245,236,227,0.06)]">
         <div
-          className={cn("h-full rounded-full transition-all duration-500", barColor)}
+          className={cn(
+            "h-full rounded-full transition-all duration-500",
+            barColor,
+          )}
           style={{ width: `${pct}%` }}
         />
       </div>
       <div className="flex justify-between text-xs text-muted-foreground">
-        <span>{pct}% {t("traffic.used").toLowerCase()}</span>
+        <span>
+          {pct}% {t("traffic.used").toLowerCase()}
+        </span>
         <span>
           {formatBytes(Math.max(0, totalBytes - usedBytes))}{" "}
           {t("traffic.remaining").toLowerCase()}
@@ -245,7 +246,8 @@ function PendingBanner({ daysLeft }: { daysLeft: number }) {
         <Clock size={14} className="text-[#f59e0b]" />
         <span className="text-sm font-medium text-[#f59e0b]">
           {t("subscriptions.status.pending")} — {daysLeft}{" "}
-          {daysLeft === 1 ? "day" : "days"} {t("traffic.remaining").toLowerCase()}
+          {daysLeft === 1 ? "day" : "days"}{" "}
+          {t("traffic.remaining").toLowerCase()}
         </span>
       </div>
     </div>
@@ -372,9 +374,7 @@ export function SubscriptionCard({ subscription }: SubscriptionCardProps) {
             icon={Smartphone}
             label={t("plans.devices")}
             value={
-              deviceLimit > 0
-                ? `${devicesConnected} / ${deviceLimit}`
-                : "---"
+              deviceLimit > 0 ? `${devicesConnected} / ${deviceLimit}` : "---"
             }
           />
           <MiniStat
@@ -389,7 +389,9 @@ export function SubscriptionCard({ subscription }: SubscriptionCardProps) {
       <div
         className={cn(
           "grid transition-all duration-300",
-          expanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+          expanded
+            ? "grid-rows-[1fr] opacity-100"
+            : "grid-rows-[0fr] opacity-0",
         )}
       >
         <div className="overflow-hidden">

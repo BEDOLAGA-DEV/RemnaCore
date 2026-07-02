@@ -1,40 +1,40 @@
-import { useMemo } from "react";
-import { useTranslation } from "react-i18next";
-import {
-  useAdminStats,
-  useAdminMetrics,
-  useMetricsHistory,
-  useAdminActivity,
-  useAdminSubscriptions,
-  useRemnawaveOverview,
-  useRemnawaveNodes,
-  useRemnawaveRealtime,
-  usePlugins,
-  useSystemHealth,
-  LoadingSpinner,
-  PAGINATION_DEFAULTS,
-  formatMoney,
-} from "@remnacore/shared";
 import type {
   ActivityEntry,
   ActivityLevel,
-  RemnawaveNodeRow,
   RealtimeNodeMetrics,
+  RemnawaveNodeRow,
 } from "@remnacore/shared";
 import {
+  formatMoney,
+  LoadingSpinner,
+  PAGINATION_DEFAULTS,
+  useAdminActivity,
+  useAdminMetrics,
+  useAdminStats,
+  useAdminSubscriptions,
+  useMetricsHistory,
+  usePlugins,
+  useRemnawaveNodes,
+  useRemnawaveOverview,
+  useRemnawaveRealtime,
+  useSystemHealth,
+} from "@remnacore/shared";
+import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
+import type { Column, Tone } from "../components/ui/index.js";
+import {
+  AreaChart,
+  Bar,
+  DataTable,
+  KpiGrid,
   PageHeader,
   Panel,
   PanelHeader,
-  KpiGrid,
+  PulseDot,
+  Sparkline,
   StatCell,
   StatusPill,
-  Bar,
-  PulseDot,
-  DataTable,
-  Sparkline,
-  AreaChart,
 } from "../components/ui/index.js";
-import type { Tone, Column } from "../components/ui/index.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -197,12 +197,22 @@ export function AdminDashboardPage() {
     return <LoadingSpinner />;
   }
 
-  const churnPct = metrics ? (metrics.churn_30d * PERCENT_MULTIPLIER).toFixed(1) : "0.0";
+  const churnPct = metrics
+    ? (metrics.churn_30d * PERCENT_MULTIPLIER).toFixed(1)
+    : "0.0";
 
   const funnelTotal = metrics?.total_subs || 1;
   const funnelRows = [
-    { label: "ACTIVE", value: metrics?.active_subs ?? 0, color: "var(--accent)" },
-    { label: "PENDING", value: metrics?.pending_subs ?? 0, color: "var(--warn)" },
+    {
+      label: "ACTIVE",
+      value: metrics?.active_subs ?? 0,
+      color: "var(--accent)",
+    },
+    {
+      label: "PENDING",
+      value: metrics?.pending_subs ?? 0,
+      color: "var(--warn)",
+    },
     { label: "PAUSED", value: metrics?.paused_subs ?? 0, color: "var(--t5)" },
     {
       label: "CANCELLED",
@@ -252,7 +262,9 @@ export function AdminDashboardPage() {
           return <span className="text-t8">—</span>;
         }
         const speed = m.uploadSpeedBytes + m.downloadSpeedBytes;
-        const pct = Math.round((speed / SPEED_BAR_MAX_BYTES) * PERCENT_MULTIPLIER);
+        const pct = Math.round(
+          (speed / SPEED_BAR_MAX_BYTES) * PERCENT_MULTIPLIER,
+        );
         return (
           <span className="flex items-center">
             <Bar pct={pct} />
@@ -303,11 +315,7 @@ export function AdminDashboardPage() {
           value={formatMoney(Math.round(metrics?.arpu_cents ?? 0))}
           dot="var(--accent)"
         />
-        <StatCell
-          label="CHURN 30D"
-          value={`${churnPct}%`}
-          dot="var(--warn)"
-        />
+        <StatCell label="CHURN 30D" value={`${churnPct}%`} dot="var(--warn)" />
         <StatCell
           label="SUBS TODAY"
           value={(metrics?.subs_today ?? 0).toLocaleString()}
@@ -364,10 +372,7 @@ export function AdminDashboardPage() {
           </Panel>
 
           <Panel scanline>
-            <PanelHeader
-              title="REMNAWAVE THROUGHPUT"
-              right={<PulseDot />}
-            />
+            <PanelHeader title="REMNAWAVE THROUGHPUT" right={<PulseDot />} />
             <div className="flex flex-col gap-4 px-4 py-4">
               <div className="flex flex-col gap-1">
                 <span className="text-[10px] uppercase tracking-[1.5px] text-t6">
@@ -415,7 +420,9 @@ export function AdminDashboardPage() {
           <PanelHeader title="SUBSCRIPTION FUNNEL" />
           <div className="flex flex-col gap-3.5 px-4 py-4">
             {funnelRows.map((row) => {
-              const pct = Math.round((row.value / funnelTotal) * PERCENT_MULTIPLIER);
+              const pct = Math.round(
+                (row.value / funnelTotal) * PERCENT_MULTIPLIER,
+              );
               return (
                 <div key={row.label} className="flex flex-col gap-1.5">
                   <div className="flex items-center justify-between text-[11px]">

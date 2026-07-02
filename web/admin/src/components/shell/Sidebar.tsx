@@ -34,10 +34,31 @@ import { PulseDot } from "../ui/index.js";
 import { STATIC_NAV, usePluginNavGroups } from "./nav.js";
 
 const ICON_MAP: Record<string, LucideIcon> = {
-  ArrowUpCircle, BarChart3, BookOpen, Boxes, Building2, Calculator, Clock,
-  CreditCard, FileText, Globe, LayoutDashboard, List, Network, Package, Plus,
-  Puzzle, Search, Server, Settings, ShoppingCart, Smartphone, Tag, TrendingUp,
-  Users, Wallet,
+  ArrowUpCircle,
+  BarChart3,
+  BookOpen,
+  Boxes,
+  Building2,
+  Calculator,
+  Clock,
+  CreditCard,
+  FileText,
+  Globe,
+  LayoutDashboard,
+  List,
+  Network,
+  Package,
+  Plus,
+  Puzzle,
+  Search,
+  Server,
+  Settings,
+  ShoppingCart,
+  Smartphone,
+  Tag,
+  TrendingUp,
+  Users,
+  Wallet,
 };
 
 const LINK_BASE =
@@ -63,9 +84,7 @@ export function Sidebar() {
     <aside className="sticky top-0 flex h-screen w-[236px] flex-col border-r border-line bg-raised">
       {/* Logo */}
       <div className="flex items-center gap-2.5 border-b border-line px-[18px] py-4">
-        <span
-          className="relative h-[22px] w-[22px] rotate-45 border border-accent"
-        >
+        <span className="relative h-[22px] w-[22px] rotate-45 border border-accent">
           <span className="absolute inset-[5px] bg-accent" />
         </span>
         <div>

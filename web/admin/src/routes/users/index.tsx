@@ -1,16 +1,16 @@
+import type { User, UserRole } from "@remnacore/shared";
+import { formatDate, USER_ROLES, useAdminUsers } from "@remnacore/shared";
+import { useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "@tanstack/react-router";
-import { useAdminUsers, formatDate, USER_ROLES } from "@remnacore/shared";
-import type { User, UserRole } from "@remnacore/shared";
 import {
-  PageHeader,
-  DataTable,
   type Column,
-  StatusPill,
+  DataTable,
+  PageHeader,
   Segmented,
-  TermInput,
+  StatusPill,
   TermButton,
+  TermInput,
 } from "@/components/ui";
 
 type RoleFilter = "all" | UserRole;
@@ -73,9 +73,7 @@ export function UsersPage() {
       key: "created",
       header: t("common.createdAt"),
       render: (u) => (
-        <span className="tabular-nums text-t5">
-          {formatDate(u.created_at)}
-        </span>
+        <span className="tabular-nums text-t5">{formatDate(u.created_at)}</span>
       ),
     },
     {
@@ -88,10 +86,7 @@ export function UsersPage() {
 
   return (
     <div className="space-y-3.5">
-      <PageHeader
-        title="USERS"
-        breadcrumb="REMNAWAVE PROVIDER / CUSTOMERS"
-      />
+      <PageHeader title="USERS" breadcrumb="REMNAWAVE PROVIDER / CUSTOMERS" />
 
       <div className="flex flex-wrap items-center gap-2.5">
         <Segmented

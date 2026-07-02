@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAuthStore } from "../../stores/authStore.js";
 import { QUERY_KEYS } from "../../lib/queryKeys.js";
-import { ENDPOINTS } from "../endpoints.js";
-import { apiGet, apiPost } from "../client.js";
+import { useAuthStore } from "../../stores/authStore.js";
 import type { LoginResponse, SetupStatusResponse } from "../../types/index.js";
+import { apiGet, apiPost } from "../client.js";
+import { ENDPOINTS } from "../endpoints.js";
 import type { CreateAdminRequest } from "../types.js";
 
 /**

@@ -1,14 +1,14 @@
+import type { Invoice, InvoiceStatus } from "@remnacore/shared";
+import { formatDate, formatMoney, useAdminInvoices } from "@remnacore/shared";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useAdminInvoices, formatDate, formatMoney } from "@remnacore/shared";
-import type { Invoice, InvoiceStatus } from "@remnacore/shared";
 import {
-  PageHeader,
-  DataTable,
   type Column,
+  DataTable,
+  PageHeader,
   StatusPill,
-  type Tone,
   TermButton,
+  type Tone,
 } from "@/components/ui";
 
 function statusTone(status: InvoiceStatus): Tone {
@@ -38,9 +38,7 @@ export function AdminInvoicesPage() {
       key: "user",
       header: t("admin.subscriptions.userId"),
       render: (inv) => (
-        <span className="tabular-nums text-t2">
-          {inv.user_id.slice(0, 8)}
-        </span>
+        <span className="tabular-nums text-t2">{inv.user_id.slice(0, 8)}</span>
       ),
     },
     {

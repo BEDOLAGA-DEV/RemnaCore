@@ -1,15 +1,15 @@
-import { useTranslation } from "react-i18next";
-import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { Loader2, Check, Unlink } from "lucide-react";
 import {
-  useMe,
-  useUpdateProfile,
-  useLinkTelegram,
-  useUnlinkTelegram,
   LoadingSpinner,
+  useLinkTelegram,
+  useMe,
+  useUnlinkTelegram,
+  useUpdateProfile,
 } from "@remnacore/shared";
+import { Check, Loader2, Unlink } from "lucide-react";
+import { useForm } from "react-hook-form";
+import { useTranslation } from "react-i18next";
+import { z } from "zod";
 
 const profileSchema = z.object({
   display_name: z.string().min(1),
@@ -72,9 +72,7 @@ export function ProfilePage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-6">
-      <h1
-        className="animate-fade-up text-3xl font-bold tracking-tight text-foreground"
-      >
+      <h1 className="animate-fade-up text-3xl font-bold tracking-tight text-foreground">
         {t("profile.title")}
       </h1>
 

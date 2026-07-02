@@ -1,17 +1,17 @@
+import { useAuthStore, useLogout, useThemeStore } from "@remnacore/shared";
 import { Link } from "@tanstack/react-router";
+import { LogOut, Menu, Moon, Shield, Sun, X } from "lucide-react";
+import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Moon, Sun, LogOut, Menu, X, Shield } from "lucide-react";
-import { useState, useCallback } from "react";
-import {
-  useAuthStore,
-  useThemeStore,
-  useLogout,
-} from "@remnacore/shared";
 
 const NAV_ITEMS = [
   { to: "/" as const, labelKey: "nav.dashboard", hasBadge: false },
   { to: "/plans" as const, labelKey: "nav.plans", hasBadge: false },
-  { to: "/subscriptions" as const, labelKey: "nav.subscriptions", hasBadge: true },
+  {
+    to: "/subscriptions" as const,
+    labelKey: "nav.subscriptions",
+    hasBadge: true,
+  },
   { to: "/family" as const, labelKey: "nav.family", hasBadge: false },
   { to: "/traffic" as const, labelKey: "nav.traffic", hasBadge: false },
   { to: "/profile" as const, labelKey: "nav.profile", hasBadge: false },
@@ -35,7 +35,9 @@ function BrandMark() {
   );
 }
 
-function getUserInitial(user: { display_name?: string | null; email?: string | null } | null): string {
+function getUserInitial(
+  user: { display_name?: string | null; email?: string | null } | null,
+): string {
   if (!user) return "?";
   const name = user.display_name ?? user.email ?? "";
   return name.charAt(0).toUpperCase() || "?";
@@ -50,9 +52,8 @@ export function Navbar() {
 
   const closeMobile = useCallback(() => setMobileOpen(false), []);
 
-  const subscriptionCount = (user as Record<string, unknown> | null)?.subscription_count as
-    | number
-    | undefined;
+  const subscriptionCount = (user as Record<string, unknown> | null)
+    ?.subscription_count as number | undefined;
 
   return (
     <>
@@ -75,14 +76,16 @@ export function Navbar() {
                 activeProps={{ className: "pill-nav pill-nav-active" }}
               >
                 {t(item.labelKey)}
-                {item.hasBadge && subscriptionCount != null && subscriptionCount > 0 && (
-                  <span
-                    className="ml-1 inline-flex items-center justify-center rounded-full bg-[rgba(0,0,0,0.35)] px-1.5"
-                    style={{ fontSize: "9px", lineHeight: "16px" }}
-                  >
-                    {subscriptionCount}
-                  </span>
-                )}
+                {item.hasBadge &&
+                  subscriptionCount != null &&
+                  subscriptionCount > 0 && (
+                    <span
+                      className="ml-1 inline-flex items-center justify-center rounded-full bg-[rgba(0,0,0,0.35)] px-1.5"
+                      style={{ fontSize: "9px", lineHeight: "16px" }}
+                    >
+                      {subscriptionCount}
+                    </span>
+                  )}
               </Link>
             ))}
           </nav>
@@ -160,17 +163,22 @@ export function Navbar() {
                 to={item.to}
                 onClick={closeMobile}
                 className="pill-nav w-full max-w-[280px] justify-center py-3 text-sm"
-                activeProps={{ className: "pill-nav pill-nav-active w-full max-w-[280px] justify-center py-3 text-sm" }}
+                activeProps={{
+                  className:
+                    "pill-nav pill-nav-active w-full max-w-[280px] justify-center py-3 text-sm",
+                }}
               >
                 {t(item.labelKey)}
-                {item.hasBadge && subscriptionCount != null && subscriptionCount > 0 && (
-                  <span
-                    className="ml-1.5 inline-flex items-center justify-center rounded-full bg-[rgba(0,0,0,0.35)] px-1.5"
-                    style={{ fontSize: "9px", lineHeight: "16px" }}
-                  >
-                    {subscriptionCount}
-                  </span>
-                )}
+                {item.hasBadge &&
+                  subscriptionCount != null &&
+                  subscriptionCount > 0 && (
+                    <span
+                      className="ml-1.5 inline-flex items-center justify-center rounded-full bg-[rgba(0,0,0,0.35)] px-1.5"
+                      style={{ fontSize: "9px", lineHeight: "16px" }}
+                    >
+                      {subscriptionCount}
+                    </span>
+                  )}
               </Link>
             ))}
 

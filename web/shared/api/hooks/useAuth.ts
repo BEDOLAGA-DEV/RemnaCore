@@ -1,19 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAuthStore } from "../../stores/authStore.js";
-import { QUERY_KEYS } from "../../lib/queryKeys.js";
 import { STALE_TIME_USER_MS } from "../../lib/constants.js";
-import { ENDPOINTS } from "../endpoints.js";
-import { apiGet, apiPost, apiPut, apiDelete } from "../client.js";
-import type { User, LoginResponse, RegisterResponse } from "../../types/index.js";
+import { QUERY_KEYS } from "../../lib/queryKeys.js";
+import { useAuthStore } from "../../stores/authStore.js";
 import type {
+  LoginResponse,
+  RegisterResponse,
+  User,
+} from "../../types/index.js";
+import { apiDelete, apiGet, apiPost, apiPut } from "../client.js";
+import { ENDPOINTS } from "../endpoints.js";
+import type {
+  ForgotPasswordRequest,
+  LinkTelegramRequest,
   LoginRequest,
   RegisterRequest,
-  ForgotPasswordRequest,
   ResetPasswordRequest,
-  UpdateProfileRequest,
-  LinkTelegramRequest,
-  TelegramWebAppLoginRequest,
   StatusResponse,
+  TelegramWebAppLoginRequest,
+  UpdateProfileRequest,
   VerifyEmailRequest,
 } from "../types.js";
 
@@ -111,8 +115,7 @@ export function useUnlinkTelegram() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: () =>
-      apiDelete<StatusResponse>(ENDPOINTS.me.unlinkTelegram),
+    mutationFn: () => apiDelete<StatusResponse>(ENDPOINTS.me.unlinkTelegram),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.auth.me });
     },

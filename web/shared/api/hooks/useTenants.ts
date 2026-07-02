@@ -1,8 +1,8 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { QUERY_KEYS } from "../../lib/queryKeys.js";
-import { ENDPOINTS } from "../endpoints.js";
-import { apiPost, apiPut } from "../client.js";
 import type { Tenant } from "../../types/index.js";
+import { apiPost, apiPut } from "../client.js";
+import { ENDPOINTS } from "../endpoints.js";
 import type {
   CreateTenantRequest,
   CreateTenantResponse,
@@ -34,10 +34,7 @@ export function useUpdateBranding() {
       tenantId: string;
       data: UpdateBrandingRequest;
     }) =>
-      apiPut<Tenant>(
-        ENDPOINTS.admin.tenants.updateBranding(tenantId),
-        data,
-      ),
+      apiPut<Tenant>(ENDPOINTS.admin.tenants.updateBranding(tenantId), data),
     onSuccess: (_data, { tenantId }) => {
       queryClient.invalidateQueries({
         queryKey: QUERY_KEYS.admin.tenants.detail(tenantId),

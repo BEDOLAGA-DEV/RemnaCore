@@ -1,20 +1,20 @@
-import { useMemo } from "react";
-import { useTranslation } from "react-i18next";
+import type { Binding } from "@remnacore/shared";
 import {
+  cn,
+  formatBytes,
+  LoadingSpinner,
+  useBindings,
+} from "@remnacore/shared";
+import {
+  Activity,
   ArrowDownToLine,
   ArrowUpFromLine,
-  Activity,
-  Server,
   Calendar,
   Inbox,
+  Server,
 } from "lucide-react";
-import {
-  useBindings,
-  LoadingSpinner,
-  formatBytes,
-  cn,
-} from "@remnacore/shared";
-import type { Binding } from "@remnacore/shared";
+import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 
 const DAYS_IN_RANGE = 30;
 
@@ -63,13 +63,7 @@ function SummaryCard({
   );
 }
 
-function BindingRow({
-  binding,
-  index,
-}: {
-  binding: Binding;
-  index: number;
-}) {
+function BindingRow({ binding, index }: { binding: Binding; index: number }) {
   const { t } = useTranslation();
   const used = binding.traffic_limit_bytes;
   const limit = binding.traffic_limit_bytes;
@@ -159,9 +153,7 @@ export function TrafficPage() {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div
-        className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between animate-fade-up"
-      >
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between animate-fade-up">
         <div>
           <h1 className="text-3xl font-bold tracking-[-0.03em] text-foreground">
             {t("traffic.title")}

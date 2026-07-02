@@ -1,9 +1,8 @@
-import { Link } from "@tanstack/react-router";
-import { useTranslation } from "react-i18next";
-import { Puzzle, ExternalLink, Loader2 } from "lucide-react";
-import { cn } from "@remnacore/shared";
-import { useEnablePlugin, useDisablePlugin } from "@remnacore/shared";
 import type { Plugin, PluginStatus } from "@remnacore/shared";
+import { cn, useDisablePlugin, useEnablePlugin } from "@remnacore/shared";
+import { Link } from "@tanstack/react-router";
+import { ExternalLink, Loader2, Puzzle } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 type PluginCardProps = {
   plugin: Plugin;
@@ -46,7 +45,9 @@ export function PluginCard({ plugin }: PluginCardProps) {
             )}
           </div>
           <div>
-            <h3 className="text-[13px] font-medium text-foreground">{plugin.name}</h3>
+            <h3 className="text-[13px] font-medium text-foreground">
+              {plugin.name}
+            </h3>
             <p className="font-mono text-[11px] text-muted-foreground">
               {plugin.slug} v{plugin.version}
             </p>

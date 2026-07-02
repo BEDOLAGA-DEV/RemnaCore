@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { User } from "../types/index.js";
 import { TOKEN_STORAGE_KEY } from "../lib/constants.js";
+import type { User } from "../types/index.js";
 
 type AuthState = {
   accessToken: string | null;

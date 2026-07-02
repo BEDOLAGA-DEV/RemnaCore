@@ -38,7 +38,10 @@ export function StatCell({
         <span className="text-[10px] uppercase tracking-[1.5px] text-t6">
           {label}
         </span>
-        <span className="h-[5px] w-[5px] rounded-full" style={{ background: dot }} />
+        <span
+          className="h-[5px] w-[5px] rounded-full"
+          style={{ background: dot }}
+        />
       </div>
       <div className="text-[30px] font-bold leading-none tracking-[.5px] tabular-nums">
         {value}

@@ -1,6 +1,6 @@
-import { useTranslation } from "react-i18next";
-import { Trash2, Crown, User } from "lucide-react";
 import type { FamilyMember } from "@remnacore/shared";
+import { Crown, Trash2, User } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 type FamilyMemberListProps = {
   members: FamilyMember[];

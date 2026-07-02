@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { QUERY_KEYS } from "../../lib/queryKeys.js";
-import { ENDPOINTS } from "../endpoints.js";
-import { apiGet, apiPost, apiPut, apiDelete } from "../client.js";
 import type { Plugin } from "../../types/index.js";
+import { apiDelete, apiGet, apiPost, apiPut } from "../client.js";
+import { ENDPOINTS } from "../endpoints.js";
 import type {
   InstallPluginRequest,
-  UpdatePluginConfigRequest,
   StatusResponse,
+  UpdatePluginConfigRequest,
 } from "../types.js";
 
 export function usePlugins() {

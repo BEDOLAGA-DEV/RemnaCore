@@ -14,8 +14,7 @@ export function Sparkline({
   const max = Math.max(...data);
   const span = max - min || 1;
   const pts = data.map(
-    (v, i) =>
-      `${(i / (data.length - 1)) * w},${h - ((v - min) / span) * h}`,
+    (v, i) => `${(i / (data.length - 1)) * w},${h - ((v - min) / span) * h}`,
   );
   return (
     <svg
@@ -24,7 +23,12 @@ export function Sparkline({
       style={{ width: w, height: h }}
       aria-hidden
     >
-      <path d={`M${pts.join(" L")}`} fill="none" stroke={color} strokeWidth={1.5} />
+      <path
+        d={`M${pts.join(" L")}`}
+        fill="none"
+        stroke={color}
+        strokeWidth={1.5}
+      />
     </svg>
   );
 }

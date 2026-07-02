@@ -1,24 +1,24 @@
+import { useAuthStore } from "@remnacore/shared";
 import {
-  createRouter,
   createRootRoute,
   createRoute,
+  createRouter,
   Outlet,
   redirect,
 } from "@tanstack/react-router";
-import { useAuthStore } from "@remnacore/shared";
 import { Layout } from "./routes/_layout.js";
+import { CheckoutPage } from "./routes/checkout.js";
+import { FamilyPage } from "./routes/family.js";
+import { ForgotPasswordPage } from "./routes/forgot-password.js";
 import { DashboardPage } from "./routes/index.js";
 import { LoginPage } from "./routes/login.js";
-import { RegisterPage } from "./routes/register.js";
-import { ForgotPasswordPage } from "./routes/forgot-password.js";
-import { ResetPasswordPage } from "./routes/reset-password.js";
 import { PlansPage } from "./routes/plans.js";
-import { CheckoutPage } from "./routes/checkout.js";
-import { SubscriptionsPage } from "./routes/subscriptions/index.js";
-import { SubscriptionDetailPage } from "./routes/subscriptions/[id].js";
-import { FamilyPage } from "./routes/family.js";
-import { TrafficPage } from "./routes/traffic.js";
 import { ProfilePage } from "./routes/profile.js";
+import { RegisterPage } from "./routes/register.js";
+import { ResetPasswordPage } from "./routes/reset-password.js";
+import { SubscriptionDetailPage } from "./routes/subscriptions/[id].js";
+import { SubscriptionsPage } from "./routes/subscriptions/index.js";
+import { TrafficPage } from "./routes/traffic.js";
 
 const rootRoute = createRootRoute({
   component: Outlet,

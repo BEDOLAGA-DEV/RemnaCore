@@ -1,8 +1,8 @@
-import { useTranslation } from "react-i18next";
-import { Copy, Check, Wifi, WifiOff } from "lucide-react";
-import { useState } from "react";
-import { cn, formatBytes } from "@remnacore/shared";
 import type { Binding, BindingStatus } from "@remnacore/shared";
+import { cn, formatBytes } from "@remnacore/shared";
+import { Check, Copy, Wifi, WifiOff } from "lucide-react";
+import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 type BindingLinksProps = {
   bindings: Binding[];

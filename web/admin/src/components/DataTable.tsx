@@ -1,11 +1,11 @@
+import { cn } from "@remnacore/shared";
 import {
-  useReactTable,
-  getCoreRowModel,
-  flexRender,
   type ColumnDef,
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
 } from "@tanstack/react-table";
 import { useTranslation } from "react-i18next";
-import { cn } from "@remnacore/shared";
 
 type DataTableProps<TData> = {
   data: TData[];

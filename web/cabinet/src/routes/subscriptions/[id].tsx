@@ -1,33 +1,33 @@
-import { useMemo } from "react";
-import { useTranslation } from "react-i18next";
+import type { InvoiceStatus, SubscriptionStatus } from "@remnacore/shared";
+import {
+  cn,
+  formatBytes,
+  formatDate,
+  formatMoney,
+  LoadingSpinner,
+  useCancelSubscription,
+  useInvoices,
+  usePlans,
+  useSubscription,
+  useSubscriptionBindings,
+} from "@remnacore/shared";
 import { Link, useParams } from "@tanstack/react-router";
 import {
   ArrowLeft,
-  Loader2,
-  CreditCard,
-  Hash,
-  Shield,
   CalendarDays,
   CalendarRange,
-  Timer,
   CircleDot,
-  RotateCcw,
+  CreditCard,
+  Hash,
   Inbox,
+  Loader2,
+  RotateCcw,
+  Shield,
+  Timer,
   XCircle,
 } from "lucide-react";
-import {
-  useSubscription,
-  useCancelSubscription,
-  useSubscriptionBindings,
-  useInvoices,
-  usePlans,
-  LoadingSpinner,
-  formatDate,
-  formatBytes,
-  formatMoney,
-  cn,
-} from "@remnacore/shared";
-import type { SubscriptionStatus, InvoiceStatus } from "@remnacore/shared";
+import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { BindingLinks } from "../../components/BindingLinks.js";
 
 // ─── Status styling ──────────────────────────────────────────────────────────
@@ -354,10 +354,7 @@ export function SubscriptionDetailPage() {
             className={cn(
               "h-full rounded-full transition-all duration-700",
               barColor(
-                trafficPercent(
-                  trafficStats.totalUsed,
-                  trafficStats.totalLimit,
-                ),
+                trafficPercent(trafficStats.totalUsed, trafficStats.totalLimit),
               ),
             )}
             style={{

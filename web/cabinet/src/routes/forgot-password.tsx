@@ -1,11 +1,11 @@
-import { useState } from "react";
-import { useTranslation } from "react-i18next";
-import { Link } from "@tanstack/react-router";
-import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { Loader2, Shield, ArrowLeft } from "lucide-react";
 import { useForgotPassword } from "@remnacore/shared";
+import { Link } from "@tanstack/react-router";
+import { ArrowLeft, Loader2, Shield } from "lucide-react";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { useTranslation } from "react-i18next";
+import { z } from "zod";
 
 const forgotSchema = z.object({
   email: z.string().email(),
@@ -63,9 +63,7 @@ export function ForgotPasswordPage() {
         {/* Form card */}
         {sent ? (
           <div className="rounded-[var(--radius)] border border-border bg-card p-6 text-center">
-            <p className="text-sm text-foreground">
-              {t("auth.resetSent")}
-            </p>
+            <p className="text-sm text-foreground">{t("auth.resetSent")}</p>
           </div>
         ) : (
           <div className="rounded-[var(--radius)] border border-border bg-card p-6 space-y-4">

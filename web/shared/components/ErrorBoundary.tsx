@@ -1,5 +1,5 @@
-import { Component, type ReactNode } from "react";
 import { AlertTriangle } from "lucide-react";
+import { Component, type ReactNode } from "react";
 
 type ErrorBoundaryProps = {
   children: ReactNode;

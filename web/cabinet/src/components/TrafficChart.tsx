@@ -1,15 +1,15 @@
+import type { Binding } from "@remnacore/shared";
+import { formatBytes } from "@remnacore/shared";
 import { useTranslation } from "react-i18next";
 import {
-  AreaChart,
   Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
 } from "recharts";
-import { formatBytes } from "@remnacore/shared";
-import type { Binding } from "@remnacore/shared";
 
 type TrafficChartProps = {
   bindings: Binding[];
@@ -54,7 +54,10 @@ export function TrafficChart({ bindings }: TrafficChartProps) {
             tick={{ fill: "var(--muted-foreground)" }}
           />
           <Tooltip
-            formatter={(value) => [formatBytes(Number(value)), t("traffic.used")]}
+            formatter={(value) => [
+              formatBytes(Number(value)),
+              t("traffic.used"),
+            ]}
             contentStyle={{
               backgroundColor: "var(--card)",
               border: "1px solid var(--border)",

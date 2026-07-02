@@ -1,12 +1,12 @@
-import { useState } from "react";
-import { useTranslation } from "react-i18next";
-import { useNavigate } from "@tanstack/react-router";
-import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
+import { USER_ROLES, useAuthStore, useLogin } from "@remnacore/shared";
+import { useNavigate } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
-import { useLogin, useAuthStore, USER_ROLES } from "@remnacore/shared";
-import { GridBackdrop, ScanLine, TermInput, TermButton } from "@/components/ui";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { useTranslation } from "react-i18next";
+import { z } from "zod";
+import { GridBackdrop, ScanLine, TermButton, TermInput } from "@/components/ui";
 
 const loginSchema = z.object({
   email: z.string().email(),

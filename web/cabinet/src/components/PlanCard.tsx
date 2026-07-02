@@ -1,7 +1,7 @@
-import { useTranslation } from "react-i18next";
-import { Check, Zap } from "lucide-react";
+import type { BillingInterval, Plan } from "@remnacore/shared";
 import { cn, formatBytes, formatMoney } from "@remnacore/shared";
-import type { Plan, BillingInterval } from "@remnacore/shared";
+import { Check, Zap } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 type PlanCardProps = {
   plan: Plan;
@@ -9,7 +9,10 @@ type PlanCardProps = {
   onSelect: (plan: Plan) => void;
 };
 
-function intervalLabel(interval: BillingInterval, t: (key: string) => string): string {
+function intervalLabel(
+  interval: BillingInterval,
+  t: (key: string) => string,
+): string {
   const labels: Record<BillingInterval, string> = {
     month: t("plans.perMonth"),
     quarter: t("plans.perQuarter"),

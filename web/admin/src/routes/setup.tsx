@@ -1,13 +1,20 @@
-import { useState } from "react";
-import { useTranslation } from "react-i18next";
-import { useNavigate } from "@tanstack/react-router";
-import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { Loader2 } from "lucide-react";
 import { passwordSchema, useSetupAdmin } from "@remnacore/shared";
+import { useNavigate } from "@tanstack/react-router";
+import { Loader2 } from "lucide-react";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { useTranslation } from "react-i18next";
+import { z } from "zod";
+import {
+  Bar,
+  GridBackdrop,
+  Panel,
+  ScanLine,
+  TermButton,
+  TermInput,
+} from "@/components/ui";
 import { markSetupComplete } from "@/lib/setupGate";
-import { GridBackdrop, ScanLine, Panel, TermInput, TermButton, Bar } from "@/components/ui";
 
 // Reuses the shared password policy (mirrors the Go backend) so client and
 // server validation never drift.

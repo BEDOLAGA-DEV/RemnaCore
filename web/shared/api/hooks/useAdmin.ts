@@ -1,17 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { QUERY_KEYS } from "../../lib/queryKeys.js";
-import { ENDPOINTS } from "../endpoints.js";
-import { apiGet } from "../client.js";
 import type {
-  User,
-  Subscription,
-  Invoice,
-  Tenant,
-  PaginationParams,
-  AdminMetrics,
   ActivityListResponse,
+  AdminMetrics,
+  Invoice,
   MetricsHistoryResponse,
+  PaginationParams,
+  Subscription,
+  Tenant,
+  User,
 } from "../../types/index.js";
+import { apiGet } from "../client.js";
+import { ENDPOINTS } from "../endpoints.js";
 
 export function useAdminUsers(params?: PaginationParams) {
   const limit = params?.limit ?? 50;

@@ -24,8 +24,16 @@ export function Header({ onOpenSearch }: { onOpenSearch: () => void }) {
         <div className="text-[12px] tracking-[1px] text-t6">
           ADMIN<span className="text-accent">/</span>PANEL
         </div>
-        <div className="flex items-center gap-[7px] border px-2.5 py-1 text-[10px] uppercase tracking-[1.5px] text-accent" style={{ borderColor: "color-mix(in srgb,var(--accent) 40%,transparent)" }}>
-          <span className="h-1.5 w-1.5 rounded-full bg-accent" style={{ boxShadow: "0 0 8px var(--accent)" }} />
+        <div
+          className="flex items-center gap-[7px] border px-2.5 py-1 text-[10px] uppercase tracking-[1.5px] text-accent"
+          style={{
+            borderColor: "color-mix(in srgb,var(--accent) 40%,transparent)",
+          }}
+        >
+          <span
+            className="h-1.5 w-1.5 rounded-full bg-accent"
+            style={{ boxShadow: "0 0 8px var(--accent)" }}
+          />
           LIVE
         </div>
       </div>

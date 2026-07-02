@@ -1,23 +1,23 @@
-import type { ReactNode } from "react";
-import { useTranslation } from "react-i18next";
-import { Link, useParams } from "@tanstack/react-router";
-import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { ArrowLeft, Loader2, Check } from "lucide-react";
 import {
+  formatDate,
+  LoadingSpinner,
   useAdminTenant,
   useUpdateBranding,
-  LoadingSpinner,
-  formatDate,
 } from "@remnacore/shared";
+import { Link, useParams } from "@tanstack/react-router";
+import { ArrowLeft, Check, Loader2 } from "lucide-react";
+import type { ReactNode } from "react";
+import { useForm } from "react-hook-form";
+import { useTranslation } from "react-i18next";
+import { z } from "zod";
 import {
   PageHeader,
   Panel,
   PanelHeader,
   StatusPill,
-  TermInput,
   TermButton,
+  TermInput,
 } from "@/components/ui";
 
 const brandingSchema = z.object({
@@ -128,7 +128,9 @@ export function TenantDetailPage() {
             )}
           </Row>
           <Row label={t("common.createdAt")}>
-            <span className="tabular-nums">{formatDate(tenant.created_at)}</span>
+            <span className="tabular-nums">
+              {formatDate(tenant.created_at)}
+            </span>
           </Row>
         </div>
       </Panel>

@@ -1,5 +1,5 @@
-import { useTranslation } from "react-i18next";
 import { Server } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { PageHeader, Panel } from "@/components/ui";
 
 /**
@@ -18,7 +18,10 @@ export function NodesPage() {
         breadcrumb="REMNAWAVE PROVIDER / INFRASTRUCTURE"
       />
 
-      <Panel scanline className="flex flex-col items-center justify-center gap-4 px-4 py-16 text-center">
+      <Panel
+        scanline
+        className="flex flex-col items-center justify-center gap-4 px-4 py-16 text-center"
+      >
         <span className="flex h-12 w-12 items-center justify-center border border-line bg-input text-t6">
           <Server size={20} />
         </span>

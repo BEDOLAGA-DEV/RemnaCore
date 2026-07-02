@@ -6,6 +6,15 @@
     "declarationMap": true,
     "sourceMap": true
   },
-  "include": ["env.d.ts", "api/**/*", "stores/**/*", "components/**/*", "lib/**/*", "types/**/*", "hooks/**/*", "index.ts"],
+  "include": [
+    "env.d.ts",
+    "api/**/*",
+    "stores/**/*",
+    "components/**/*",
+    "lib/**/*",
+    "types/**/*",
+    "hooks/**/*",
+    "index.ts"
+  ],
   "exclude": ["dist", "node_modules", "**/*.test.*"]
 }

@@ -1,6 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  apiGet,
+  apiPost,
+  cn,
+  ENDPOINTS,
+  LoadingSpinner,
+} from "@remnacore/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiGet, apiPost, cn, ENDPOINTS, LoadingSpinner } from "@remnacore/shared";
 import {
   Loader2,
   Power,
@@ -9,6 +14,7 @@ import {
   Search,
   Users,
 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -118,7 +124,8 @@ function useUserAction(action: string) {
 
 function StatusBadge({ status }: { status: string }) {
   const normalized = status.toLowerCase();
-  const colorClass = STATUS_COLORS[normalized] ?? "bg-muted text-muted-foreground";
+  const colorClass =
+    STATUS_COLORS[normalized] ?? "bg-muted text-muted-foreground";
 
   return (
     <span
@@ -132,13 +139,7 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function TrafficCell({
-  used,
-  limit,
-}: {
-  used: number;
-  limit: number;
-}) {
+function TrafficCell({ used, limit }: { used: number; limit: number }) {
   const pct = trafficPercentage(used, limit);
 
   return (
@@ -240,7 +241,11 @@ function UserActions({ entry }: { entry: RemnawaveUserEntry }) {
 export default function RemnawaveUsers() {
   const [searchInput, setSearchInput] = useState("");
   const debouncedSearch = useDebounce(searchInput, DEBOUNCE_MS);
-  const { data: users, isLoading, isError } = useRemnawaveUsers(debouncedSearch);
+  const {
+    data: users,
+    isLoading,
+    isError,
+  } = useRemnawaveUsers(debouncedSearch);
 
   const inputRef = useRef<HTMLInputElement>(null);
 

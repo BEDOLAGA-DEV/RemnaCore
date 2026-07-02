@@ -1,15 +1,15 @@
-import { useTranslation } from "react-i18next";
-import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { Loader2, Users } from "lucide-react";
 import {
-  useFamily,
-  useAddFamilyMember,
-  useRemoveFamilyMember,
-  useAuthStore,
   LoadingSpinner,
+  useAddFamilyMember,
+  useAuthStore,
+  useFamily,
+  useRemoveFamilyMember,
 } from "@remnacore/shared";
+import { Loader2, Users } from "lucide-react";
+import { useForm } from "react-hook-form";
+import { useTranslation } from "react-i18next";
+import { z } from "zod";
 import { FamilyMemberList } from "../components/FamilyMemberList.js";
 
 const addMemberSchema = z.object({
@@ -105,10 +105,7 @@ export function FamilyPage() {
             <h3 className="mb-4 text-lg font-semibold tracking-tight text-foreground">
               {t("family.addMember")}
             </h3>
-            <form
-              onSubmit={handleSubmit(onSubmit)}
-              className="space-y-4"
-            >
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
               <div>
                 <label
                   htmlFor="subscription_id"

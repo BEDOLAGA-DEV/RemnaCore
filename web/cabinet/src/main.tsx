@@ -1,7 +1,7 @@
+import { initI18n } from "@remnacore/shared";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.js";
-import { initI18n } from "@remnacore/shared";
 import "./styles/globals.css";
 
 initI18n().then(() => {

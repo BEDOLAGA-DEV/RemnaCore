@@ -1,29 +1,29 @@
-import type { ReactNode } from "react";
-import { useTranslation } from "react-i18next";
-import { Link, useParams } from "@tanstack/react-router";
-import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { ArrowLeft, Loader2, Trash2, Zap } from "lucide-react";
-import { useState } from "react";
-import {
-  usePlugin,
-  useUpdatePluginConfig,
-  useUninstallPlugin,
-  useEnablePlugin,
-  useDisablePlugin,
-  apiPost,
-  LoadingSpinner,
-  formatDateTime,
-} from "@remnacore/shared";
 import type { PluginStatus } from "@remnacore/shared";
+import {
+  apiPost,
+  formatDateTime,
+  LoadingSpinner,
+  useDisablePlugin,
+  useEnablePlugin,
+  usePlugin,
+  useUninstallPlugin,
+  useUpdatePluginConfig,
+} from "@remnacore/shared";
+import { Link, useParams } from "@tanstack/react-router";
+import { ArrowLeft, Loader2, Trash2, Zap } from "lucide-react";
+import type { ReactNode } from "react";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { useTranslation } from "react-i18next";
+import { z } from "zod";
 import {
   PageHeader,
   Panel,
   PanelHeader,
   StatusPill,
-  type Tone,
   TermButton,
+  type Tone,
 } from "@/components/ui";
 
 const configSchema = z.object({
@@ -67,7 +67,12 @@ export function PluginDetailPage() {
   const uninstall = useUninstallPlugin();
   const enable = useEnablePlugin();
   const disable = useDisablePlugin();
-  const [testResult, setTestResult] = useState<{ success: boolean; message?: string; error?: string; node_count?: number } | null>(null);
+  const [testResult, setTestResult] = useState<{
+    success: boolean;
+    message?: string;
+    error?: string;
+    node_count?: number;
+  } | null>(null);
   const [testPending, setTestPending] = useState(false);
 
   const {
@@ -77,7 +82,9 @@ export function PluginDetailPage() {
   } = useForm<ConfigFormValues>({
     resolver: zodResolver(configSchema),
     values: {
-      configJson: plugin?.config ? JSON.stringify(plugin.config, null, 2) : "{}",
+      configJson: plugin?.config
+        ? JSON.stringify(plugin.config, null, 2)
+        : "{}",
     },
   });
 
@@ -186,9 +193,7 @@ export function PluginDetailPage() {
               type="button"
               variant={isEnabled ? "ghost" : "primary"}
               onClick={() =>
-                isEnabled
-                  ? disable.mutate(plugin.id)
-                  : enable.mutate(plugin.id)
+                isEnabled ? disable.mutate(plugin.id) : enable.mutate(plugin.id)
               }
               disabled={enable.isPending || disable.isPending}
             >
@@ -209,7 +214,12 @@ export function PluginDetailPage() {
                   setTestPending(true);
                   setTestResult(null);
                   try {
-                    const res = await apiPost<{ success: boolean; message?: string; error?: string; node_count?: number }>("/api/remnawave/test-connection", {});
+                    const res = await apiPost<{
+                      success: boolean;
+                      message?: string;
+                      error?: string;
+                      node_count?: number;
+                    }>("/api/remnawave/test-connection", {});
                     setTestResult(res);
                   } catch {
                     setTestResult({ success: false, error: "Request failed" });
@@ -265,7 +275,10 @@ export function PluginDetailPage() {
         {/* Config editor */}
         <Panel>
           <PanelHeader title={t("admin.plugins.config")} />
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 px-4 py-4">
+          <form
+            onSubmit={handleSubmit(onSubmit)}
+            className="space-y-4 px-4 py-4"
+          >
             <textarea
               rows={10}
               {...register("configJson")}

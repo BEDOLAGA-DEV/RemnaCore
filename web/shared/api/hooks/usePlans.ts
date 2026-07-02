@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { QUERY_KEYS } from "../../lib/queryKeys.js";
 import { STALE_TIME_PLANS_MS } from "../../lib/constants.js";
-import { ENDPOINTS } from "../endpoints.js";
-import { apiGet } from "../client.js";
+import { QUERY_KEYS } from "../../lib/queryKeys.js";
 import type { Plan } from "../../types/index.js";
+import { apiGet } from "../client.js";
+import { ENDPOINTS } from "../endpoints.js";
 
 export function usePlans() {
   return useQuery({

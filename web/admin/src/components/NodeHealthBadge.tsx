@@ -1,5 +1,5 @@
-import { useTranslation } from "react-i18next";
 import { cn } from "@remnacore/shared";
+import { useTranslation } from "react-i18next";
 
 const HEALTH_STATES = {
   healthy: "healthy",
@@ -43,12 +43,7 @@ export function NodeHealthBadge({ health }: NodeHealthBadgeProps) {
         healthColor(health),
       )}
     >
-      <span
-        className={cn(
-          "h-1.5 w-1.5 rounded-full",
-          dotColor(health),
-        )}
-      />
+      <span className={cn("h-1.5 w-1.5 rounded-full", dotColor(health))} />
       {t(labelKey)}
     </span>
   );

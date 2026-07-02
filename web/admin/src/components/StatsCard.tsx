@@ -1,5 +1,5 @@
-import type { LucideIcon } from "lucide-react";
 import { cn } from "@remnacore/shared";
+import type { LucideIcon } from "lucide-react";
 
 type StatsCardProps = {
   label: string;
