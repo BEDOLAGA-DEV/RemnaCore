@@ -2,6 +2,8 @@ package handler
 
 import (
 	"context"
+
+	"github.com/go-chi/chi/v5"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -205,4 +207,59 @@ func TestResellerCommissions_NoActiveTenant_Forbidden(t *testing.T) {
 	// implementation detail that may be reworded.
 	require.Equal(t, http.StatusForbidden, rec.Code)
 	assert.Contains(t, rec.Body.String(), "COMMON.FORBIDDEN")
+}
+
+// withTenantParam returns a copy of r whose chi route context carries the
+// given tenantID path parameter (as the router would set for /tenants/{tenantID}/...).
+func withTenantParam(r *http.Request, tenantID string) *http.Request {
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("tenantID", tenantID)
+	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+}
+
+func TestGetTenantBot_NeverLeaksToken(t *testing.T) {
+	const secretToken = "123:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	repo := &botStubRepo{
+		cfg: &vo.ShopBotConfig{
+			Token:         config.NewSecretString(secretToken),
+			CabinetURL:    "https://cabinet.example.com",
+			Enabled:       true,
+			BotPluginSlug: "samplebot",
+		},
+	}
+	h := newBotTestHandler(t, repo)
+
+	req := withTenantParam(httptest.NewRequest(http.MethodGet, "/admin/tenants/tenant-abc/bot", nil), "tenant-abc")
+	rec := httptest.NewRecorder()
+
+	h.GetTenantBot(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	require.NotContains(t, body, secretToken, "token must never appear in GET response")
+	require.Contains(t, body, `"has_token":true`)
+	require.Contains(t, body, `"bot_plugin":"samplebot"`)
+}
+
+func TestGetTenantBot_MissingTenantID_UnprocessableEntity(t *testing.T) {
+	h := newBotTestHandler(t, &botStubRepo{})
+
+	req := withTenantParam(httptest.NewRequest(http.MethodGet, "/admin/tenants//bot", nil), "")
+	rec := httptest.NewRecorder()
+
+	h.GetTenantBot(rec, req)
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+}
+
+func TestGetTenantBot_NotConfigured_ReturnsEmptyOK(t *testing.T) {
+	h := newBotTestHandler(t, &botStubRepo{}) // no cfg stored
+
+	req := withTenantParam(httptest.NewRequest(http.MethodGet, "/admin/tenants/tenant-abc/bot", nil), "tenant-abc")
+	rec := httptest.NewRecorder()
+
+	h.GetTenantBot(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), `"has_token":false`)
 }

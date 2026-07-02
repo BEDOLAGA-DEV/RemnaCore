@@ -290,6 +290,7 @@ func NewRouter(p RouterParams) http.Handler {
 				admin.With(perm(p.AccessService, rbac.ShopsRead)).Get("/tenants", p.ResellerHandler.ListTenants)
 				admin.With(perm(p.AccessService, rbac.ShopsRead)).Get("/tenants/{tenantID}", p.ResellerHandler.GetTenant)
 				admin.With(perm(p.AccessService, rbac.ShopsBranding)).Put("/tenants/{tenantID}/branding", p.ResellerHandler.UpdateBranding)
+				admin.With(perm(p.AccessService, rbac.ShopsRead)).Get("/tenants/{tenantID}/bot", p.ResellerHandler.GetTenantBot)
 				admin.With(perm(p.AccessService, rbac.ShopsManage)).Put("/tenants/{tenantID}/bot", p.ResellerHandler.UpdateTenantBot)
 
 				// Tariff management routes are registered dynamically by the

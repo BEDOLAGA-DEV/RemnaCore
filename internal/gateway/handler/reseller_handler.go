@@ -298,6 +298,26 @@ func (h *ResellerHandler) GetResellerBot(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	h.respondBotConfig(w, r, tenantID)
+}
+
+// GetTenantBot handles GET /api/admin/tenants/{tenantID}/bot -- admin-level
+// read of any tenant's Telegram bot configuration (token never returned; only
+// has_token). Twin of GetResellerBot with an explicit tenant path param.
+func (h *ResellerHandler) GetTenantBot(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	if tenantID == "" {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("tenant ID is required"))
+		return
+	}
+
+	h.respondBotConfig(w, r, tenantID)
+}
+
+// respondBotConfig writes the redacted bot configuration for tenantID: an empty
+// getBotResponse when none is configured, the mapped view otherwise. Shared by
+// the reseller- and admin-facing GET handlers.
+func (h *ResellerHandler) respondBotConfig(w http.ResponseWriter, r *http.Request, tenantID string) {
 	cfg, err := h.service.GetShopBot(r.Context(), tenantID)
 	if err != nil {
 		if errors.Is(err, reseller.ErrShopBotNotFound) {
