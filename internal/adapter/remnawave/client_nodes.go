@@ -58,9 +58,17 @@ func (c *Client) DisableNode(ctx context.Context, uuid string) error {
 	return c.do(ctx, http.MethodPost, APIPathNodes+uuid+subPathActions+APIPathNodeDisable, nil, nil)
 }
 
-// RestartNode restarts a single proxy node.
-func (c *Client) RestartNode(ctx context.Context, uuid string) error {
-	return c.do(ctx, http.MethodPost, APIPathNodes+uuid+subPathActions+APIPathNodeRestart, nil, nil)
+// NodeRestartRequest is the body for node restart / restart-all actions. The
+// forceRestart flag is REQUIRED by the 2.8.0 contract (a nil body → 400).
+type NodeRestartRequest struct {
+	ForceRestart bool `json:"forceRestart"`
+}
+
+// RestartNode restarts a single proxy node. forceRestart=false performs a
+// graceful restart.
+func (c *Client) RestartNode(ctx context.Context, uuid string, forceRestart bool) error {
+	body := NodeRestartRequest{ForceRestart: forceRestart}
+	return c.do(ctx, http.MethodPost, APIPathNodes+uuid+subPathActions+APIPathNodeRestart, body, nil)
 }
 
 // ResetNodeTraffic resets traffic counters for a single proxy node.
@@ -68,9 +76,11 @@ func (c *Client) ResetNodeTraffic(ctx context.Context, uuid string) error {
 	return c.do(ctx, http.MethodPost, APIPathNodes+uuid+subPathActions+APIPathResetTraffic, nil, nil)
 }
 
-// RestartAllNodes restarts all proxy nodes.
-func (c *Client) RestartAllNodes(ctx context.Context) error {
-	return c.do(ctx, http.MethodPost, APIPathNodesActions+APIPathNodeRestartAll, nil, nil)
+// RestartAllNodes restarts all proxy nodes. forceRestart=false performs a
+// graceful restart.
+func (c *Client) RestartAllNodes(ctx context.Context, forceRestart bool) error {
+	body := NodeRestartRequest{ForceRestart: forceRestart}
+	return c.do(ctx, http.MethodPost, APIPathNodesActions+APIPathNodeRestartAll, body, nil)
 }
 
 // ReorderNodes sets the display order for proxy nodes.
