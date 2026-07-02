@@ -2,22 +2,41 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/rbac"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/reseller/vo"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/gateway/handler"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/telegram"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/health"
 	"go.uber.org/fx"
 )
 
-// provideShopBotConfigResolver adapts the reseller service to the narrow
-// ShopBotConfigResolver port the Telegram auth handler depends on. Keeping this
-// adapter in the module (not the handler) lets the handler stay within a single
-// domain service context per the gateway single-context architecture rule.
+// shopBotConfigResolver adapts the reseller service to the narrow
+// handler.ShopBotConfigResolver port, translating the reseller domain's
+// not-found error into the port-level handler.ErrShopBotNotConfigured so the
+// handler can classify not-found vs infrastructure failures without importing
+// the reseller service context (gateway single-context architecture rule).
+type shopBotConfigResolver struct {
+	svc *reseller.ResellerService
+}
+
+func (r shopBotConfigResolver) GetShopBot(ctx context.Context, tenantID string) (*vo.ShopBotConfig, error) {
+	cfg, err := r.svc.GetShopBot(ctx, tenantID)
+	if err != nil {
+		if errors.Is(err, reseller.ErrShopBotNotFound) {
+			return nil, handler.ErrShopBotNotConfigured
+		}
+		return nil, err
+	}
+	return cfg, nil
+}
+
+// provideShopBotConfigResolver wires the adapter above into the fx graph.
 func provideShopBotConfigResolver(s *reseller.ResellerService) handler.ShopBotConfigResolver {
-	return s
+	return shopBotConfigResolver{svc: s}
 }
 
 // provideBotPluginLister adapts the concrete telegram bot-plugin catalog to the

@@ -33,7 +33,7 @@ func newTestHealthHandler(checks ...health.ComponentCheck) *HealthHandler {
 
 // readyzResponse is the expected JSON shape returned by Readyz.
 type readyzResponse struct {
-	Status string                 `json:"status"`
+	Status string                  `json:"status"`
 	Checks []health.ComponentCheck `json:"checks"`
 }
 

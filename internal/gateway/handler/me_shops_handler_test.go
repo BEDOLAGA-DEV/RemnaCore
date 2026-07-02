@@ -74,8 +74,8 @@ func TestMeShopsHandler_TwoShops_NameSorted(t *testing.T) {
 	}
 	sg := &stubShopNameGetter{
 		names: map[string]string{
-			shopA: "Zebra Shop",  // comes last alphabetically
-			shopB: "Alpha Shop",  // comes first alphabetically
+			shopA: "Zebra Shop", // comes last alphabetically
+			shopB: "Alpha Shop", // comes first alphabetically
 		},
 	}
 

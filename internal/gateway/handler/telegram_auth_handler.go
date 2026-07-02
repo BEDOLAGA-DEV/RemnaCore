@@ -3,6 +3,8 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
@@ -12,8 +14,16 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
 )
 
+// ErrShopBotNotConfigured is the port-level sentinel meaning "this shop has no
+// bot row". The resolver adapter translates the reseller domain's not-found
+// error into this so the handler can distinguish a client condition (unknown
+// shop → 401) from an infrastructure failure (→ 500) without importing the
+// reseller service context (gateway single-context architecture rule).
+var ErrShopBotNotConfigured = errors.New("shop bot not configured")
+
 // ShopBotConfigResolver resolves a shop's Telegram bot configuration by tenant.
-// It is satisfied by *reseller.ResellerService. The handler depends on this
+// A missing configuration is reported as ErrShopBotNotConfigured; any other
+// error is treated as infrastructure failure. The handler depends on this
 // narrow port (returning only the reseller vo type) instead of importing the
 // reseller service package directly, so it stays within a single domain
 // service context per the gateway single-context architecture rule.
@@ -27,12 +37,17 @@ type ShopBotConfigResolver interface {
 type TelegramAuthHandler struct {
 	identity *identity.Service
 	shopBots ShopBotConfigResolver
+	logger   *slog.Logger
 }
 
 // NewTelegramAuthHandler creates a TelegramAuthHandler backed by the identity
 // service and a shop-bot-config resolver.
-func NewTelegramAuthHandler(identitySvc *identity.Service, shopBots ShopBotConfigResolver) *TelegramAuthHandler {
-	return &TelegramAuthHandler{identity: identitySvc, shopBots: shopBots}
+func NewTelegramAuthHandler(identitySvc *identity.Service, shopBots ShopBotConfigResolver, logger *slog.Logger) *TelegramAuthHandler {
+	return &TelegramAuthHandler{
+		identity: identitySvc,
+		shopBots: shopBots,
+		logger:   logger.With(slog.String("component", "telegram_auth_handler")),
+	}
 }
 
 type telegramWebAppLoginRequest struct {
@@ -80,7 +95,22 @@ func (h *TelegramAuthHandler) WebAppLogin(w http.ResponseWriter, r *http.Request
 	}
 
 	cfg, err := h.shopBots.GetShopBot(tenantctx.WithPlatformScope(r.Context()), shopID)
-	if err != nil || cfg == nil || !cfg.Enabled {
+	if err != nil {
+		// A genuine not-found is a client condition (unknown shop) → 401; any
+		// other error (DB down, decryption failure) is infrastructure → 500.
+		// Collapsing both to 401 (the old behavior) hid real outages.
+		if errors.Is(err, ErrShopBotNotConfigured) {
+			h.logger.Info("telegram webapp login: shop bot not found", slog.String("shop_id", shopID))
+			writeAPIError(w, apierror.Unauthorized.WithDetails("telegram authentication unavailable for this shop"))
+			return
+		}
+		h.logger.Error("telegram webapp login: shop bot lookup failed",
+			slog.String("shop_id", shopID), slog.Any("error", err))
+		writeAPIError(w, apierror.Internal)
+		return
+	}
+	if cfg == nil || !cfg.Enabled {
+		h.logger.Info("telegram webapp login: shop bot missing or disabled", slog.String("shop_id", shopID))
 		writeAPIError(w, apierror.Unauthorized.WithDetails("telegram authentication unavailable for this shop"))
 		return
 	}
@@ -89,6 +119,8 @@ func (h *TelegramAuthHandler) WebAppLogin(w http.ResponseWriter, r *http.Request
 		r.Context(), req.InitData, cfg.Token.Expose(), shopID, extractIP(r), r.UserAgent(),
 	)
 	if err != nil {
+		h.logger.Info("telegram webapp login: invalid session",
+			slog.String("shop_id", shopID), slog.Any("error", err))
 		writeAPIError(w, apierror.Unauthorized.WithDetails("invalid telegram session"))
 		return
 	}

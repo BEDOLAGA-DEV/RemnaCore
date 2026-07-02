@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"log/slog"
 	"testing"
 
 	"go.uber.org/fx"
@@ -21,6 +22,7 @@ func TestTelegramAuthHandlerGraphResolves(t *testing.T) {
 	err := fx.ValidateApp(
 		fx.Provide(func() *identity.Service { return nil }),
 		fx.Provide(func() *reseller.ResellerService { return nil }),
+		fx.Provide(func() *slog.Logger { return slog.Default() }),
 		fx.Provide(provideShopBotConfigResolver),
 		fx.Provide(handler.NewTelegramAuthHandler),
 		fx.Invoke(func(*handler.TelegramAuthHandler) {}),
