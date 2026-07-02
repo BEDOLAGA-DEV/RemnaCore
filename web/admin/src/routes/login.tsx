@@ -1,5 +1,10 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { USER_ROLES, useAuthStore, useLogin } from "@remnacore/shared";
+import {
+  emailSchema,
+  USER_ROLES,
+  useAuthStore,
+  useLogin,
+} from "@remnacore/shared";
 import { useNavigate } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { useState } from "react";
@@ -9,7 +14,7 @@ import { z } from "zod";
 import { GridBackdrop, ScanLine, TermButton, TermInput } from "@/components/ui";
 
 const loginSchema = z.object({
-  email: z.string().email(),
+  email: emailSchema,
   password: z.string().min(1),
 });
 

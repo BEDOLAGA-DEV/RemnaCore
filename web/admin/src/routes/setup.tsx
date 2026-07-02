@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { passwordSchema, useSetupAdmin } from "@remnacore/shared";
+import { emailSchema, passwordSchema, useSetupAdmin } from "@remnacore/shared";
 import { useNavigate } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { useState } from "react";
@@ -20,7 +20,7 @@ import { markSetupComplete } from "@/lib/setupGate";
 // server validation never drift.
 const setupSchema = z
   .object({
-    email: z.string().email(),
+    email: emailSchema,
     password: passwordSchema,
     confirm: z.string(),
   })

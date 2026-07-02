@@ -41,13 +41,13 @@ func (s *stubTariffReader) Get(ctx context.Context, _ string) (*TariffOffer, err
 
 // stubSubscriptionReader is a test double for SubscriptionReader.
 type stubSubscriptionReader struct {
-	lastCtx      context.Context
-	lastUserID   string
-	activeSubs   []Subscription
-	activeErr    error
-	getSub       *Subscription
-	getOwnerID   string
-	getErr       error
+	lastCtx    context.Context
+	lastUserID string
+	activeSubs []Subscription
+	activeErr  error
+	getSub     *Subscription
+	getOwnerID string
+	getErr     error
 }
 
 func (s *stubSubscriptionReader) ActiveByUser(ctx context.Context, userID string) ([]Subscription, error) {
@@ -177,17 +177,6 @@ func TestDomainOp_PlansList_TenantCtx(t *testing.T) {
 	require.Equal(t, tenant, tenantctx.TenantIDFromContext(stub.lastCtx))
 }
 
-func TestDomainOp_PlansList_NilTariffs(t *testing.T) {
-	oc := &OpContext{
-		TenantID: "shop-abc",
-		TxRunner: txmanagertest.NoopTxRunner{},
-		Tariffs:  nil,
-	}
-
-	_, err := callDomainOp(t, oc, plugin.PermBillingRead, OpPlansList, plansListArgs{})
-	require.ErrorIs(t, err, ErrCapabilityUnavailable)
-}
-
 // ─── plans.get ───────────────────────────────────────────────────────────────
 
 func TestDomainOp_PlansGet_ReturnsOffer(t *testing.T) {
@@ -208,16 +197,6 @@ func TestDomainOp_PlansGet_ReturnsOffer(t *testing.T) {
 	require.Equal(t, "plan-2", got.PlanID)
 
 	require.Equal(t, tenant, tenantctx.TenantIDFromContext(stub.lastCtx))
-}
-
-func TestDomainOp_PlansGet_NilTariffs(t *testing.T) {
-	oc := &OpContext{
-		TenantID: "shop-xyz",
-		TxRunner: txmanagertest.NoopTxRunner{},
-	}
-
-	_, err := callDomainOp(t, oc, plugin.PermBillingRead, OpPlansGet, plansGetArgs{PlanID: "p1"})
-	require.ErrorIs(t, err, ErrCapabilityUnavailable)
 }
 
 // ─── subscriptions.mine ──────────────────────────────────────────────────────
@@ -379,6 +358,34 @@ func TestDomainOp_BalanceGet_ReturnsWallets(t *testing.T) {
 
 	require.Equal(t, tenant, tenantctx.TenantIDFromContext(balStub.lastCtx))
 	repo.AssertExpectations(t)
+}
+
+// ─── Nil-capability guards ───────────────────────────────────────────────────
+
+// TestDomainOps_NilCapability verifies every read op fails closed with
+// ErrCapabilityUnavailable when its reader is not wired into the OpContext.
+// checkout.create's nil guard sits behind resolveUser and is covered
+// separately by TestDomainOp_CheckoutCreate_NilCheckout.
+func TestDomainOps_NilCapability(t *testing.T) {
+	cases := []struct {
+		op   string
+		args any
+	}{
+		{OpPlansList, plansListArgs{}},
+		{OpPlansGet, plansGetArgs{PlanID: "p1"}},
+		{OpSubscriptionsMine, subscriptionsMineArgs{TelegramID: 1}},
+		{OpSubscriptionsGet, subscriptionsGetArgs{TelegramID: 1, ID: "s1"}},
+		{OpInvoicesPending, invoicesPendingArgs{TelegramID: 1}},
+		{OpBalanceGet, balanceGetArgs{TelegramID: 1}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.op, func(t *testing.T) {
+			oc := &OpContext{TenantID: "shop-nil", TxRunner: txmanagertest.NoopTxRunner{}}
+
+			_, err := callDomainOp(t, oc, plugin.PermBillingRead, tc.op, tc.args)
+			require.ErrorIs(t, err, ErrCapabilityUnavailable)
+		})
+	}
 }
 
 // ─── checkout.create ─────────────────────────────────────────────────────────

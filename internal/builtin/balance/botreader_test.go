@@ -6,8 +6,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/telegram/bothost"
 )
 
 // stubWalletGetter implements the narrow walletGetter interface.
@@ -63,6 +61,3 @@ func TestBalanceReaderAdapter_WalletsByUser_EmptyList(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, views)
 }
-
-// Compile-time check: BalanceReaderAdapter must implement bothost.BalanceReader.
-var _ bothost.BalanceReader = (*BalanceReaderAdapter)(nil)

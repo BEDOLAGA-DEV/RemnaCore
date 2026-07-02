@@ -58,7 +58,7 @@ export {
   formatDateTime,
   formatMoney,
 } from "./lib/utils.js";
-export { passwordSchema } from "./lib/validation.js";
+export { emailSchema, httpsURLSchema, passwordSchema } from "./lib/validation.js";
 // Stores
 export { useAuthStore } from "./stores/authStore.js";
 export { useShopStore } from "./stores/shopStore.js";

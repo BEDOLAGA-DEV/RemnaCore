@@ -83,7 +83,6 @@ func NewBot(
 		webhookURL: cfg.Telegram.WebhookURL,
 		cabinetURL: cfg.Telegram.CabinetURL,
 		tenantID:   tenantctx.PlatformScopeSentinel,
-		isShop:     false,
 
 		identity: identitySvc,
 		billing:  billingSvc,

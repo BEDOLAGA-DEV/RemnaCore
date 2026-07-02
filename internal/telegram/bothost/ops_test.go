@@ -237,6 +237,8 @@ func TestOp_CabinetOpen_HTTP_URLButton(t *testing.T) {
 	require.Len(t, sender.sendKeyboardCalls, 1)
 	c := sender.sendKeyboardCalls[0]
 	require.Equal(t, "Custom message", c.Text)
+	require.Len(t, c.KB.Rows, 1)
+	require.Len(t, c.KB.Rows[0], 1)
 	btn := c.KB.Rows[0][0]
 	require.Equal(t, cabinetButtonLabel, btn.Text)
 	require.Equal(t, "http://cabinet.local/shop", btn.URL)
@@ -289,4 +291,21 @@ func TestOp_UserRegister(t *testing.T) {
 	require.Equal(t, capturedUserID, res.UserID)
 
 	repo.AssertExpectations(t)
+}
+
+// TestStdOps_DecodeArgsError verifies every std op rejects malformed args JSON
+// with its "<op>: decode args" error path. The op list comes from the live
+// registry, so an op added to RegisterStdOps is covered automatically.
+func TestStdOps_DecodeArgsError(t *testing.T) {
+	r := NewRegistry()
+	RegisterStdOps(r)
+	oc := &OpContext{TenantID: "t1", CabinetURL: "https://cab.example.com", Sender: &stubSender{}}
+
+	require.NotEmpty(t, r.ops)
+	for op, reg := range r.ops {
+		t.Run(op, func(t *testing.T) {
+			_, err := r.Call(context.Background(), oc, NewPermSet(reg.perm), op, json.RawMessage(`{invalid`))
+			require.ErrorContains(t, err, "decode args")
+		})
+	}
 }

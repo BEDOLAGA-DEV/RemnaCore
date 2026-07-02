@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { passwordSchema, useRegister } from "@remnacore/shared";
+import { emailSchema, passwordSchema, useRegister } from "@remnacore/shared";
 import { Link } from "@tanstack/react-router";
 import { Loader2, Mail, Shield } from "lucide-react";
 import { useState } from "react";
@@ -9,7 +9,7 @@ import { z } from "zod";
 
 const registerSchema = z
   .object({
-    email: z.string().email(),
+    email: emailSchema,
     password: passwordSchema,
     confirmPassword: z.string().min(1),
   })

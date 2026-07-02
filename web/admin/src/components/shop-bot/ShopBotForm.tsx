@@ -1,8 +1,9 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import type {
-  BotPluginInfo,
-  ShopBotConfig,
-  UpdateShopBotInput,
+import {
+  type BotPluginInfo,
+  httpsURLSchema,
+  type ShopBotConfig,
+  type UpdateShopBotInput,
 } from "@remnacore/shared";
 import { Check, Loader2 } from "lucide-react";
 import { useEffect } from "react";
@@ -15,7 +16,7 @@ import { TermInput } from "@/components/ui/TermInput";
 
 const botSchema = z.object({
   bot_token: z.string(),
-  cabinet_url: z.string().url().startsWith("https://").or(z.literal("")),
+  cabinet_url: httpsURLSchema.or(z.literal("")),
   bot_plugin: z.string(),
   enabled: z.boolean(),
 });

@@ -105,9 +105,6 @@ func TestSubscriptionReaderAdapter_Get_NotFound_ReturnsNilNoError(t *testing.T) 
 	assert.Empty(t, ownerUserID)
 }
 
-// Compile-time check: subscriptionReaderAdapter satisfies bothost.SubscriptionReader.
-var _ bothost.SubscriptionReader = (*subscriptionReaderAdapter)(nil)
-
 // ──────────────────────────────────────────────────────────────────────────────
 // Invoice stubs
 // ──────────────────────────────────────────────────────────────────────────────
@@ -152,9 +149,6 @@ func TestInvoiceReaderAdapter_PendingByUser_EmptyList(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, invoices)
 }
-
-// Compile-time check: invoiceReaderAdapter satisfies bothost.InvoiceReader.
-var _ bothost.InvoiceReader = (*invoiceReaderAdapter)(nil)
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Checkout stubs
@@ -209,6 +203,3 @@ func TestCheckoutStarterAdapter_Start_ThreadsInputAndMapsOutput(t *testing.T) {
 	assert.Equal(t, "inv-1", result.InvoiceID)
 	assert.Equal(t, "stripe", result.Provider)
 }
-
-// Compile-time check: checkoutStarterAdapter satisfies bothost.CheckoutStarter.
-var _ bothost.CheckoutStarter = (*checkoutStarterAdapter)(nil)

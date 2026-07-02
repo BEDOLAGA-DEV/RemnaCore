@@ -1,5 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
+  emailSchema,
   formatDate,
   LoadingSpinner,
   useAdminTenant,
@@ -28,8 +29,8 @@ const brandingSchema = z.object({
   logo: z.string(),
   primary_color: z.string(),
   app_name: z.string(),
-  support_email: z.string().email().or(z.literal("")),
-  support_url: z.string().url().or(z.literal("")),
+  support_email: emailSchema.or(z.literal("")),
+  support_url: z.url().or(z.literal("")),
 });
 
 type BrandingFormValues = z.infer<typeof brandingSchema>;
