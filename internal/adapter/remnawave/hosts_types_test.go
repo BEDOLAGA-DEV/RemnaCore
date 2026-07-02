@@ -136,3 +136,13 @@ func TestHWIDDevice_2_8_0Shape(t *testing.T) {
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"userUuid":"u-1"}`, string(dab))
 }
+
+// TestDropConnections_DiscriminatedUnionShape locks the 2.8.0 drop-connections
+// body: dropBy{by,userUuids} + targetNodes{target}, not the old flat userUuid.
+func TestDropConnections_DiscriminatedUnionShape(t *testing.T) {
+	b, err := json.Marshal(NewDropUserConnections("u-1"))
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"dropBy":{"by":"userUuids","userUuids":["u-1"]},"targetNodes":{"target":"allNodes"}}`, string(b))
+	assert.NotContains(t, string(b), `"userUuid"`)
+	assert.NotContains(t, string(b), `"nodeUuid"`)
+}
