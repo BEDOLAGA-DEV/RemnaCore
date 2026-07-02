@@ -28,11 +28,11 @@ var webhookEventMap = map[string]string{
 	"user.disabled":                          "subscription.binding_disabled",
 	"user.enabled":                           "subscription.binding_enabled",
 	"user.expired":                           "subscription.remnawave_expired",
-	"user.expired_24_hours_ago":              "subscription.expired_24h_ago",
-	"user.expires_in_24_hours":               "subscription.expiring_soon",
-	"user.expires_in_48_hours":               "subscription.expiring_soon",
-	"user.expires_in_72_hours":               "subscription.expiring_soon",
-	"user.first_connected":                   "subscription.first_use",
+	// NOTE: the per-threshold user.expired_24_hours_ago / user.expires_in_{24,48,72}_hours
+	// keys were REMOVED in Remnawave 2.8.0. They are replaced by the unified
+	// user.expiration event, handled specially in MapWebhookEvent by the sign of
+	// meta.expiration (see below) — not via this map.
+	"user.first_connected": "subscription.first_use",
 	"user.limited":                           "binding.traffic_exceeded",
 	"user.modified":                          "remnawave.user.modified",
 	"user.not_connected":                     "subscription.user_not_connected",
@@ -84,12 +84,22 @@ func BuildUsername(platformUserID, purpose string, index int) string {
 	return naming.BuildRemnawaveUsername(platformUserID, purpose, index)
 }
 
-// MapWebhookEvent translates a Remnawave webhook scope and event into a domain
-// event type. Unknown combinations fall back to "remnawave.{scope}.{event}".
-func MapWebhookEvent(scope, event string) string {
-	key := scope + "." + event
+// MapWebhookEvent translates a Remnawave webhook payload into a domain event
+// type. Most events map through webhookEventMap keyed by "scope.event"; the
+// unified 2.8.0 user.expiration event is special-cased on the sign of
+// meta.expiration (signed hours: negative = hours before expiry → expiring
+// soon; positive = hours after expiry → expired N hours ago). Unknown
+// combinations fall back to "remnawave.{scope}.{event}".
+func MapWebhookEvent(p WebhookPayload) string {
+	if p.Scope == "user" && p.Event == "expiration" {
+		if p.Meta.Expiration != nil && *p.Meta.Expiration > 0 {
+			return "subscription.expired_24h_ago"
+		}
+		return "subscription.expiring_soon"
+	}
+	key := p.Scope + "." + p.Event
 	if domainEvent, ok := webhookEventMap[key]; ok {
 		return domainEvent
 	}
-	return fmt.Sprintf("remnawave.%s.%s", scope, event)
+	return fmt.Sprintf("remnawave.%s.%s", p.Scope, p.Event)
 }

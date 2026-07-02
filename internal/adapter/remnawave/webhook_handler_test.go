@@ -72,3 +72,9 @@ func TestWebhookHandler_EmptyBody(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
+
+// TestHeaderWebhookSecret_MatchesPanel locks the signature header name to the
+// value the Remnawave panel actually sends (2.6.4–2.8.0).
+func TestHeaderWebhookSecret_MatchesPanel(t *testing.T) {
+	assert.Equal(t, "X-Remnawave-Signature", HeaderWebhookSecret)
+}
