@@ -28,4 +28,3 @@ type UpdateNodePluginRequest struct {
 	Config    json.RawMessage `json:"config,omitempty"`
 	IsEnabled *bool           `json:"isEnabled,omitempty"`
 }
-

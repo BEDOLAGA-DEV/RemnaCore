@@ -14,12 +14,12 @@ type NodeBandwidthStats struct {
 
 // RealtimeNodeMetrics represents real-time bandwidth metrics for a node.
 type RealtimeNodeMetrics struct {
-	UUID                string  `json:"uuid"`
-	Name                string  `json:"name"`
-	UploadSpeedBytes    float64 `json:"uploadSpeedBytes"`
-	DownloadSpeedBytes  float64 `json:"downloadSpeedBytes"`
-	ActiveConnections   int     `json:"activeConnections"`
-	CollectedAt         string  `json:"collectedAt"`
+	UUID               string  `json:"uuid"`
+	Name               string  `json:"name"`
+	UploadSpeedBytes   float64 `json:"uploadSpeedBytes"`
+	DownloadSpeedBytes float64 `json:"downloadSpeedBytes"`
+	ActiveConnections  int     `json:"activeConnections"`
+	CollectedAt        string  `json:"collectedAt"`
 }
 
 // UserBandwidthStats represents bandwidth statistics for a single user.

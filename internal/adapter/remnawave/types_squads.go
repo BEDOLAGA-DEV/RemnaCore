@@ -51,4 +51,3 @@ type UpdateSquadRequest struct {
 type BulkUsersRequest struct {
 	UserUUIDs []string `json:"userUuids"`
 }
-

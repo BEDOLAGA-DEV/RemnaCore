@@ -10,10 +10,10 @@ const APIPathBandwidthStats = "/api/bandwidth-stats/"
 
 // Bandwidth stats endpoint path segments.
 const (
-	bandwidthPathNodes      = "nodes/"
-	bandwidthPathRealtime   = "nodes/realtime"
-	bandwidthPathNodeUsers  = "/users"
-	bandwidthPathUsers      = "users/"
+	bandwidthPathNodes     = "nodes/"
+	bandwidthPathRealtime  = "nodes/realtime"
+	bandwidthPathNodeUsers = "/users"
+	bandwidthPathUsers     = "users/"
 )
 
 // GetNodesBandwidthStats returns bandwidth statistics for all nodes.
