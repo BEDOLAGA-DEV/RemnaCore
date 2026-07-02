@@ -90,11 +90,12 @@ type OpContext struct {
 	Identity   *identity.Service
 	TxRunner   txmanager.Runner
 
-	Tariffs  TariffReader
-	Subs     SubscriptionReader
-	Invoices InvoiceReader
-	Balance  BalanceReader
-	Checkout CheckoutStarter
+	Tariffs    TariffReader
+	Subs       SubscriptionReader
+	Invoices   InvoiceReader
+	Balance    BalanceReader
+	Checkout   CheckoutStarter
+	SubMutator SubscriptionMutator
 }
 
 // OpHandler executes one op against the OpContext and returns its JSON result

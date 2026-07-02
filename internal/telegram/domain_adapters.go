@@ -178,3 +178,38 @@ func (a *checkoutStarterAdapter) Start(ctx context.Context, in bothost.CheckoutI
 
 // Compile-time assertion: checkoutStarterAdapter must implement bothost.CheckoutStarter.
 var _ bothost.CheckoutStarter = (*checkoutStarterAdapter)(nil)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SubscriptionMutator adapter
+// ══════════════════════════════════════════════════════════════════════════════
+
+// subscriptionMutatorAdapter adapts *billingservice.BillingService to the
+// bothost.SubscriptionMutator port. Both methods self-wrap their own RunInTx;
+// the caller passes a tenant-annotated ctx but must not wrap them.
+type subscriptionMutatorAdapter struct {
+	svc *billingservice.BillingService
+}
+
+// NewSubscriptionMutatorAdapter returns a bothost.SubscriptionMutator backed by svc.
+func NewSubscriptionMutatorAdapter(svc *billingservice.BillingService) bothost.SubscriptionMutator {
+	return &subscriptionMutatorAdapter{svc: svc}
+}
+
+// Cancel implements bothost.SubscriptionMutator.
+func (a *subscriptionMutatorAdapter) Cancel(ctx context.Context, subID string, reason *string) error {
+	if err := a.svc.CancelSubscription(ctx, subID, reason); err != nil {
+		return fmt.Errorf("subscription.cancel: %w", err)
+	}
+	return nil
+}
+
+// Upgrade implements bothost.SubscriptionMutator.
+func (a *subscriptionMutatorAdapter) Upgrade(ctx context.Context, subID, newPlanID string) error {
+	if err := a.svc.UpgradeSubscription(ctx, subID, newPlanID); err != nil {
+		return fmt.Errorf("subscription.upgrade: %w", err)
+	}
+	return nil
+}
+
+// Compile-time assertion: subscriptionMutatorAdapter must implement bothost.SubscriptionMutator.
+var _ bothost.SubscriptionMutator = (*subscriptionMutatorAdapter)(nil)
