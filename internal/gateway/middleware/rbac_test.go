@@ -37,11 +37,23 @@ func (s stubRBAC) PermissionsForRoles(_ context.Context, ids []string) (map[stri
 	}
 	return out, nil
 }
-func (s stubRBAC) SyncCatalog(context.Context, []rbac.Definition, []rbac.SystemRole) error { return nil }
-func (s stubRBAC) AssignRole(_ context.Context, _, _ string, _ *string, _ string) error  { return nil }
-func (s stubRBAC) RevokeRole(_ context.Context, _, _ string, _ *string) (int64, error)   { return 0, nil }
-func (s stubRBAC) GetRole(_ context.Context, _ string) (rbac.Role, error)                 { return rbac.Role{}, nil }
-func (s stubRBAC) CountPlatformAdmins(_ context.Context) (int, error)                    { return 0, nil }
+func (s stubRBAC) SyncCatalog(context.Context, []rbac.Definition, []rbac.SystemRole) error {
+	return nil
+}
+func (s stubRBAC) AssignRole(_ context.Context, _, _ string, _ *string, _ string) error { return nil }
+func (s stubRBAC) RevokeRole(_ context.Context, _, _ string, _ *string) (int64, error)  { return 0, nil }
+func (s stubRBAC) GetRole(_ context.Context, _ string) (rbac.Role, error)               { return rbac.Role{}, nil }
+func (s stubRBAC) CountPlatformAdmins(_ context.Context) (int, error)                   { return 0, nil }
+func (s stubRBAC) CreateCustomRole(_ context.Context, _, _, _ string, _ *string, _ []rbac.Permission) (string, error) {
+	return "", nil
+}
+func (s stubRBAC) ListCustomRoles(_ context.Context, _ *string) ([]rbac.CustomRole, error) {
+	return nil, nil
+}
+func (s stubRBAC) GetCustomRole(_ context.Context, _ string) (rbac.CustomRole, error) {
+	return rbac.CustomRole{}, rbac.ErrRoleNotFound
+}
+func (s stubRBAC) DeleteCustomRole(_ context.Context, _ string) (int64, error) { return 0, nil }
 
 func newAccess(b map[string][]rbac.Binding, p map[string][]rbac.Permission) *service.AccessService {
 	return service.NewAccessService(stubRBAC{bindings: b, perms: p}, time.Now, time.Minute)

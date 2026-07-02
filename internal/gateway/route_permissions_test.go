@@ -84,6 +84,16 @@ func (denyAllRepo) GetRole(_ context.Context, _ string) (rbac.Role, error) {
 	return rbac.Role{}, nil
 }
 func (denyAllRepo) CountPlatformAdmins(_ context.Context) (int, error) { return 0, nil }
+func (denyAllRepo) CreateCustomRole(_ context.Context, _, _, _ string, _ *string, _ []rbac.Permission) (string, error) {
+	return "", nil
+}
+func (denyAllRepo) ListCustomRoles(_ context.Context, _ *string) ([]rbac.CustomRole, error) {
+	return nil, nil
+}
+func (denyAllRepo) GetCustomRole(_ context.Context, _ string) (rbac.CustomRole, error) {
+	return rbac.CustomRole{}, rbac.ErrRoleNotFound
+}
+func (denyAllRepo) DeleteCustomRole(_ context.Context, _ string) (int64, error) { return 0, nil }
 
 // ─── test helper ─────────────────────────────────────────────────────────────
 

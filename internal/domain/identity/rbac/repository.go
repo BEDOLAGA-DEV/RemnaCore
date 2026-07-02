@@ -23,6 +23,17 @@ type Binding struct {
 	TenantID  *string
 }
 
+// CustomRole is a tenant-defined (is_system=false) role with its permission set.
+// Custom roles carry no key (the DB key column is NULL); they are referenced by ID.
+type CustomRole struct {
+	ID          string
+	Name        string
+	Description string
+	ScopeKind   string  // ScopeGlobal | ScopeShop
+	TenantID    *string // non-nil only for shop-scoped custom roles
+	Permissions []Permission
+}
+
 // Repository is the persistence port for RBAC reads and catalog sync.
 type Repository interface {
 	// ListBindingsForUser returns every role assignment for the user.
@@ -48,4 +59,20 @@ type Repository interface {
 	GetRole(ctx context.Context, key string) (Role, error)
 	// CountPlatformAdmins returns the number of distinct global platform_admin holders.
 	CountPlatformAdmins(ctx context.Context) (int, error)
+
+	// --- Custom-role CRUD (Phase D) ---
+
+	// CreateCustomRole inserts a non-system role and its permission rows, returning
+	// the new role ID. Callers MUST wrap this in a transaction (role + permission
+	// rows must be atomic).
+	CreateCustomRole(ctx context.Context, name, description, scopeKind string, tenantID *string, perms []Permission) (string, error)
+	// ListCustomRoles returns non-system roles for the given scope: tenantID nil
+	// selects global custom roles; non-nil selects that tenant's.
+	ListCustomRoles(ctx context.Context, tenantID *string) ([]CustomRole, error)
+	// GetCustomRole returns the non-system role by ID. Returns ErrRoleNotFound when
+	// missing or when the ID names a system role.
+	GetCustomRole(ctx context.Context, roleID string) (CustomRole, error)
+	// DeleteCustomRole removes a non-system role by ID (permission rows and
+	// assignments cascade). Returns the number of rows removed.
+	DeleteCustomRole(ctx context.Context, roleID string) (int64, error)
 }
