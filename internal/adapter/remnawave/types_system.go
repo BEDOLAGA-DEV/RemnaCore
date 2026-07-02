@@ -71,8 +71,34 @@ type IPFetchResult struct {
 	IPs    []string `json:"ips,omitempty"`
 }
 
-// DropConnectionsRequest is the payload to drop active connections.
+// DropConnectionsBy selects WHICH connections to drop (discriminated union:
+// by = "userUuids" or "ipAddresses").
+type DropConnectionsBy struct {
+	By          string   `json:"by"`
+	UserUuids   []string `json:"userUuids,omitempty"`
+	IpAddresses []string `json:"ipAddresses,omitempty"`
+}
+
+// DropConnectionsTarget selects on WHICH nodes to drop (discriminated union:
+// target = "allNodes" or "specificNodes").
+type DropConnectionsTarget struct {
+	Target    string   `json:"target"`
+	NodeUuids []string `json:"nodeUuids,omitempty"`
+}
+
+// DropConnectionsRequest is the payload to drop active connections. The 2.8.0
+// (and 2.7.0) contract uses two discriminated unions; the previous flat
+// {userUuid, nodeUuid} shape failed Zod validation.
 type DropConnectionsRequest struct {
-	UserUUID string `json:"userUuid"`
-	NodeUUID string `json:"nodeUuid,omitempty"`
+	DropBy      DropConnectionsBy     `json:"dropBy"`
+	TargetNodes DropConnectionsTarget `json:"targetNodes"`
+}
+
+// NewDropUserConnections builds a request that drops all of a single user's
+// connections across every node.
+func NewDropUserConnections(userUUID string) DropConnectionsRequest {
+	return DropConnectionsRequest{
+		DropBy:      DropConnectionsBy{By: "userUuids", UserUuids: []string{userUUID}},
+		TargetNodes: DropConnectionsTarget{Target: "allNodes"},
+	}
 }

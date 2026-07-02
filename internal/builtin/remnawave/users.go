@@ -157,7 +157,7 @@ func (h *Handler) DisconnectUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := client.DropConnections(r.Context(), rwclient.DropConnectionsRequest{UserUUID: userUUID}); err != nil {
+	if err := client.DropConnections(r.Context(), rwclient.NewDropUserConnections(userUUID)); err != nil {
 		writeAPIError(w, apierror.Internal)
 		return
 	}
