@@ -197,8 +197,10 @@ func TestBillingFlow(t *testing.T) {
 		var resp map[string]any
 		err := json.NewDecoder(rec.Body).Decode(&resp)
 		require.NoError(t, err)
-		assert.Equal(t, "plan-1", resp["ID"])
-		assert.Equal(t, "Basic", resp["Name"])
+		assert.Equal(t, "plan-1", resp["id"])
+		assert.Equal(t, "Basic", resp["name"])
+		assert.EqualValues(t, 999, resp["base_price_amount"])
+		assert.Equal(t, "USD", resp["base_price_currency"])
 
 		h.plans.AssertExpectations(t)
 	})
