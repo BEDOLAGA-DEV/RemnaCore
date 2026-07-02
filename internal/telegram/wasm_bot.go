@@ -32,6 +32,13 @@ type PluginReader interface {
 	GetBySlug(ctx context.Context, slug string) (*plugin.Plugin, error)
 }
 
+// PluginLister is the narrow slice of the plugin repository the bot-plugin
+// catalog needs: listing every enabled plugin. Depending on this keeps the
+// catalog decoupled from the full plugin.PluginRepository.
+type PluginLister interface {
+	GetEnabled(ctx context.Context) ([]*plugin.Plugin, error)
+}
+
 // runtimePoolDispatcher is the production WASMBotDispatcher backed by the
 // plugin runtime pool and the plugin repository.
 type runtimePoolDispatcher struct {

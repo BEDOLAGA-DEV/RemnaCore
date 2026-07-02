@@ -74,6 +74,7 @@ type RouterParams struct {
 	PluginRepo            plugin.PluginRepository
 	BotManager            *telegram.BotManager
 	TelegramAuthHandler   *handler.TelegramAuthHandler
+	BotCatalogHandler     *handler.BotCatalogHandler
 }
 
 // NewRouter creates and returns a fully-configured chi router with all
@@ -293,6 +294,9 @@ func NewRouter(p RouterParams) http.Handler {
 				admin.With(perm(p.AccessService, rbac.ShopsRead)).Get("/tenants/{tenantID}/bot", p.ResellerHandler.GetTenantBot)
 				admin.With(perm(p.AccessService, rbac.ShopsManage)).Put("/tenants/{tenantID}/bot", p.ResellerHandler.UpdateTenantBot)
 
+				// Selectable bot-plugin catalog (built-in + enabled WASM bots).
+				admin.With(perm(p.AccessService, rbac.ShopsRead)).Get("/bot-plugins", p.BotCatalogHandler.ListBotPlugins)
+
 				// Tariff management routes are registered dynamically by the
 				// tariff-manager built-in plugin via RegisterPluginRoutes.
 			})
@@ -309,6 +313,7 @@ func NewRouter(p RouterParams) http.Handler {
 				resellerRouter.With(perm(p.AccessService, rbac.CustomersRead)).Get("/customers", p.ResellerHandler.Customers)
 				resellerRouter.With(perm(p.AccessService, rbac.ShopSettingsManage)).Put("/bot", p.ResellerHandler.SetResellerBot)
 				resellerRouter.With(perm(p.AccessService, rbac.ShopSettingsManage)).Get("/bot", p.ResellerHandler.GetResellerBot)
+				resellerRouter.With(perm(p.AccessService, rbac.ShopSettingsManage)).Get("/bot/plugins", p.BotCatalogHandler.ListBotPlugins)
 			})
 		})
 	})

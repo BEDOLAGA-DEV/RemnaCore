@@ -27,6 +27,10 @@ var Module = fx.Module("telegram",
 	// bot dispatcher depends on.
 	fx.Provide(func(r plugin.PluginRepository) PluginReader { return r }),
 	fx.Provide(NewWASMBotDispatcher),
+	// Adapt the full plugin repository down to the narrow PluginLister the
+	// bot-plugin catalog depends on, then provide the catalog itself.
+	fx.Provide(func(r plugin.PluginRepository) PluginLister { return r }),
+	fx.Provide(NewBotPluginCatalog),
 	fx.Invoke(registerCabinetBot),
 	// Domain-reader adapters: billing-layer readers (from billing fx bindings).
 	fx.Provide(NewSubscriptionReaderAdapter),
@@ -85,7 +89,7 @@ func (v *botPluginValidator) IsValidBotPlugin(ctx context.Context, slug string) 
 	if p.Status != plugin.StatusEnabled {
 		return false, nil
 	}
-	if p.Manifest == nil || p.Manifest.Telegram == nil || !p.Manifest.Telegram.ProvidesBot {
+	if !isEnabledWASMBot(p) {
 		return false, nil
 	}
 	return true, nil
