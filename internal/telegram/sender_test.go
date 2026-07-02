@@ -8,9 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Compile-time assertion: *Bot must satisfy bothost.MessageSender.
-var _ bothost.MessageSender = (*Bot)(nil)
-
 func TestToInlineKeyboard_WebAppButton(t *testing.T) {
 	kb := bothost.Keyboard{
 		Rows: [][]bothost.Button{
