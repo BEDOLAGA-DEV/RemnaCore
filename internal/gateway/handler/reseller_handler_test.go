@@ -29,6 +29,7 @@ import (
 type botStubRepo struct {
 	cfg       *vo.ShopBotConfig
 	upsertErr error
+	getErr    error // when set, GetByTenant returns it (simulates infra failure)
 }
 
 func (s *botStubRepo) Upsert(_ context.Context, _ string, _ vo.ShopBotConfig) error {
@@ -36,6 +37,9 @@ func (s *botStubRepo) Upsert(_ context.Context, _ string, _ vo.ShopBotConfig) er
 }
 
 func (s *botStubRepo) GetByTenant(_ context.Context, _ string) (*vo.ShopBotConfig, error) {
+	if s.getErr != nil {
+		return nil, s.getErr
+	}
 	if s.cfg == nil {
 		return nil, resellerservice.ErrShopBotNotFound
 	}

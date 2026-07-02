@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -61,7 +62,25 @@ func newTestTelegramAuthHandler(
 		15*time.Minute, 7*24*time.Hour, sessions,
 	)
 
-	return NewTelegramAuthHandler(identitySvc, resellerSvc), pub
+	return NewTelegramAuthHandler(identitySvc, testShopBotResolver{svc: resellerSvc}, logger), pub
+}
+
+// testShopBotResolver mirrors the production gateway adapter: it maps the
+// reseller not-found error to the port-level ErrShopBotNotConfigured so the
+// handler's not-found vs infra classification is exercised under test.
+type testShopBotResolver struct {
+	svc *reseller.ResellerService
+}
+
+func (r testShopBotResolver) GetShopBot(ctx context.Context, tenantID string) (*vo.ShopBotConfig, error) {
+	cfg, err := r.svc.GetShopBot(ctx, tenantID)
+	if err != nil {
+		if errors.Is(err, resellerservice.ErrShopBotNotFound) {
+			return nil, ErrShopBotNotConfigured
+		}
+		return nil, err
+	}
+	return cfg, nil
 }
 
 // --- Tests ---
@@ -276,4 +295,27 @@ func TestWebAppLogin_DomainResolvedShop(t *testing.T) {
 
 	repo.AssertExpectations(t)
 	pub.AssertExpectations(t)
+}
+
+// TestWebAppLogin_InfraError_Returns500 verifies that a non-not-found error from
+// the shop-bot lookup (DB down, decryption failure) surfaces as 500, not 401 —
+// so real outages are observable instead of masked as "unknown shop".
+func TestWebAppLogin_InfraError_Returns500(t *testing.T) {
+	botRepo := &botStubRepo{getErr: errors.New("connection refused")}
+	repo := new(identitytest.MockRepository)
+
+	h, _ := newTestTelegramAuthHandler(t, botRepo, repo, clock.NewReal())
+
+	body, _ := json.Marshal(map[string]string{
+		"shop_id":   "shop-x",
+		"init_data": "auth_date=1700000000&hash=deadbeef&user=%7B%22id%22%3A1%7D",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/telegram/webapp", bytes.NewReader(body))
+	req.Header.Set(httpconst.HeaderContentType, httpconst.ContentTypeJSON)
+	rec := httptest.NewRecorder()
+
+	h.WebAppLogin(rec, req)
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	repo.AssertNotCalled(t, "GetUserByTelegramID", mock.Anything, mock.Anything)
 }
