@@ -49,7 +49,7 @@ func (noopPublisher) Publish(_ context.Context, _ domainevent.Event) error      
 func (noopPublisher) PublishBatch(_ context.Context, _ []domainevent.Event) error { return nil }
 
 // stubBotPluginValidator is a controllable BotPluginValidator for unit tests.
-// Set valid to control IsValidBotPlugin's return; LastSlug records the last
+// Set valid to control IsValidBotPlugin's return; lastSlug records the last
 // slug passed in.
 type stubBotPluginValidator struct {
 	valid    bool
@@ -138,11 +138,13 @@ func TestSetShopBot_BotPluginValidation(t *testing.T) {
 	err := svc.SetShopBot(ctx, "t-1", withPlugin(base, "ghost-bot"))
 	require.ErrorIs(t, err, service.ErrShopBotInvalidPlugin)
 	require.Equal(t, 0, repo.upsertCalls)
+	require.Equal(t, "ghost-bot", validator.lastSlug, "validator must receive the submitted slug")
 
 	// valid plugin slug → upsert with BotPluginSlug set
 	validator.valid = true
 	require.NoError(t, svc.SetShopBot(ctx, "t-1", withPlugin(base, "cabinet-bot")))
 	require.Equal(t, "cabinet-bot", repo.lastUpsert.BotPluginSlug)
+	require.Equal(t, "cabinet-bot", validator.lastSlug, "validator must receive the submitted slug")
 
 	// empty plugin slug → default behaviour, upsert with empty BotPluginSlug
 	require.NoError(t, svc.SetShopBot(ctx, "t-1", base))
