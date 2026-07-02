@@ -14,6 +14,8 @@ func TestFormatMoney(t *testing.T) {
 	assert.Equal(t, "9.99 USD", formatMoney(999, "USD"))
 	assert.Equal(t, "10.00 RUB", formatMoney(1000, "RUB"))
 	assert.Equal(t, "-1.05 USD", formatMoney(-105, "USD"))
+	// Sub-unit negative must keep its sign (regression: naive division dropped it).
+	assert.Equal(t, "-0.50 USD", formatMoney(-50, "USD"))
 }
 
 func TestFormatOffers_Empty(t *testing.T) {

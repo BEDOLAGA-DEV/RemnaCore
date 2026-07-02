@@ -434,10 +434,13 @@ func TestDomainOp_CheckoutCreate_ReturnsResult(t *testing.T) {
 	require.Equal(t, email, coStub.lastInput.UserEmail)
 	require.Equal(t, country, coStub.lastInput.UserCountry)
 
-	// Checkout.Start must receive the PLAIN ctx — no tenant GUC (avoids
-	// double-wrap with CheckoutService's own RunInTx).
-	require.Empty(t, tenantctx.TenantIDFromContext(coStub.lastCtx),
-		"checkout.create must call Start with plain ctx, not WithTenantID")
+	// Checkout.Start must receive the shop's tenant in ctx (so its self-wrapped
+	// RunInTx stamps the subscription/invoice with tenant_id) — but NOT be
+	// wrapped in RunInTx here (CheckoutService self-wraps; double-wrap would
+	// break re-entrancy). WithTenantID only annotates the ctx; it does not open
+	// a transaction.
+	require.Equal(t, tenant, tenantctx.TenantIDFromContext(coStub.lastCtx),
+		"checkout.create must scope Start's ctx to the shop tenant")
 
 	repo.AssertExpectations(t)
 }

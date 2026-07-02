@@ -3,10 +3,10 @@ package telegram
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
 	msaggregate "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub/aggregate"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestPlansKeyboard(t *testing.T) {
@@ -111,9 +111,9 @@ func TestFormatTrafficUsage_WithBindings(t *testing.T) {
 	bindings := []*msaggregate.RemnawaveBinding{
 		{
 			RemnawaveUsername: "user1",
-			Purpose:          msaggregate.PurposeBase,
+			Purpose:           msaggregate.PurposeBase,
 			TrafficLimitBytes: 5 * 1024 * 1024 * 1024,
-			Status:           msaggregate.BindingActive,
+			Status:            msaggregate.BindingActive,
 		},
 	}
 	text := FormatTrafficUsage(bindings)

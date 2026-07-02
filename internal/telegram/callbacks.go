@@ -9,6 +9,7 @@ import (
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	billingaggregate "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	billingservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/service"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
@@ -162,10 +163,34 @@ func (b *Bot) handleCancelCallback(ctx context.Context, _ *tgbot.Bot, update *mo
 		return
 	}
 
+	// Ownership check: subID comes from attacker-forgeable callback data, and
+	// CancelSubscription performs no ownership check of its own. Resolve the
+	// caller and confirm they own the subscription before cancelling, so a user
+	// cannot cancel someone else's subscription by guessing its ID. Both reads
+	// run under this bot's scope (RLS-protected tables).
+	tgUser := cb.From
+	var (
+		user *identity.PlatformUser
+		sub  *billingaggregate.Subscription
+	)
+	if err := b.withScope(ctx, func(txCtx context.Context) error {
+		var scopeErr error
+		user, scopeErr = b.identity.GetByTelegramID(txCtx, tgUser.ID)
+		if scopeErr != nil || user == nil {
+			return scopeErr
+		}
+		sub, scopeErr = b.subs.GetByID(txCtx, subID)
+		return scopeErr
+	}); err != nil || user == nil || sub == nil || sub.UserID != user.ID {
+		b.logger.Warn("cancel subscription denied",
+			slog.String("sub_id", subID), slog.Int64("telegram_id", tgUser.ID), slog.Any("error", err))
+		b.answerCallback(ctx, cb.ID, "Failed to cancel subscription.")
+		return
+	}
+
 	// CancelSubscription self-wraps its own RunInTx — pass the scoped ctx
 	// WITHOUT another RunInTx.
-	err := b.billing.CancelSubscription(tenantctx.WithTenantID(ctx, b.tenantID), subID, nil)
-	if err != nil {
+	if err := b.billing.CancelSubscription(tenantctx.WithTenantID(ctx, b.tenantID), subID, nil); err != nil {
 		b.logger.Error("cancel subscription failed", slog.String("sub_id", subID), slog.Any("error", err))
 		b.answerCallback(ctx, cb.ID, "Failed to cancel subscription.")
 		return

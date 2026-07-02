@@ -44,15 +44,23 @@ func newScopeTestIdentity(t *testing.T, repo *identitytest.MockRepository) *iden
 	)
 }
 
-// scopeStubSubs records the ctx GetByUserID received.
+// scopeStubSubs records the ctx GetByUserID received and returns a configurable
+// subscription from GetByID.
 type scopeStubSubs struct {
 	billing.SubscriptionReader
-	lastCtx context.Context
+	lastCtx  context.Context
+	getByID  *billingaggregate.Subscription
+	getByIDN int
 }
 
 func (s *scopeStubSubs) GetByUserID(ctx context.Context, _ string) ([]*billingaggregate.Subscription, error) {
 	s.lastCtx = ctx
 	return nil, nil
+}
+
+func (s *scopeStubSubs) GetByID(_ context.Context, _ string) (*billingaggregate.Subscription, error) {
+	s.getByIDN++
+	return s.getByID, nil
 }
 
 // newPlatformScopeBot builds an offline platform Bot (b.bot == nil — sends are
@@ -114,4 +122,36 @@ func TestHandleMy_ReadsCarryPlatformScope(t *testing.T) {
 	require.Equal(t, tenantctx.PlatformScopeSentinel, tenantctx.TenantIDFromContext(gotIdentityCtx))
 	require.NotNil(t, subs.lastCtx, "subscription read must have happened")
 	require.Equal(t, tenantctx.PlatformScopeSentinel, tenantctx.TenantIDFromContext(subs.lastCtx))
+}
+
+func callbackUpdate(tgID int64, data string) *models.Update {
+	return &models.Update{
+		CallbackQuery: &models.CallbackQuery{
+			ID:   "cb-1",
+			From: models.User{ID: tgID},
+			Data: data,
+			Message: models.MaybeInaccessibleMessage{
+				Message: &models.Message{ID: 7, Chat: models.Chat{ID: 500}},
+			},
+		},
+	}
+}
+
+// TestHandleCancelCallback_ForeignSubscription_Denied verifies the ownership
+// check: a caller cannot cancel a subscription owned by another user. The
+// concrete billing service is nil, so reaching CancelSubscription would panic —
+// the test passing proves the guard denied before the cancel call.
+func TestHandleCancelCallback_ForeignSubscription_Denied(t *testing.T) {
+	repo := new(identitytest.MockRepository)
+	repo.On("GetUserByTelegramID", mock.Anything, int64(42)).
+		Return(&identity.PlatformUser{ID: "u-caller"}, nil)
+
+	subs := &scopeStubSubs{getByID: &billingaggregate.Subscription{ID: "s-1", UserID: "u-OTHER"}}
+	b := newPlatformScopeBot(t, repo)
+	b.subs = subs
+
+	// Must not panic (would if CancelSubscription on nil b.billing were reached).
+	b.handleCancelCallback(context.Background(), nil, callbackUpdate(42, CallbackPrefixCancel+"s-1"))
+
+	require.Equal(t, 1, subs.getByIDN, "ownership read must have run")
 }

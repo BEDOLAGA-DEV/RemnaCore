@@ -21,4 +21,3 @@ const (
 
 // MaxMessageLength is the Telegram Bot API limit for a single message.
 const MaxMessageLength = 4096
-

@@ -251,10 +251,12 @@ func handleBalanceGet(ctx context.Context, oc *OpContext, args json.RawMessage) 
 }
 
 // handleCheckoutCreate resolves the calling user (inside tenant tx, per
-// resolveUser contract) then starts the checkout flow with the PLAIN ctx.
-// oc.Checkout.Start self-wraps its own RunInTx internally; wrapping it in
-// another RunInTx would break the tx-manager re-entrancy contract. Call it
-// with the original ctx — not WithTenantID — exactly as the platform bot does.
+// resolveUser contract) then starts the checkout flow with a tenant-SCOPED but
+// UNWRAPPED ctx. oc.Checkout.Start self-wraps its own RunInTx internally, so we
+// must NOT wrap it in another RunInTx (that would break the tx-manager
+// re-entrancy contract) — but we DO annotate the ctx with the shop's tenant so
+// the subscription/invoice INSERTs (which stamp tenant_id from the GUC) are
+// owned by this shop rather than defaulting to NULL/platform-owned.
 func handleCheckoutCreate(ctx context.Context, oc *OpContext, args json.RawMessage) (json.RawMessage, error) {
 	var a checkoutCreateArgs
 	if err := json.Unmarshal(args, &a); err != nil {
@@ -267,10 +269,8 @@ func handleCheckoutCreate(ctx context.Context, oc *OpContext, args json.RawMessa
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", OpCheckoutCreate, err)
 	}
-	// Start is called with the plain ctx — NOT wrapped in RunInTx or
-	// WithTenantID. CheckoutService.StartCheckout self-wraps its own RunInTx;
-	// double-wrapping would violate the tx-manager re-entrancy contract.
-	result, err := oc.Checkout.Start(ctx, CheckoutInput{
+	scopedCtx := tenantctx.WithTenantID(ctx, oc.TenantID)
+	result, err := oc.Checkout.Start(scopedCtx, CheckoutInput{
 		UserID:      userID,
 		PlanID:      a.PlanID,
 		UserEmail:   a.Email,

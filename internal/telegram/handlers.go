@@ -251,4 +251,3 @@ func (b *Bot) handleReferral(ctx context.Context, _ *tgbot.Bot, update *models.U
 	chatID := update.Message.Chat.ID
 	b.sendText(ctx, chatID, "Referral program coming soon! Stay tuned.")
 }
-

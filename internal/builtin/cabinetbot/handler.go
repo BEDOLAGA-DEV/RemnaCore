@@ -182,6 +182,14 @@ func handlePlanCallback(ctx context.Context, update bothost.Update, host bothost
 func handleBuyCallback(ctx context.Context, update bothost.Update, host bothost.Host) error {
 	planID := strings.TrimPrefix(update.CallbackData, callbackPrefixBuy)
 	answerCallback(ctx, host, update.CallbackID, "")
+	// Validate the plan is visible to THIS shop before charging: plans.get is
+	// tenant-scoped (ListVisibleTariffs filters by the shop GUC), whereas the
+	// downstream checkout resolves plans from the tenant-agnostic global
+	// catalog. Without this gate a forged buy:<planID> could purchase another
+	// shop's (or a platform) plan at its terms.
+	if getOffer(ctx, host, planID) == nil {
+		return sendText(ctx, host, update.ChatID, msgCommandFailed)
+	}
 	out, err := call(ctx, host, bothost.OpCheckoutCreate, map[string]any{
 		"telegram_id": update.From.ID,
 		"plan_id":     planID,

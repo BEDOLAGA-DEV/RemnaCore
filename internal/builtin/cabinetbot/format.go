@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/telegram/bothost"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/money"
 )
 
 // Callback-data prefixes for the cabinet-bot inline keyboards.
@@ -12,10 +13,6 @@ const (
 	callbackPrefixPlan = "plan:"
 	callbackPrefixBuy  = "buy:"
 )
-
-// minorUnitsPerUnit converts stored minor units (cents/kopecks) to the major
-// currency unit for display.
-const minorUnitsPerUnit = 100
 
 // User-facing copy (RU, matching the existing plugin copy style).
 const (
@@ -29,13 +26,11 @@ const (
 	msgInvoicesHeader  = "Неоплаченные счета:"
 )
 
+// formatMoney renders a minor-unit amount (cents/kopecks) as major units,
+// delegating to money.Money.String so the sign handling and formatting match
+// the rest of the platform.
 func formatMoney(amount int64, currency string) string {
-	units := amount / minorUnitsPerUnit
-	cents := amount % minorUnitsPerUnit
-	if cents < 0 {
-		cents = -cents
-	}
-	return fmt.Sprintf("%d.%02d %s", units, cents, currency)
+	return money.NewMoney(amount, money.Currency(currency)).String()
 }
 
 // formatOffers renders the /plans reply: a short header plus one keyboard

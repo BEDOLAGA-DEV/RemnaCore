@@ -203,6 +203,7 @@ func TestHandler_PlanCallback_SendsDetailWithBuyButtons(t *testing.T) {
 
 func TestHandler_BuyCallback_StartsCheckoutAndSendsPayButton(t *testing.T) {
 	host := &fakeHost{results: map[string]json.RawMessage{
+		bothost.OpPlansGet:       json.RawMessage(`{"plan_id":"period-30","name":"Basic"}`),
 		bothost.OpCheckoutCreate: json.RawMessage(`{"checkout_url":"https://pay.example.com/x","subscription_id":"s1","invoice_id":"i1","provider":"stripe"}`),
 	}}
 	update := bothost.Update{
@@ -214,26 +215,49 @@ func TestHandler_BuyCallback_StartsCheckoutAndSendsPayButton(t *testing.T) {
 	}
 
 	require.NoError(t, Handler(context.Background(), update, host))
-	require.Equal(t, []string{bothost.OpUserRegister, bothost.OpTelegramAnswerCallback, bothost.OpCheckoutCreate, bothost.OpTelegramSendKeyboard}, host.ops())
+	// plans.get validates tenant visibility before checkout.create.
+	require.Equal(t, []string{bothost.OpUserRegister, bothost.OpTelegramAnswerCallback, bothost.OpPlansGet, bothost.OpCheckoutCreate, bothost.OpTelegramSendKeyboard}, host.ops())
 
 	var coArgs struct {
 		TelegramID int64  `json:"telegram_id"`
 		PlanID     string `json:"plan_id"`
 	}
-	require.NoError(t, json.Unmarshal(host.calls[2].args, &coArgs))
+	require.NoError(t, json.Unmarshal(host.calls[3].args, &coArgs))
 	require.EqualValues(t, 9, coArgs.TelegramID)
 	require.Equal(t, "period-30", coArgs.PlanID)
 
 	var kbArgs struct {
 		Keyboard bothost.Keyboard `json:"keyboard"`
 	}
-	require.NoError(t, json.Unmarshal(host.calls[3].args, &kbArgs))
+	require.NoError(t, json.Unmarshal(host.calls[4].args, &kbArgs))
 	require.Equal(t, "https://pay.example.com/x", kbArgs.Keyboard.Rows[0][0].URL)
+}
+
+func TestHandler_BuyCallback_UnknownPlan_DoesNotCheckout(t *testing.T) {
+	// plans.get returns nothing → plan not visible to this shop; checkout must
+	// not be attempted (cross-tenant purchase guard).
+	host := &fakeHost{}
+	update := bothost.Update{
+		ChatID:       5,
+		From:         bothost.User{ID: 9},
+		IsCallback:   true,
+		CallbackID:   "cb-2b",
+		CallbackData: "buy:foreign-plan",
+	}
+
+	require.NoError(t, Handler(context.Background(), update, host))
+	require.Equal(t, []string{bothost.OpUserRegister, bothost.OpTelegramAnswerCallback, bothost.OpPlansGet, bothost.OpTelegramSendText}, host.ops())
 }
 
 func TestHandler_BuyCallback_CheckoutFails_Notifies(t *testing.T) {
 	coErr := errors.New("no provider")
-	host := &fakeHost{failOp: bothost.OpCheckoutCreate, failErr: coErr}
+	host := &fakeHost{
+		failOp:  bothost.OpCheckoutCreate,
+		failErr: coErr,
+		results: map[string]json.RawMessage{
+			bothost.OpPlansGet: json.RawMessage(`{"plan_id":"p1","name":"Basic"}`),
+		},
+	}
 	update := bothost.Update{
 		ChatID:       5,
 		From:         bothost.User{ID: 9},
@@ -244,7 +268,7 @@ func TestHandler_BuyCallback_CheckoutFails_Notifies(t *testing.T) {
 
 	err := Handler(context.Background(), update, host)
 	require.ErrorIs(t, err, coErr)
-	require.Equal(t, []string{bothost.OpUserRegister, bothost.OpTelegramAnswerCallback, bothost.OpCheckoutCreate, bothost.OpTelegramSendText}, host.ops())
+	require.Equal(t, []string{bothost.OpUserRegister, bothost.OpTelegramAnswerCallback, bothost.OpPlansGet, bothost.OpCheckoutCreate, bothost.OpTelegramSendText}, host.ops())
 }
 
 func TestHandler_UnknownCallback_AnswersStale(t *testing.T) {

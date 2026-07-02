@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
-	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
 	billingservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/service"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/vo"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/telegram/bothost"
 )
 
