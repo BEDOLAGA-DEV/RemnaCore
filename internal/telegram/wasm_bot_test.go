@@ -155,3 +155,20 @@ func (f *fakeWASMDispatcher) Invoke(_ context.Context, slug, entry string, envel
 	copy(f.invokeEnv, envelope)
 	return nil
 }
+
+// TestRuntimePoolDispatcher_Resolve_ProvidesBotFalse verifies that an enabled
+// plugin whose manifest HAS a Telegram section but does not declare
+// ProvidesBot returns ok=false (the sub-case distinct from Telegram==nil).
+func TestRuntimePoolDispatcher_Resolve_ProvidesBotFalse(t *testing.T) {
+	p := &plugin.Plugin{
+		Status: plugin.StatusEnabled,
+		Manifest: &plugin.Manifest{
+			Telegram: &plugin.ManifestTelegram{ProvidesBot: false, Entry: "handle_update"},
+		},
+	}
+	repo := &stubPluginRepo{plugin: p}
+	d := &runtimePoolDispatcher{pool: nil, plugins: repo}
+
+	_, _, ok := d.Resolve(context.Background(), "wasmbot")
+	assert.False(t, ok)
+}

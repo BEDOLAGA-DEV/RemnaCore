@@ -122,3 +122,22 @@ func TestBotPluginValidator_RepoInfraError(t *testing.T) {
 	assert.False(t, ok)
 	assert.ErrorIs(t, err, infraErr, "infrastructure error must be propagated")
 }
+
+// TestBotPluginValidator_NonBotWASMPlugin_TelegramSectionPresent verifies that
+// an enabled WASM plugin whose Telegram section exists but has
+// ProvidesBot=false is rejected.
+func TestBotPluginValidator_NonBotWASMPlugin_TelegramSectionPresent(t *testing.T) {
+	p := &plugin.Plugin{
+		Status: plugin.StatusEnabled,
+		Manifest: &plugin.Manifest{
+			Telegram: &plugin.ManifestTelegram{ProvidesBot: false},
+		},
+	}
+	repo := &stubPluginRepo{plugin: p}
+	v, _ := newValidatorTestFixture(repo)
+
+	ok, err := v.IsValidBotPlugin(context.Background(), "wasm-bot")
+
+	require.NoError(t, err)
+	assert.False(t, ok, "plugin without ProvidesBot must be rejected")
+}

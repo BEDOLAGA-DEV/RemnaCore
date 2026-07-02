@@ -78,6 +78,7 @@ func TestHandleHostCall_MalformedInput(t *testing.T) {
 
 	_, err := handleHostCall(ctx, []byte("not json"))
 	require.Error(t, err, "malformed JSON must produce a non-nil error")
+	assert.ErrorContains(t, err, "host_call: decode request")
 }
 
 func TestHandleHostCall_NilResult(t *testing.T) {
