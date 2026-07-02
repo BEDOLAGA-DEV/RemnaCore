@@ -12,9 +12,10 @@ import (
 )
 
 const (
-	// HeaderWebhookSecret is the HTTP header containing the HMAC-SHA256 hex
-	// signature of the request body.
-	HeaderWebhookSecret = "X-Webhook-Secret"
+	// HeaderWebhookSecret is the HTTP header carrying the HMAC-SHA256 hex
+	// signature of the raw request body. Remnawave (2.6.4–2.8.0) sends this as
+	// X-Remnawave-Signature = hex(HMAC-SHA256(rawBody, WEBHOOK_SECRET_HEADER)).
+	HeaderWebhookSecret = "X-Remnawave-Signature"
 )
 
 // WebhookHandler verifies HMAC-SHA256 signatures and dispatches parsed

@@ -93,4 +93,15 @@ type WebhookPayload struct {
 	Event     string          `json:"event"`
 	Timestamp time.Time       `json:"timestamp"`
 	Data      json.RawMessage `json:"data"`
+	Meta      WebhookMeta     `json:"meta"`
+}
+
+// WebhookMeta carries the optional top-level meta object Remnawave 2.8.0 attaches
+// to certain user events. Pointer fields distinguish "absent" from a zero value.
+//   - Expiration: signed hours for the unified user.expiration event
+//     (negative = hours before expiry, positive = hours after expiry).
+//   - NotConnectedAfterHours: threshold for user.not_connected (not yet consumed).
+type WebhookMeta struct {
+	Expiration             *int `json:"expiration"`
+	NotConnectedAfterHours *int `json:"notConnectedAfterHours"`
 }

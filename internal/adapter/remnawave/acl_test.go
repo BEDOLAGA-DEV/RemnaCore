@@ -46,10 +46,6 @@ func TestMapWebhookEvent_Known(t *testing.T) {
 		{"user", "disabled", "subscription.binding_disabled"},
 		{"user", "enabled", "subscription.binding_enabled"},
 		{"user", "expired", "subscription.remnawave_expired"},
-		{"user", "expired_24_hours_ago", "subscription.expired_24h_ago"},
-		{"user", "expires_in_24_hours", "subscription.expiring_soon"},
-		{"user", "expires_in_48_hours", "subscription.expiring_soon"},
-		{"user", "expires_in_72_hours", "subscription.expiring_soon"},
 		{"user", "first_connected", "subscription.first_use"},
 		{"user", "limited", "binding.traffic_exceeded"},
 		{"user", "modified", "remnawave.user.modified"},
@@ -95,7 +91,7 @@ func TestMapWebhookEvent_Known(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.scope+"."+tt.event, func(t *testing.T) {
-			got := MapWebhookEvent(tt.scope, tt.event)
+			got := MapWebhookEvent(WebhookPayload{Scope: tt.scope, Event: tt.event})
 			assert.Equal(t, tt.expected, got)
 		})
 	}
@@ -103,12 +99,35 @@ func TestMapWebhookEvent_Known(t *testing.T) {
 
 func TestMapWebhookEvent_Unknown(t *testing.T) {
 	t.Run("falls back to remnawave prefix", func(t *testing.T) {
-		got := MapWebhookEvent("billing", "invoice_paid")
+		got := MapWebhookEvent(WebhookPayload{Scope: "billing", Event: "invoice_paid"})
 		assert.Equal(t, "remnawave.billing.invoice_paid", got)
 	})
 
 	t.Run("unknown user event", func(t *testing.T) {
-		got := MapWebhookEvent("user", "unknown_event")
+		got := MapWebhookEvent(WebhookPayload{Scope: "user", Event: "unknown_event"})
 		assert.Equal(t, "remnawave.user.unknown_event", got)
 	})
+}
+
+// TestMapWebhookEvent_UnifiedExpiration covers the 2.8.0 unified user.expiration
+// event: the sign of meta.expiration selects expiring-soon vs expired-N-ago.
+func TestMapWebhookEvent_UnifiedExpiration(t *testing.T) {
+	hours := func(h int) *int { return &h }
+
+	cases := []struct {
+		name     string
+		meta     WebhookMeta
+		expected string
+	}{
+		{"negative hours = expiring soon", WebhookMeta{Expiration: hours(-24)}, "subscription.expiring_soon"},
+		{"positive hours = expired N ago", WebhookMeta{Expiration: hours(24)}, "subscription.expired_24h_ago"},
+		{"nil meta = expiring soon", WebhookMeta{}, "subscription.expiring_soon"},
+		{"zero = expiring soon", WebhookMeta{Expiration: hours(0)}, "subscription.expiring_soon"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := MapWebhookEvent(WebhookPayload{Scope: "user", Event: "expiration", Meta: tc.meta})
+			assert.Equal(t, tc.expected, got)
+		})
+	}
 }
