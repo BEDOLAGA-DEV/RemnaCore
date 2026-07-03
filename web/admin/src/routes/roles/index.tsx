@@ -5,8 +5,9 @@ import {
   useCustomRoles,
   useDeleteCustomRole,
   usePermissionCatalog,
+  useUpdateCustomRole,
 } from "@remnacore/shared";
-import { Loader2, Trash2 } from "lucide-react";
+import { Loader2, Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -23,6 +24,7 @@ export function RolesPage() {
   const { t } = useTranslation();
   const { data: roles, isLoading } = useCustomRoles();
   const deleteRole = useDeleteCustomRole();
+  const [editRole, setEditRole] = useState<CustomRole | null>(null);
 
   return (
     <div className="space-y-6">
@@ -31,7 +33,7 @@ export function RolesPage() {
         breadcrumb={t("admin.roles.subtitle")}
       />
 
-      <CreateRoleForm />
+      <RoleForm editRole={editRole} onDone={() => setEditRole(null)} />
 
       <Panel>
         <PanelHeader title={t("admin.roles.title")} />
@@ -47,12 +49,13 @@ export function RolesPage() {
               <RoleRow
                 key={role.id}
                 role={role}
+                onEdit={() => setEditRole(role)}
                 onDelete={() => {
                   if (window.confirm(t("admin.roles.deleteConfirm"))) {
                     deleteRole.mutate(role.id);
                   }
                 }}
-                deleting={deleteRole.isPending}
+                busy={deleteRole.isPending}
               />
             ))}
           </ul>
@@ -64,12 +67,14 @@ export function RolesPage() {
 
 function RoleRow({
   role,
+  onEdit,
   onDelete,
-  deleting,
+  busy,
 }: {
   role: CustomRole;
+  onEdit: () => void;
   onDelete: () => void;
-  deleting: boolean;
+  busy: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -90,73 +95,135 @@ function RoleRow({
           <p className="mt-1 text-[11px] text-t5">{role.description}</p>
         )}
         <p className="mt-1 text-[10px] uppercase tracking-[1px] text-t6">
-          {t("admin.roles.permissionCount", {
-            count: role.permissions.length,
-          })}
+          {t("admin.roles.permissionCount", { count: role.permissions.length })}
           {role.permissions.length > 0 && ` — ${role.permissions.join(", ")}`}
         </p>
       </div>
-      <TermButton
-        variant="ghost"
-        onClick={onDelete}
-        disabled={deleting}
-        aria-label={t("common.delete")}
-      >
-        <Trash2 size={14} />
-      </TermButton>
+      <div className="flex shrink-0 gap-1">
+        <TermButton
+          variant="ghost"
+          onClick={onEdit}
+          disabled={busy}
+          aria-label={t("common.edit")}
+        >
+          <Pencil size={14} />
+        </TermButton>
+        <TermButton
+          variant="ghost"
+          onClick={onDelete}
+          disabled={busy}
+          aria-label={t("common.delete")}
+        >
+          <Trash2 size={14} />
+        </TermButton>
+      </div>
     </li>
   );
 }
 
-function CreateRoleForm() {
-  const { t } = useTranslation();
+function RoleForm({
+  editRole,
+  onDone,
+}: {
+  editRole: CustomRole | null;
+  onDone: () => void;
+}) {
   const { data: catalog } = usePermissionCatalog();
   const createRole = useCreateCustomRole();
+  const updateRole = useUpdateCustomRole();
 
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [scope, setScope] = useState<"global" | "shop">("global");
-  const [tenantId, setTenantId] = useState("");
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const isEdit = !!editRole;
+  // Re-key the inner form on the edited role so its useState resets cleanly.
+  return (
+    <RoleFormFields
+      key={editRole?.id ?? "new"}
+      editRole={editRole}
+      catalog={catalog ?? []}
+      pending={createRole.isPending || updateRole.isPending}
+      success={createRole.isSuccess}
+      onCancel={onDone}
+      onSubmit={(fields) => {
+        if (isEdit && editRole) {
+          updateRole.mutate(
+            {
+              roleId: editRole.id,
+              data: {
+                name: fields.name,
+                description: fields.description,
+                permissions: fields.permissions,
+              },
+            },
+            { onSuccess: onDone },
+          );
+        } else {
+          const payload: CreateCustomRoleRequest = {
+            name: fields.name,
+            description: fields.description,
+            scope_kind: fields.scope,
+            tenant_id: fields.scope === "shop" ? fields.tenantId || null : null,
+            permissions: fields.permissions,
+          };
+          createRole.mutate(payload);
+        }
+      }}
+    />
+  );
+}
+
+type FieldValues = {
+  name: string;
+  description: string;
+  scope: "global" | "shop";
+  tenantId: string;
+  permissions: string[];
+};
+
+function RoleFormFields({
+  editRole,
+  catalog,
+  pending,
+  success,
+  onSubmit,
+  onCancel,
+}: {
+  editRole: CustomRole | null;
+  catalog: { key: string; description: string }[];
+  pending: boolean;
+  success: boolean;
+  onSubmit: (v: FieldValues) => void;
+  onCancel: () => void;
+}) {
+  const { t } = useTranslation();
+  const isEdit = !!editRole;
+  const [name, setName] = useState(editRole?.name ?? "");
+  const [description, setDescription] = useState(editRole?.description ?? "");
+  const [scope, setScope] = useState<"global" | "shop">(
+    editRole?.scope_kind ?? "global",
+  );
+  const [tenantId, setTenantId] = useState(editRole?.tenant_id ?? "");
+  const [selected, setSelected] = useState<Set<string>>(
+    new Set(editRole?.permissions ?? []),
+  );
 
   const togglePerm = (key: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
-    });
-  };
-
-  const submit = () => {
-    const payload: CreateCustomRoleRequest = {
-      name: name.trim(),
-      description: description.trim(),
-      scope_kind: scope,
-      tenant_id: scope === "shop" ? tenantId.trim() || null : null,
-      permissions: [...selected],
-    };
-    createRole.mutate(payload, {
-      onSuccess: () => {
-        setName("");
-        setDescription("");
-        setTenantId("");
-        setSelected(new Set());
-      },
     });
   };
 
   const canSubmit =
     name.trim().length > 0 &&
-    (scope === "global" || tenantId.trim().length > 0) &&
-    !createRole.isPending;
+    (isEdit || scope === "global" || tenantId.trim().length > 0) &&
+    !pending;
 
   return (
     <Panel>
-      <PanelHeader title={t("admin.roles.create")} />
+      <PanelHeader
+        title={isEdit ? t("common.edit") : t("admin.roles.create")}
+      />
       <div className="space-y-4 p-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <TermInput
@@ -171,20 +238,22 @@ function CreateRoleForm() {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
-          <div>
-            <div className="mb-2 text-[9px] uppercase tracking-[1.5px] text-t6">
-              {t("admin.roles.scope")}
+          {!isEdit && (
+            <div>
+              <div className="mb-2 text-[9px] uppercase tracking-[1.5px] text-t6">
+                {t("admin.roles.scope")}
+              </div>
+              <Segmented<"global" | "shop">
+                value={scope}
+                options={[
+                  { value: "global", label: t("admin.roles.scopeGlobal") },
+                  { value: "shop", label: t("admin.roles.scopeShop") },
+                ]}
+                onChange={setScope}
+              />
             </div>
-            <Segmented<"global" | "shop">
-              value={scope}
-              options={[
-                { value: "global", label: t("admin.roles.scopeGlobal") },
-                { value: "shop", label: t("admin.roles.scopeShop") },
-              ]}
-              onChange={setScope}
-            />
-          </div>
-          {scope === "shop" && (
+          )}
+          {!isEdit && scope === "shop" && (
             <TermInput
               id="role-tenant"
               label={t("admin.roles.tenantId")}
@@ -200,7 +269,7 @@ function CreateRoleForm() {
             {t("admin.roles.permissions")}
           </div>
           <div className="grid max-h-64 gap-1.5 overflow-y-auto sm:grid-cols-2">
-            {(catalog ?? []).map((p) => (
+            {catalog.map((p) => (
               <label
                 key={p.key}
                 className="flex cursor-pointer items-start gap-2 border border-line bg-input px-2.5 py-2 text-[11px]"
@@ -222,23 +291,40 @@ function CreateRoleForm() {
           </div>
         </div>
 
-        <TermButton
-          type="button"
-          variant="primary"
-          onClick={submit}
-          disabled={!canSubmit}
-        >
-          {createRole.isPending ? (
-            <Loader2 size={14} className="animate-spin" />
-          ) : (
-            t("admin.roles.create")
+        <div className="flex items-center gap-2">
+          <TermButton
+            type="button"
+            variant="primary"
+            onClick={() =>
+              onSubmit({
+                name: name.trim(),
+                description: description.trim(),
+                scope,
+                tenantId: tenantId.trim(),
+                permissions: [...selected],
+              })
+            }
+            disabled={!canSubmit}
+          >
+            {pending ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : isEdit ? (
+              t("common.save")
+            ) : (
+              t("admin.roles.create")
+            )}
+          </TermButton>
+          {isEdit && (
+            <TermButton type="button" variant="ghost" onClick={onCancel}>
+              {t("common.cancel")}
+            </TermButton>
           )}
-        </TermButton>
-        {createRole.isSuccess && (
-          <p className="text-[10px] uppercase tracking-[1px] text-accent">
-            {t("admin.roles.createSuccess")}
-          </p>
-        )}
+          {!isEdit && success && (
+            <span className="text-[10px] uppercase tracking-[1px] text-accent">
+              {t("admin.roles.createSuccess")}
+            </span>
+          )}
+        </div>
       </div>
     </Panel>
   );

@@ -93,6 +93,9 @@ func (denyAllRepo) ListCustomRoles(_ context.Context, _ *string) ([]rbac.CustomR
 func (denyAllRepo) GetCustomRole(_ context.Context, _ string) (rbac.CustomRole, error) {
 	return rbac.CustomRole{}, rbac.ErrRoleNotFound
 }
+func (denyAllRepo) UpdateCustomRole(_ context.Context, _, _, _ string, _ []rbac.Permission) error {
+	return nil
+}
 func (denyAllRepo) DeleteCustomRole(_ context.Context, _ string) (int64, error) { return 0, nil }
 
 // ─── test helper ─────────────────────────────────────────────────────────────

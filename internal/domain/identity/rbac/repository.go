@@ -72,6 +72,10 @@ type Repository interface {
 	// GetCustomRole returns the non-system role by ID. Returns ErrRoleNotFound when
 	// missing or when the ID names a system role.
 	GetCustomRole(ctx context.Context, roleID string) (CustomRole, error)
+	// UpdateCustomRole replaces a non-system role's name, description, and
+	// permission set. Callers MUST wrap this in a transaction. Returns
+	// ErrRoleNotFound when the ID is missing or names a system role.
+	UpdateCustomRole(ctx context.Context, roleID, name, description string, perms []Permission) error
 	// DeleteCustomRole removes a non-system role by ID (permission rows and
 	// assignments cascade). Returns the number of rows removed.
 	DeleteCustomRole(ctx context.Context, roleID string) (int64, error)

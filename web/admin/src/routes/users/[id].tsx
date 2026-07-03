@@ -1,7 +1,13 @@
-import { formatDate, LoadingSpinner, useAdminUser } from "@remnacore/shared";
+import {
+  formatDate,
+  LoadingSpinner,
+  useAdminUser,
+  useAssignCustomRole,
+  useCustomRoles,
+} from "@remnacore/shared";
 import { Link, useParams } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   PageHeader,
@@ -103,6 +109,63 @@ export function UserDetailPage() {
           </div>
         </Panel>
       </div>
+
+      <AssignCustomRolePanel userId={user.id} />
     </div>
+  );
+}
+
+function AssignCustomRolePanel({ userId }: { userId: string }) {
+  const { t } = useTranslation();
+  const { data: roles } = useCustomRoles();
+  const assign = useAssignCustomRole(userId);
+  const [roleId, setRoleId] = useState("");
+
+  const selectClassName =
+    "w-full border border-line bg-input px-3 py-2.5 text-[12px] text-t2 outline-none focus:border-accent/45";
+
+  return (
+    <Panel>
+      <PanelHeader title={t("admin.users.assignRole")} />
+      <div className="flex items-end gap-3 p-4">
+        <div className="min-w-0 flex-1">
+          <div className="mb-2 text-[9px] uppercase tracking-[1.5px] text-t6">
+            {t("admin.roles.title")}
+          </div>
+          <select
+            value={roleId}
+            onChange={(e) => setRoleId(e.target.value)}
+            className={selectClassName}
+          >
+            <option value="">{t("admin.users.selectRole")}</option>
+            {(roles ?? []).map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+                {r.scope_kind === "shop" ? " (shop)" : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+        <TermButton
+          type="button"
+          variant="primary"
+          disabled={!roleId || assign.isPending}
+          onClick={() => {
+            const role = roles?.find((r) => r.id === roleId);
+            assign.mutate(
+              { role_id: roleId, tenant_id: role?.tenant_id ?? null },
+              { onSuccess: () => setRoleId("") },
+            );
+          }}
+        >
+          {t("admin.users.assign")}
+        </TermButton>
+      </div>
+      {assign.isSuccess && (
+        <p className="px-4 pb-3 text-[10px] uppercase tracking-[1px] text-accent">
+          {t("admin.users.roleAssigned")}
+        </p>
+      )}
+    </Panel>
   );
 }

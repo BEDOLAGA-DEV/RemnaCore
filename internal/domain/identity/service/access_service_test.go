@@ -63,6 +63,9 @@ func (f *fakeRBACRepo) ListCustomRoles(_ context.Context, _ *string) ([]rbac.Cus
 func (f *fakeRBACRepo) GetCustomRole(_ context.Context, _ string) (rbac.CustomRole, error) {
 	return rbac.CustomRole{}, rbac.ErrRoleNotFound
 }
+func (f *fakeRBACRepo) UpdateCustomRole(_ context.Context, _, _, _ string, _ []rbac.Permission) error {
+	return nil
+}
 func (f *fakeRBACRepo) DeleteCustomRole(_ context.Context, _ string) (int64, error) { return 0, nil }
 
 func clk() func() time.Time { return func() time.Time { return time.Unix(1_700_000_000, 0) } }

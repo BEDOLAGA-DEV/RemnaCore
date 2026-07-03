@@ -80,6 +80,36 @@ func (s *IdentityAdminService) ListCustomRoles(ctx context.Context, actorUserID 
 	return roles, nil
 }
 
+// UpdateCustomRoleInput is the input for renaming / re-permissioning a role.
+type UpdateCustomRoleInput struct {
+	Name        string
+	Description string
+	Permissions []rbac.Permission
+}
+
+// UpdateCustomRole renames and re-permissions a custom role. The actor is
+// authorized against the role's scope/tenant with the NEW permission set (so a
+// non-admin cannot add a permission they do not hold) — the same escalation
+// guard as creation.
+func (s *IdentityAdminService) UpdateCustomRole(ctx context.Context, actorUserID, roleID string, in UpdateCustomRoleInput) error {
+	role, err := s.rbacRepo.GetCustomRole(ctx, roleID)
+	if err != nil {
+		return err // ErrRoleNotFound
+	}
+	if err := s.authorizeCustomGrant(ctx, actorUserID, role.ScopeKind, in.Permissions, role.TenantID); err != nil {
+		return err
+	}
+	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		return s.rbacRepo.UpdateCustomRole(txCtx, roleID, in.Name, in.Description, in.Permissions)
+	}); err != nil {
+		return err
+	}
+	// Re-permissioning a role changes the effective access of everyone who holds
+	// it; flush the cache (no role→user reverse index).
+	s.access.Flush()
+	return nil
+}
+
 // DeleteCustomRole deletes a custom role after authorizing the actor against the
 // role's own scope and permission set (so a non-admin can only delete a role
 // they could have created).
