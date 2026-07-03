@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/telegram/bothost"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pluginstore"
 )
 
@@ -144,4 +145,31 @@ func TestGetTariffByPlanID_NotFound_WrapsErrDocumentNotFound(t *testing.T) {
 
 	_, err := h.GetTariffByPlanID(context.Background(), "00000000-0000-0000-0000-000000000000")
 	require.ErrorIs(t, err, pluginstore.ErrDocumentNotFound)
+}
+
+// TestPricePeriod_GeoDiscount verifies the pricing pipeline applies a geo
+// modifier from the rule to a period's base price.
+func TestPricePeriod_GeoDiscount(t *testing.T) {
+	h := &Handler{}
+	rule := &PricingRuleInput{
+		Modifiers: []PricingRuleModifier{
+			{
+				Type:       "geo",
+				Conditions: map[string]any{"countries": []any{"US"}},
+				Action:     ModifierAction{Op: ModifierPercentOff, Value: 1000}, // 10% off
+			},
+		},
+	}
+	hints := bothost.PriceHints{Country: "US"}
+	// base 1000 cents → 10% off → 900.
+	got := h.pricePeriod(rule, nil, "", 1000, hints, 30, "USD", "t-1")
+	assert.Equal(t, int64(900), got)
+
+	// A country with no matching modifier keeps the base price.
+	other := h.pricePeriod(rule, nil, "", 1000, bothost.PriceHints{Country: "DE"}, 30, "USD", "t-1")
+	assert.Equal(t, int64(1000), other)
+
+	// No hints (zero country) → base unchanged.
+	none := h.pricePeriod(rule, nil, "", 1000, bothost.PriceHints{}, 30, "USD", "t-1")
+	assert.Equal(t, int64(1000), none)
 }

@@ -2,6 +2,7 @@ package tariff
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 
@@ -74,7 +75,84 @@ func (h *Handler) ListVisibleTariffs(ctx context.Context, channel string) ([]Tar
 		return a.SortOrder - b.SortOrder
 	})
 
+	// Personalize per-period prices when the bot passed price hints (geo/promo/
+	// user). With no hints this is a no-op and list prices are returned.
+	h.personalizeVisible(ctx, out)
+
 	return out, nil
+}
+
+// personalizeVisible applies the pricing pipeline to each visible tariff's
+// periods when ctx carries bothost.PriceHints. It mutates out in place. Failures
+// to load a rule/promo degrade to list prices for that tariff (never an error).
+func (h *Handler) personalizeVisible(ctx context.Context, out []TariffResponse) {
+	hints := bothost.PriceHintsFromContext(ctx)
+	if hints.IsZero() {
+		return
+	}
+	var promo *PromoCodeInput
+	if hints.PromoCode != "" {
+		promo = h.findPromoByCode(ctx, hints.PromoCode)
+	}
+	for i := range out {
+		t := &out[i]
+		var rule *PricingRuleInput
+		if t.PricingRuleID != "" {
+			if doc, err := h.collections.GetDocument(ctx, PluginSlug, CollectionPricingRules, t.PricingRuleID); err == nil {
+				var pr PricingRuleInput
+				if json.Unmarshal(doc.Data, &pr) == nil {
+					rule = &pr
+				}
+			}
+		}
+		cur := t.PriceCurrency
+		if len(t.PricingPeriods) > 0 {
+			for j := range t.PricingPeriods {
+				t.PricingPeriods[j].PriceAmount = h.pricePeriod(rule, promo, t.PriceCharmStrategy, t.PricingPeriods[j].PriceAmount, hints, t.PricingPeriods[j].DurationDays, cur, t.ID)
+			}
+		} else {
+			t.PriceAmount = h.pricePeriod(rule, promo, t.PriceCharmStrategy, t.PriceAmount, hints, t.DurationDays, cur, t.ID)
+		}
+	}
+}
+
+// pricePeriod runs the pricing pipeline (without the base-price stage — the base
+// is the period's own stored price) over a single period, returning the
+// personalized amount. On any pipeline error it returns the unmodified base.
+func (h *Handler) pricePeriod(rule *PricingRuleInput, promo *PromoCodeInput, charm string, base int64, hints bothost.PriceHints, durationDays int, currency, tariffID string) int64 {
+	var modifiers []PricingRuleModifier
+	var floor int64
+	if rule != nil {
+		modifiers = rule.Modifiers
+		floor = rule.PriceFloorCents
+		if charm == "" {
+			charm = rule.Rounding
+		}
+	}
+	pctx := &PriceContext{
+		TariffID:   tariffID,
+		UserID:     hints.UserID,
+		Country:    hints.Country,
+		Currency:   currency,
+		Duration:   durationDays,
+		Quantity:   1,
+		PromoCode:  hints.PromoCode,
+		BasePrice:  base,
+		FinalPrice: base,
+	}
+	pipe := NewPricingPipeline(
+		&geoAdjustStage{modifiers: modifiers},
+		&promoGroupAdjustStage{},
+		&loyaltyDiscountStage{},
+		&bulkDiscountStage{modifiers: modifiers},
+		&promoCodeStage{promoCode: promo},
+		&priceFloorStage{floorCents: floor},
+		&charmPriceStage{strategy: charm},
+	)
+	if err := pipe.Calculate(pctx); err != nil {
+		return base
+	}
+	return pctx.FinalPrice
 }
 
 // visibleInChannel reports whether a tariff is visible in the named channel.
