@@ -18,6 +18,7 @@ import { InstallPluginPage } from "./routes/plugins/install.js";
 import { PluginPageView } from "./routes/plugins/page.js";
 import { ResellerLayout } from "./routes/reseller/_layout.js";
 import { ResellerBotPage } from "./routes/reseller/bot.js";
+import { RolesPage } from "./routes/roles/index.js";
 import { SettingsPage } from "./routes/settings.js";
 import { AdminSetupPage } from "./routes/setup.js";
 import { AdminSubscriptionDetailPage } from "./routes/subscriptions/[id].js";
@@ -188,6 +189,12 @@ const settingsRoute = createRoute({
   component: SettingsPage,
 });
 
+const rolesRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: "/roles",
+  component: RolesPage,
+});
+
 // ─── Protected (reseller layout) ──────────────────────────────────────────
 
 const resellerLayoutRoute = createRoute({
@@ -223,6 +230,7 @@ const routeTree = rootRoute.addChildren([
     tenantDetailRoute,
     nodesRoute,
     settingsRoute,
+    rolesRoute,
   ]),
   resellerLayoutRoute.addChildren([resellerBotRoute]),
 ]);

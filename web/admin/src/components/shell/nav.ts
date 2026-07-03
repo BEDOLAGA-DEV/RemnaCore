@@ -9,6 +9,7 @@ import {
   Puzzle,
   Server,
   Settings,
+  Shield,
   ShoppingCart,
   Users,
   Wallet,
@@ -38,6 +39,7 @@ export const STATIC_NAV: NavItem[] = [
   { to: "/plugins", icon: Puzzle, labelKey: "admin.plugins.title" },
   { to: "/nodes", icon: Globe, labelKey: "admin.nodes.title" },
   { to: "/tenants", icon: Building2, labelKey: "admin.tenants.title" },
+  { to: "/roles", icon: Shield, labelKey: "admin.roles.title" },
   { to: "/settings", icon: Settings, labelKey: "admin.settings.title" },
 ];
 

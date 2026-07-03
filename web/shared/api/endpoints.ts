@@ -89,7 +89,16 @@ export const ENDPOINTS = {
       list: (userId: string) => `/api/users/${userId}/roles`,
       assign: (userId: string) => `/api/users/${userId}/roles`,
       revoke: (userId: string) => `/api/users/${userId}/roles`,
+      assignCustom: (userId: string) => `/api/users/${userId}/roles/custom`,
     },
+  },
+
+  // ─── IAM: Custom roles + permission catalog (Phase D) ───────────────────
+  roles: {
+    list: "/api/roles",
+    create: "/api/roles",
+    delete: (roleId: string) => `/api/roles/${roleId}`,
+    permissions: "/api/permissions",
   },
 
   // ─── Admin ─────────────────────────────────────────────────────────────

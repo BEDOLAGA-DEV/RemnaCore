@@ -46,6 +46,24 @@ func toCustomRoleView(r rbac.CustomRole) customRoleView {
 	}
 }
 
+// permissionView is the API projection of a permission catalog entry.
+type permissionView struct {
+	Key         string `json:"key"`
+	Description string `json:"description"`
+	Scope       string `json:"scope"`
+}
+
+// ListPermissions handles GET /api/permissions — the permission catalog the
+// custom-role UI offers when building a role's permission set.
+func (h *IAMHandler) ListPermissions(w http.ResponseWriter, _ *http.Request) {
+	defs := rbac.Catalog()
+	views := make([]permissionView, len(defs))
+	for i, d := range defs {
+		views[i] = permissionView{Key: string(d.Key), Description: d.Description, Scope: string(d.Scope)}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"permissions": views})
+}
+
 // CreateCustomRole handles POST /api/roles.
 func (h *IAMHandler) CreateCustomRole(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())

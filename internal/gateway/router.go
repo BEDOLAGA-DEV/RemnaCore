@@ -216,6 +216,7 @@ func NewRouter(p RouterParams) http.Handler {
 			protected.With(perm(p.AccessService, rbac.RolesManage)).Post("/roles", p.IdentityAdminHandler.CreateCustomRole)
 			protected.With(perm(p.AccessService, rbac.RolesRead)).Get("/roles", p.IdentityAdminHandler.ListCustomRoles)
 			protected.With(perm(p.AccessService, rbac.RolesManage)).Delete("/roles/{roleID}", p.IdentityAdminHandler.DeleteCustomRole)
+			protected.With(perm(p.AccessService, rbac.RolesRead)).Get("/permissions", p.IdentityAdminHandler.ListPermissions)
 			protected.With(perm(p.AccessService, rbac.UsersAssignRole)).Post("/users/{userID}/roles/custom", p.IdentityAdminHandler.AssignCustomRole)
 
 			// Subscriptions

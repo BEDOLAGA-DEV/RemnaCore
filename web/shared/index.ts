@@ -24,6 +24,7 @@ export * from "./api/hooks/usePlans.js";
 export * from "./api/hooks/usePluginPages.js";
 export * from "./api/hooks/usePlugins.js";
 export * from "./api/hooks/useRemnawave.js";
+export * from "./api/hooks/useRoles.js";
 export * from "./api/hooks/useSettings.js";
 export * from "./api/hooks/useSetup.js";
 export * from "./api/hooks/useShopBot.js";
@@ -58,7 +59,11 @@ export {
   formatDateTime,
   formatMoney,
 } from "./lib/utils.js";
-export { emailSchema, httpsURLSchema, passwordSchema } from "./lib/validation.js";
+export {
+  emailSchema,
+  httpsURLSchema,
+  passwordSchema,
+} from "./lib/validation.js";
 // Stores
 export { useAuthStore } from "./stores/authStore.js";
 export { useShopStore } from "./stores/shopStore.js";
