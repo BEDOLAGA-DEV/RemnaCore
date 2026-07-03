@@ -351,8 +351,13 @@ func (r *OutboxRepository) DetachAndDropPartition(ctx context.Context, partition
 	if !outboxPartitionPattern.MatchString(partitionName) {
 		return fmt.Errorf("invalid partition name: %s", partitionName)
 	}
-	// CONCURRENTLY avoids blocking concurrent DML on the parent table.
-	detachSQL := fmt.Sprintf("ALTER TABLE public.outbox DETACH PARTITION %s CONCURRENTLY", partitionName)
+	// Non-concurrent DETACH: public.outbox always has a DEFAULT partition
+	// (outbox_default), and Postgres forbids DETACH PARTITION ... CONCURRENTLY
+	// while a default partition exists ("cannot detach partitions concurrently
+	// when a default partition exists", SQLSTATE 55000). A plain DETACH is a
+	// fast catalog-only operation; it briefly takes ACCESS EXCLUSIVE on the
+	// parent, which is acceptable for this infrequent, advisory-locked cleanup.
+	detachSQL := fmt.Sprintf("ALTER TABLE public.outbox DETACH PARTITION %s", partitionName)
 	if _, err := r.pool.Exec(ctx, detachSQL); err != nil {
 		return fmt.Errorf("detach partition %s: %w", partitionName, err)
 	}
