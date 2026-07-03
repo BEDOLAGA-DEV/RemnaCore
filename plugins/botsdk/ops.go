@@ -87,10 +87,55 @@ func PlansList(channel string) ([]TariffOffer, error) {
 	return offers, nil
 }
 
+// PlansListFor returns tariff offers with PERSONALIZED prices: the host runs the
+// pricing pipeline (geo by country, promo code, and per-user loyalty when
+// telegramID resolves to a customer) instead of returning list prices. Pass a
+// zero telegramID / empty country / empty promo to omit that signal.
+func PlansListFor(channel string, telegramID int64, country, promo string) ([]TariffOffer, error) {
+	if channel == "" {
+		channel = ChannelTelegram
+	}
+	args := map[string]any{"channel": channel}
+	if telegramID != 0 {
+		args["telegram_id"] = telegramID
+	}
+	if country != "" {
+		args["country"] = country
+	}
+	if promo != "" {
+		args["promo"] = promo
+	}
+	var offers []TariffOffer
+	if err := callInto(OpPlansList, args, &offers); err != nil {
+		return nil, err
+	}
+	return offers, nil
+}
+
 // PlanGet resolves a plan ID to its tariff offer.
 func PlanGet(planID string) (*TariffOffer, error) {
 	var offer TariffOffer
 	if err := callInto(OpPlansGet, map[string]any{"plan_id": planID}, &offer); err != nil {
+		return nil, err
+	}
+	return &offer, nil
+}
+
+// PlanGetFor resolves a plan ID to its tariff offer with personalized pricing
+// (see PlansListFor for the hint semantics).
+func PlanGetFor(planID string, telegramID int64, country, promo string) (*TariffOffer, error) {
+	args := map[string]any{"plan_id": planID}
+	if telegramID != 0 {
+		args["telegram_id"] = telegramID
+	}
+	if country != "" {
+		args["country"] = country
+	}
+	if promo != "" {
+		args["promo"] = promo
+	}
+	var offer TariffOffer
+	if err := callInto(OpPlansGet, args, &offer); err != nil {
 		return nil, err
 	}
 	return &offer, nil

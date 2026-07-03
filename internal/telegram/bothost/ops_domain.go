@@ -39,10 +39,18 @@ const (
 
 type plansListArgs struct {
 	Channel string `json:"channel"`
+	// Optional personalization: when set, the tariff reader runs the pricing
+	// pipeline (geo/promo/loyalty) instead of returning list prices.
+	TelegramID int64  `json:"telegram_id,omitempty"`
+	Country    string `json:"country,omitempty"`
+	Promo      string `json:"promo,omitempty"`
 }
 
 type plansGetArgs struct {
-	PlanID string `json:"plan_id"`
+	PlanID     string `json:"plan_id"`
+	TelegramID int64  `json:"telegram_id,omitempty"`
+	Country    string `json:"country,omitempty"`
+	Promo      string `json:"promo,omitempty"`
 }
 
 type subscriptionsMineArgs struct {
@@ -140,6 +148,7 @@ func handlePlansList(ctx context.Context, oc *OpContext, args json.RawMessage) (
 	if ch == "" {
 		ch = ChannelTelegram
 	}
+	ctx = withPriceHints(ctx, oc, a.TelegramID, a.Country, a.Promo)
 	var offers []TariffOffer
 	if err := inTenantTx(ctx, oc, func(txCtx context.Context) error {
 		var err error
@@ -151,6 +160,23 @@ func handlePlansList(ctx context.Context, oc *OpContext, args json.RawMessage) (
 	return json.Marshal(offers)
 }
 
+// withPriceHints resolves the optional personalization inputs into a ctx-carried
+// PriceHints the tariff reader consumes. telegramID>0 is resolved to a platform
+// user id (best-effort; a resolution error just leaves UserID empty so geo/promo
+// pricing still applies). Returns the original ctx when no hint is present.
+func withPriceHints(ctx context.Context, oc *OpContext, telegramID int64, country, promo string) context.Context {
+	hints := PriceHints{Country: country, PromoCode: promo}
+	if telegramID != 0 {
+		if userID, err := resolveUser(ctx, oc, telegramID); err == nil {
+			hints.UserID = userID
+		}
+	}
+	if hints.IsZero() {
+		return ctx
+	}
+	return WithPriceHints(ctx, hints)
+}
+
 func handlePlansGet(ctx context.Context, oc *OpContext, args json.RawMessage) (json.RawMessage, error) {
 	var a plansGetArgs
 	if err := json.Unmarshal(args, &a); err != nil {
@@ -159,6 +185,7 @@ func handlePlansGet(ctx context.Context, oc *OpContext, args json.RawMessage) (j
 	if oc.Tariffs == nil {
 		return nil, ErrCapabilityUnavailable
 	}
+	ctx = withPriceHints(ctx, oc, a.TelegramID, a.Country, a.Promo)
 	var offer *TariffOffer
 	if err := inTenantTx(ctx, oc, func(txCtx context.Context) error {
 		var err error
