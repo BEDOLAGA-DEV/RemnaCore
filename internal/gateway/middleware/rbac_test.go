@@ -53,6 +53,9 @@ func (s stubRBAC) ListCustomRoles(_ context.Context, _ *string) ([]rbac.CustomRo
 func (s stubRBAC) GetCustomRole(_ context.Context, _ string) (rbac.CustomRole, error) {
 	return rbac.CustomRole{}, rbac.ErrRoleNotFound
 }
+func (s stubRBAC) UpdateCustomRole(_ context.Context, _, _, _ string, _ []rbac.Permission) error {
+	return nil
+}
 func (s stubRBAC) DeleteCustomRole(_ context.Context, _ string) (int64, error) { return 0, nil }
 
 func newAccess(b map[string][]rbac.Binding, p map[string][]rbac.Permission) *service.AccessService {

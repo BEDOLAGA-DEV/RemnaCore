@@ -212,6 +212,10 @@ const en = {
       title: "Users",
       role: "Role",
       emailVerified: "Verified",
+      assignRole: "Assign custom role",
+      selectRole: "Select a role",
+      assign: "Assign",
+      roleAssigned: "Role assigned.",
     },
     subscriptions: {
       title: "Subscriptions",
@@ -578,6 +582,10 @@ const ru: typeof en = {
       title: "Пользователи",
       role: "Роль",
       emailVerified: "Подтверждён",
+      assignRole: "Назначить роль",
+      selectRole: "Выберите роль",
+      assign: "Назначить",
+      roleAssigned: "Роль назначена.",
     },
     subscriptions: {
       title: "Подписки",

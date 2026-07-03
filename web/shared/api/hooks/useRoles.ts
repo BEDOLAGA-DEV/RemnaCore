@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { QUERY_KEYS } from "../../lib/queryKeys.js";
-import { apiDeleteVoid, apiGet, apiPost } from "../client.js";
+import { apiDeleteVoid, apiGet, apiPost, apiPutVoid } from "../client.js";
 import { ENDPOINTS } from "../endpoints.js";
 
 /** A tenant-defined custom role with its permission set. */
@@ -59,6 +59,23 @@ export function useCreateCustomRole() {
       queryClient.invalidateQueries({
         queryKey: QUERY_KEYS.admin.roles.all(vars.tenant_id ?? undefined),
       });
+    },
+  });
+}
+
+export type UpdateCustomRoleRequest = {
+  name: string;
+  description: string;
+  permissions: string[];
+};
+
+export function useUpdateCustomRole() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { roleId: string; data: UpdateCustomRoleRequest }) =>
+      apiPutVoid(ENDPOINTS.roles.update(vars.roleId), vars.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "roles"] });
     },
   });
 }

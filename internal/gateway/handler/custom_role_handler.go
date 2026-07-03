@@ -130,6 +130,48 @@ func (h *IAMHandler) ListCustomRoles(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"roles": views})
 }
 
+type updateCustomRoleRequest struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Permissions []string `json:"permissions"`
+}
+
+// UpdateCustomRole handles PUT /api/roles/{roleID}.
+func (h *IAMHandler) UpdateCustomRole(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+	if claims == nil {
+		writeAPIError(w, apierror.Unauthorized)
+		return
+	}
+	roleID := chi.URLParam(r, "roleID")
+	if roleID == "" {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("roleID is required"))
+		return
+	}
+	var req updateCustomRoleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeValidationError(w, err)
+		return
+	}
+	if req.Name == "" {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("name is required"))
+		return
+	}
+	perms := make([]rbac.Permission, len(req.Permissions))
+	for i, p := range req.Permissions {
+		perms[i] = rbac.Permission(p)
+	}
+	if err := h.svc.UpdateCustomRole(r.Context(), claims.UserID, roleID, identityservice.UpdateCustomRoleInput{
+		Name:        req.Name,
+		Description: req.Description,
+		Permissions: perms,
+	}); err != nil {
+		writeErrorFromDomain(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // DeleteCustomRole handles DELETE /api/roles/{roleID}.
 func (h *IAMHandler) DeleteCustomRole(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())

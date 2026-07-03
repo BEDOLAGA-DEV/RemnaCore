@@ -281,6 +281,18 @@ func (r *adminStubRBACRepo) GetCustomRole(_ context.Context, roleID string) (rba
 	return rbac.CustomRole{}, rbac.ErrRoleNotFound
 }
 
+func (r *adminStubRBACRepo) UpdateCustomRole(_ context.Context, roleID, name, description string, perms []rbac.Permission) error {
+	cr, ok := r.customRoles[roleID]
+	if !ok {
+		return rbac.ErrRoleNotFound
+	}
+	cr.Name = name
+	cr.Description = description
+	cr.Permissions = perms
+	r.customRoles[roleID] = cr
+	return nil
+}
+
 func (r *adminStubRBACRepo) DeleteCustomRole(_ context.Context, roleID string) (int64, error) {
 	if _, ok := r.customRoles[roleID]; !ok {
 		return 0, nil
@@ -1666,5 +1678,43 @@ func TestDeleteCustomRole_NotFound(t *testing.T) {
 	svc := buildAdminSvc(t, repo, rbacRepo, &adminStubShops{}, &noopPublisher{}, now)
 
 	err := svc.DeleteCustomRole(context.Background(), actorID, "ghost")
+	require.ErrorIs(t, err, rbac.ErrRoleNotFound)
+}
+
+func TestUpdateCustomRole_PlatformAdmin_OK(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "admin-user-id"
+
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	rbacRepo.bindings = platformAdminBindings(actorID)
+	svc := buildAdminSvc(t, repo, rbacRepo, &adminStubShops{}, &noopPublisher{}, now)
+
+	roleID, err := svc.CreateCustomRole(context.Background(), actorID, service.CreateCustomRoleInput{
+		Name:        "Analyst",
+		ScopeKind:   rbac.ScopeGlobal,
+		Permissions: []rbac.Permission{rbac.DashboardRead},
+	})
+	require.NoError(t, err)
+
+	err = svc.UpdateCustomRole(context.Background(), actorID, roleID, service.UpdateCustomRoleInput{
+		Name:        "Senior Analyst",
+		Description: "renamed",
+		Permissions: []rbac.Permission{rbac.DashboardRead, rbac.CustomersRead},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "Senior Analyst", rbacRepo.customRoles[roleID].Name)
+	require.Len(t, rbacRepo.customRoles[roleID].Permissions, 2)
+}
+
+func TestUpdateCustomRole_NotFound(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	actorID := "admin-user-id"
+	repo := newAdminStubRepo()
+	rbacRepo := newAdminStubRBACRepo()
+	rbacRepo.bindings = platformAdminBindings(actorID)
+	svc := buildAdminSvc(t, repo, rbacRepo, &adminStubShops{}, &noopPublisher{}, now)
+
+	err := svc.UpdateCustomRole(context.Background(), actorID, "ghost", service.UpdateCustomRoleInput{Name: "x"})
 	require.ErrorIs(t, err, rbac.ErrRoleNotFound)
 }

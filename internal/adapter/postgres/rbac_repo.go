@@ -347,6 +347,39 @@ func (r *RBACRepository) GetCustomRole(ctx context.Context, roleID string) (rbac
 	}, nil
 }
 
+// UpdateCustomRole replaces a non-system role's name, description, and
+// permission set. Must run inside a transaction (the service wraps it).
+func (r *RBACRepository) UpdateCustomRole(ctx context.Context, roleID, name, description string, perms []rbac.Permission) error {
+	db := DBFromContext(ctx, r.pool)
+	tag, err := db.Exec(ctx,
+		`UPDATE identity.roles SET name = $2, description = $3, updated_at = now()
+		 WHERE id = $1 AND is_system = false`,
+		pgutil.UUIDToPgtype(roleID), name, description,
+	)
+	if err != nil {
+		return fmt.Errorf("update custom role %q: %w", roleID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("update custom role %q: %w", roleID, rbac.ErrRoleNotFound)
+	}
+	if _, err := db.Exec(ctx,
+		`DELETE FROM identity.role_permissions WHERE role_id = $1`,
+		pgutil.UUIDToPgtype(roleID),
+	); err != nil {
+		return fmt.Errorf("clear custom role permissions %q: %w", roleID, err)
+	}
+	for _, p := range perms {
+		if _, err := db.Exec(ctx,
+			`INSERT INTO identity.role_permissions (role_id, permission_key) VALUES ($1, $2)
+			 ON CONFLICT DO NOTHING`,
+			pgutil.UUIDToPgtype(roleID), string(p),
+		); err != nil {
+			return fmt.Errorf("insert custom role permission %q: %w", p, err)
+		}
+	}
+	return nil
+}
+
 // DeleteCustomRole removes a non-system role by ID. Permission rows and
 // assignments cascade via FK. Returns rows removed.
 func (r *RBACRepository) DeleteCustomRole(ctx context.Context, roleID string) (int64, error) {

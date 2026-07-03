@@ -97,6 +97,7 @@ export const ENDPOINTS = {
   roles: {
     list: "/api/roles",
     create: "/api/roles",
+    update: (roleId: string) => `/api/roles/${roleId}`,
     delete: (roleId: string) => `/api/roles/${roleId}`,
     permissions: "/api/permissions",
   },
