@@ -114,6 +114,14 @@ type TelegramReplayGuard interface {
 	Consume(ctx context.Context, nonce string, expiresAt time.Time) (fresh bool, err error)
 }
 
+// PlatformAdminGranter grants the platform_admin global role binding to a user.
+// CreateFirstAdmin uses it so the bootstrap admin has RBAC authority IMMEDIATELY
+// (permission gates read RBAC bindings, not the legacy role column) instead of
+// only after the next boot-time backfill. Must run inside the caller's tx.
+type PlatformAdminGranter interface {
+	GrantPlatformAdmin(ctx context.Context, userID, grantedBy string) error
+}
+
 type Service struct {
 	repo        Repository
 	publisher   domainevent.Publisher
@@ -123,7 +131,8 @@ type Service struct {
 	accessTTL   time.Duration
 	refreshTTL  time.Duration
 	sessions    *SessionIssuer
-	replayGuard TelegramReplayGuard // optional; nil disables the replay check
+	replayGuard TelegramReplayGuard  // optional; nil disables the replay check
+	adminGrant  PlatformAdminGranter // optional; nil skips the RBAC binding
 }
 
 // NewService creates a Service with the given dependencies. accessTTL and
@@ -149,6 +158,15 @@ func NewService(repo Repository, publisher domainevent.Publisher, txRunner txman
 // (validation-only, as before).
 func (s *Service) WithTelegramReplayGuard(g TelegramReplayGuard) *Service {
 	s.replayGuard = g
+	return s
+}
+
+// WithPlatformAdminGranter installs the RBAC granter used by CreateFirstAdmin to
+// give the first admin its platform_admin binding atomically. Returns the same
+// Service for chaining; when unset, the first admin gets its binding only on the
+// next boot-time RBAC backfill.
+func (s *Service) WithPlatformAdminGranter(g PlatformAdminGranter) *Service {
+	s.adminGrant = g
 	return s
 }
 
@@ -407,6 +425,15 @@ func (s *Service) CreateFirstAdmin(ctx context.Context, in CreateFirstAdminInput
 		}
 		if err := s.repo.CreateUser(txCtx, user); err != nil {
 			return fmt.Errorf("persisting admin: %w", err)
+		}
+		// Grant the platform_admin RBAC binding in the SAME tx. Permission gates
+		// (ShopResolver/RequirePermission) authorize off RBAC bindings, not the
+		// legacy role column, so without this the first admin can log in but is
+		// denied every admin API (empty /users, etc.) until the next restart.
+		if s.adminGrant != nil {
+			if err := s.adminGrant.GrantPlatformAdmin(txCtx, user.ID, user.ID); err != nil {
+				return fmt.Errorf("granting platform_admin: %w", err)
+			}
 		}
 		if err := domainevent.PublishAll(txCtx, s.publisher, user); err != nil {
 			return err

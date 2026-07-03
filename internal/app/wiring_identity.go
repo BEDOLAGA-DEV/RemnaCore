@@ -51,9 +51,10 @@ var identityWiring = fx.Options(
 	}),
 
 	// Identity domain service
-	fx.Provide(func(repo identity.Repository, pub domainevent.Publisher, txRunner txmanager.Runner, jwt *authutil.JWTIssuer, clk clock.Clock, cfg *config.Config, sessions *identityservice.SessionIssuer, nonces *postgres.TelegramNonceRepository) *identity.Service {
+	fx.Provide(func(repo identity.Repository, pub domainevent.Publisher, txRunner txmanager.Runner, jwt *authutil.JWTIssuer, clk clock.Clock, cfg *config.Config, sessions *identityservice.SessionIssuer, nonces *postgres.TelegramNonceRepository, rbacRepo *postgres.RBACRepository) *identity.Service {
 		return identity.NewService(repo, pub, txRunner, jwt, clk, cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL, sessions).
-			WithTelegramReplayGuard(nonces)
+			WithTelegramReplayGuard(nonces).
+			WithPlatformAdminGranter(platformAdminGranter{rbac: rbacRepo})
 	}),
 
 	// Identity cleanup scheduler — uses concrete repo type which satisfies
@@ -262,4 +263,18 @@ func startRBACSync(lc fx.Lifecycle, sync *identityservice.RBACCatalogSync, logge
 			return sync.Run(ctx)
 		},
 	})
+}
+
+// platformAdminGranter adapts the RBAC repository to
+// identityservice.PlatformAdminGranter: it resolves the platform_admin role and
+// assigns it as a global (tenant-less) binding, so CreateFirstAdmin gives the
+// bootstrap admin RBAC authority in the same transaction.
+type platformAdminGranter struct{ rbac *postgres.RBACRepository }
+
+func (g platformAdminGranter) GrantPlatformAdmin(ctx context.Context, userID, grantedBy string) error {
+	role, err := g.rbac.GetRole(ctx, rbac.RolePlatformAdmin)
+	if err != nil {
+		return err
+	}
+	return g.rbac.AssignRole(ctx, userID, role.ID, nil, grantedBy)
 }
