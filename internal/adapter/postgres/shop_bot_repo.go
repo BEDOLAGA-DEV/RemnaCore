@@ -2,9 +2,11 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres/gen"
@@ -52,15 +54,38 @@ func (r *ShopBotRepository) Upsert(ctx context.Context, tenantID string, cfg vo.
 	if err != nil {
 		return fmt.Errorf("encrypt bot token: %w", err)
 	}
-	return r.q(ctx).UpsertShopBot(ctx, gen.UpsertShopBotParams{
-		TenantID:      pgutil.UUIDToPgtype(tenantID),
-		BotTokenEnc:   enc,
-		WebhookSecret: cfg.WebhookSecret,
-		CabinetUrl:    cfg.CabinetURL,
-		BotUsername:   pgutil.StrPtrOrNil(cfg.BotUsername),
-		Enabled:       cfg.Enabled,
-		BotPluginSlug: pgutil.StrPtrOrNil(cfg.BotPluginSlug),
-	})
+	// Deterministic keyed hash for the cross-tenant uniqueness guard (the random
+	// nonce in enc makes ciphertext-level dedup impossible). A duplicate hash
+	// trips the partial UNIQUE index idx_shop_bots_token_hash (migration 048).
+	tokenHash := r.box.HMAC(cfg.Token.Expose())
+
+	// Raw pgx (not sqlc) so we can carry bot_token_hash and map the token-hash
+	// unique violation to a domain error. ON CONFLICT (tenant_id) handles the
+	// same-tenant update; a DIFFERENT tenant with the same token collides on the
+	// token-hash index instead.
+	_, err = DBFromContext(ctx, r.pool).Exec(ctx,
+		`INSERT INTO reseller.shop_bots
+		    (tenant_id, bot_token_enc, bot_token_hash, webhook_secret, cabinet_url, bot_username, enabled, bot_plugin_slug)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		 ON CONFLICT (tenant_id) DO UPDATE SET
+		    bot_token_enc   = EXCLUDED.bot_token_enc,
+		    bot_token_hash  = EXCLUDED.bot_token_hash,
+		    webhook_secret  = EXCLUDED.webhook_secret,
+		    cabinet_url     = EXCLUDED.cabinet_url,
+		    bot_username    = EXCLUDED.bot_username,
+		    enabled         = EXCLUDED.enabled,
+		    bot_plugin_slug = EXCLUDED.bot_plugin_slug`,
+		pgutil.UUIDToPgtype(tenantID), enc, tokenHash, cfg.WebhookSecret,
+		cfg.CabinetURL, pgutil.StrPtrOrNil(cfg.BotUsername), cfg.Enabled, pgutil.StrPtrOrNil(cfg.BotPluginSlug),
+	)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "idx_shop_bots_token_hash" {
+			return fmt.Errorf("upsert shop bot: %w", reseller.ErrShopBotTokenInUse)
+		}
+		return fmt.Errorf("upsert shop bot: %w", err)
+	}
+	return nil
 }
 
 // GetByTenant retrieves and decrypts the bot config for tenantID.

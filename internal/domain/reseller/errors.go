@@ -24,6 +24,7 @@ var (
 	ErrShopBotInvalidToken      = service.ErrShopBotInvalidToken
 	ErrShopBotInvalidCabinetURL = service.ErrShopBotInvalidCabinetURL
 	ErrShopBotInvalidPlugin     = service.ErrShopBotInvalidPlugin
+	ErrShopBotTokenInUse        = service.ErrShopBotTokenInUse
 )
 
 // Aggregate-level error aliases re-exported for backward compatibility.

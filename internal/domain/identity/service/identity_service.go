@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -104,15 +106,24 @@ type Repository interface {
 // Auth operations (Register, Login, RefreshToken) live in this file.
 // Profile operations (VerifyEmail, UpdateDisplayName, LinkTelegram,
 // UnlinkTelegram, ResetPassword) live in identity_profile.go.
+// TelegramReplayGuard records used Telegram initData so a captured payload
+// cannot be replayed within its validity window. Consume atomically claims a
+// nonce: it returns fresh=true the first time and fresh=false on any later call
+// for the same nonce (until expiresAt passes and the row is pruned).
+type TelegramReplayGuard interface {
+	Consume(ctx context.Context, nonce string, expiresAt time.Time) (fresh bool, err error)
+}
+
 type Service struct {
-	repo       Repository
-	publisher  domainevent.Publisher
-	txRunner   txmanager.Runner
-	jwt        *authutil.JWTIssuer
-	clock      clock.Clock
-	accessTTL  time.Duration
-	refreshTTL time.Duration
-	sessions   *SessionIssuer
+	repo        Repository
+	publisher   domainevent.Publisher
+	txRunner    txmanager.Runner
+	jwt         *authutil.JWTIssuer
+	clock       clock.Clock
+	accessTTL   time.Duration
+	refreshTTL  time.Duration
+	sessions    *SessionIssuer
+	replayGuard TelegramReplayGuard // optional; nil disables the replay check
 }
 
 // NewService creates a Service with the given dependencies. accessTTL and
@@ -130,6 +141,15 @@ func NewService(repo Repository, publisher domainevent.Publisher, txRunner txman
 		refreshTTL: refreshTTL,
 		sessions:   sessions,
 	}
+}
+
+// WithTelegramReplayGuard installs a replay guard for Telegram Mini App logins
+// and returns the same Service for chaining. Wiring calls this after
+// construction; when unset, LoginViaTelegramWebApp skips the single-use check
+// (validation-only, as before).
+func (s *Service) WithTelegramReplayGuard(g TelegramReplayGuard) *Service {
+	s.replayGuard = g
+	return s
 }
 
 // RegisterInput holds the data required to register a new user.
@@ -437,6 +457,22 @@ func (s *Service) LoginViaTelegramWebApp(ctx context.Context, initData, botToken
 	tgUser, err := telegramauth.ValidateWebAppInitData(initData, botToken, s.clock.Now(), telegramauth.DefaultInitDataMaxAge)
 	if err != nil {
 		return nil, fmt.Errorf("validate telegram initData: %w", err)
+	}
+
+	// Single-use enforcement: a valid signature only proves the payload came from
+	// Telegram, not that it is fresh. Claim a nonce derived from the whole
+	// initData so a captured payload cannot be replayed within its 24h window.
+	if s.replayGuard != nil {
+		sum := sha256.Sum256([]byte(initData))
+		nonce := hex.EncodeToString(sum[:])
+		expiresAt := s.clock.Now().Add(telegramauth.DefaultInitDataMaxAge)
+		fresh, cerr := s.replayGuard.Consume(ctx, nonce, expiresAt)
+		if cerr != nil {
+			return nil, fmt.Errorf("telegram replay guard: %w", cerr)
+		}
+		if !fresh {
+			return nil, ErrTelegramInitDataReplayed
+		}
 	}
 
 	displayName := strings.TrimSpace(tgUser.FirstName + " " + tgUser.LastName)
