@@ -1,0 +1,13 @@
+module {{.Name}}
+
+go 1.26.4
+
+require (
+	github.com/BEDOLAGA-DEV/RemnaCore/plugins/botsdk v0.0.0
+	github.com/extism/go-pdk v1.1.3
+)
+
+// The guest SDK is a workspace module. When developing inside the RemnaCore
+// monorepo, point this at the local path; for a standalone build, vendor the
+// botsdk module or replace it with your checkout.
+replace github.com/BEDOLAGA-DEV/RemnaCore/plugins/botsdk => ../botsdk

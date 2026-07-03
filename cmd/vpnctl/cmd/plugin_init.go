@@ -17,8 +17,13 @@ const (
 	FlagInitLang  = "lang"
 	FlagInitName  = "name"
 	FlagInitHooks = "hooks"
+	FlagInitKind  = "kind"
 
 	DefaultInitLang = "go"
+	DefaultInitKind = "hook"
+
+	KindHook = "hook"
+	KindBot  = "bot"
 )
 
 // HookInfo holds computed naming variants for a single hook.
@@ -50,19 +55,28 @@ func init() {
 	pluginCmd.AddCommand(pluginInitCmd)
 	pluginInitCmd.Flags().String(FlagInitLang, DefaultInitLang, "plugin language (go)")
 	pluginInitCmd.Flags().String(FlagInitName, "", "plugin name (required)")
-	pluginInitCmd.Flags().String(FlagInitHooks, "", "comma-separated hook names (required)")
+	pluginInitCmd.Flags().String(FlagInitHooks, "", "comma-separated hook names (required for --kind hook)")
+	pluginInitCmd.Flags().String(FlagInitKind, DefaultInitKind, "plugin kind: hook | bot")
 
 	_ = pluginInitCmd.MarkFlagRequired(FlagInitName)
-	_ = pluginInitCmd.MarkFlagRequired(FlagInitHooks)
 }
 
 func runPluginInit(cmd *cobra.Command, _ []string) error {
 	lang, _ := cmd.Flags().GetString(FlagInitLang)
 	name, _ := cmd.Flags().GetString(FlagInitName)
 	hooks, _ := cmd.Flags().GetString(FlagInitHooks)
+	kind, _ := cmd.Flags().GetString(FlagInitKind)
 
 	if lang != "go" {
 		return fmt.Errorf("unsupported language %q; only \"go\" is supported", lang)
+	}
+	switch kind {
+	case KindHook:
+		// fall through to the hook flow below
+	case KindBot:
+		return scaffoldBot(cmd, name)
+	default:
+		return fmt.Errorf("unsupported kind %q; use \"hook\" or \"bot\"", kind)
 	}
 
 	hookNames := strings.Split(hooks, ",")
@@ -117,6 +131,43 @@ func runPluginInit(cmd *cobra.Command, _ []string) error {
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Plugin scaffolded in ./%s\n", name)
+	return nil
+}
+
+// scaffoldBot generates a botsdk-based Telegram bot plugin project.
+func scaffoldBot(cmd *cobra.Command, name string) error {
+	data := initData{
+		Name:        name,
+		Description: "A RemnaCore Telegram bot plugin.",
+	}
+
+	outDir := filepath.Join(".", name)
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return fmt.Errorf("creating output directory: %w", err)
+	}
+
+	files := []struct {
+		tmpl string
+		out  string
+		exec bool
+	}{
+		{"bot/main.go.tmpl", "main.go", false},
+		{"bot/go.mod.tmpl", "go.mod", false},
+		{"bot/plugin.toml.tmpl", "plugin.toml", false},
+		{"bot/build.sh.tmpl", "build.sh", true},
+		{"bot/README.md.tmpl", "README.md", false},
+	}
+	for _, f := range files {
+		outPath := filepath.Join(outDir, f.out)
+		if err := renderTemplate(f.tmpl, outPath, data); err != nil {
+			return fmt.Errorf("rendering %s: %w", f.out, err)
+		}
+		if f.exec {
+			_ = os.Chmod(outPath, 0o755)
+		}
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Bot plugin scaffolded in ./%s (build with ./build.sh)\n", name)
 	return nil
 }
 

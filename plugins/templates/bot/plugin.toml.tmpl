@@ -1,0 +1,20 @@
+[plugin]
+id          = "{{.Name}}"
+name        = "{{.Name}}"
+version     = "0.1.0"
+description = "{{.Description}}"
+author      = ""
+license     = "MIT"
+sdk_version = "1.0.0"
+lang        = "go"
+
+# provides_bot marks this plugin as selectable as a shop's Telegram bot.
+[telegram]
+provides_bot = true
+entry        = "handle_update"
+
+# Declare only the ops your bot uses; the host rejects ungranted calls.
+[permissions]
+grants = ["telegram:send", "users:write", "billing:read"]
+
+[limits]
