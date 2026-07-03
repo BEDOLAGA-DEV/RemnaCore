@@ -301,6 +301,24 @@ const en = {
     settings: {
       title: "Settings",
     },
+    roles: {
+      title: "Roles",
+      subtitle: "Custom roles and permissions",
+      create: "Create role",
+      name: "Name",
+      description: "Description",
+      scope: "Scope",
+      scopeGlobal: "Global",
+      scopeShop: "Shop",
+      tenantId: "Shop ID",
+      tenantIdHint: "Required for shop-scoped roles",
+      permissions: "Permissions",
+      permissionCount: "{{count}} permissions",
+      noRoles: "No custom roles yet.",
+      deleteConfirm: "Delete this role?",
+      createSuccess: "Role created.",
+      empty: "System roles are managed in code; create custom roles here.",
+    },
   },
   nav: {
     dashboard: "Dashboard",
@@ -314,6 +332,7 @@ const en = {
     plugins: "Plugins",
     tenants: "Tenants",
     nodes: "Nodes",
+    roles: "Roles",
   },
   reseller: {
     bot: {
@@ -626,6 +645,25 @@ const ru: typeof en = {
     settings: {
       title: "Настройки",
     },
+    roles: {
+      title: "Роли",
+      subtitle: "Пользовательские роли и права",
+      create: "Создать роль",
+      name: "Название",
+      description: "Описание",
+      scope: "Область",
+      scopeGlobal: "Глобальная",
+      scopeShop: "Магазин",
+      tenantId: "ID магазина",
+      tenantIdHint: "Обязательно для ролей уровня магазина",
+      permissions: "Права",
+      permissionCount: "{{count}} прав",
+      noRoles: "Пользовательских ролей пока нет.",
+      deleteConfirm: "Удалить эту роль?",
+      createSuccess: "Роль создана.",
+      empty:
+        "Системные роли управляются в коде; здесь создаются пользовательские.",
+    },
   },
   nav: {
     dashboard: "Обзор",
@@ -639,6 +677,7 @@ const ru: typeof en = {
     plugins: "Плагины",
     tenants: "Тенанты",
     nodes: "Ноды",
+    roles: "Роли",
   },
   reseller: {
     bot: {

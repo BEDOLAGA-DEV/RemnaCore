@@ -50,6 +50,10 @@ export const QUERY_KEYS = {
       detail: (id: string) => ["admin", "tenants", id] as const,
       bot: (id: string) => ["admin", "tenants", id, "bot"] as const,
     },
+    roles: {
+      all: (tenantId?: string) => ["admin", "roles", { tenantId }] as const,
+    },
+    permissions: ["admin", "permissions"] as const,
     botPlugins: ["admin", "bot-plugins"] as const,
     pluginPages: ["admin", "plugin-pages"] as const,
     sessions: ["admin", "sessions"] as const,
