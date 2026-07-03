@@ -146,3 +146,35 @@ func TestDropConnections_DiscriminatedUnionShape(t *testing.T) {
 	assert.NotContains(t, string(b), `"userUuid"`)
 	assert.NotContains(t, string(b), `"nodeUuid"`)
 }
+
+// TestIPFetchResult_2_8_0Shape parses the nested fetch-ips-result envelope.
+func TestIPFetchResult_2_8_0Shape(t *testing.T) {
+	body := `{
+		"isCompleted": true, "isFailed": false,
+		"progress": {"total": 2, "completed": 2, "percent": 100},
+		"result": {"success": true, "userUuid": "u-1", "userId": 42,
+			"nodes": [{"nodeUuid":"n-1","nodeName":"eu","countryCode":"DE",
+				"ips":[{"ip":"1.2.3.4","lastSeen":"2026-07-01T00:00:00Z"}]}]}
+	}`
+	var res IPFetchResult
+	require.NoError(t, json.Unmarshal([]byte(body), &res))
+	assert.True(t, res.IsCompleted)
+	assert.Equal(t, 100, res.Progress.Percent)
+	require.NotNil(t, res.Result)
+	assert.Equal(t, int64(42), res.Result.UserID)
+	require.Len(t, res.Result.Nodes, 1)
+	require.Len(t, res.Result.Nodes[0].IPs, 1)
+	assert.Equal(t, "1.2.3.4", res.Result.Nodes[0].IPs[0].IP)
+}
+
+// TestSystemStats_2_8_0Shape parses the nested /system/stats envelope.
+func TestSystemStats_2_8_0Shape(t *testing.T) {
+	body := `{"cpu":{"cores":8},"memory":{"total":100,"free":40,"used":60},
+		"uptime":123,"users":{"statusCounts":{"ACTIVE":5},"totalUsers":9},
+		"onlineStats":{"onlineNow":3},"nodes":{"totalOnline":2,"totalBytesLifetime":999}}`
+	var s SystemStats
+	require.NoError(t, json.Unmarshal([]byte(body), &s))
+	assert.Equal(t, 5, s.Users.StatusCounts["ACTIVE"])
+	assert.Equal(t, 2, s.Nodes.TotalOnline)
+	assert.Equal(t, int64(999), s.Nodes.TotalBytesLifetime)
+}

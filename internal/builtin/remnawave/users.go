@@ -186,7 +186,6 @@ func (h *Handler) GetUserSessions(w http.ResponseWriter, r *http.Request) {
 		"panel_id":  panelID,
 		"user_uuid": userUUID,
 		"job_id":    job.JobID,
-		"status":    job.Status,
 	})
 }
 

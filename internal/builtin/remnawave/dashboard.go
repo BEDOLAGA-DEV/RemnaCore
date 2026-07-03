@@ -16,7 +16,7 @@ func (h *Handler) GetDashboardOverview(w http.ResponseWriter, r *http.Request) {
 			"nodes_healthy": 0,
 			"nodes_total":   0,
 			"active_users":  0,
-			"bandwidth":     map[string]int64{"upload": 0, "download": 0, "total": 0},
+			"bandwidth":     map[string]int64{"total_bytes_lifetime": 0},
 		})
 		return
 	}
@@ -26,7 +26,7 @@ func (h *Handler) GetDashboardOverview(w http.ResponseWriter, r *http.Request) {
 	totalNodes := 0
 	healthyNodes := 0
 	totalActiveUsers := 0
-	var totalUpload, totalDownload int64
+	var totalBytesLifetime int64
 
 	for panelID, client := range clients {
 		stats, err := client.GetSystemStats(r.Context())
@@ -35,15 +35,14 @@ func (h *Handler) GetDashboardOverview(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		panelsUp++
-		totalNodes += stats.TotalNodes
-		healthyNodes += stats.ConnectedNodes
-		totalActiveUsers += stats.ActiveUsers
-
-		bwStats, err := client.GetBandwidthSystemStats(r.Context())
-		if err == nil {
-			totalUpload += bwStats.TotalUploadBytes
-			totalDownload += bwStats.TotalDownloadBytes
-		}
+		// The 2.8.0 /system/stats contract exposes only online-node and
+		// per-status user counts (no separate total/connected node split nor a
+		// flat active-user count). Map to the closest contract fields.
+		online := stats.Nodes.TotalOnline
+		totalNodes += online
+		healthyNodes += online
+		totalActiveUsers += stats.Users.StatusCounts["ACTIVE"]
+		totalBytesLifetime += stats.Nodes.TotalBytesLifetime
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -53,9 +52,10 @@ func (h *Handler) GetDashboardOverview(w http.ResponseWriter, r *http.Request) {
 		"nodes_total":   totalNodes,
 		"active_users":  totalActiveUsers,
 		"bandwidth": map[string]int64{
-			"upload":   totalUpload,
-			"download": totalDownload,
-			"total":    totalUpload + totalDownload,
+			// The contract's bandwidth endpoint reports period deltas, not an
+			// upload/download split; the lifetime total from /system/stats is the
+			// closest cross-panel aggregate.
+			"total_bytes_lifetime": totalBytesLifetime,
 		},
 	})
 }

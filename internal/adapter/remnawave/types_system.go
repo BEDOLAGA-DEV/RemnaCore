@@ -1,74 +1,183 @@
 package remnawave
 
-import "encoding/json"
+// The struct shapes below mirror the Remnawave 2.8.0 system/metadata/ip-control
+// contracts (identical in 2.7.0). The prior definitions used field names absent
+// from the contract, so Go's tolerant json.Unmarshal decoded them to zero values
+// — endpoints returned empty data without erroring. These match the real wire
+// shapes so the data is actually populated.
 
-// SystemHealth represents the health check response from Remnawave.
+// SystemHealth is the /system/health response: per-instance runtime metrics.
 type SystemHealth struct {
-	Status  string `json:"status"`
-	Version string `json:"version"`
-	Uptime  int64  `json:"uptime"`
+	RuntimeMetrics []RuntimeMetric `json:"runtimeMetrics"`
 }
 
-// SystemMetadata contains system-level metadata from Remnawave.
+// RuntimeMetric is one instance's runtime memory metrics.
+type RuntimeMetric struct {
+	InstanceID   string `json:"instanceId"`
+	InstanceType string `json:"instanceType"`
+	RSS          int64  `json:"rss"`
+	HeapUsed     int64  `json:"heapUsed"`
+	HeapTotal    int64  `json:"heapTotal"`
+}
+
+// SystemMetadata is the /system/metadata response.
 type SystemMetadata struct {
-	Version     string          `json:"version"`
-	Environment string          `json:"environment"`
-	Extra       json.RawMessage `json:"extra,omitempty"`
+	Version string          `json:"version"`
+	Build   MetadataBuild   `json:"build"`
+	Git     MetadataGitInfo `json:"git"`
 }
 
-// SystemStats contains high-level system statistics.
+// MetadataBuild carries build time and number.
+type MetadataBuild struct {
+	Time   string `json:"time"`
+	Number string `json:"number"`
+}
+
+// MetadataGitInfo carries backend/frontend git provenance.
+type MetadataGitInfo struct {
+	Backend  MetadataGitRepo `json:"backend"`
+	Frontend MetadataGitRepo `json:"frontend"`
+}
+
+// MetadataGitRepo is a single repo's git provenance.
+type MetadataGitRepo struct {
+	CommitSha string `json:"commitSha"`
+	Branch    string `json:"branch"`
+	CommitURL string `json:"commitUrl"`
+}
+
+// SystemStats is the /system/stats response.
 type SystemStats struct {
-	TotalUsers     int   `json:"totalUsers"`
-	ActiveUsers    int   `json:"activeUsers"`
-	TotalNodes     int   `json:"totalNodes"`
-	ConnectedNodes int   `json:"connectedNodes"`
-	TotalTraffic   int64 `json:"totalTraffic"`
+	CPU         StatsCPU         `json:"cpu"`
+	Memory      StatsMemory      `json:"memory"`
+	Uptime      int64            `json:"uptime"`
+	Timestamp   int64            `json:"timestamp"`
+	Users       StatsUsers       `json:"users"`
+	OnlineStats StatsOnline      `json:"onlineStats"`
+	Nodes       StatsNodesSystem `json:"nodes"`
 }
 
-// BandwidthSystemStats contains bandwidth-specific system statistics.
+type StatsCPU struct {
+	Cores int `json:"cores"`
+}
+
+type StatsMemory struct {
+	Total int64 `json:"total"`
+	Free  int64 `json:"free"`
+	Used  int64 `json:"used"`
+}
+
+type StatsUsers struct {
+	StatusCounts map[string]int `json:"statusCounts"`
+	TotalUsers   int            `json:"totalUsers"`
+}
+
+type StatsOnline struct {
+	LastDay     int `json:"lastDay"`
+	LastWeek    int `json:"lastWeek"`
+	NeverOnline int `json:"neverOnline"`
+	OnlineNow   int `json:"onlineNow"`
+}
+
+type StatsNodesSystem struct {
+	TotalOnline        int   `json:"totalOnline"`
+	TotalBytesLifetime int64 `json:"totalBytesLifetime"`
+}
+
+// BandwidthPeriod is one period's bandwidth stat (BaseStat in the contract).
+type BandwidthPeriod struct {
+	Current    string `json:"current"`
+	Previous   string `json:"previous"`
+	Difference string `json:"difference"`
+}
+
+// BandwidthSystemStats is the /system/stats/bandwidth response: period deltas.
 type BandwidthSystemStats struct {
-	TotalUploadBytes   int64 `json:"totalUploadBytes"`
-	TotalDownloadBytes int64 `json:"totalDownloadBytes"`
-	TotalBytes         int64 `json:"totalBytes"`
+	LastTwoDays   BandwidthPeriod `json:"bandwidthLastTwoDays"`
+	LastSevenDays BandwidthPeriod `json:"bandwidthLastSevenDays"`
+	Last30Days    BandwidthPeriod `json:"bandwidthLast30Days"`
+	CalendarMonth BandwidthPeriod `json:"bandwidthCalendarMonth"`
+	CurrentYear   BandwidthPeriod `json:"bandwidthCurrentYear"`
 }
 
-// NodesSystemStats contains node-specific system statistics.
+// NodesSystemStats is the /system/nodes/statistics response (last-7-days series).
 type NodesSystemStats struct {
-	TotalNodes     int `json:"totalNodes"`
-	ConnectedNodes int `json:"connectedNodes"`
-	DisabledNodes  int `json:"disabledNodes"`
+	LastSevenDays []NodeDailyUsage `json:"lastSevenDays"`
 }
 
-// NodeMetrics represents metrics for a single node.
+// NodeDailyUsage is one node's total for a day.
+type NodeDailyUsage struct {
+	NodeName  string `json:"nodeName"`
+	Date      string `json:"date"`
+	TotalGiB  string `json:"totalGib"`
+	TotalDown string `json:"totalDownload"`
+	TotalUp   string `json:"totalUpload"`
+}
+
+// NodeMetrics is one node's realtime metrics (/system/nodes/metrics nodes[]).
 type NodeMetrics struct {
-	UUID               string  `json:"uuid"`
-	Name               string  `json:"name"`
-	IsConnected        bool    `json:"isConnected"`
-	UploadSpeedBytes   float64 `json:"uploadSpeedBytes"`
-	DownloadSpeedBytes float64 `json:"downloadSpeedBytes"`
-	ActiveConnections  int     `json:"activeConnections"`
+	NodeUUID      string       `json:"nodeUuid"`
+	NodeName      string       `json:"nodeName"`
+	CountryEmoji  string       `json:"countryEmoji"`
+	ProviderName  string       `json:"providerName"`
+	UsersOnline   int          `json:"usersOnline"`
+	InboundsStats []NodeIOStat `json:"inboundsStats"`
+	OutboundsStat []NodeIOStat `json:"outboundsStats"`
 }
 
-// StatsRecap contains a recap/summary of system statistics.
+// NodeIOStat is one inbound/outbound tag's upload/download.
+type NodeIOStat struct {
+	Tag      string `json:"tag"`
+	Upload   string `json:"upload"`
+	Download string `json:"download"`
+}
+
+// StatsRecap is the /system/stats/recap response.
 type StatsRecap struct {
-	TotalUsers    int   `json:"totalUsers"`
-	ActiveUsers   int   `json:"activeUsers"`
-	TotalNodes    int   `json:"totalNodes"`
-	TotalTraffic  int64 `json:"totalTraffic"`
-	NewUsersToday int   `json:"newUsersToday"`
+	UsersByStatus map[string]int `json:"usersByStatus"`
+	TotalUsers    int            `json:"totalUsers"`
 }
 
-// IPFetchJob represents an asynchronous IP fetch job.
+// IPFetchJob is the fetch-ips response: just a job id.
 type IPFetchJob struct {
-	JobID  string `json:"jobId"`
-	Status string `json:"status"`
+	JobID string `json:"jobId"`
 }
 
-// IPFetchResult contains the result of a completed IP fetch job.
+// IPFetchProgress tracks an async IP-fetch job's progress.
+type IPFetchProgress struct {
+	Total     int `json:"total"`
+	Completed int `json:"completed"`
+	Percent   int `json:"percent"`
+}
+
+// IPFetchNodeResult is one node's IPs for a user in a fetch result.
+type IPFetchNodeResult struct {
+	NodeUUID    string      `json:"nodeUuid"`
+	NodeName    string      `json:"nodeName"`
+	CountryCode string      `json:"countryCode"`
+	IPs         []IPFetchIP `json:"ips"`
+}
+
+// IPFetchIP is a single observed IP with its last-seen time.
+type IPFetchIP struct {
+	IP       string `json:"ip"`
+	LastSeen string `json:"lastSeen"`
+}
+
+// IPFetchInner is the nested "result" object of a completed fetch.
+type IPFetchInner struct {
+	Success  bool                `json:"success"`
+	UserUUID string              `json:"userUuid"`
+	UserID   int64               `json:"userId"`
+	Nodes    []IPFetchNodeResult `json:"nodes"`
+}
+
+// IPFetchResult is the fetch-ips-result response.
 type IPFetchResult struct {
-	JobID  string   `json:"jobId"`
-	Status string   `json:"status"`
-	IPs    []string `json:"ips,omitempty"`
+	IsCompleted bool            `json:"isCompleted"`
+	IsFailed    bool            `json:"isFailed"`
+	Progress    IPFetchProgress `json:"progress"`
+	Result      *IPFetchInner   `json:"result"`
 }
 
 // DropConnectionsBy selects WHICH connections to drop (discriminated union:
