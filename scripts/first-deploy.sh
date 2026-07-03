@@ -34,6 +34,7 @@ if [ -f .env ]; then
     warn ".env already exists, skipping generation (delete it to regenerate)"
 else
     PLATFORM_DB_PASSWORD="$(rand_secret 32)"
+    PLATFORM_APP_DB_PASSWORD="$(rand_secret 32)"
     REMNAWAVE_DB_PASSWORD="$(rand_secret 32)"
     REMNAWAVE_WEBHOOK_SECRET="$(rand_secret 48)"
     REMNAWAVE_JWT_AUTH_SECRET="$(rand_secret 48)"
@@ -47,6 +48,11 @@ else
 PLATFORM_DB_USER=platform
 PLATFORM_DB_PASSWORD=${PLATFORM_DB_PASSWORD}
 PLATFORM_DB_NAME=remnacore
+
+# Least-privilege runtime role the APP connects as (migrations still use the
+# superuser above). Provisioned by scripts/provision-app-role.sh.
+PLATFORM_APP_DB_USER=remnacore_app
+PLATFORM_APP_DB_PASSWORD=${PLATFORM_APP_DB_PASSWORD}
 
 LOG_LEVEL=info
 LOG_FORMAT=json
@@ -122,6 +128,27 @@ PSQL="docker compose exec -T platform-db psql -U platform -d remnacore -v ON_ERR
     MIGRATIONS_DIR="internal/adapter/postgres/migrations" \
     bash scripts/migrate.sh || fail "Migrations failed"
 ok "Migrations applied"
+
+# ── Step 5.5: Provision the least-privilege app DB role ────────────────────
+# The app refuses to boot as a superuser/BYPASSRLS role (would void tenant RLS),
+# so it connects as remnacore_app. Older .env files predate this — ensure the
+# credentials exist there (compose reads them), then create/grant the role as
+# the superuser BEFORE the app starts so its connection succeeds.
+echo "Provisioning application database role..."
+if ! grep -q '^PLATFORM_APP_DB_USER=' .env; then
+    printf '\n# Least-privilege runtime role the app connects as (added by first-deploy.sh)\nPLATFORM_APP_DB_USER=remnacore_app\n' >> .env
+fi
+if ! grep -q '^PLATFORM_APP_DB_PASSWORD=' .env; then
+    printf 'PLATFORM_APP_DB_PASSWORD=%s\n' "$(rand_secret 32)" >> .env
+fi
+# shellcheck disable=SC1091
+APP_DB_USER="$(grep '^PLATFORM_APP_DB_USER=' .env | head -1 | cut -d= -f2-)"
+APP_DB_PASSWORD="$(grep '^PLATFORM_APP_DB_PASSWORD=' .env | head -1 | cut -d= -f2-)"
+PSQL="docker compose exec -T platform-db psql -U platform -d remnacore -v ON_ERROR_STOP=1" \
+    APP_DB_USER="${APP_DB_USER:-remnacore_app}" \
+    APP_DB_PASSWORD="$APP_DB_PASSWORD" \
+    bash scripts/provision-app-role.sh || fail "Failed to provision app DB role"
+ok "Application database role provisioned"
 
 # ── Step 6: Start application services ─────────────────────────────────────
 echo "Starting application services..."
