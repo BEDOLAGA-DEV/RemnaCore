@@ -17,7 +17,11 @@ services:
       APP_PORT: "4000"
       APP_LOG_LEVEL: "${LOG_LEVEL:-info}"
       APP_LOG_FORMAT: "${LOG_FORMAT:-json}"
-      DATABASE_URL: "postgres://${PLATFORM_DB_USER:-platform}:${PLATFORM_DB_PASSWORD:-secret}@platform-db:5432/${PLATFORM_DB_NAME:-remnacore}?sslmode=disable"
+      # The app connects as the least-privilege runtime role (NOSUPERUSER,
+      # NOBYPASSRLS) provisioned by scripts/provision-app-role.sh — NOT as the
+      # bootstrap superuser (${PLATFORM_DB_USER}), which migrations use. A
+      # superuser/BYPASSRLS connection is rejected at boot (voids tenant RLS).
+      DATABASE_URL: "postgres://${PLATFORM_APP_DB_USER:-remnacore_app}:${PLATFORM_APP_DB_PASSWORD:-app_secret}@platform-db:5432/${PLATFORM_DB_NAME:-remnacore}?sslmode=disable"
       DATABASE_MIN_CONNS: "${DATABASE_MIN_CONNS:-5}"
       DATABASE_CONN_MAX_IDLE_TIME: "${DATABASE_CONN_MAX_IDLE_TIME:-1m}"
       DATABASE_HEALTH_CHECK_PERIOD: "${DATABASE_HEALTH_CHECK_PERIOD:-30s}"
