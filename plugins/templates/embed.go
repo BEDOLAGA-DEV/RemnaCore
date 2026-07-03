@@ -6,5 +6,5 @@ import "embed"
 // FS contains the embedded plugin template files. Templates are organized by
 // language under subdirectories (e.g., go/).
 //
-//go:embed go/*.tmpl
+//go:embed go/*.tmpl bot/*.tmpl
 var FS embed.FS

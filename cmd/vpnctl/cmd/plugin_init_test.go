@@ -103,3 +103,41 @@ func TestRunPluginInit_CreatesFiles(t *testing.T) {
 		assert.NoError(t, statErr, "expected file %s to exist", f)
 	}
 }
+
+func TestRunPluginInit_BotKind(t *testing.T) {
+	dir := t.TempDir()
+	origDir, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	rootCmd.SetArgs([]string{"plugin", "init", "--kind", "bot", "--name", "mybot"})
+	require.NoError(t, rootCmd.Execute())
+
+	for _, f := range []string{"main.go", "go.mod", "plugin.toml", "build.sh", "README.md"} {
+		_, statErr := os.Stat(filepath.Join(dir, "mybot", f))
+		assert.NoError(t, statErr, "expected bot file %s", f)
+	}
+
+	// main.go must use the guest SDK and export handle_update.
+	main, err := os.ReadFile(filepath.Join(dir, "mybot", "main.go"))
+	require.NoError(t, err)
+	assert.Contains(t, string(main), "plugins/botsdk")
+	assert.Contains(t, string(main), "//go:wasmexport handle_update")
+
+	// plugin.toml must declare the bot capability.
+	toml, err := os.ReadFile(filepath.Join(dir, "mybot", "plugin.toml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(toml), "provides_bot = true")
+}
+
+func TestRunPluginInit_UnknownKind(t *testing.T) {
+	dir := t.TempDir()
+	origDir, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	rootCmd.SetArgs([]string{"plugin", "init", "--kind", "nonsense", "--name", "x"})
+	require.Error(t, rootCmd.Execute())
+}

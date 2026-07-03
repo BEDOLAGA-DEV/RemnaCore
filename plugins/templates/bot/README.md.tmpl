@@ -1,0 +1,25 @@
+# {{.Name}}
+
+A RemnaCore per-shop Telegram bot plugin built on the guest SDK.
+
+## Build
+
+```sh
+./build.sh
+# or: GOOS=wasip1 GOARCH=wasm GOWORK=off go build -buildmode=c-shared -trimpath -o {{.Name}}.wasm .
+```
+
+## Install & enable
+
+```sh
+vpnctl plugin install ./{{.Name}}.wasm
+vpnctl plugin enable {{.Name}}
+```
+
+A shop owner then selects this plugin as their bot in the admin/reseller UI.
+
+## Permissions
+
+Edit `plugin.toml` `[permissions].grants` to match the ops your bot calls
+(`telegram:send`, `users:write`, `billing:read`, `payment:write`,
+`billing:write`). See the botsdk README for the full op → permission table.

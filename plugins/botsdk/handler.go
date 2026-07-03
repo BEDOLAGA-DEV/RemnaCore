@@ -3,6 +3,7 @@ package botsdk
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	pdk "github.com/extism/go-pdk"
 )
@@ -28,4 +29,16 @@ func Handle(fn func(Update) error) int32 {
 	}
 	pdk.OutputString("ok")
 	return 0
+}
+
+// Command extracts the leading slash-command token from an update's text,
+// stripping an @botname suffix ("/plans@shop_bot arg" → "/plans"). Returns ""
+// for non-command text.
+func Command(text string) string {
+	fields := strings.Fields(text)
+	if len(fields) == 0 || !strings.HasPrefix(fields[0], "/") {
+		return ""
+	}
+	cmd, _, _ := strings.Cut(fields[0], "@")
+	return cmd
 }

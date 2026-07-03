@@ -1,0 +1,46 @@
+// Package main is a RemnaCore per-shop Telegram bot plugin built on the guest
+// SDK (github.com/BEDOLAGA-DEV/RemnaCore/plugins/botsdk). All host communication
+// goes through botsdk, so this file is pure bot logic.
+//
+// Build:  GOOS=wasip1 GOARCH=wasm GOWORK=off go build -buildmode=c-shared -trimpath -o {{.Name}}.wasm .
+package main
+
+import botsdk "github.com/BEDOLAGA-DEV/RemnaCore/plugins/botsdk"
+
+// bot handles one inbound update. Extend the switch with your commands and
+// callbacks; every op is permission-gated by the host (see plugin.toml).
+func bot(u botsdk.Update) error {
+	// Register first — idempotent, required before user-scoped ops.
+	if err := botsdk.RegisterUser(u.From.ID, botsdk.DisplayName(u.From)); err != nil {
+		return err
+	}
+
+	if u.IsCallback {
+		botsdk.AnswerCallback(u.CallbackID, "")
+		return nil
+	}
+
+	switch botsdk.Command(u.Text) {
+	case "/plans":
+		offers, err := botsdk.PlansList(botsdk.ChannelTelegram)
+		if err != nil {
+			return err
+		}
+		var kb botsdk.Keyboard
+		for _, o := range offers {
+			btn := botsdk.Button{Text: o.Name, CallbackData: "plan:" + o.PlanID}
+			kb.Rows = append(kb.Rows, []botsdk.Button{btn})
+		}
+		if len(kb.Rows) == 0 {
+			return botsdk.SendText(u.ChatID, "No plans available.")
+		}
+		return botsdk.SendKeyboard(u.ChatID, "Available plans:", kb)
+	default:
+		return botsdk.OpenCabinet(u.ChatID, "")
+	}
+}
+
+//go:wasmexport handle_update
+func handle_update() int32 { return botsdk.Handle(bot) }
+
+func main() {}

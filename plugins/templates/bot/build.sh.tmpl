@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")"
+# WASI reactor module (-buildmode=c-shared) so the Go runtime is initialized
+# before handle_update runs; a command module traps with runtime.notInitialized().
+GOWORK=off GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -trimpath -o {{.Name}}.wasm .
+echo "{{.Name}}.wasm built"
