@@ -38,6 +38,8 @@ func MapToAPIError(err error) *apierror.Error {
 		return apierror.ValidationFailed
 	case errors.Is(err, ErrShopBotInvalidPlugin):
 		return apierror.ValidationFailed
+	case errors.Is(err, ErrShopBotTokenInUse):
+		return apierror.ResellerShopBotTokenInUse
 	default:
 		return nil
 	}

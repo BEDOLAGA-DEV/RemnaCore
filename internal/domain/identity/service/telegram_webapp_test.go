@@ -37,7 +37,7 @@ func TestLoginViaTelegramWebApp_EmptyToken(t *testing.T) {
 	result, err := svc.LoginViaTelegramWebApp(
 		context.Background(),
 		"some-init-data",
-		"",         // empty bot token
+		"", // empty bot token
 		"tenant-1",
 		"127.0.0.1",
 		"test-agent",
@@ -119,4 +119,44 @@ func TestLoginViaTelegramWebApp_TamperedInitData(t *testing.T) {
 	assert.Nil(t, result)
 	assert.Equal(t, 0, repo.createCalls, "no repo write must occur on tampered initData")
 	assert.Empty(t, repo.adminStubRepo.sessions, "no session must be created on tampered initData")
+}
+
+// fakeReplayGuard records consumed nonces in memory; Consume returns fresh=true
+// the first time a nonce is seen and false thereafter.
+type fakeReplayGuard struct {
+	seen map[string]bool
+}
+
+func (g *fakeReplayGuard) Consume(_ context.Context, nonce string, _ time.Time) (bool, error) {
+	if g.seen == nil {
+		g.seen = map[string]bool{}
+	}
+	if g.seen[nonce] {
+		return false, nil
+	}
+	g.seen[nonce] = true
+	return true, nil
+}
+
+// TestLoginViaTelegramWebApp_ReplayRejected verifies the single-use guard: the
+// same valid initData succeeds once and is rejected on replay.
+func TestLoginViaTelegramWebApp_ReplayRejected(t *testing.T) {
+	const (
+		botToken = "123456:test-bot-token"
+		tenantID = "tenant-abc"
+	)
+	svc, _ := newTestServiceForWebApp(t)
+	svc.WithTelegramReplayGuard(&fakeReplayGuard{})
+
+	fixedNow := time.Unix(1_700_000_000, 0)
+	userJSON := `{"id":42,"first_name":"Alice","username":"alice"}`
+	initData := telegramauthtest.BuildInitData(t, botToken, fixedNow.Unix()-10, userJSON)
+
+	// First use succeeds.
+	_, err := svc.LoginViaTelegramWebApp(context.Background(), initData, botToken, tenantID, "127.0.0.1", "UA")
+	require.NoError(t, err)
+
+	// Replay of the identical payload is rejected.
+	_, err = svc.LoginViaTelegramWebApp(context.Background(), initData, botToken, tenantID, "127.0.0.1", "UA")
+	require.ErrorIs(t, err, service.ErrTelegramInitDataReplayed)
 }

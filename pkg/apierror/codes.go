@@ -127,6 +127,7 @@ var (
 	ResellerInvalidAPIKey           = New("RESELLER.INVALID_API_KEY", "invalid API key", http.StatusUnauthorized)
 	ResellerTenantInactive          = New("RESELLER.TENANT_INACTIVE", "tenant is inactive", http.StatusForbidden)
 	ResellerDuplicateDomain         = New("RESELLER.DUPLICATE_DOMAIN", "domain already in use", http.StatusConflict)
+	ResellerShopBotTokenInUse       = New("RESELLER.SHOP_BOT_TOKEN_IN_USE", "this Telegram bot token is already used by another shop", http.StatusConflict)
 )
 
 // Plugin error codes.

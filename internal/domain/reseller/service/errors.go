@@ -35,4 +35,9 @@ var (
 	// ErrShopBotInvalidPlugin is returned when the provided BotPlugin slug does
 	// not name an installed, enabled, bot-capable plugin.
 	ErrShopBotInvalidPlugin = errors.New("shop bot plugin is not a valid enabled bot plugin")
+
+	// ErrShopBotTokenInUse is returned when another shop already uses the same
+	// Telegram bot token. Two shops sharing one token is a cross-tenant hijack
+	// (Telegram delivers a token's updates to whichever webhook registered last).
+	ErrShopBotTokenInUse = errors.New("this Telegram bot token is already used by another shop")
 )

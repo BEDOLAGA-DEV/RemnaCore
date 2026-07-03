@@ -15,4 +15,7 @@ var (
 	ErrPasswordResetNotFound   = errors.New("password reset token not found")
 	ErrSetupAlreadyCompleted   = errors.New("admin setup already completed")
 	ErrTelegramAuthUnavailable = errors.New("telegram auth not available: shop has no bot configured")
+	// ErrTelegramInitDataReplayed is returned when the same Telegram initData
+	// payload is presented more than once within its validity window (replay).
+	ErrTelegramInitDataReplayed = errors.New("telegram initData already used (replay)")
 )

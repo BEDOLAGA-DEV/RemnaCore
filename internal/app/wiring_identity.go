@@ -45,9 +45,15 @@ var identityWiring = fx.Options(
 	// IdentityAdminService; handles all token generation and session persistence.
 	fx.Provide(provideSessionIssuer),
 
+	// Telegram initData replay guard — single-use nonce store for Mini App logins.
+	fx.Provide(func(pool *pgxpool.Pool) *postgres.TelegramNonceRepository {
+		return postgres.NewTelegramNonceRepository(pool)
+	}),
+
 	// Identity domain service
-	fx.Provide(func(repo identity.Repository, pub domainevent.Publisher, txRunner txmanager.Runner, jwt *authutil.JWTIssuer, clk clock.Clock, cfg *config.Config, sessions *identityservice.SessionIssuer) *identity.Service {
-		return identity.NewService(repo, pub, txRunner, jwt, clk, cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL, sessions)
+	fx.Provide(func(repo identity.Repository, pub domainevent.Publisher, txRunner txmanager.Runner, jwt *authutil.JWTIssuer, clk clock.Clock, cfg *config.Config, sessions *identityservice.SessionIssuer, nonces *postgres.TelegramNonceRepository) *identity.Service {
+		return identity.NewService(repo, pub, txRunner, jwt, clk, cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL, sessions).
+			WithTelegramReplayGuard(nonces)
 	}),
 
 	// Identity cleanup scheduler — uses concrete repo type which satisfies

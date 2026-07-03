@@ -5,12 +5,19 @@ package secretbox
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 )
+
+// hmacKeyLabel is the domain-separation label used to derive an HMAC key from
+// the box key, so the HMAC and the AEAD never share raw key material.
+const hmacKeyLabel = "secretbox:hmac-v1"
 
 // KeySize is the required AES-256 key length in bytes.
 const KeySize = 32
@@ -18,8 +25,12 @@ const KeySize = 32
 // ErrInvalidKey is returned when the key is not KeySize bytes.
 var ErrInvalidKey = errors.New("secretbox: key must be 32 bytes")
 
-// Box seals and opens secrets with AES-256-GCM.
-type Box struct{ aead cipher.AEAD }
+// Box seals and opens secrets with AES-256-GCM, and derives deterministic HMAC
+// tags (for equality/uniqueness checks over encrypted-at-rest values).
+type Box struct {
+	aead    cipher.AEAD
+	hmacKey []byte
+}
 
 // New returns a Box for the given 32-byte key.
 func New(key []byte) (*Box, error) {
@@ -34,7 +45,21 @@ func New(key []byte) (*Box, error) {
 	if err != nil {
 		return nil, fmt.Errorf("secretbox: new gcm: %w", err)
 	}
-	return &Box{aead: aead}, nil
+	// Derive a separate HMAC key from the box key so the AEAD and HMAC never
+	// share raw key material (key separation).
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(hmacKeyLabel))
+	return &Box{aead: aead, hmacKey: mac.Sum(nil)}, nil
+}
+
+// HMAC returns a deterministic hex HMAC-SHA256 tag of s. Unlike Seal (random
+// nonce → different ciphertext each call), HMAC yields the same tag for the same
+// input, so it can back a UNIQUE index for detecting duplicate secrets without
+// storing plaintext.
+func (b *Box) HMAC(s string) string {
+	mac := hmac.New(sha256.New, b.hmacKey)
+	mac.Write([]byte(s))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 // Seal encrypts plaintext and returns base64(nonce ‖ ciphertext).
