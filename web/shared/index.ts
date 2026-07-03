@@ -24,6 +24,7 @@ export * from "./api/hooks/usePlans.js";
 export * from "./api/hooks/usePluginPages.js";
 export * from "./api/hooks/usePlugins.js";
 export * from "./api/hooks/useRemnawave.js";
+export * from "./api/hooks/useResellerZone.js";
 export * from "./api/hooks/useRoles.js";
 export * from "./api/hooks/useSettings.js";
 export * from "./api/hooks/useSetup.js";

@@ -179,6 +179,9 @@ export const ENDPOINTS = {
   reseller: {
     bot: "/api/reseller/bot",
     botPlugins: "/api/reseller/bot/plugins",
+    dashboard: "/api/reseller/dashboard",
+    commissions: "/api/reseller/commissions",
+    customers: "/api/reseller/customers",
   },
 
   // ─── Routing (Protected) ───────────────────────────────────────────────

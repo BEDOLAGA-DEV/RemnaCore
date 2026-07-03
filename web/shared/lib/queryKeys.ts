@@ -64,6 +64,10 @@ export const QUERY_KEYS = {
     bot: (shopId: string) => ["reseller", "bot", shopId] as const,
     botPlugins: (shopId: string) =>
       ["reseller", "bot-plugins", shopId] as const,
+    dashboard: (shopId: string) => ["reseller", "dashboard", shopId] as const,
+    commissions: (shopId: string) =>
+      ["reseller", "commissions", shopId] as const,
+    customers: (shopId: string) => ["reseller", "customers", shopId] as const,
   },
   plugins: {
     collections: (slug: string, collection: string) =>

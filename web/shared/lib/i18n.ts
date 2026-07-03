@@ -335,11 +335,34 @@ const en = {
     roles: "Roles",
   },
   reseller: {
+    nav: {
+      overview: "Overview",
+      settings: "Settings",
+    },
+    selectShopFirst: "Select a shop to continue.",
     bot: {
       title: "Bot Settings",
       shopPicker: "Shop",
       selectShop: "Select a shop",
       noShops: "No shops available.",
+    },
+    dashboard: {
+      title: "Dashboard",
+      activeCustomers: "Active customers",
+      activeSubscriptions: "Active subscriptions",
+      pendingCommission: "Pending commission",
+    },
+    commissions: {
+      title: "Commissions",
+      saleId: "Sale",
+      amount: "Amount",
+      empty: "No commissions yet.",
+    },
+    customers: {
+      title: "Customers",
+      displayName: "Name",
+      activeSubs: "Subs",
+      empty: "No customers yet.",
     },
   },
 };
@@ -680,11 +703,34 @@ const ru: typeof en = {
     roles: "Роли",
   },
   reseller: {
+    nav: {
+      overview: "Обзор",
+      settings: "Настройки",
+    },
+    selectShopFirst: "Выберите магазин, чтобы продолжить.",
     bot: {
       title: "Настройки бота",
       shopPicker: "Магазин",
       selectShop: "Выберите магазин",
       noShops: "Нет доступных магазинов.",
+    },
+    dashboard: {
+      title: "Панель",
+      activeCustomers: "Активные клиенты",
+      activeSubscriptions: "Активные подписки",
+      pendingCommission: "Ожидающая комиссия",
+    },
+    commissions: {
+      title: "Комиссии",
+      saleId: "Продажа",
+      amount: "Сумма",
+      empty: "Комиссий пока нет.",
+    },
+    customers: {
+      title: "Клиенты",
+      displayName: "Имя",
+      activeSubs: "Подписки",
+      empty: "Клиентов пока нет.",
     },
   },
 };

@@ -18,6 +18,9 @@ import { InstallPluginPage } from "./routes/plugins/install.js";
 import { PluginPageView } from "./routes/plugins/page.js";
 import { ResellerLayout } from "./routes/reseller/_layout.js";
 import { ResellerBotPage } from "./routes/reseller/bot.js";
+import { ResellerCommissionsPage } from "./routes/reseller/commissions.js";
+import { ResellerCustomersPage } from "./routes/reseller/customers.js";
+import { ResellerDashboardPage } from "./routes/reseller/dashboard.js";
 import { RolesPage } from "./routes/roles/index.js";
 import { SettingsPage } from "./routes/settings.js";
 import { AdminSetupPage } from "./routes/setup.js";
@@ -210,6 +213,24 @@ const resellerBotRoute = createRoute({
   component: ResellerBotPage,
 });
 
+const resellerDashboardRoute = createRoute({
+  getParentRoute: () => resellerLayoutRoute,
+  path: "/reseller/dashboard",
+  component: ResellerDashboardPage,
+});
+
+const resellerCustomersRoute = createRoute({
+  getParentRoute: () => resellerLayoutRoute,
+  path: "/reseller/customers",
+  component: ResellerCustomersPage,
+});
+
+const resellerCommissionsRoute = createRoute({
+  getParentRoute: () => resellerLayoutRoute,
+  path: "/reseller/commissions",
+  component: ResellerCommissionsPage,
+});
+
 // ─── Tree ───────────────────────────────────────────────────────────────────
 
 const routeTree = rootRoute.addChildren([
@@ -232,7 +253,12 @@ const routeTree = rootRoute.addChildren([
     settingsRoute,
     rolesRoute,
   ]),
-  resellerLayoutRoute.addChildren([resellerBotRoute]),
+  resellerLayoutRoute.addChildren([
+    resellerBotRoute,
+    resellerDashboardRoute,
+    resellerCustomersRoute,
+    resellerCommissionsRoute,
+  ]),
 ]);
 
 export const router = createRouter({ routeTree });

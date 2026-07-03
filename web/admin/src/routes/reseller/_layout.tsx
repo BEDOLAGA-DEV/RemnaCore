@@ -1,9 +1,10 @@
 import { ErrorBoundary } from "@remnacore/shared";
 import { Link, Outlet } from "@tanstack/react-router";
-import { Bot } from "lucide-react";
+import { Bot, LayoutDashboard, Users, Wallet } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { PulseDot } from "@/components/ui";
+import { ShopPicker } from "../../components/reseller/ShopPicker.js";
 import { CommandPalette } from "../../components/shell/CommandPalette.js";
 import { Header } from "../../components/shell/Header.js";
 
@@ -43,9 +44,25 @@ export function ResellerLayout() {
           </div>
         </div>
 
+        {/* Active-shop picker (X-Shop-Id source for all reseller pages) */}
+        <ShopPicker />
+
         {/* Navigation */}
         <nav className="flex flex-1 flex-col overflow-y-auto px-2.5 py-3">
-          <GroupHeader>Settings</GroupHeader>
+          <GroupHeader>{t("reseller.nav.overview")}</GroupHeader>
+          <Link to="/reseller/dashboard" className={LINK_BASE}>
+            <LayoutDashboard size={15} className="shrink-0" />
+            <span>{t("reseller.dashboard.title")}</span>
+          </Link>
+          <Link to="/reseller/customers" className={LINK_BASE}>
+            <Users size={15} className="shrink-0" />
+            <span>{t("reseller.customers.title")}</span>
+          </Link>
+          <Link to="/reseller/commissions" className={LINK_BASE}>
+            <Wallet size={15} className="shrink-0" />
+            <span>{t("reseller.commissions.title")}</span>
+          </Link>
+          <GroupHeader>{t("reseller.nav.settings")}</GroupHeader>
           <Link to="/reseller/bot" className={LINK_BASE}>
             <Bot size={15} className="shrink-0" />
             <span>{t("reseller.bot.title")}</span>
