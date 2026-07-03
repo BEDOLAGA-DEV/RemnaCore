@@ -9,6 +9,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity/aggregate"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/authutil"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/domainevent"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
 )
 
 // VerifyEmail validates the token, marks the user's email as verified, removes
@@ -26,7 +27,10 @@ func (s *Service) VerifyEmail(ctx context.Context, token string) error {
 		return ErrTokenExpired
 	}
 
-	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+	// Pre-auth (public /auth/verify-email): no tenant context, and
+	// identity.platform_users is FORCE RLS, so run under the platform sentinel or
+	// the user row is invisible and verification always fails.
+	return s.txRunner.RunInTx(tenantctx.WithPlatformScope(ctx), func(txCtx context.Context) error {
 		user, err := s.repo.GetUserByIDForUpdate(txCtx, verification.UserID)
 		if err != nil {
 			return fmt.Errorf("finding user: %w", err)
@@ -45,19 +49,38 @@ func (s *Service) VerifyEmail(ctx context.Context, token string) error {
 	})
 }
 
-// GetMe retrieves the authenticated user's profile by ID.
+// GetMe retrieves the authenticated user's profile by ID. Wrapped in RunInTx so
+// the caller's scope (WithPlatformScope for admins / WithTenantID for tenant
+// users, both set by ShopResolver) reaches the DB as the app.tenant_id GUC —
+// without it, identity.platform_users FORCE RLS hides even the caller's own row.
 func (s *Service) GetMe(ctx context.Context, userID string) (*aggregate.PlatformUser, error) {
-	user, err := s.repo.GetUserByID(ctx, userID)
-	if err != nil {
+	var user *aggregate.PlatformUser
+	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		u, err := s.repo.GetUserByID(txCtx, userID)
+		if err != nil {
+			return err
+		}
+		user = u
+		return nil
+	}); err != nil {
 		return nil, fmt.Errorf("finding user: %w", err)
 	}
 	return user, nil
 }
 
-// GetByTelegramID retrieves a user by their linked Telegram ID.
+// GetByTelegramID retrieves a user by their linked Telegram ID. Runs under the
+// platform sentinel: it is used by pre-auth Telegram flows with no tenant
+// context, and platform_users FORCE RLS would otherwise hide the row.
 func (s *Service) GetByTelegramID(ctx context.Context, telegramID int64) (*aggregate.PlatformUser, error) {
-	user, err := s.repo.GetUserByTelegramID(ctx, telegramID)
-	if err != nil {
+	var user *aggregate.PlatformUser
+	if err := s.txRunner.RunInTx(tenantctx.WithPlatformScope(ctx), func(txCtx context.Context) error {
+		u, err := s.repo.GetUserByTelegramID(txCtx, telegramID)
+		if err != nil {
+			return err
+		}
+		user = u
+		return nil
+	}); err != nil {
 		return nil, fmt.Errorf("finding user by telegram id: %w", err)
 	}
 	return user, nil
@@ -140,8 +163,18 @@ func (s *Service) ListUsers(ctx context.Context, limit, offset int) ([]*aggregat
 // publishes a PasswordResetRequested event. If the email is not found, no error
 // is returned to prevent user enumeration.
 func (s *Service) RequestPasswordReset(ctx context.Context, email string) error {
-	user, err := s.repo.GetUserByEmail(ctx, email)
-	if err != nil {
+	// Pre-auth (public /auth/forgot-password): platform sentinel so the email
+	// lookup on FORCE-RLS platform_users can see the user.
+	ctx = tenantctx.WithPlatformScope(ctx)
+	var user *aggregate.PlatformUser
+	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		u, uerr := s.repo.GetUserByEmail(txCtx, email)
+		if uerr != nil {
+			return uerr
+		}
+		user = u
+		return nil
+	}); err != nil {
 		if errors.Is(err, ErrNotFound) {
 			// Silently succeed to prevent email enumeration.
 			return nil
@@ -198,7 +231,9 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 		return fmt.Errorf("hashing password: %w", err)
 	}
 
-	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+	// Pre-auth (public /auth/reset-password): platform sentinel so the FOR UPDATE
+	// read on FORCE-RLS platform_users can see the user.
+	return s.txRunner.RunInTx(tenantctx.WithPlatformScope(ctx), func(txCtx context.Context) error {
 		user, err := s.repo.GetUserByIDForUpdate(txCtx, reset.UserID)
 		if err != nil {
 			return fmt.Errorf("finding user: %w", err)

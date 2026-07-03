@@ -191,15 +191,6 @@ type CreateFirstAdminInput struct {
 // Register creates a new user, generates an email verification token, and
 // publishes a UserRegistered event.
 func (s *Service) Register(ctx context.Context, input RegisterInput) (*RegisterResult, error) {
-	// Check for duplicate email.
-	existing, err := s.repo.GetUserByEmail(ctx, input.Email)
-	if err != nil && !errors.Is(err, ErrNotFound) {
-		return nil, fmt.Errorf("checking email: %w", err)
-	}
-	if existing != nil {
-		return nil, ErrEmailTaken
-	}
-
 	now := s.clock.Now()
 	user, err := aggregate.NewPlatformUser(input.Email, input.Password, now)
 	if err != nil {
@@ -211,7 +202,18 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (*RegisterR
 		return nil, fmt.Errorf("creating email verification: %w", err)
 	}
 
-	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+	// Platform sentinel: the duplicate-email check and CreateUser both touch
+	// identity.platform_users (FORCE RLS); pre-auth registration has no tenant
+	// context, so without it the dup-check is blind (RLS-hidden) and the insert's
+	// scope is undefined. The check runs inside the same tx to close the TOCTOU.
+	if err := s.txRunner.RunInTx(tenantctx.WithPlatformScope(ctx), func(txCtx context.Context) error {
+		existing, cerr := s.repo.GetUserByEmail(txCtx, input.Email)
+		if cerr != nil && !errors.Is(cerr, ErrNotFound) {
+			return fmt.Errorf("checking email: %w", cerr)
+		}
+		if existing != nil {
+			return ErrEmailTaken
+		}
 		if err := s.repo.CreateUser(txCtx, user); err != nil {
 			return fmt.Errorf("persisting user: %w", err)
 		}
@@ -236,8 +238,19 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (*RegisterR
 // ErrInvalidCredentials for both unknown emails and wrong passwords to avoid
 // leaking user existence.
 func (s *Service) Login(ctx context.Context, input LoginInput) (*LoginResult, error) {
-	user, err := s.repo.GetUserByEmail(ctx, input.Email)
-	if err != nil {
+	// The email lookup reads identity.platform_users, which is FORCE RLS. Login
+	// is pre-auth (no tenant known yet) and must see users across every tenant,
+	// so it runs under the platform sentinel; otherwise the RLS policy hides
+	// every row and login always fails as "invalid credentials".
+	var user *aggregate.PlatformUser
+	if err := s.txRunner.RunInTx(tenantctx.WithPlatformScope(ctx), func(txCtx context.Context) error {
+		u, uerr := s.repo.GetUserByEmail(txCtx, input.Email)
+		if uerr != nil {
+			return uerr
+		}
+		user = u
+		return nil
+	}); err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return nil, ErrInvalidCredentials
 		}
@@ -286,8 +299,19 @@ func (s *Service) RefreshToken(ctx context.Context, refreshToken string) (*Login
 		return nil, ErrSessionExpired
 	}
 
-	user, err := s.repo.GetUserByID(ctx, session.UserID)
-	if err != nil {
+	// GetUserByID reads identity.platform_users (FORCE RLS). Refresh is pre-auth
+	// (the JWT is expired/absent, no tenant scope), so it runs under the platform
+	// sentinel — otherwise RLS hides the user row and every refresh fails,
+	// logging the operator out when the access token expires.
+	var user *aggregate.PlatformUser
+	if err := s.txRunner.RunInTx(tenantctx.WithPlatformScope(ctx), func(txCtx context.Context) error {
+		u, uerr := s.repo.GetUserByID(txCtx, session.UserID)
+		if uerr != nil {
+			return uerr
+		}
+		user = u
+		return nil
+	}); err != nil {
 		return nil, fmt.Errorf("finding user: %w", err)
 	}
 
@@ -339,8 +363,17 @@ func (s *Service) RefreshToken(ctx context.Context, refreshToken string) (*Login
 // SetupNeeded reports whether the platform has no administrator yet, i.e. the
 // first-run admin setup wizard should be shown.
 func (s *Service) SetupNeeded(ctx context.Context) (bool, error) {
-	n, err := s.repo.CountAdmins(ctx)
-	if err != nil {
+	// CountAdmins reads identity.platform_users (FORCE RLS). This is a public,
+	// pre-auth endpoint with no tenant context, so it must run under the platform
+	// sentinel — otherwise RLS hides the admin rows and the count is always 0,
+	// which wrongly reports "setup needed" forever (and traps operators on the
+	// /setup wizard after logout instead of showing /login).
+	var n int64
+	if err := s.txRunner.RunInTx(tenantctx.WithPlatformScope(ctx), func(txCtx context.Context) error {
+		var cerr error
+		n, cerr = s.repo.CountAdmins(txCtx)
+		return cerr
+	}); err != nil {
 		return false, fmt.Errorf("counting admins: %w", err)
 	}
 	return n == 0, nil
@@ -358,7 +391,10 @@ func (s *Service) CreateFirstAdmin(ctx context.Context, in CreateFirstAdminInput
 	}
 
 	var result *LoginResult
-	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+	// Runs under the platform sentinel: CountAdmins / CreateUser touch
+	// identity.platform_users (FORCE RLS), and without it the count would always
+	// see 0 admins (RLS-hidden) and create a duplicate admin on every call.
+	if err := s.txRunner.RunInTx(tenantctx.WithPlatformScope(ctx), func(txCtx context.Context) error {
 		if err := s.repo.AcquireBootstrapLock(txCtx); err != nil {
 			return err
 		}

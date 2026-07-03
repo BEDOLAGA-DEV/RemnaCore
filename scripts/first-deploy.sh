@@ -167,31 +167,9 @@ until curl -sf http://localhost:80/healthz > /dev/null 2>&1; do
 done
 ok "Health check passed"
 
-# ── Step 8: Create admin account ───────────────────────────────────────────
-ADMIN_EMAIL="admin@remnacore.local"
-ADMIN_CHECK=$(docker compose exec -T platform-db psql -U platform -d remnacore -tAc \
-    "SELECT 1 FROM identity.platform_users WHERE email = '${ADMIN_EMAIL}'" 2>/dev/null || true)
-
-if [ "$ADMIN_CHECK" = "1" ]; then
-    warn "Admin account already exists (${ADMIN_EMAIL}), skipping"
-    ADMIN_PASSWORD="<already created>"
-else
-    ADMIN_PASSWORD="$(rand_secret 24)"
-    # Register via API
-    REGISTER_RESULT=$(curl -sf -X POST http://localhost:80/api/auth/register \
-        -H "Content-Type: application/json" \
-        -d "{\"email\":\"${ADMIN_EMAIL}\",\"password\":\"${ADMIN_PASSWORD}\"}" 2>/dev/null || true)
-
-    if [ -z "$REGISTER_RESULT" ]; then
-        fail "Failed to register admin account"
-    fi
-
-    # Promote to admin role
-    docker compose exec -T platform-db psql -U platform -d remnacore \
-        -c "UPDATE identity.platform_users SET role = 'admin', email_verified = true WHERE email = '${ADMIN_EMAIL}';" > /dev/null 2>&1
-
-    ok "Admin account created"
-fi
+# The first administrator is NOT created here — open the Admin panel and the
+# first-run setup wizard will prompt you to create it (POST /api/setup). The
+# wizard is reachable only while no admin exists and bounces to /login after.
 
 # ── Done ───────────────────────────────────────────────────────────────────
 SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
@@ -205,16 +183,13 @@ echo "  Remnawave panel: http://${SERVER_IP}:8080"
 echo "  API:             http://${SERVER_IP}:80/api"
 echo "  Metrics:         http://${SERVER_IP}:80/metrics"
 echo ""
-if [ "$ADMIN_PASSWORD" != "<already created>" ]; then
-    echo -e "${GREEN}  Admin credentials:${NC}"
-    echo "    Email:    ${ADMIN_EMAIL}"
-    echo "    Password: ${ADMIN_PASSWORD}"
-    echo ""
-    echo "  ⚠  Save these credentials — they will not be shown again."
-fi
+echo -e "${GREEN}  First-run setup:${NC}"
+echo "    Open the Admin panel and create your administrator account"
+echo "    (the setup wizard appears automatically on first launch)."
 echo ""
 echo -e "${YELLOW}ACTION REQUIRED:${NC}"
-echo "  1. Open Remnawave panel at http://${SERVER_IP}:8080"
-echo "  2. Create an API token in the panel"
-echo "  3. Edit .env and set REMNAWAVE_API_TOKEN=<your-token>"
-echo "  4. Run: docker compose restart remnacore"
+echo "  1. Open the Admin panel at http://${SERVER_IP}:8081 and create the admin"
+echo "  2. Open Remnawave panel at http://${SERVER_IP}:8080"
+echo "  3. Create an API token in the Remnawave panel"
+echo "  4. Edit .env and set REMNAWAVE_API_TOKEN=<your-token>"
+echo "  5. Run: docker compose restart remnacore"

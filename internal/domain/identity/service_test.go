@@ -49,10 +49,10 @@ func TestService_Register_Success(t *testing.T) {
 	svc, repo, pub := newTestService(t)
 	ctx := context.Background()
 
-	repo.On("GetUserByEmail", ctx, "alice@example.com").Return(nil, identity.ErrNotFound)
-	repo.On("CreateUser", ctx, mock.AnythingOfType("*aggregate.PlatformUser")).Return(nil)
-	repo.On("CreateEmailVerification", ctx, mock.AnythingOfType("*aggregate.EmailVerification")).Return(nil)
-	pub.On("Publish", ctx, mock.AnythingOfType("domainevent.Event")).Return(nil)
+	repo.On("GetUserByEmail", mock.Anything, "alice@example.com").Return(nil, identity.ErrNotFound)
+	repo.On("CreateUser", mock.Anything, mock.AnythingOfType("*aggregate.PlatformUser")).Return(nil)
+	repo.On("CreateEmailVerification", mock.Anything, mock.AnythingOfType("*aggregate.EmailVerification")).Return(nil)
+	pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
 	result, err := svc.Register(ctx, identity.RegisterInput{
 		Email:    "alice@example.com",
@@ -72,7 +72,7 @@ func TestService_Register_DuplicateEmail(t *testing.T) {
 	ctx := context.Background()
 
 	existing := &identity.PlatformUser{ID: "existing-id", Email: "alice@example.com"}
-	repo.On("GetUserByEmail", ctx, "alice@example.com").Return(existing, nil)
+	repo.On("GetUserByEmail", mock.Anything, "alice@example.com").Return(existing, nil)
 
 	_, err := svc.Register(ctx, identity.RegisterInput{
 		Email:    "alice@example.com",
@@ -96,9 +96,9 @@ func TestService_Login_Success(t *testing.T) {
 		Role:          identity.RoleCustomer,
 	}
 
-	repo.On("GetUserByEmail", ctx, "alice@example.com").Return(user, nil)
-	repo.On("CreateSession", ctx, mock.AnythingOfType("*aggregate.Session")).Return(nil)
-	pub.On("Publish", ctx, mock.AnythingOfType("domainevent.Event")).Return(nil)
+	repo.On("GetUserByEmail", mock.Anything, "alice@example.com").Return(user, nil)
+	repo.On("CreateSession", mock.Anything, mock.AnythingOfType("*aggregate.Session")).Return(nil)
+	pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
 	result, err := svc.Login(ctx, identity.LoginInput{
 		Email:    "alice@example.com",
@@ -126,7 +126,7 @@ func TestService_Login_WrongPassword(t *testing.T) {
 		Role:          identity.RoleCustomer,
 	}
 
-	repo.On("GetUserByEmail", ctx, "alice@example.com").Return(user, nil)
+	repo.On("GetUserByEmail", mock.Anything, "alice@example.com").Return(user, nil)
 
 	_, err := svc.Login(ctx, identity.LoginInput{
 		Email:    "alice@example.com",
@@ -140,7 +140,7 @@ func TestService_Login_UserNotFound(t *testing.T) {
 	svc, repo, _ := newTestService(t)
 	ctx := context.Background()
 
-	repo.On("GetUserByEmail", ctx, "unknown@example.com").Return(nil, identity.ErrNotFound)
+	repo.On("GetUserByEmail", mock.Anything, "unknown@example.com").Return(nil, identity.ErrNotFound)
 
 	_, err := svc.Login(ctx, identity.LoginInput{
 		Email:    "unknown@example.com",
@@ -155,12 +155,12 @@ func TestService_SetupNeeded(t *testing.T) {
 	svc, repo, _ := newTestService(t)
 	ctx := context.Background()
 
-	repo.On("CountAdmins", ctx).Return(int64(0), nil).Once()
+	repo.On("CountAdmins", mock.Anything).Return(int64(0), nil).Once()
 	need, err := svc.SetupNeeded(ctx)
 	require.NoError(t, err)
 	assert.True(t, need)
 
-	repo.On("CountAdmins", ctx).Return(int64(1), nil).Once()
+	repo.On("CountAdmins", mock.Anything).Return(int64(1), nil).Once()
 	need, err = svc.SetupNeeded(ctx)
 	require.NoError(t, err)
 	assert.False(t, need)
@@ -238,11 +238,11 @@ func TestService_VerifyEmail_Success(t *testing.T) {
 		EmailVerified: false,
 	}
 
-	repo.On("GetEmailVerification", ctx, "abc123").Return(verification, nil)
-	repo.On("GetUserByIDForUpdate", ctx, "user-1").Return(user, nil)
-	repo.On("UpdateUser", ctx, mock.AnythingOfType("*aggregate.PlatformUser")).Return(nil)
-	repo.On("DeleteEmailVerification", ctx, "v-1").Return(nil)
-	pub.On("Publish", ctx, mock.AnythingOfType("domainevent.Event")).Return(nil)
+	repo.On("GetEmailVerification", mock.Anything, "abc123").Return(verification, nil)
+	repo.On("GetUserByIDForUpdate", mock.Anything, "user-1").Return(user, nil)
+	repo.On("UpdateUser", mock.Anything, mock.AnythingOfType("*aggregate.PlatformUser")).Return(nil)
+	repo.On("DeleteEmailVerification", mock.Anything, "v-1").Return(nil)
+	pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
 
 	err := svc.VerifyEmail(ctx, "abc123")
 
@@ -263,7 +263,7 @@ func TestService_VerifyEmail_Expired(t *testing.T) {
 		ExpiresAt: time.Now().Add(-time.Hour), // expired
 	}
 
-	repo.On("GetEmailVerification", ctx, "abc123").Return(verification, nil)
+	repo.On("GetEmailVerification", mock.Anything, "abc123").Return(verification, nil)
 
 	err := svc.VerifyEmail(ctx, "abc123")
 
@@ -352,7 +352,7 @@ func TestService_RefreshToken_Expired(t *testing.T) {
 		ExpiresAt:    time.Now().Add(-time.Hour), // expired
 	}
 
-	repo.On("GetSessionByRefreshToken", ctx, "old-refresh-token").Return(session, nil)
+	repo.On("GetSessionByRefreshToken", mock.Anything, "old-refresh-token").Return(session, nil)
 
 	_, err := svc.RefreshToken(ctx, "old-refresh-token")
 
