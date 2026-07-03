@@ -191,6 +191,37 @@ func TestService_CreateFirstAdmin_Success(t *testing.T) {
 	pub.AssertExpectations(t)
 }
 
+// fakeAdminGranter records the userID it was asked to grant platform_admin to.
+type fakeAdminGranter struct{ grantedUserID string }
+
+func (g *fakeAdminGranter) GrantPlatformAdmin(_ context.Context, userID, _ string) error {
+	g.grantedUserID = userID
+	return nil
+}
+
+func TestService_CreateFirstAdmin_GrantsPlatformAdminBinding(t *testing.T) {
+	svc, repo, pub := newTestService(t)
+	granter := &fakeAdminGranter{}
+	svc.WithPlatformAdminGranter(granter)
+	ctx := context.Background()
+
+	repo.On("AcquireBootstrapLock", mock.Anything).Return(nil)
+	repo.On("CountAdmins", mock.Anything).Return(int64(0), nil)
+	repo.On("CreateUser", mock.Anything, mock.AnythingOfType("*aggregate.PlatformUser")).Return(nil)
+	repo.On("CreateSession", mock.Anything, mock.AnythingOfType("*aggregate.Session")).Return(nil)
+	pub.On("Publish", mock.Anything, mock.AnythingOfType("domainevent.Event")).Return(nil)
+
+	result, err := svc.CreateFirstAdmin(ctx, identity.CreateFirstAdminInput{
+		Email:    "admin@example.com",
+		Password: "StrongP4ss",
+	})
+
+	require.NoError(t, err)
+	// The bootstrap admin must receive the platform_admin binding atomically, or
+	// every RBAC-gated admin endpoint would 403 until the next restart.
+	assert.Equal(t, result.User.ID, granter.grantedUserID)
+}
+
 func TestService_CreateFirstAdmin_AlreadyCompleted(t *testing.T) {
 	svc, repo, _ := newTestService(t)
 	ctx := context.Background()
