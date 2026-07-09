@@ -1,6 +1,8 @@
 services:
   # ── RemnaCore ───────────────────────────────────────────────────────────────
   remnacore:
+    restart: unless-stopped
+    mem_limit: ${REMNACORE_MEM_LIMIT:-768m}
     build:
       context: .
       dockerfile: deploy/docker/Dockerfile
@@ -40,10 +42,23 @@ services:
       GOMEMLIMIT: "${GOMEMLIMIT:-512MiB}"
       REMNAWAVE_URL: "http://remnawave-backend:3000"
       REMNAWAVE_API_TOKEN: "${REMNAWAVE_API_TOKEN:-changeme}"
-      REMNAWAVE_WEBHOOK_SECRET: "${REMNAWAVE_WEBHOOK_SECRET:-changeme}"
+      # Required (first-deploy.sh generates it). An empty webhook secret makes
+      # inbound Remnawave webhooks forgeable (empty-key HMAC), so fail fast.
+      REMNAWAVE_WEBHOOK_SECRET: "${REMNAWAVE_WEBHOOK_SECRET:?set REMNAWAVE_WEBHOOK_SECRET in .env}"
+      # At-rest encryption for per-shop bot tokens. Without it the shop-bot
+      # feature fails at runtime; first-deploy.sh generates it into .env.
+      SECURITY_ENCRYPTION_KEY: "${SECURITY_ENCRYPTION_KEY:-}"
       OUTBOX_RELAY_WORKERS: "${OUTBOX_RELAY_WORKERS:-1}"
       OUTBOX_PARTITION_LOOKAHEAD: "${OUTBOX_PARTITION_LOOKAHEAD:-2}"
       OUTBOX_RETENTION_DAYS: "${OUTBOX_RETENTION_DAYS:-90}"
+    healthcheck:
+      # busybox wget (present in the alpine runtime image). /readyz aggregates
+      # Postgres/Valkey/NATS/outbox checkers, so Caddy only routes once ready.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:4000/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
     depends_on:
       platform-db:
         condition: service_healthy
@@ -54,6 +69,8 @@ services:
 
   # ── Platform PostgreSQL ─────────────────────────────────────────────────────
   platform-db:
+    restart: unless-stopped
+    mem_limit: ${PLATFORM_DB_MEM_LIMIT:-1280m}
     image: postgres:18
     # PG18 async I/O and performance tuning (sized for 1GB container, SSD storage).
     # Data checksums are enabled by default in PG18 (initdb --data-checksums).
@@ -102,11 +119,15 @@ services:
 
   # ── Valkey (Redis-compatible) ───────────────────────────────────────────────
   valkey:
+    restart: unless-stopped
+    mem_limit: ${VALKEY_MEM_LIMIT:-320m}
     image: valkey/valkey:9-alpine
     command: --maxmemory 256mb --maxmemory-policy allkeys-lru
 
   # ── NATS with JetStream ────────────────────────────────────────────────────
   nats:
+    restart: unless-stopped
+    mem_limit: ${NATS_MEM_LIMIT:-320m}
     image: nats:2.12-alpine
     command: --jetstream --store_dir /data --http_port 8222
     volumes:
@@ -114,6 +135,8 @@ services:
 
   # ── Remnawave Backend ──────────────────────────────────────────────────────
   remnawave-backend:
+    restart: unless-stopped
+    mem_limit: ${REMNAWAVE_BACKEND_MEM_LIMIT:-1024m}
     image: remnawave/backend:2
     environment:
       APP_PORT: "3000"
@@ -124,8 +147,9 @@ services:
       SUB_PUBLIC_DOMAIN: "${SUB_PUBLIC_DOMAIN:-https://sub.example.com}"
       PANEL_DOMAIN: "${PANEL_DOMAIN:-https://panel.example.com}"
       FRONT_END_DOMAIN: "${FRONT_END_DOMAIN:-https://panel.example.com}"
-      METRICS_USER: "${METRICS_USER:-admin}"
-      METRICS_PASS: "${METRICS_PASS:-admin}"
+      METRICS_USER: "${METRICS_USER:-metrics}"
+      # Required (first-deploy.sh generates it) — never ship admin/admin.
+      METRICS_PASS: "${METRICS_PASS:?set METRICS_PASS in .env}"
       REDIS_HOST: "remnawave-valkey"
       REDIS_PORT: "6379"
       IS_DOCS_ENABLED: "${IS_DOCS_ENABLED:-true}"
@@ -142,6 +166,8 @@ services:
 
   # ── Remnawave PostgreSQL ───────────────────────────────────────────────────
   remnawave-db:
+    restart: unless-stopped
+    mem_limit: ${REMNAWAVE_DB_MEM_LIMIT:-768m}
     image: postgres:17
     environment:
       POSTGRES_DB: "${REMNAWAVE_DB_NAME:-remnawave}"
@@ -157,6 +183,8 @@ services:
 
   # ── Remnawave Valkey ───────────────────────────────────────────────────────
   remnawave-valkey:
+    restart: unless-stopped
+    mem_limit: ${REMNAWAVE_VALKEY_MEM_LIMIT:-320m}
     image: valkey/valkey:9-alpine
 
   # ── Caddy Reverse Proxy ─────────────────────────────────────────────────────
@@ -171,8 +199,10 @@ services:
       - ./web/cabinet/dist:/srv/cabinet:ro
       - ./web/admin/dist:/srv/admin:ro
     depends_on:
-      - remnacore
-      - remnawave-backend
+      remnacore:
+        condition: service_healthy
+      remnawave-backend:
+        condition: service_started
     restart: unless-stopped
 
 volumes:

@@ -39,6 +39,10 @@ else
     REMNAWAVE_WEBHOOK_SECRET="$(rand_secret 48)"
     REMNAWAVE_JWT_AUTH_SECRET="$(rand_secret 48)"
     REMNAWAVE_JWT_API_TOKENS_SECRET="$(rand_secret 48)"
+    # AES-256 key for at-rest bot-token encryption: 32 raw bytes, base64-encoded
+    # (the app base64-decodes it and requires exactly 32 bytes).
+    SECURITY_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+    METRICS_PASS="$(rand_secret 24)"
 
     SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
 
@@ -72,11 +76,34 @@ REMNAWAVE_WEBHOOK_SECRET=${REMNAWAVE_WEBHOOK_SECRET}
 REMNAWAVE_JWT_AUTH_SECRET=${REMNAWAVE_JWT_AUTH_SECRET}
 REMNAWAVE_JWT_API_TOKENS_SECRET=${REMNAWAVE_JWT_API_TOKENS_SECRET}
 
+# ── Secrets ─────────────────────────────────────────────────────────────────
+SECURITY_ENCRYPTION_KEY=${SECURITY_ENCRYPTION_KEY}
+METRICS_USER=metrics
+METRICS_PASS=${METRICS_PASS}
+
 SUB_PUBLIC_DOMAIN=http://${SERVER_IP}
 PANEL_DOMAIN=http://${SERVER_IP}:8080
 FRONT_END_DOMAIN=http://${SERVER_IP}:8080
 EOF
     ok ".env generated with random secrets"
+fi
+
+# ── Step 1.5: Back-fill required secrets into an older .env ─────────────────
+# Newer compose requires METRICS_PASS and SECURITY_ENCRYPTION_KEY (and the app
+# runtime role password). An .env from an earlier release lacks them, which would
+# make every `docker compose` command below fail on a `${VAR:?}` guard. Append
+# any missing secret so re-deploys of an existing install keep working.
+ensure_env() {
+    local key="$1" value="$2"
+    grep -q "^${key}=" .env || printf '%s=%s\n' "$key" "$value" >> .env
+}
+if [ -f .env ]; then
+    ensure_env PLATFORM_APP_DB_USER "remnacore_app"
+    ensure_env PLATFORM_APP_DB_PASSWORD "$(rand_secret 32)"
+    ensure_env SECURITY_ENCRYPTION_KEY "$(openssl rand -base64 32)"
+    ensure_env METRICS_USER "metrics"
+    ensure_env METRICS_PASS "$(rand_secret 24)"
+    ok "Required secrets present in .env"
 fi
 
 # ── Step 2: Generate JWT keys ──────────────────────────────────────────────
