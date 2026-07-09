@@ -3,6 +3,7 @@ package remnawave
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
@@ -19,13 +20,17 @@ type GatewayAdapter struct {
 	client                *ResilientClient
 	clock                 clock.Clock
 	defaultInternalSquads []string
+	logger                *slog.Logger
 }
 
 // NewGatewayAdapter creates a GatewayAdapter backed by the given resilient
 // client. defaultInternalSquads is applied to every CreateUser call that does
 // not supply its own ActiveInternalSquads override.
-func NewGatewayAdapter(client *ResilientClient, clk clock.Clock, defaultInternalSquads []string) *GatewayAdapter {
-	return &GatewayAdapter{client: client, clock: clk, defaultInternalSquads: defaultInternalSquads}
+func NewGatewayAdapter(client *ResilientClient, clk clock.Clock, defaultInternalSquads []string, logger *slog.Logger) *GatewayAdapter {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &GatewayAdapter{client: client, clock: clk, defaultInternalSquads: defaultInternalSquads, logger: logger}
 }
 
 // CreateUser provisions a VPN user in Remnawave, translating the domain
@@ -38,6 +43,13 @@ func (a *GatewayAdapter) CreateUser(ctx context.Context, req multisub.CreateRemn
 	rwReq.ActiveInternalSquads = req.ActiveInternalSquads
 	if len(rwReq.ActiveInternalSquads) == 0 {
 		rwReq.ActiveInternalSquads = a.defaultInternalSquads
+	}
+	if len(rwReq.ActiveInternalSquads) == 0 {
+		// A user with no internal squads gets an EMPTY, non-working subscription
+		// (no inbounds). This is almost always a misconfiguration — warn loudly
+		// per provision, not just once at boot, so it surfaces in operations.
+		a.logger.WarnContext(ctx, "remnawave: provisioning VPN user with NO internal squads — subscription will not work; set REMNAWAVE_DEFAULT_INTERNAL_SQUADS or supply squads per request",
+			slog.String("username", req.Username))
 	}
 	if req.ExpireAt != nil {
 		rwReq.ExpireAt = *req.ExpireAt
@@ -96,11 +108,12 @@ func (a *GatewayAdapter) DisableUser(ctx context.Context, remnawaveUUID string) 
 	return nil
 }
 
-// AssignToSquad assigns a Remnawave user to a squad (server group). This maps
-// to a future Remnawave API endpoint; currently a no-op placeholder that
-// returns nil to indicate success.
-func (a *GatewayAdapter) AssignToSquad(_ context.Context, _, _ string) error {
-	// TODO: implement when Remnawave adds squad assignment API endpoint.
+// AssignToSquad assigns a Remnawave user to an internal squad (server group)
+// via the bulk-add-users endpoint.
+func (a *GatewayAdapter) AssignToSquad(ctx context.Context, remnawaveUUID, squadUUID string) error {
+	if err := a.client.AddUsersToInternalSquad(ctx, squadUUID, []string{remnawaveUUID}); err != nil {
+		return fmt.Errorf("remnawave assign user %s to squad %s: %w", remnawaveUUID, squadUUID, err)
+	}
 	return nil
 }
 

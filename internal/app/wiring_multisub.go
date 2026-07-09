@@ -56,7 +56,7 @@ var multisubWiring = fx.Options(
 			logger.Warn("remnawave: no default internal squads configured; new VPN users will be provisioned without squads (empty/non-working subscriptions) unless a per-request override is supplied",
 				slog.String("config_key", "remnawave.default_internal_squads"))
 		}
-		return remnawave.NewGatewayAdapter(client, clk, cfg.Remnawave.DefaultInternalSquads)
+		return remnawave.NewGatewayAdapter(client, clk, cfg.Remnawave.DefaultInternalSquads, logger)
 	}),
 	fx.Provide(func(adapter *remnawave.GatewayAdapter) multisub.RemnawaveGateway { return adapter }),
 
