@@ -208,7 +208,8 @@ echo "  Cabinet:         http://${SERVER_IP}:80"
 echo "  Admin:           http://${SERVER_IP}:8081"
 echo "  Remnawave panel: http://${SERVER_IP}:8080"
 echo "  API:             http://${SERVER_IP}:80/api"
-echo "  Metrics:         http://${SERVER_IP}:80/metrics"
+# /metrics is intentionally NOT exposed publicly (internal telemetry). Scrape
+# remnacore:4000/metrics on the docker network from a Prometheus sidecar.
 echo ""
 echo -e "${GREEN}  First-run setup:${NC}"
 echo "    Open the Admin panel and create your administrator account"

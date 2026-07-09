@@ -1,21 +1,21 @@
+# CORS is owned by the application (go-chi/cors with the CORS_ALLOWED_ORIGINS
+# allowlist), which also answers preflight OPTIONS. Caddy must NOT inject
+# Access-Control-Allow-Origin "*" — that overrode the app's allowlist and let any
+# origin read API responses. /metrics is intentionally NOT exposed here (it
+# leaked internal telemetry unauthenticated); scrape remnacore:4000/metrics on
+# the internal network from a Prometheus sidecar instead.
+
+# ── Cabinet SPA + public API/subscription (port 80) ──────────────────────────
 :80 {
-    @cors_preflight method OPTIONS
-    handle @cors_preflight {
-        header Access-Control-Allow-Origin "*"
-        header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
-        header Access-Control-Allow-Headers "Authorization, Content-Type, X-Request-ID"
-        header Access-Control-Max-Age "300"
-        respond 204
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
     }
     handle /api/* {
-        reverse_proxy remnacore:4000 {
-            header_down Access-Control-Allow-Origin "*"
-        }
-    }
-    handle /healthz {
         reverse_proxy remnacore:4000
     }
-    handle /metrics {
+    handle /healthz {
         reverse_proxy remnacore:4000
     }
     handle /sub/* {
@@ -28,19 +28,15 @@
     }
 }
 
+# ── Admin SPA + API (port 8081) ──────────────────────────────────────────────
 :8081 {
-    @cors_preflight method OPTIONS
-    handle @cors_preflight {
-        header Access-Control-Allow-Origin "*"
-        header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
-        header Access-Control-Allow-Headers "Authorization, Content-Type, X-Request-ID"
-        header Access-Control-Max-Age "300"
-        respond 204
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
     }
     handle /api/* {
-        reverse_proxy remnacore:4000 {
-            header_down Access-Control-Allow-Origin "*"
-        }
+        reverse_proxy remnacore:4000
     }
     handle /readyz {
         reverse_proxy remnacore:4000
@@ -52,6 +48,7 @@
     }
 }
 
+# ── Remnawave panel (port 8080) ──────────────────────────────────────────────
 :8080 {
     reverse_proxy remnawave-backend:3000 {
         header_up X-Forwarded-Proto https
