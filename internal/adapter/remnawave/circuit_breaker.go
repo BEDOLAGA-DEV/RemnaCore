@@ -26,6 +26,7 @@ const (
 	TimeoutGetUser     = 5 * time.Second
 	TimeoutUpdateUser  = 5 * time.Second
 	TimeoutGetNodes    = 10 * time.Second
+	TimeoutAssignSquad = 5 * time.Second
 )
 
 // Prometheus metric constants for the circuit breaker.
@@ -189,5 +190,15 @@ func (rc *ResilientClient) DisableUser(ctx context.Context, uuid string) error {
 	defer cancel()
 	return cbExecNoResult(rc.cb, func() error {
 		return rc.client.DisableUser(ctx, uuid)
+	})
+}
+
+// AddUsersToInternalSquad assigns users to an internal squad through the
+// circuit breaker.
+func (rc *ResilientClient) AddUsersToInternalSquad(ctx context.Context, squadUUID string, userUUIDs []string) error {
+	ctx, cancel := withTimeout(ctx, TimeoutAssignSquad)
+	defer cancel()
+	return cbExecNoResult(rc.cb, func() error {
+		return rc.client.AddUsersToInternalSquad(ctx, squadUUID, userUUIDs)
 	})
 }

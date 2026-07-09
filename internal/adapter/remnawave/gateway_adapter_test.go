@@ -24,7 +24,7 @@ func TestGatewayAdapter_CreateUser_AppliesSquads(t *testing.T) {
 	}))
 	defer srv.Close()
 	mk := func(def []string) *GatewayAdapter {
-		return NewGatewayAdapter(NewResilientClient(NewClient(srv.URL, "t"), circuitbreaker.DefaultConfig(), slog.Default()), clock.NewReal(), def)
+		return NewGatewayAdapter(NewResilientClient(NewClient(srv.URL, "t"), circuitbreaker.DefaultConfig(), slog.Default()), clock.NewReal(), def, slog.Default())
 	}
 	_, err := mk([]string{"default-sq"}).CreateUser(context.Background(), multisub.CreateRemnawaveUserRequest{Username: "u"})
 	require.NoError(t, err)
@@ -51,7 +51,7 @@ func TestGatewayAdapter_GetUser_StatusMapping(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, `{"response":{"uuid":"u1","status":%q,"userTraffic":{"usedTrafficBytes":1024}}}`, tc.status)
 		}))
-		a := NewGatewayAdapter(NewResilientClient(NewClient(srv.URL, "t"), circuitbreaker.DefaultConfig(), slog.Default()), clock.NewReal(), nil)
+		a := NewGatewayAdapter(NewResilientClient(NewClient(srv.URL, "t"), circuitbreaker.DefaultConfig(), slog.Default()), clock.NewReal(), nil, slog.Default())
 		got, err := a.GetUser(context.Background(), "u1")
 		require.NoError(t, err)
 		require.Equal(t, tc.wantEnabled, got.Enabled, "status %s enabled", tc.status)
@@ -59,4 +59,21 @@ func TestGatewayAdapter_GetUser_StatusMapping(t *testing.T) {
 		require.Equal(t, int64(1024), got.UsedBytes)
 		srv.Close()
 	}
+}
+
+func TestGatewayAdapter_AssignToSquad_HitsBulkAddEndpoint(t *testing.T) {
+	var gotPath string
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotBody, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte(`{"response":{}}`))
+	}))
+	defer srv.Close()
+
+	a := NewGatewayAdapter(NewResilientClient(NewClient(srv.URL, "t"), circuitbreaker.DefaultConfig(), slog.Default()), clock.NewReal(), nil, slog.Default())
+	err := a.AssignToSquad(context.Background(), "user-uuid-1", "squad-uuid-9")
+	require.NoError(t, err)
+	require.Equal(t, "/api/internal-squads/squad-uuid-9/bulk-actions/add-users", gotPath)
+	require.Contains(t, string(gotBody), "user-uuid-1")
 }
