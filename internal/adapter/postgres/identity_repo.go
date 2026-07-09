@@ -10,6 +10,7 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres/gen"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pgutil"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tokenhash"
 )
 
 // IdentityRepository implements identity.Repository backed by PostgreSQL via
@@ -201,7 +202,7 @@ func (r *IdentityRepository) CreateSession(ctx context.Context, session *identit
 	err := r.q(ctx).CreateSession(ctx, gen.CreateSessionParams{
 		ID:           pgutil.UUIDToPgtype(session.ID),
 		UserID:       pgutil.UUIDToPgtype(session.UserID),
-		RefreshToken: session.RefreshToken,
+		RefreshToken: tokenhash.Hash(session.RefreshToken),
 		IpAddress:    session.IPAddress,
 		UserAgent:    session.UserAgent,
 		ExpiresAt:    pgutil.TimeToPgtype(session.ExpiresAt),
@@ -217,7 +218,7 @@ func (r *IdentityRepository) CreateSession(ctx context.Context, session *identit
 }
 
 func (r *IdentityRepository) GetSessionByRefreshToken(ctx context.Context, token string) (*identity.Session, error) {
-	row, err := r.q(ctx).GetSessionByRefreshToken(ctx, token)
+	row, err := r.q(ctx).GetSessionByRefreshToken(ctx, tokenhash.Hash(token))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get session by refresh token", identity.ErrNotFound)
 	}
@@ -291,7 +292,7 @@ func (r *IdentityRepository) CreateEmailVerification(ctx context.Context, v *ide
 		ID:        pgutil.UUIDToPgtype(v.ID),
 		UserID:    pgutil.UUIDToPgtype(v.UserID),
 		Email:     v.Email,
-		Token:     v.Token,
+		Token:     tokenhash.Hash(v.Token),
 		ExpiresAt: pgutil.TimeToPgtype(v.ExpiresAt),
 		CreatedAt: pgutil.TimeToPgtype(v.CreatedAt),
 	})
@@ -305,7 +306,7 @@ func (r *IdentityRepository) CreateEmailVerification(ctx context.Context, v *ide
 }
 
 func (r *IdentityRepository) GetEmailVerification(ctx context.Context, token string) (*identity.EmailVerification, error) {
-	row, err := r.q(ctx).GetEmailVerification(ctx, token)
+	row, err := r.q(ctx).GetEmailVerification(ctx, tokenhash.Hash(token))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get email verification", identity.ErrNotFound)
 	}
@@ -339,7 +340,7 @@ func (r *IdentityRepository) CreatePasswordReset(ctx context.Context, pr *identi
 		ID:        pgutil.UUIDToPgtype(pr.ID),
 		UserID:    pgutil.UUIDToPgtype(pr.UserID),
 		Email:     pr.Email,
-		Token:     pr.Token,
+		Token:     tokenhash.Hash(pr.Token),
 		ExpiresAt: pgutil.TimeToPgtype(pr.ExpiresAt),
 		CreatedAt: pgutil.TimeToPgtype(pr.CreatedAt),
 	})
@@ -353,7 +354,7 @@ func (r *IdentityRepository) CreatePasswordReset(ctx context.Context, pr *identi
 }
 
 func (r *IdentityRepository) GetPasswordResetByToken(ctx context.Context, token string) (*identity.PasswordReset, error) {
-	row, err := r.q(ctx).GetPasswordResetByToken(ctx, token)
+	row, err := r.q(ctx).GetPasswordResetByToken(ctx, tokenhash.Hash(token))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get password reset by token", identity.ErrNotFound)
 	}
@@ -431,7 +432,7 @@ func (r *IdentityRepository) CreateInvitation(ctx context.Context, inv *identity
 	err := r.q(ctx).CreateInvitation(ctx, gen.CreateInvitationParams{
 		ID:             pgutil.UUIDToPgtype(inv.ID),
 		Email:          inv.Email,
-		Token:          inv.Token,
+		Token:          tokenhash.Hash(inv.Token),
 		RoleKey:        inv.RoleKey,
 		TenantID:       pgutil.OptStrToPgtypeUUID(inv.TenantID),
 		CommissionRate: commissionRate,
@@ -449,7 +450,7 @@ func (r *IdentityRepository) CreateInvitation(ctx context.Context, inv *identity
 }
 
 func (r *IdentityRepository) GetInvitationByToken(ctx context.Context, token string) (*identity.Invitation, error) {
-	row, err := r.q(ctx).GetInvitationByToken(ctx, token)
+	row, err := r.q(ctx).GetInvitationByToken(ctx, tokenhash.Hash(token))
 	if err != nil {
 		return nil, pgutil.MapErr(err, "get invitation by token", identity.ErrNotFound)
 	}
