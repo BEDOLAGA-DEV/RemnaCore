@@ -12,37 +12,37 @@ import (
 )
 
 const (
-	DefaultAppPort           = 4000
-	DefaultLogLevel          = "debug"
-	DefaultLogFormat         = "json"
-	DefaultPoolMaxConns        int32         = 20
-	DefaultPoolMinConns        int32         = 5
-	DefaultPoolMaxConnLifetime               = 1 * time.Hour
-	DefaultPoolMaxConnIdleTime               = 30 * time.Minute
-	DefaultPoolHealthCheck                   = 1 * time.Minute
-	DefaultJWTAccessTTL      = 15 * time.Minute
-	DefaultJWTRefreshTTL     = 7 * 24 * time.Hour // 1 week
-	DefaultBillingTrialDays  = 7
-	DefaultPluginsDir             = "./plugins"
-	DefaultMaxPlugins             = 50
-	DefaultPluginHotReload        = false
-	DefaultHealthCheckInterval    = 10 // seconds
-	DefaultMaxConcurrentChecks    = 50
-	DefaultSpeedTestPort          = 4203
-	DefaultSubscriptionProxyPort  = 4100
-	DefaultCheckoutMaxPerHour     = 10
-	DefaultSubscriptionMaxPerDay  = 5
-	DefaultLoginMaxPerWindow      = 20
-	DefaultLoginWindowMinutes     = 15
-	DefaultForgotPwdMaxPerWindow         = 3
-	DefaultForgotPwdWindowMinutes        = 60
-	DefaultAcceptInvitationMaxPerWindow  = 3
-	DefaultAcceptInvitationWindowMinutes = 60
-	DefaultOutboxRelayWorkers        = 1
-	DefaultOutboxPartitionLookahead = 2
-	DefaultOutboxRetentionDays      = 90
-	DefaultHooksSubscriptionEnabled = false
-	DefaultHooksVPNProviderEnabled  = false
+	DefaultAppPort                             = 4000
+	DefaultLogLevel                            = "debug"
+	DefaultLogFormat                           = "json"
+	DefaultPoolMaxConns                  int32 = 20
+	DefaultPoolMinConns                  int32 = 5
+	DefaultPoolMaxConnLifetime                 = 1 * time.Hour
+	DefaultPoolMaxConnIdleTime                 = 30 * time.Minute
+	DefaultPoolHealthCheck                     = 1 * time.Minute
+	DefaultJWTAccessTTL                        = 15 * time.Minute
+	DefaultJWTRefreshTTL                       = 7 * 24 * time.Hour // 1 week
+	DefaultBillingTrialDays                    = 7
+	DefaultPluginsDir                          = "./plugins"
+	DefaultMaxPlugins                          = 50
+	DefaultPluginHotReload                     = false
+	DefaultHealthCheckInterval                 = 10 // seconds
+	DefaultMaxConcurrentChecks                 = 50
+	DefaultSpeedTestPort                       = 4203
+	DefaultSubscriptionProxyPort               = 4100
+	DefaultCheckoutMaxPerHour                  = 10
+	DefaultSubscriptionMaxPerDay               = 5
+	DefaultLoginMaxPerWindow                   = 20
+	DefaultLoginWindowMinutes                  = 15
+	DefaultForgotPwdMaxPerWindow               = 3
+	DefaultForgotPwdWindowMinutes              = 60
+	DefaultAcceptInvitationMaxPerWindow        = 3
+	DefaultAcceptInvitationWindowMinutes       = 60
+	DefaultOutboxRelayWorkers                  = 1
+	DefaultOutboxPartitionLookahead            = 2
+	DefaultOutboxRetentionDays                 = 90
+	DefaultHooksSubscriptionEnabled            = false
+	DefaultHooksVPNProviderEnabled             = false
 
 	// Smart router default weights — browsing.
 	DefaultWeightGeo     = 0.33
@@ -97,6 +97,12 @@ type JWTConfig struct {
 	PublicKeyPath   string        `koanf:"public_key_path"`
 	AccessTokenTTL  time.Duration `koanf:"access_token_ttl"`
 	RefreshTokenTTL time.Duration `koanf:"refresh_token_ttl"`
+	// AllowEphemeralKey permits generating a throwaway in-memory signing key when
+	// the key file is missing. DEV ONLY: an ephemeral key invalidates all tokens
+	// on restart and makes multi-replica deployments reject each other's tokens,
+	// so production must ship a real key file. Defaults to false (boot fails if
+	// the key is absent).
+	AllowEphemeralKey bool `koanf:"allow_ephemeral_key"`
 }
 
 type RemnawaveConfig struct {
@@ -167,12 +173,12 @@ type TracingConfig struct {
 
 // RateLimitConfig holds domain-level rate limit thresholds.
 type RateLimitConfig struct {
-	CheckoutMaxPerHour          int `koanf:"checkout_max_per_hour"`
-	SubscriptionMaxPerDay       int `koanf:"subscription_max_per_day"`
-	LoginMaxPerWindow           int `koanf:"login_max_per_window"`
-	LoginWindowMinutes          int `koanf:"login_window_minutes"`
-	ForgotPwdMaxPerWindow       int `koanf:"forgot_pwd_max_per_window"`
-	ForgotPwdWindowMinutes      int `koanf:"forgot_pwd_window_minutes"`
+	CheckoutMaxPerHour            int `koanf:"checkout_max_per_hour"`
+	SubscriptionMaxPerDay         int `koanf:"subscription_max_per_day"`
+	LoginMaxPerWindow             int `koanf:"login_max_per_window"`
+	LoginWindowMinutes            int `koanf:"login_window_minutes"`
+	ForgotPwdMaxPerWindow         int `koanf:"forgot_pwd_max_per_window"`
+	ForgotPwdWindowMinutes        int `koanf:"forgot_pwd_window_minutes"`
 	AcceptInvitationMaxPerWindow  int `koanf:"accept_invitation_max_per_window"`
 	AcceptInvitationWindowMinutes int `koanf:"accept_invitation_window_minutes"`
 }
@@ -255,38 +261,38 @@ func Load() (*Config, error) {
 
 	// Set defaults
 	defaults := map[string]any{
-		"app.port":                   DefaultAppPort,
-		"app.version":               DefaultAppVersion,
-		"app.log_level":             DefaultLogLevel,
-		"app.log_format":            DefaultLogFormat,
-		"database.max_conns":          DefaultPoolMaxConns,
-		"database.min_conns":          DefaultPoolMinConns,
-		"database.max_conn_lifetime":  DefaultPoolMaxConnLifetime,
-		"database.max_conn_idle_time": DefaultPoolMaxConnIdleTime,
-		"database.health_check_period": DefaultPoolHealthCheck,
-		"jwt.access_token_ttl":      DefaultJWTAccessTTL,
-		"jwt.refresh_token_ttl":     DefaultJWTRefreshTTL,
-		"billing.trial_days":        DefaultBillingTrialDays,
-		"plugin.dir":                     DefaultPluginsDir,
-		"plugin.max_plugins":             DefaultMaxPlugins,
-		"plugin.hot_reload":              DefaultPluginHotReload,
-		"infra.health_check_interval":    time.Duration(DefaultHealthCheckInterval) * time.Second,
-		"infra.max_concurrent_checks":    DefaultMaxConcurrentChecks,
-		"infra.speed_test_port":          DefaultSpeedTestPort,
-		"infra.subscription_proxy_port":  DefaultSubscriptionProxyPort,
-		"ratelimit.checkout_max_per_hour":      DefaultCheckoutMaxPerHour,
-		"ratelimit.subscription_max_per_day":   DefaultSubscriptionMaxPerDay,
-		"ratelimit.login_max_per_window":       DefaultLoginMaxPerWindow,
-		"ratelimit.login_window_minutes":       DefaultLoginWindowMinutes,
-		"ratelimit.forgot_pwd_max_per_window":          DefaultForgotPwdMaxPerWindow,
-		"ratelimit.forgot_pwd_window_minutes":          DefaultForgotPwdWindowMinutes,
-		"ratelimit.accept_invitation_max_per_window":   DefaultAcceptInvitationMaxPerWindow,
-		"ratelimit.accept_invitation_window_minutes":   DefaultAcceptInvitationWindowMinutes,
-		"outbox.relay_workers":               DefaultOutboxRelayWorkers,
-		"outbox.partition_lookahead":         DefaultOutboxPartitionLookahead,
-		"outbox.retention_days":              DefaultOutboxRetentionDays,
-		"featureflags.hooks_subscription_enabled": DefaultHooksSubscriptionEnabled,
-		"featureflags.hooks_vpn_provider_enabled": DefaultHooksVPNProviderEnabled,
+		"app.port":                                   DefaultAppPort,
+		"app.version":                                DefaultAppVersion,
+		"app.log_level":                              DefaultLogLevel,
+		"app.log_format":                             DefaultLogFormat,
+		"database.max_conns":                         DefaultPoolMaxConns,
+		"database.min_conns":                         DefaultPoolMinConns,
+		"database.max_conn_lifetime":                 DefaultPoolMaxConnLifetime,
+		"database.max_conn_idle_time":                DefaultPoolMaxConnIdleTime,
+		"database.health_check_period":               DefaultPoolHealthCheck,
+		"jwt.access_token_ttl":                       DefaultJWTAccessTTL,
+		"jwt.refresh_token_ttl":                      DefaultJWTRefreshTTL,
+		"billing.trial_days":                         DefaultBillingTrialDays,
+		"plugin.dir":                                 DefaultPluginsDir,
+		"plugin.max_plugins":                         DefaultMaxPlugins,
+		"plugin.hot_reload":                          DefaultPluginHotReload,
+		"infra.health_check_interval":                time.Duration(DefaultHealthCheckInterval) * time.Second,
+		"infra.max_concurrent_checks":                DefaultMaxConcurrentChecks,
+		"infra.speed_test_port":                      DefaultSpeedTestPort,
+		"infra.subscription_proxy_port":              DefaultSubscriptionProxyPort,
+		"ratelimit.checkout_max_per_hour":            DefaultCheckoutMaxPerHour,
+		"ratelimit.subscription_max_per_day":         DefaultSubscriptionMaxPerDay,
+		"ratelimit.login_max_per_window":             DefaultLoginMaxPerWindow,
+		"ratelimit.login_window_minutes":             DefaultLoginWindowMinutes,
+		"ratelimit.forgot_pwd_max_per_window":        DefaultForgotPwdMaxPerWindow,
+		"ratelimit.forgot_pwd_window_minutes":        DefaultForgotPwdWindowMinutes,
+		"ratelimit.accept_invitation_max_per_window": DefaultAcceptInvitationMaxPerWindow,
+		"ratelimit.accept_invitation_window_minutes": DefaultAcceptInvitationWindowMinutes,
+		"outbox.relay_workers":                       DefaultOutboxRelayWorkers,
+		"outbox.partition_lookahead":                 DefaultOutboxPartitionLookahead,
+		"outbox.retention_days":                      DefaultOutboxRetentionDays,
+		"featureflags.hooks_subscription_enabled":    DefaultHooksSubscriptionEnabled,
+		"featureflags.hooks_vpn_provider_enabled":    DefaultHooksVPNProviderEnabled,
 		// Smart router weight defaults.
 		"smartrouter.weight_geo":               DefaultWeightGeo,
 		"smartrouter.weight_latency":           DefaultWeightLatency,
@@ -298,27 +304,27 @@ func Load() (*Config, error) {
 		"smartrouter.weight_streaming_latency": DefaultWeightStreamingLatency,
 		"smartrouter.weight_streaming_load":    DefaultWeightStreamingLoad,
 		// Speed test defaults.
-		"speedtest.max_concurrent":   DefaultSpeedTestMaxConcurrent,
+		"speedtest.max_concurrent":    DefaultSpeedTestMaxConcurrent,
 		"speedtest.per_ip_rate_limit": DefaultSpeedTestPerIPRateLimit,
-		"speedtest.max_upload_bytes": DefaultSpeedTestMaxUploadBytes,
+		"speedtest.max_upload_bytes":  DefaultSpeedTestMaxUploadBytes,
 		// Circuit breaker defaults — Remnawave and VPN provider use DefaultConfig
 		// (with interval), outbox relay and Valkey use DefaultConfigNoInterval.
 		"circuitbreaker.remnawave.max_failures":    circuitbreaker.DefaultMaxFailures,
-		"circuitbreaker.remnawave.timeout":          circuitbreaker.DefaultTimeout,
-		"circuitbreaker.remnawave.max_requests":     circuitbreaker.DefaultMaxRequests,
-		"circuitbreaker.remnawave.interval":          circuitbreaker.DefaultInterval,
-		"circuitbreaker.outbox_nats.max_failures":   circuitbreaker.DefaultMaxFailures,
-		"circuitbreaker.outbox_nats.timeout":         circuitbreaker.DefaultTimeout,
-		"circuitbreaker.outbox_nats.max_requests":    uint32(1),
-		"circuitbreaker.outbox_nats.interval":        time.Duration(0),
-		"circuitbreaker.valkey.max_failures":         circuitbreaker.DefaultMaxFailures,
-		"circuitbreaker.valkey.timeout":              circuitbreaker.DefaultTimeout,
-		"circuitbreaker.valkey.max_requests":         circuitbreaker.DefaultMaxRequests,
-		"circuitbreaker.valkey.interval":             time.Duration(0),
-		"circuitbreaker.vpn_provider.max_failures":  circuitbreaker.DefaultMaxFailures,
-		"circuitbreaker.vpn_provider.timeout":        circuitbreaker.DefaultTimeout,
-		"circuitbreaker.vpn_provider.max_requests":   circuitbreaker.DefaultMaxRequests,
-		"circuitbreaker.vpn_provider.interval":       circuitbreaker.DefaultInterval,
+		"circuitbreaker.remnawave.timeout":         circuitbreaker.DefaultTimeout,
+		"circuitbreaker.remnawave.max_requests":    circuitbreaker.DefaultMaxRequests,
+		"circuitbreaker.remnawave.interval":        circuitbreaker.DefaultInterval,
+		"circuitbreaker.outbox_nats.max_failures":  circuitbreaker.DefaultMaxFailures,
+		"circuitbreaker.outbox_nats.timeout":       circuitbreaker.DefaultTimeout,
+		"circuitbreaker.outbox_nats.max_requests":  uint32(1),
+		"circuitbreaker.outbox_nats.interval":      time.Duration(0),
+		"circuitbreaker.valkey.max_failures":       circuitbreaker.DefaultMaxFailures,
+		"circuitbreaker.valkey.timeout":            circuitbreaker.DefaultTimeout,
+		"circuitbreaker.valkey.max_requests":       circuitbreaker.DefaultMaxRequests,
+		"circuitbreaker.valkey.interval":           time.Duration(0),
+		"circuitbreaker.vpn_provider.max_failures": circuitbreaker.DefaultMaxFailures,
+		"circuitbreaker.vpn_provider.timeout":      circuitbreaker.DefaultTimeout,
+		"circuitbreaker.vpn_provider.max_requests": circuitbreaker.DefaultMaxRequests,
+		"circuitbreaker.vpn_provider.interval":     circuitbreaker.DefaultInterval,
 	}
 	for key, val := range defaults {
 		k.Set(key, val) //nolint:errcheck // Set on a fresh koanf instance cannot fail

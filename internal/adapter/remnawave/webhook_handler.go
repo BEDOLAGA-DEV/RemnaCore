@@ -68,6 +68,13 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // verifySignature computes HMAC-SHA256 of body using the shared secret and
 // compares it to the provided hex-encoded signature in constant time.
 func (h *WebhookHandler) verifySignature(body []byte, sigHex string) bool {
+	// Fail closed on an unset secret: HMAC over an empty key is trivially
+	// forgeable, so an attacker could inject arbitrary Remnawave payloads. Reject
+	// every webhook until a real secret is configured.
+	if h.secret == "" {
+		return false
+	}
+
 	sig, err := hex.DecodeString(sigHex)
 	if err != nil {
 		return false
