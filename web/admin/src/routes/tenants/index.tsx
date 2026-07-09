@@ -35,7 +35,12 @@ export function TenantsPage() {
   const navigate = useNavigate();
   const [showForm, setShowForm] = useState(false);
   const [pagination, setPagination] = useState({ limit: 50, offset: 0 });
-  const { data: tenants, isLoading } = useAdminTenants(pagination);
+  const {
+    data: tenants,
+    isLoading,
+    error,
+    refetch,
+  } = useAdminTenants(pagination);
   const createTenant = useCreateTenant();
 
   const {
@@ -165,6 +170,8 @@ export function TenantsPage() {
       <DataTable<Tenant>
         columns={columns}
         rows={isLoading ? [] : (tenants ?? [])}
+        error={error}
+        onRetry={refetch}
         cols="1.6fr 1fr .9fr 1fr 40px"
         rowKey={(tn) => tn.id}
         onRowClick={(tn) =>
