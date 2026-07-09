@@ -59,7 +59,7 @@ func setupBillingDB(t *testing.T) *pgxpool.Pool {
 		),
 	)
 	if err != nil {
-		t.Skipf("skipping integration test: could not start postgres container: %v", err)
+		failOrSkip(t, "skipping integration test: could not start postgres container: %v", err)
 	}
 	t.Cleanup(func() { _ = ctr.Terminate(context.Background()) })
 

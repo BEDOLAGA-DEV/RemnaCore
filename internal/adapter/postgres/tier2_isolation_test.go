@@ -347,7 +347,7 @@ func setupTier2DB(t *testing.T) (*pgxpool.Pool, string) {
 		// in the container logs as a startup failure — distinguish it from "no
 		// Docker" so a broken migration list can never produce a vacuous skip.
 		if isDockerUnavailable(err) {
-			t.Skipf("skipping integration test: docker/container unavailable: %v", err)
+			failOrSkip(t, "skipping integration test: docker/container unavailable: %v", err)
 		}
 		t.Fatalf("postgres container failed to start (migration apply or SQL error, NOT docker-absent): %v", err)
 	}
