@@ -155,6 +155,13 @@ func NewRouter(p RouterParams) http.Handler {
 		p.AuthRateLimiters.LoginCfg,
 		"register",
 	)
+	// Refresh is unauthenticated (the access token is expired/absent) and rotates
+	// sessions; throttle per-IP so a stolen refresh token can't be hammered.
+	refreshRL := middleware.AuthRateLimit(
+		p.AuthRateLimiters.Login,
+		p.AuthRateLimiters.LoginCfg,
+		"refresh",
+	)
 	acceptInviteRL := middleware.AuthRateLimit(
 		p.AuthRateLimiters.AcceptInvitation,
 		p.AuthRateLimiters.AcceptInvitationCfg,
@@ -173,7 +180,7 @@ func NewRouter(p RouterParams) http.Handler {
 		api.With(registerRL).Post("/auth/register", p.IdentityHandler.Register)
 		api.With(loginRL).Post("/auth/login", p.IdentityHandler.Login)
 		api.Post("/auth/verify-email", p.IdentityHandler.VerifyEmail)
-		api.Post("/auth/refresh", p.IdentityHandler.RefreshToken)
+		api.With(refreshRL).Post("/auth/refresh", p.IdentityHandler.RefreshToken)
 
 		// Public webhook endpoints (authenticated by their respective handlers).
 		api.Post("/webhooks/remnawave", p.WebhookHandler.ServeHTTP)
