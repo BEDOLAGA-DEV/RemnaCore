@@ -78,3 +78,23 @@ func TestWebhookHandler_EmptyBody(t *testing.T) {
 func TestHeaderWebhookSecret_MatchesPanel(t *testing.T) {
 	assert.Equal(t, "X-Remnawave-Signature", HeaderWebhookSecret)
 }
+
+// TestWebhookHandler_EmptySecretRejectsAll verifies fail-closed behavior: with
+// no configured secret, even a signature correctly computed over the empty key
+// is rejected (otherwise webhooks would be forgeable).
+func TestWebhookHandler_EmptySecretRejectsAll(t *testing.T) {
+	called := false
+	handler := NewWebhookHandler("", func(WebhookPayload) { called = true })
+
+	body := `{"scope":"user","event":"created"}`
+	// Signature an attacker would compute against the empty key.
+	sig := computeHMAC(body, "")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/remnawave", strings.NewReader(body))
+	req.Header.Set(HeaderWebhookSecret, sig)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	assert.False(t, called, "callback must not fire when the secret is unset")
+}

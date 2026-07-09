@@ -128,7 +128,15 @@ func provideJWTIssuer(cfg *config.Config, logger *slog.Logger) (*authutil.JWTIss
 		return nil, fmt.Errorf("loading private key from %s: %w", cfg.JWT.PrivateKeyPath, err)
 	}
 
-	// File does not exist — generate an ephemeral key for development.
+	// File does not exist. Fail closed unless ephemeral keys are explicitly
+	// allowed (dev only): silently synthesizing a per-process signing key means
+	// tokens die on every restart and replicas reject each other's tokens — an
+	// auth footgun that must never happen by accident in production.
+	if !cfg.JWT.AllowEphemeralKey {
+		return nil, fmt.Errorf("jwt private key not found at %s and JWT_ALLOW_EPHEMERAL_KEY is not set: refusing to boot with a throwaway signing key (set the key file, or enable ephemeral keys for local dev only)", cfg.JWT.PrivateKeyPath)
+	}
+
+	// Ephemeral key for development.
 	logger.Warn("jwt private key file not found, generating ephemeral P-256 key (NOT FOR PRODUCTION)",
 		slog.String("path", cfg.JWT.PrivateKeyPath),
 	)
