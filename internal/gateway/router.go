@@ -148,6 +148,13 @@ func NewRouter(p RouterParams) http.Handler {
 		p.AuthRateLimiters.LoginCfg,
 		"setup",
 	)
+	// Register reuses the login limiter's thresholds under its own per-IP bucket:
+	// unlimited registration is an argon2 memory-DoS and email-enumeration vector.
+	registerRL := middleware.AuthRateLimit(
+		p.AuthRateLimiters.Login,
+		p.AuthRateLimiters.LoginCfg,
+		"register",
+	)
 	acceptInviteRL := middleware.AuthRateLimit(
 		p.AuthRateLimiters.AcceptInvitation,
 		p.AuthRateLimiters.AcceptInvitationCfg,
@@ -163,7 +170,7 @@ func NewRouter(p RouterParams) http.Handler {
 		api.With(setupRL).Post("/setup/admin", p.SetupHandler.CreateAdmin)
 
 		// Public auth endpoints.
-		api.Post("/auth/register", p.IdentityHandler.Register)
+		api.With(registerRL).Post("/auth/register", p.IdentityHandler.Register)
 		api.With(loginRL).Post("/auth/login", p.IdentityHandler.Login)
 		api.Post("/auth/verify-email", p.IdentityHandler.VerifyEmail)
 		api.Post("/auth/refresh", p.IdentityHandler.RefreshToken)

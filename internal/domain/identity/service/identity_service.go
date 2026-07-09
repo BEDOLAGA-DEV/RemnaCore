@@ -24,6 +24,17 @@ import (
 // The resulting hex-encoded string is twice this length (64 chars).
 const RefreshTokenLen = 32
 
+// dummyPasswordHash is a valid argon2 hash verified against on unknown-email
+// login so the response timing is constant whether or not the email exists
+// (both paths pay the argon2 cost). Computed once at package init.
+var dummyPasswordHash = func() string {
+	h, err := authutil.HashPassword("constant-time-login-placeholder")
+	if err != nil {
+		panic(fmt.Sprintf("identity: precompute dummy password hash: %v", err))
+	}
+	return h
+}()
+
 // Repository defines the persistence operations for the identity domain.
 type Repository interface {
 	CreateUser(ctx context.Context, user *aggregate.PlatformUser) error
@@ -270,6 +281,10 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (*LoginResult, er
 		return nil
 	}); err != nil {
 		if errors.Is(err, ErrNotFound) {
+			// Equalize timing: an unknown email would otherwise return instantly
+			// while a known email pays the argon2 cost, giving an existence oracle.
+			// Run a verify against a fixed dummy hash and discard the result.
+			_, _ = authutil.VerifyPassword(input.Password, dummyPasswordHash)
 			return nil, ErrInvalidCredentials
 		}
 		return nil, fmt.Errorf("finding user: %w", err)
