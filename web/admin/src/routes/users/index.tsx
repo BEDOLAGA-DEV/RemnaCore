@@ -21,7 +21,7 @@ export function UsersPage() {
   const [pagination, setPagination] = useState({ limit: 50, offset: 0 });
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
   const [search, setSearch] = useState("");
-  const { data: users, isLoading } = useAdminUsers(pagination);
+  const { data: users, isLoading, error, refetch } = useAdminUsers(pagination);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -108,6 +108,8 @@ export function UsersPage() {
       <DataTable<User>
         columns={columns}
         rows={isLoading ? [] : filtered}
+        error={error}
+        onRetry={refetch}
         cols="1.6fr .8fr .9fr 1fr 40px"
         rowKey={(u) => u.id}
         onRowClick={(u) => navigate({ to: "/users/$id", params: { id: u.id } })}

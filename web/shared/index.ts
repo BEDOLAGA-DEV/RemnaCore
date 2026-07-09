@@ -12,6 +12,7 @@ export {
   apiPutVoid,
 } from "./api/client.js";
 export { ENDPOINTS } from "./api/endpoints.js";
+export * from "./api/errors.js";
 export * from "./api/hooks/useAdmin.js";
 // Hooks - API
 export * from "./api/hooks/useAuth.js";

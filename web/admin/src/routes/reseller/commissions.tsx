@@ -17,7 +17,12 @@ import { NoShop } from "./dashboard";
 export function ResellerCommissionsPage() {
   const { t } = useTranslation();
   const { activeShopId } = useShopStore();
-  const { data: commissions, isLoading } = useResellerCommissions(activeShopId);
+  const {
+    data: commissions,
+    isLoading,
+    error,
+    refetch,
+  } = useResellerCommissions(activeShopId);
 
   if (!activeShopId) {
     return <NoShop title={t("reseller.commissions.title")} />;
@@ -63,6 +68,8 @@ export function ResellerCommissionsPage() {
       <DataTable
         columns={columns}
         rows={commissions ?? []}
+        error={error}
+        onRetry={refetch}
         cols="1.4fr .8fr .8fr 1fr"
         rowKey={(c) => c.id}
         empty={

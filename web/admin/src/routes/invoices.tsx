@@ -24,7 +24,12 @@ function statusTone(status: InvoiceStatus): Tone {
 export function AdminInvoicesPage() {
   const { t } = useTranslation();
   const [pagination, setPagination] = useState({ limit: 50, offset: 0 });
-  const { data: invoices, isLoading } = useAdminInvoices(pagination);
+  const {
+    data: invoices,
+    isLoading,
+    error,
+    refetch,
+  } = useAdminInvoices(pagination);
 
   const columns: Column<Invoice>[] = [
     {
@@ -89,6 +94,8 @@ export function AdminInvoicesPage() {
       <DataTable<Invoice>
         columns={columns}
         rows={isLoading ? [] : (invoices ?? [])}
+        error={error}
+        onRetry={refetch}
         cols=".9fr 1.1fr .9fr 1fr 1.1fr 1.1fr"
         rowKey={(inv) => inv.id}
         empty={isLoading ? t("common.loading").toUpperCase() : "NO INVOICES"}

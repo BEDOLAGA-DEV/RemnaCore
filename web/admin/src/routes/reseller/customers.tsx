@@ -11,7 +11,12 @@ import { NoShop } from "./dashboard";
 export function ResellerCustomersPage() {
   const { t } = useTranslation();
   const { activeShopId } = useShopStore();
-  const { data: customers, isLoading } = useResellerCustomers(activeShopId);
+  const {
+    data: customers,
+    isLoading,
+    error,
+    refetch,
+  } = useResellerCustomers(activeShopId);
 
   if (!activeShopId) {
     return <NoShop title={t("reseller.customers.title")} />;
@@ -50,6 +55,8 @@ export function ResellerCustomersPage() {
       <DataTable
         columns={columns}
         rows={customers ?? []}
+        error={error}
+        onRetry={refetch}
         cols="1.4fr 1fr .6fr 1fr"
         rowKey={(c) => c.user_id}
         empty={isLoading ? t("common.loading") : t("reseller.customers.empty")}

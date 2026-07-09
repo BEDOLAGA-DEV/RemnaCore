@@ -27,7 +27,12 @@ export function AdminSubscriptionsPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [pagination, setPagination] = useState({ limit: 50, offset: 0 });
-  const { data: subs, isLoading } = useAdminSubscriptions(pagination);
+  const {
+    data: subs,
+    isLoading,
+    error,
+    refetch,
+  } = useAdminSubscriptions(pagination);
 
   const columns: Column<Subscription>[] = [
     {
@@ -88,6 +93,8 @@ export function AdminSubscriptionsPage() {
       <DataTable<Subscription>
         columns={columns}
         rows={isLoading ? [] : (subs ?? [])}
+        error={error}
+        onRetry={refetch}
         cols=".9fr 1.1fr 1.1fr 1fr 1.1fr 40px"
         rowKey={(s) => s.id}
         onRowClick={(s) =>
