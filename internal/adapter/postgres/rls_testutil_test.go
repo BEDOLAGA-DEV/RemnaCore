@@ -5,11 +5,24 @@ package postgres_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 )
+
+// failOrSkip aborts a container-backed test when Docker is unavailable. In CI
+// (REMNACORE_REQUIRE_INTEGRATION set) it FAILS so the integration suite can
+// never go green vacuously by skipping every test; locally it SKIPS so devs
+// without Docker are not blocked.
+func failOrSkip(t *testing.T, format string, args ...any) {
+	t.Helper()
+	if os.Getenv("REMNACORE_REQUIRE_INTEGRATION") != "" {
+		t.Fatalf(format, args...)
+	}
+	t.Skipf(format, args...)
+}
 
 const (
 	// Shared across all postgres_test RLS integration tests (declared once here).

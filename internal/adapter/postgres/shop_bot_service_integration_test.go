@@ -58,6 +58,7 @@ func TestShopBotService_RunInTx_EndToEnd(t *testing.T) {
 		clock.NewReal(),
 		tm,
 		repo,
+		nil, // BotPluginValidator — unused; this test never sets a BotPlugin
 	)
 
 	shopCtx := tenantctx.WithTenantID(ctx, tenantID)
