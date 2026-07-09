@@ -68,6 +68,11 @@ func (h *IdentityHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// NOTE: verification_token is returned here only because email verification
+	// is not yet enforced at login and no email-delivery plugin is wired, so the
+	// response is currently the only channel to obtain it. Once verification is
+	// enforced AND delivered out-of-band, drop this field (returning it lets a
+	// self-registrant self-verify).
 	writeJSON(w, http.StatusCreated, map[string]string{
 		"user_id":            result.User.ID,
 		"email":              result.User.Email,
