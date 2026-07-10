@@ -5,8 +5,6 @@ package postgres_test
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -297,44 +295,12 @@ func setupTier2DB(t *testing.T) (*pgxpool.Pool, string) {
 	t.Helper()
 	ctx := context.Background()
 
-	migrationPath, err := filepath.Abs("migrations")
-	require.NoError(t, err)
-
-	files := []string{
-		"001_identity.sql",
-		"002_billing.sql",
-		"003_multisub.sql",
-		"005_payment.sql",
-		"006_reseller.sql",
-		"035_balance.sql",
-		"036_checkout.sql",
-		"040_rls_sentinel_rewrite.sql",
-		tier2Migration042,
-	}
-
-	paths := make([]string, len(files))
-	for i, f := range files {
-		paths[i] = filepath.Join(migrationPath, f)
-	}
-
-	// Validate every migration path BEFORE booting the container (#6). With
-	// tcpostgres.WithInitScripts each file is copied from its host path at
-	// container-create time, so a missing/renamed migration surfaces as "no such
-	// file or directory" from tcpostgres.Run — indistinguishable from a Docker
-	// socket being absent. Stat'ing here makes a broken migration list a hard
-	// t.Fatal (never a vacuous skip) and keeps isDockerUnavailable narrow.
-	for _, p := range paths {
-		if _, statErr := os.Stat(p); statErr != nil {
-			t.Fatalf("tier-2 migration file missing or unreadable (broken migration list, NOT docker-absent): %v", statErr)
-		}
-	}
-
 	ctr, err := tcpostgres.Run(ctx,
 		"postgres:18",
 		tcpostgres.WithDatabase(testDBName),
 		tcpostgres.WithUsername(testDBUser),
 		tcpostgres.WithPassword(testDBPass),
-		tcpostgres.WithInitScripts(paths...),
+		tcpostgres.WithInitScripts(allMigrationScripts(t)...),
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").
 				WithOccurrence(2).

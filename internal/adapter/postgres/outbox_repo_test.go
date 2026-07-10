@@ -5,7 +5,6 @@ package postgres_test
 import (
 	"context"
 	"encoding/json"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -30,15 +29,12 @@ func setupOutboxDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	ctx := context.Background()
 
-	migrationPath, err := filepath.Abs("migrations")
-	require.NoError(t, err)
-
 	ctr, err := tcpostgres.Run(ctx,
 		"postgres:18",
 		tcpostgres.WithDatabase(testDBName),
 		tcpostgres.WithUsername(testDBUser),
 		tcpostgres.WithPassword(testDBPass),
-		tcpostgres.WithInitScripts(filepath.Join(migrationPath, "008_outbox.sql")),
+		tcpostgres.WithInitScripts(allMigrationScripts(t)...),
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").
 				WithOccurrence(2).

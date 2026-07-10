@@ -6,11 +6,38 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 )
+
+// allMigrationScripts returns the absolute paths of EVERY migration, sorted by
+// filename (== apply order). Harnesses pass these to tcpostgres.WithInitScripts
+// so the test schema always matches the current migration chain — hard-coding a
+// subset silently rots as new columns/tables land (the cause of the mass
+// "column does not exist" integration failures). WithInitScripts runs each file
+// via the postgres entrypoint (psql), so CREATE INDEX CONCURRENTLY is fine here
+// (unlike a single pool.Exec of a whole file, which wraps it in a transaction).
+func allMigrationScripts(t *testing.T) []string {
+	t.Helper()
+	dir, err := filepath.Abs("migrations")
+	require.NoError(t, err)
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	var scripts []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".sql") {
+			scripts = append(scripts, filepath.Join(dir, e.Name()))
+		}
+	}
+	sort.Strings(scripts)
+	require.NotEmpty(t, scripts, "no migration scripts found under %s", dir)
+	return scripts
+}
 
 // failOrSkip aborts a container-backed test when Docker is unavailable. In CI
 // (REMNACORE_REQUIRE_INTEGRATION set) it FAILS so the integration suite can

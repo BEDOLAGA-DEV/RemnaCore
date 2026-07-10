@@ -4,7 +4,6 @@ package postgres_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -39,19 +38,12 @@ func setupBillingDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	ctx := context.Background()
 
-	migrationPath, err := filepath.Abs("migrations")
-	require.NoError(t, err)
-
 	ctr, err := tcpostgres.Run(ctx,
 		"postgres:18",
 		tcpostgres.WithDatabase(testDBName),
 		tcpostgres.WithUsername(testDBUser),
 		tcpostgres.WithPassword(testDBPass),
-		tcpostgres.WithInitScripts(
-			filepath.Join(migrationPath, "001_identity.sql"),
-			filepath.Join(migrationPath, "002_billing.sql"),
-			filepath.Join(migrationPath, "011_pg18_features.sql"),
-		),
+		tcpostgres.WithInitScripts(allMigrationScripts(t)...),
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").
 				WithOccurrence(2).
