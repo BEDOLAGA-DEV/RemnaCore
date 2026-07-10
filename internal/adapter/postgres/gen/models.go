@@ -366,6 +366,12 @@ type IdentitySession struct {
 	UserAgent    string             `json:"user_agent"`
 }
 
+// Consumed Telegram Mini App initData hashes (SHA-256) for single-use replay prevention; rows prunable once expires_at passes.
+type IdentityTelegramInitdataNonce struct {
+	Nonce     string             `json:"nonce"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+}
+
 type MetricsSample struct {
 	ID          pgtype.UUID        `json:"id"`
 	CapturedAt  pgtype.Timestamptz `json:"captured_at"`
@@ -558,6 +564,8 @@ type ResellerShopBot struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 	BotPluginSlug *string            `json:"bot_plugin_slug"`
+	// Deterministic keyed HMAC of the plaintext bot token (secretbox.Box.HMAC); UNIQUE to prevent two shops sharing one Telegram bot token.
+	BotTokenHash *string `json:"bot_token_hash"`
 }
 
 type ResellerTenant struct {
