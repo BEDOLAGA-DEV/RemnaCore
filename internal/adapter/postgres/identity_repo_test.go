@@ -5,7 +5,6 @@ package postgres_test
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -33,15 +32,12 @@ func setupTestDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	ctx := context.Background()
 
-	migrationPath, err := filepath.Abs("migrations")
-	require.NoError(t, err)
-
 	ctr, err := tcpostgres.Run(ctx,
 		"postgres:18",
 		tcpostgres.WithDatabase(testDBName),
 		tcpostgres.WithUsername(testDBUser),
 		tcpostgres.WithPassword(testDBPass),
-		tcpostgres.WithInitScripts(filepath.Join(migrationPath, "001_identity.sql")),
+		tcpostgres.WithInitScripts(allMigrationScripts(t)...),
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").
 				WithOccurrence(2).
@@ -171,12 +167,12 @@ func TestIdentityRepo_SessionLifecycle(t *testing.T) {
 	s1 := &identity.Session{
 		ID: uuid.Must(uuid.NewV7()).String(), UserID: user.ID,
 		RefreshToken: uuid.Must(uuid.NewV7()).String(),
-		ExpiresAt: now.Add(time.Hour), CreatedAt: now,
+		ExpiresAt:    now.Add(time.Hour), CreatedAt: now,
 	}
 	s2 := &identity.Session{
 		ID: uuid.Must(uuid.NewV7()).String(), UserID: user.ID,
 		RefreshToken: uuid.Must(uuid.NewV7()).String(),
-		ExpiresAt: now.Add(time.Hour), CreatedAt: now,
+		ExpiresAt:    now.Add(time.Hour), CreatedAt: now,
 	}
 	require.NoError(t, repo.CreateSession(ctx, s1))
 	require.NoError(t, repo.CreateSession(ctx, s2))

@@ -162,8 +162,8 @@ func TestIAM_InvitationRoundTrip(t *testing.T) {
 	inv, err := aggregate.NewInvitation(
 		"newstaff@iam.test",
 		rbac.RoleShopStaff,
-		nil,  // global invitation (no tenant scope)
-		nil,  // no commission
+		nil, // global invitation (no tenant scope)
+		nil, // no commission
 		invitedBy,
 		now,
 	)

@@ -125,9 +125,9 @@ func TestListTariffs_RLS_ShopSeesOwnPlusTemplates(t *testing.T) {
 
 	shopA := uuid.Must(uuid.NewV7()).String()
 	shopB := uuid.Must(uuid.NewV7()).String()
-	seedCollectionTariffRow(t, admin, "", "Shared Template", true)         // tenant_id NULL, is_template=true
-	seedCollectionTariffRow(t, admin, shopA, "Shop A", false)              // tenant_id = shopA
-	seedCollectionTariffRow(t, admin, shopB, "Shop B Secret", false)       // tenant_id = shopB, non-template
+	seedCollectionTariffRow(t, admin, "", "Shared Template", true)   // tenant_id NULL, is_template=true
+	seedCollectionTariffRow(t, admin, shopA, "Shop A", false)        // tenant_id = shopA
+	seedCollectionTariffRow(t, admin, shopB, "Shop B Secret", false) // tenant_id = shopB, non-template
 
 	h := newTariffRLSHandler(t, appPool)
 	shopCtx := tenantctx.WithTenantID(ctx, shopA)

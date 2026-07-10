@@ -5,7 +5,6 @@ package postgres_test
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -68,20 +67,12 @@ func setupFullDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	ctx := context.Background()
 
-	migrationPath, err := filepath.Abs("migrations")
-	require.NoError(t, err)
-
-	scripts := make([]string, len(allMigrations))
-	for i, name := range allMigrations {
-		scripts[i] = filepath.Join(migrationPath, name)
-	}
-
 	ctr, err := tcpostgres.Run(ctx,
 		"postgres:18",
 		tcpostgres.WithDatabase(testDBName),
 		tcpostgres.WithUsername(testDBUser),
 		tcpostgres.WithPassword(testDBPass),
-		tcpostgres.WithInitScripts(scripts...),
+		tcpostgres.WithInitScripts(allMigrationScripts(t)...),
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").
 				WithOccurrence(2).
