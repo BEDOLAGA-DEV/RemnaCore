@@ -244,7 +244,10 @@ func TestTier2RLS_TwoShopIsolation(t *testing.T) {
 		require.Error(t, err, "WITH CHECK must reject inserting a row stamped with a foreign tenant_id")
 	})
 
-	t.Run("null_tenant_insert_succeeds_under_shop_guc", func(t *testing.T) {
+	// Migration 044 gates the NULL-tenant WITH CHECK branch on the platform
+	// sentinel: a tenant-less row may be written ONLY under the '*' scope, never
+	// under a shop-UUID GUC (where a NULL row would otherwise escape isolation).
+	t.Run("null_tenant_insert_rejected_under_shop_guc", func(t *testing.T) {
 		txm := postgres.NewTxManager(app)
 		err := txm.RunInTx(tenantctx.WithTenantID(ctx, shopA), func(txCtx context.Context) error {
 			db := postgres.DBFromContext(txCtx, app)
@@ -256,7 +259,22 @@ func TestTier2RLS_TwoShopIsolation(t *testing.T) {
 				id, uid, planID)
 			return e
 		})
-		require.NoError(t, err, "WITH CHECK must permit a tenant-less (NULL) public/system insert")
+		require.Error(t, err, "post-044 WITH CHECK must reject a tenant-less (NULL) insert under a shop GUC")
+	})
+
+	t.Run("null_tenant_insert_succeeds_under_platform_scope", func(t *testing.T) {
+		txm := postgres.NewTxManager(app)
+		err := txm.RunInTx(tenantctx.WithPlatformScope(ctx), func(txCtx context.Context) error {
+			db := postgres.DBFromContext(txCtx, app)
+			id := uuid.Must(uuid.NewV7()).String()
+			uid := uuid.Must(uuid.NewV7()).String()
+			_, e := db.Exec(txCtx,
+				`INSERT INTO billing.subscriptions (id, user_id, plan_id, status, period_start, period_end, period_interval, tenant_id)
+				 VALUES ($1, $2, $3, 'active', now(), now() + interval '30 days', 'month', NULL)`,
+				id, uid, planID)
+			return e
+		})
+		require.NoError(t, err, "WITH CHECK must permit a tenant-less (NULL) insert under the platform sentinel")
 	})
 }
 

@@ -18,6 +18,7 @@ import (
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tokenhash"
 )
 
 const (
@@ -150,7 +151,9 @@ func TestIdentityRepo_SessionLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, session.ID, got.ID)
 	assert.Equal(t, session.UserID, got.UserID)
-	assert.Equal(t, session.RefreshToken, got.RefreshToken)
+	// Refresh tokens are hashed at rest (pkg/tokenhash): the lookup hashes the
+	// presented raw token, and the stored/returned value is that hash.
+	assert.Equal(t, tokenhash.Hash(session.RefreshToken), got.RefreshToken)
 
 	// Not found
 	_, err = repo.GetSessionByRefreshToken(ctx, "nonexistent-token")

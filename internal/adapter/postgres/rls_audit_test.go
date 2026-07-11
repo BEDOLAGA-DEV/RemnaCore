@@ -27,31 +27,6 @@ const sentinelGUC = "*"
 // cannot disagree silently.
 const policyPrefix = "tenant_isolation_"
 
-// auditMigrations is the full ordered migration chain applied to the audit
-// container: everything that creates a Phase-C tenant table or rewrites its
-// policy, in filename order. 040 rewrites 018/028/035/036 policies; 041 adds
-// plugins.collections; 042 adds the Tier-2 tables; 043 adds reseller.commissions.
-var auditMigrations = []string{
-	"001_identity.sql",
-	"002_billing.sql",
-	"003_multisub.sql",
-	"005_payment.sql",
-	"006_reseller.sql",
-	"018_row_level_security.sql",
-	"028_rls_cleanup_docs_wasm.sql",
-	"034_plugin_collections.sql",
-	"035_balance.sql",
-	"036_checkout.sql",
-	"040_rls_sentinel_rewrite.sql",
-	"041_plugin_collections_tenant.sql",
-	"042_tier2_tenant_rls.sql",
-	"043_reseller_commissions_tenant.sql",
-	"044_rls_with_check_sentinel_null.sql",
-	"045_shop_bots.sql",
-	"046_users_tenant_telegram_unique.sql",
-	"047_shop_bots_bot_plugin.sql",
-}
-
 // phaseCTenantTable identifies one table whose RLS the Phase-C audit covers,
 // plus the migration that owns its sentinel policy (for failure messages).
 type phaseCTenantTable struct {
@@ -108,7 +83,7 @@ func phaseCSchemaSet() []string {
 // setupAuditDB boots a container with the full Phase-C migration chain.
 func setupAuditDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	pool, _ := setupTestDBWith(t, auditMigrations...)
+	pool, _ := setupTestDBWith(t)
 	return pool
 }
 
@@ -298,7 +273,7 @@ func normalizeQual(qual string) string {
 // A pool-level SET would be racy: pgxpool acquires a (possibly different)
 // connection per Exec, so the GUC could be absent by the time the INSERT runs.
 func TestRLSWithCheck_NullTenantRequiresSentinel(t *testing.T) {
-	admin, connStr := setupTestDBWith(t, auditMigrations...)
+	admin, connStr := setupTestDBWith(t)
 	ctx := context.Background()
 	app := connectAsRLSApp(t, admin, connStr)
 

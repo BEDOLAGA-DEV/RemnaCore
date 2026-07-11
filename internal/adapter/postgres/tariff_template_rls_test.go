@@ -31,16 +31,6 @@ import (
 // the real CollectionsRepository, so the assertions exercise the 041 RLS policy
 // end-to-end exactly as the spec intended.
 
-// tariffTemplateRLSMigrations is the minimal migration chain to stand up
-// plugins.collections with its 041 tenant_id + RLS policy. Mirrors the chain in
-// collections_repo_test.go (inline set_updated_at stub → 004 → 034 → 041).
-var tariffTemplateRLSMigrations = []string{
-	inlineSetUpdatedAt,
-	"004_plugins.sql",
-	"034_plugin_collections.sql",
-	"041_plugin_collections_tenant.sql",
-}
-
 // newTariffRLSHandler wires the real CollectionsRepository over appPool into a
 // real tariff.Handler. ListTariffs uses only the collections store and logger;
 // pluginRepo and planRepo are unused on the list path and left nil.
@@ -117,7 +107,7 @@ func listTariffNamesUnder(t *testing.T, h *tariff.Handler, ctx context.Context) 
 // WithPlatformScope read inside ListTariffs), and does NOT contain "Shop B Secret"
 // (foreign non-template, never returned by either read — RLS keeps it out).
 func TestListTariffs_RLS_ShopSeesOwnPlusTemplates(t *testing.T) {
-	admin, connStr := setupTestDBWith(t, tariffTemplateRLSMigrations...)
+	admin, connStr := setupTestDBWith(t)
 	ctx := context.Background()
 	// Connect as the shared NON-superuser rls_app role so FORCE RLS is genuinely
 	// enforced on the handler's reads (a superuser pool would pass vacuously).

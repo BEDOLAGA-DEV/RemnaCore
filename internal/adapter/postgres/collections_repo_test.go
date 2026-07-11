@@ -30,12 +30,7 @@ func TestCollections_ReadRequiresGUC(t *testing.T) {
 	// function's OID at CREATE TRIGGER time, so identity.set_updated_at() must
 	// already exist. setupTestDBWith MUST fail the test on any migration error,
 	// never skip.
-	admin, connStr := setupTestDBWith(t,
-		"__inline_set_updated_at",
-		"004_plugins.sql",
-		"034_plugin_collections.sql",
-		"041_plugin_collections_tenant.sql",
-	)
+	admin, connStr := setupTestDBWith(t)
 	rlsPool := connectAsRLSApp(t, admin, connStr)
 	repo := postgres.NewCollectionsRepository(rlsPool, postgres.NewTxManager(rlsPool))
 	ctx := context.Background()

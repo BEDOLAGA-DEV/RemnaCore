@@ -54,9 +54,9 @@ func newTestJWTIssuer(t *testing.T) *authutil.JWTIssuer {
 //
 // The test relies on migration 046 (composite unique index on (tenant_id, telegram_id))
 // for race-safe find-or-create semantics and on migration 040 (RLS WITH CHECK) to
-// reject cross-tenant writes — both present in auditMigrations.
+// reject cross-tenant writes — both created by the full migration chain.
 func TestRegisterViaTelegram_TenantIsolation(t *testing.T) {
-	admin, connStr := setupTestDBWith(t, auditMigrations...)
+	admin, connStr := setupTestDBWith(t)
 	ctx := context.Background()
 
 	// Non-superuser, non-BYPASSRLS pool; RLS is enforced on every query.

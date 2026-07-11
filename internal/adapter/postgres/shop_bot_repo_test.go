@@ -23,16 +23,6 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
 )
 
-// shopBotMigrations is the minimal migration chain to stand up reseller.shop_bots
-// with its RLS policy (045) and the trigger dependency (identity.set_updated_at
-// created by 001).
-var shopBotMigrations = []string{
-	"001_identity.sql",
-	"006_reseller.sql",
-	"018_row_level_security.sql",
-	"045_shop_bots.sql",
-}
-
 // grantShopBotSchemasToRLSApp grants the rls_app role (created by the shared
 // connectAsRLSApp helper) USAGE + DML on the identity and reseller schemas so
 // that the shop-bot integration test can seed and read rows without hitting
@@ -81,7 +71,7 @@ func seedShopBotTenant(t *testing.T, ctx context.Context, pool *pgxpool.Pool, te
 //  3. Cross-tenant isolation: shop B's GUC cannot read shop A's row.
 //  4. Sentinel list: ListEnabled (platform scope) sees shop A's enabled row.
 func TestShopBotRepository_RLS(t *testing.T) {
-	admin, connStr := setupTestDBWith(t, shopBotMigrations...)
+	admin, connStr := setupTestDBWith(t)
 	ctx := context.Background()
 
 	// Connect as the shared NON-superuser rls_app role (rls_testutil_test.go, C2)
@@ -181,7 +171,7 @@ func TestShopBotRepository_RLS(t *testing.T) {
 // aborting the whole set on the first bad row (one corrupt blob must not take
 // down every shop bot).
 func TestShopBotRepository_ListEnabled_SkipsUndecryptable(t *testing.T) {
-	admin, connStr := setupTestDBWith(t, shopBotMigrations...)
+	admin, connStr := setupTestDBWith(t)
 	ctx := context.Background()
 
 	rlsPool := connectAsRLSApp(t, admin, connStr)
@@ -242,7 +232,7 @@ func TestShopBotRepository_ListEnabled_SkipsUndecryptable(t *testing.T) {
 // ErrEncryptionNotConfigured on every method without panicking.
 func TestShopBotRepository_NilBox(t *testing.T) {
 	// Use a minimal DB — we only need the pool for construction; no queries run.
-	pool, _ := setupTestDBWith(t, "001_identity.sql")
+	pool, _ := setupTestDBWith(t)
 	repo := postgres.NewShopBotRepository(pool, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	ctx := context.Background()
 

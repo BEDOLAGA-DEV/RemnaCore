@@ -15,16 +15,6 @@ import (
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
 )
 
-// commissionsRLSMigrations is the minimal migration chain to stand up
-// reseller.commissions with its 043 tenant_id + RLS policy.
-var commissionsRLSMigrations = []string{
-	"001_identity.sql",
-	"006_reseller.sql",
-	"018_row_level_security.sql",
-	"028_rls_cleanup_docs_wasm.sql",
-	"043_reseller_commissions_tenant.sql",
-}
-
 // DEDUP HELPER NOTE: connectAsRLSApp is NOT defined here. It is the single shared
 // non-superuser helper created in C2 at internal/adapter/postgres/rls_testutil_test.go
 // (package postgres_test). This file CALLS it; it must never redefine it (otherwise
@@ -56,7 +46,7 @@ func grantCommissionsSchemasToRLSApp(t *testing.T, ctx context.Context, admin *p
 // sees only its own commissions, the sentinel sees all, an unset GUC sees none,
 // and WITH CHECK rejects inserting a foreign tenant_id.
 func TestResellerCommissionsRLS_TwoShopIsolation(t *testing.T) {
-	admin, connStr := setupTestDBWith(t, commissionsRLSMigrations...)
+	admin, connStr := setupTestDBWith(t)
 	ctx := context.Background()
 	// Connect as the shared NON-superuser rls_app role (rls_testutil_test.go, C2)
 	// so FORCE RLS is actually enforced and the count assertions are NOT vacuous.

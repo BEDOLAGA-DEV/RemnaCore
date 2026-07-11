@@ -34,7 +34,7 @@ func (noopEventPublisher) PublishBatch(_ context.Context, _ []domainevent.Event)
 // (without RunInTx), so the app.tenant_id GUC is never set and RLS rejects the
 // write with a WITH CHECK violation or returns 0 rows on read.
 func TestShopBotService_RunInTx_EndToEnd(t *testing.T) {
-	admin, connStr := setupTestDBWith(t, shopBotMigrations...)
+	admin, connStr := setupTestDBWith(t)
 	ctx := context.Background()
 
 	rlsPool := connectAsRLSApp(t, admin, connStr)
