@@ -9,50 +9,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/identity"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/tenantctx"
 )
-
-// setupRLSDB starts a PostgreSQL 18 container with identity, reseller, and
-// RLS migrations applied. Returns a connected pool.
-func setupRLSDB(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	ctx := context.Background()
-
-	ctr, err := tcpostgres.Run(ctx,
-		"postgres:18",
-		tcpostgres.WithDatabase(testDBName),
-		tcpostgres.WithUsername(testDBUser),
-		tcpostgres.WithPassword(testDBPass),
-		tcpostgres.WithInitScripts(allMigrationScripts(t)...),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(testContainerStartupTimeout),
-		),
-	)
-	if err != nil {
-		failOrSkip(t, "skipping integration test: could not start postgres container: %v", err)
-	}
-	t.Cleanup(func() { _ = ctr.Terminate(context.Background()) })
-
-	connStr, err := ctr.ConnectionString(ctx, "sslmode=disable")
-	require.NoError(t, err)
-
-	pool, err := pgxpool.New(ctx, connStr)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-
-	return pool
-}
 
 // newTenantUser creates a PlatformUser associated with the given tenant ID.
 // Pass an empty string for a platform-level user (nil tenant_id).
@@ -66,7 +29,7 @@ func newTenantUser(t *testing.T, tenantID string) *identity.PlatformUser {
 	}
 
 	return &identity.PlatformUser{
-		ID:            uuid.Must(uuid.NewV7()).String(),
+		ID: uuid.Must(uuid.NewV7()).String(),
 		// Full UUID (not a truncated prefix): UUIDv7's leading bits are the
 		// millisecond timestamp, so several users minted in the same tick would
 		// share a truncated prefix and collide on the unique email constraint.
@@ -86,78 +49,87 @@ func newPlatformUser(t *testing.T) *identity.PlatformUser {
 	return newTenantUser(t, "")
 }
 
+// TestRLS_TenantIsolation exercises the identity.platform_users tenant-isolation
+// policy through a NON-superuser, NON-BYPASSRLS role (connectAsRLSApp). Running
+// as the testcontainer superuser would bypass RLS entirely and make every
+// assertion pass vacuously — the false-assurance gap flagged by the Phase-C audit.
+//
+// Post-040/044 read semantics (USING has NO `tenant_id IS NULL` branch):
+//   - platform sentinel '*'  → sees ALL rows.
+//   - a shop-UUID GUC        → sees ONLY that tenant's rows (never NULL/platform).
+//   - unset/empty GUC        → sees NOTHING (fail-closed).
 func TestRLS_TenantIsolation(t *testing.T) {
-	pool := setupRLSDB(t)
+	admin, connStr := setupTestDBWith(t)
+	ctx := context.Background()
+	// Connect as the shared NON-superuser rls_app role first (it creates the
+	// role), then grant it the identity/reseller schemas it needs to read/write.
+	pool := connectAsRLSApp(t, admin, connStr)
+	grantShopBotSchemasToRLSApp(t, ctx, admin)
+
 	repo := postgres.NewIdentityRepository(pool)
 	txm := postgres.NewTxManager(pool)
-	ctx := context.Background()
 
 	tenantA := uuid.Must(uuid.NewV7()).String()
 	tenantB := uuid.Must(uuid.NewV7()).String()
 
-	// Seed: one user per tenant + one platform-level user.
+	// Seed: one user per tenant + one platform-level (NULL-tenant) user.
 	userA := newTenantUser(t, tenantA)
 	userB := newTenantUser(t, tenantB)
 	userPlatform := newPlatformUser(t)
 
-	// Insert all users without tenant scoping (using raw pool to bypass RLS
-	// via SET LOCAL for each insert — we need to set the matching tenant).
-	insertWithTenant := func(user *identity.PlatformUser, tenantID string) {
+	// Each insert runs under the GUC its WITH CHECK requires: a shop GUC stamps
+	// the matching tenant_id; the platform user (tenant_id NULL) is written under
+	// the sentinel scope.
+	insertScoped := func(user *identity.PlatformUser, scope context.Context) {
 		t.Helper()
-		err := txm.RunInTx(tenantctx.WithTenantID(ctx, tenantID), func(txCtx context.Context) error {
+		err := txm.RunInTx(scope, func(txCtx context.Context) error {
 			return repo.CreateUser(txCtx, user)
 		})
 		require.NoError(t, err)
 	}
 
-	insertWithTenant(userA, tenantA)
-	insertWithTenant(userB, tenantB)
-	// Platform user has no tenant — insert without tenant context.
-	insertWithTenant(userPlatform, "")
+	insertScoped(userA, tenantctx.WithTenantID(ctx, tenantA))
+	insertScoped(userB, tenantctx.WithTenantID(ctx, tenantB))
+	insertScoped(userPlatform, tenantctx.WithPlatformScope(ctx))
 
-	t.Run("tenant_A_sees_own_users_and_platform", func(t *testing.T) {
+	listUnder := func(t *testing.T, scope context.Context) []string {
+		t.Helper()
 		var users []*identity.PlatformUser
-		err := txm.RunInTx(tenantctx.WithTenantID(ctx, tenantA), func(txCtx context.Context) error {
+		err := txm.RunInTx(scope, func(txCtx context.Context) error {
 			var listErr error
 			users, listErr = repo.ListUsers(txCtx, 100, 0)
 			return listErr
 		})
 		require.NoError(t, err)
+		return extractUserIDs(users)
+	}
 
-		ids := extractUserIDs(users)
+	t.Run("tenant_A_sees_only_its_own_users", func(t *testing.T) {
+		ids := listUnder(t, tenantctx.WithTenantID(ctx, tenantA))
 		assert.Contains(t, ids, userA.ID, "tenant A should see its own user")
-		assert.Contains(t, ids, userPlatform.ID, "tenant A should see platform-level users")
 		assert.NotContains(t, ids, userB.ID, "tenant A must NOT see tenant B users")
+		assert.NotContains(t, ids, userPlatform.ID, "tenant A must NOT see NULL-tenant platform users (USING has no IS NULL branch)")
 	})
 
-	t.Run("tenant_B_sees_own_users_and_platform", func(t *testing.T) {
-		var users []*identity.PlatformUser
-		err := txm.RunInTx(tenantctx.WithTenantID(ctx, tenantB), func(txCtx context.Context) error {
-			var listErr error
-			users, listErr = repo.ListUsers(txCtx, 100, 0)
-			return listErr
-		})
-		require.NoError(t, err)
-
-		ids := extractUserIDs(users)
+	t.Run("tenant_B_sees_only_its_own_users", func(t *testing.T) {
+		ids := listUnder(t, tenantctx.WithTenantID(ctx, tenantB))
 		assert.Contains(t, ids, userB.ID, "tenant B should see its own user")
-		assert.Contains(t, ids, userPlatform.ID, "tenant B should see platform-level users")
 		assert.NotContains(t, ids, userA.ID, "tenant B must NOT see tenant A users")
+		assert.NotContains(t, ids, userPlatform.ID, "tenant B must NOT see NULL-tenant platform users")
 	})
 
-	t.Run("no_tenant_sees_only_platform_users", func(t *testing.T) {
-		var users []*identity.PlatformUser
-		err := txm.RunInTx(ctx, func(txCtx context.Context) error {
-			var listErr error
-			users, listErr = repo.ListUsers(txCtx, 100, 0)
-			return listErr
-		})
-		require.NoError(t, err)
+	t.Run("platform_scope_sees_all_users", func(t *testing.T) {
+		ids := listUnder(t, tenantctx.WithPlatformScope(ctx))
+		assert.Contains(t, ids, userA.ID, "platform sentinel should see tenant A users")
+		assert.Contains(t, ids, userB.ID, "platform sentinel should see tenant B users")
+		assert.Contains(t, ids, userPlatform.ID, "platform sentinel should see platform-level users")
+	})
 
-		ids := extractUserIDs(users)
-		assert.Contains(t, ids, userPlatform.ID, "no-tenant context should see platform-level users")
-		assert.NotContains(t, ids, userA.ID, "no-tenant context must NOT see tenant A users")
-		assert.NotContains(t, ids, userB.ID, "no-tenant context must NOT see tenant B users")
+	t.Run("empty_context_sees_nothing", func(t *testing.T) {
+		ids := listUnder(t, ctx)
+		assert.NotContains(t, ids, userA.ID, "unset GUC must fail closed (no tenant A)")
+		assert.NotContains(t, ids, userB.ID, "unset GUC must fail closed (no tenant B)")
+		assert.NotContains(t, ids, userPlatform.ID, "unset GUC must fail closed (no platform users)")
 	})
 
 	t.Run("get_by_id_respects_rls", func(t *testing.T) {
