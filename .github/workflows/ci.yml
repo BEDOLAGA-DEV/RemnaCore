@@ -67,8 +67,16 @@ jobs:
         run: |
           docker run -d --name migdb -e POSTGRES_USER=platform -e POSTGRES_PASSWORD=secret \
             -e POSTGRES_DB=remnacore -p 5433:5432 postgres:18
+          # pg_isready is not enough: the postgres entrypoint runs a TEMPORARY
+          # server on the unix socket during init that accepts connections before
+          # POSTGRES_DB exists, so pg_isready can return "accepting connections"
+          # while a real query still fails with 'database "remnacore" does not
+          # exist'. Poll an actual SELECT against the target DB instead.
           for i in $(seq 1 30); do
-            docker exec migdb pg_isready -U platform -d remnacore && break; sleep 2; done
+            docker exec migdb psql -U platform -d remnacore -tAc 'SELECT 1' >/dev/null 2>&1 && break
+            sleep 2
+          done
+          docker exec migdb psql -U platform -d remnacore -tAc 'SELECT 1' >/dev/null
           PSQL="docker exec -i migdb psql -U platform -d remnacore -v ON_ERROR_STOP=1" \
             MIGRATIONS_DIR="internal/adapter/postgres/migrations" bash scripts/migrate.sh
           echo "--- re-running migrations to prove idempotency ---"
