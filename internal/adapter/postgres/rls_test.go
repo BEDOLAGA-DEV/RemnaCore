@@ -67,7 +67,10 @@ func newTenantUser(t *testing.T, tenantID string) *identity.PlatformUser {
 
 	return &identity.PlatformUser{
 		ID:            uuid.Must(uuid.NewV7()).String(),
-		Email:         fmt.Sprintf("user-%s@test.com", uuid.Must(uuid.NewV7()).String()[:8]),
+		// Full UUID (not a truncated prefix): UUIDv7's leading bits are the
+		// millisecond timestamp, so several users minted in the same tick would
+		// share a truncated prefix and collide on the unique email constraint.
+		Email:         fmt.Sprintf("user-%s@test.com", uuid.Must(uuid.NewV7()).String()),
 		PasswordHash:  "$2a$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012",
 		EmailVerified: false,
 		Role:          identity.RoleCustomer,

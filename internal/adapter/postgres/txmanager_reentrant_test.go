@@ -46,7 +46,10 @@ func TestTxManager_Reentrant(t *testing.T) {
 	err := tm.RunInTx(ctx, func(outerCtx context.Context) error {
 		// Inner RunInTx: must join the outer tx (re-entrant path).
 		innerErr := tm.RunInTx(outerCtx, func(innerCtx context.Context) error {
-			_, execErr := pool.Exec(innerCtx,
+			// Write through the context-bound handle so the INSERT participates in
+			// the (re-entrant) transaction. A raw pool.Exec would grab its own
+			// connection and commit independently, defeating the test's premise.
+			_, execErr := postgres.DBFromContext(innerCtx, pool).Exec(innerCtx,
 				`INSERT INTO identity.platform_users (id, email, password_hash, role, email_verified)
 				 VALUES ($1, $2, 'hash', 'customer', false)`,
 				userID, "reentrant@test.com",

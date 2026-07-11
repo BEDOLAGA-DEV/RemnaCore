@@ -217,7 +217,8 @@ func TestIdentityRepo_EmailVerification(t *testing.T) {
 	assert.Equal(t, verification.ID, got.ID)
 	assert.Equal(t, verification.UserID, got.UserID)
 	assert.Equal(t, verification.Email, got.Email)
-	assert.Equal(t, verification.Token, got.Token)
+	// Verification tokens are hashed at rest (pkg/tokenhash), like refresh tokens.
+	assert.Equal(t, tokenhash.Hash(verification.Token), got.Token)
 
 	// Not found
 	_, err = repo.GetEmailVerification(ctx, "nonexistent-token")

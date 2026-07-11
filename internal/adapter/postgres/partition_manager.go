@@ -84,6 +84,15 @@ type PartitionManager struct {
 	logger    *slog.Logger
 	lookahead int           // quarters ahead to ensure
 	retention time.Duration // 0 = no cleanup
+
+	// lockMu guards lockConn. A session-level advisory lock lives on the
+	// connection that acquired it, so the lock must be held on a dedicated
+	// connection for its whole lifetime — pool.QueryRow would run the lock on
+	// an arbitrary pooled connection and hand it straight back, leaving the
+	// lock stranded on a random connection and pg_advisory_unlock running on a
+	// different one (a silent no-op → leaked lock).
+	lockMu   sync.Mutex
+	lockConn *pgxpool.Conn
 }
 
 // NewPartitionManager creates a PartitionManager that pre-creates future
@@ -130,26 +139,57 @@ func (pm *PartitionManager) Run(ctx context.Context) {
 	}
 }
 
-// tryAdvisoryLock attempts to acquire a session-level advisory lock.
-// Returns true if the lock was acquired, false if another pod holds it
-// or the query fails.
+// tryAdvisoryLock attempts to acquire a session-level advisory lock on a
+// dedicated connection held for the lock's lifetime. Returns true if the lock
+// was acquired, false if another session holds it or the query fails.
 func (pm *PartitionManager) tryAdvisoryLock(ctx context.Context) bool {
-	var acquired bool
-	err := pm.pool.QueryRow(ctx, "SELECT pg_try_advisory_lock($1)", partitionManagerLockID).Scan(&acquired)
-	if err != nil {
-		pm.logger.Warn("partition manager: advisory lock query failed", slog.Any("error", err))
+	pm.lockMu.Lock()
+	defer pm.lockMu.Unlock()
+
+	if pm.lockConn != nil {
+		// This manager already holds the lock; do not stack a re-entrant
+		// acquisition (session advisory locks nest, and a single unlock would
+		// then leave the lock held).
 		return false
 	}
-	return acquired
+
+	conn, err := pm.pool.Acquire(ctx)
+	if err != nil {
+		pm.logger.Warn("partition manager: advisory lock connection acquire failed", slog.Any("error", err))
+		return false
+	}
+
+	var acquired bool
+	if err := conn.QueryRow(ctx, "SELECT pg_try_advisory_lock($1)", partitionManagerLockID).Scan(&acquired); err != nil {
+		pm.logger.Warn("partition manager: advisory lock query failed", slog.Any("error", err))
+		conn.Release()
+		return false
+	}
+	if !acquired {
+		conn.Release()
+		return false
+	}
+
+	pm.lockConn = conn
+	return true
 }
 
 // releaseAdvisoryLock releases the session-level advisory lock previously
-// acquired by tryAdvisoryLock. Errors are logged but not propagated.
+// acquired by tryAdvisoryLock, unlocking on the SAME connection that holds it
+// and returning that connection to the pool. Errors are logged but not
+// propagated. A no-op if this manager does not currently hold the lock.
 func (pm *PartitionManager) releaseAdvisoryLock(ctx context.Context) {
-	_, err := pm.pool.Exec(ctx, "SELECT pg_advisory_unlock($1)", partitionManagerLockID)
-	if err != nil {
+	pm.lockMu.Lock()
+	defer pm.lockMu.Unlock()
+
+	if pm.lockConn == nil {
+		return
+	}
+	if _, err := pm.lockConn.Exec(ctx, "SELECT pg_advisory_unlock($1)", partitionManagerLockID); err != nil {
 		pm.logger.Warn("partition manager: advisory unlock failed", slog.Any("error", err))
 	}
+	pm.lockConn.Release()
+	pm.lockConn = nil
 }
 
 // ensure delegates to OutboxRepository.EnsurePartitions to pre-create future

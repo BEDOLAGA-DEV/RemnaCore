@@ -72,7 +72,9 @@ func TestOutboxStore(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, events, 1)
 	assert.Equal(t, "subscription.activated", events[0].EventType)
-	assert.Equal(t, payload, events[0].Payload)
+	// jsonb round-trips through Postgres's canonical form (a space after the
+	// colon), so compare semantically rather than byte-for-byte.
+	assert.JSONEq(t, string(payload), string(events[0].Payload))
 	assert.NotEmpty(t, events[0].ID)
 	assert.False(t, events[0].CreatedAt.IsZero())
 }

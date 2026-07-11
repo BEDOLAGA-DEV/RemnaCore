@@ -146,8 +146,11 @@ func TestRLSAudit_SentinelPolicyShape(t *testing.T) {
 	pool := setupAuditDB(t)
 	ctx := context.Background()
 
-	// e.g. current_setting('app.tenant_id', true) = '*'  — sentinel from the named const.
-	sentinelFragment := "current_setting('app.tenant_id', true) = '" + sentinelGUC + "'"
+	// pg_policies renders the parsed expression in Postgres's canonical form,
+	// which adds explicit ::text casts to the literal and the GUC argument. Match
+	// that normalized shape, e.g.:
+	//   (current_setting('app.tenant_id'::text, true) = '*'::text)
+	sentinelFragment := "current_setting('app.tenant_id'::text, true) = '" + sentinelGUC + "'::text"
 
 	for _, tbl := range phaseCTenantTables {
 		policyName := tbl.policy
