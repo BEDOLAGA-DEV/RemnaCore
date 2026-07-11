@@ -79,23 +79,13 @@ jobs:
       # The real-DB / RLS / tenant-isolation suite. testcontainers uses the
       # runner's Docker. REMNACORE_REQUIRE_INTEGRATION turns "Docker unavailable"
       # from a silent skip into a hard failure so this job can't go green vacuously.
+      # BLOCKING: every harness applies the full migration chain (allMigrationScripts)
+      # and RLS tests run under the NON-superuser rls_app role, so this is a real gate.
       #
-      # NON-BLOCKING for now: the first CI run of this suite (it had never run in
-      # CI) surfaced PRE-EXISTING rot — several harnesses apply a stale SUBSET of
-      # migrations via WithInitScripts, so later-migration columns
-      # (must_change_password, outbox.entity_id/sequence_number, …) are missing
-      # and ~30 tests fail with "column does not exist". Fixing that means pointing
-      # every harness at the full migration set and re-verifying against Docker,
-      # which the dev env lacks. Until then the migrations-apply-on-clean-DB step
-      # above is the hard gate (it catches the deploy-breaking migration class),
-      # and the unit-level platform-scope guard covers the auth-under-RLS class.
-      # TODO: repair the harnesses (apply full migrations) and drop continue-on-error.
-      #
-      # TestExplain* are excluded regardless: they assert query-planner choices
-      # (index vs seq scan), which are inherently data-size/stats-dependent and
-      # flaky on CI's tiny datasets — a performance check, not a correctness gate.
+      # TestExplain* are excluded: they assert query-planner choices (index vs seq
+      # scan), which are inherently data-size/stats-dependent and flaky on CI's
+      # tiny datasets — a performance check, not a correctness gate.
       - name: Integration tests (-tags=integration)
-        continue-on-error: true
         env:
           REMNACORE_REQUIRE_INTEGRATION: "1"
         run: go test -tags=integration -count=1 -skip 'TestExplain' ./internal/adapter/postgres/... ./tests/integration/...
