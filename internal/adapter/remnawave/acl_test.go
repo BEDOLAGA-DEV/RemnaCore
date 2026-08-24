@@ -131,3 +131,46 @@ func TestMapWebhookEvent_UnifiedExpiration(t *testing.T) {
 		})
 	}
 }
+
+// TestMapWebhookEvent_QualifiedEventNaming covers the Remnawave 3 payload, which
+// qualifies the event with its scope ("user.created") where version 2 sent the
+// bare name ("created") and relied on the separate scope field. Concatenating
+// the two unconditionally produced "user.user.created", which matched no
+// mapping and was published as a subject no stream subscribes to.
+func TestMapWebhookEvent_QualifiedEventNaming(t *testing.T) {
+	cases := []struct {
+		name     string
+		scope    string
+		event    string
+		expected string
+	}{
+		{"v3 qualified user event", "user", "user.created", "remnawave.user.synced"},
+		{"v2 bare user event", "user", "created", "remnawave.user.synced"},
+		{"v3 qualified node event", "node", "node.disabled", "infra.node_disabled"},
+		{"v2 bare node event", "node", "disabled", "infra.node_disabled"},
+		{"unmapped event keeps a single scope", "user", "user.something_new", "remnawave.user.something_new"},
+		{"scope omitted entirely", "", "user.deleted", "remnawave.user.deleted"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := MapWebhookEvent(WebhookPayload{Scope: tc.scope, Event: tc.event})
+			assert.Equal(t, tc.expected, got)
+		})
+	}
+}
+
+// The unified expiry event must be recognised under the Remnawave 3 naming too,
+// where it arrives as "user.expiration" rather than "expiration".
+func TestMapWebhookEvent_UnifiedExpiration_QualifiedNaming(t *testing.T) {
+	hours := func(h int) *int { return &h }
+
+	got := MapWebhookEvent(WebhookPayload{
+		Scope: "user", Event: "user.expiration", Meta: WebhookMeta{Expiration: hours(25)},
+	})
+	assert.Equal(t, "subscription.expired_24h_ago", got)
+
+	got = MapWebhookEvent(WebhookPayload{
+		Scope: "user", Event: "user.expiration", Meta: WebhookMeta{Expiration: hours(-6)},
+	})
+	assert.Equal(t, "subscription.expiring_soon", got)
+}

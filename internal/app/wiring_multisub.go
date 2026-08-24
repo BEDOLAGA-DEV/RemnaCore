@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	builtinremnawave "github.com/BEDOLAGA-DEV/RemnaCore/internal/builtin/remnawave"
 	"log/slog"
 
 	"go.uber.org/fx"
@@ -51,12 +52,16 @@ var multisubWiring = fx.Options(
 	fx.Provide(func(repo *postgres.SagaRepository) multisub.SagaRepository { return repo }),
 
 	// Remnawave gateway -> interface binding
-	fx.Provide(func(client *remnawave.ResilientClient, clk clock.Clock, cfg *config.Config, logger *slog.Logger) *remnawave.GatewayAdapter {
-		if len(cfg.Remnawave.DefaultInternalSquads) == 0 {
-			logger.Warn("remnawave: no default internal squads configured; new VPN users will be provisioned without squads (empty/non-working subscriptions) unless a per-request override is supplied",
-				slog.String("config_key", "remnawave.default_internal_squads"))
-		}
-		return remnawave.NewGatewayAdapter(client, clk, cfg.Remnawave.DefaultInternalSquads, logger)
+	fx.Provide(func(
+		client *remnawave.ResilientClient,
+		clk clock.Clock,
+		resolver *builtinremnawave.ConfigResolver,
+		logger *slog.Logger,
+	) *remnawave.GatewayAdapter {
+		// Squads are resolved per provision: which ones exist is a property of
+		// the panel, and the strategy for choosing them is admin-managed
+		// configuration. Neither is known while the graph is being built.
+		return remnawave.NewGatewayAdapter(client, clk, resolver.InternalSquads, logger)
 	}),
 	fx.Provide(func(adapter *remnawave.GatewayAdapter) multisub.RemnawaveGateway { return adapter }),
 
@@ -120,12 +125,19 @@ func provideVPNProvider(
 	executor sdk.VPNHTTPExecutor,
 	dispatcher hookdispatch.Dispatcher,
 	logger *slog.Logger,
-	cfg *config.Config,
+	resolver *builtinremnawave.ConfigResolver,
 ) multisub.VPNProvider {
 	if executor == nil {
 		return nil
 	}
-	return pluginadapter.NewPluginVPNProvider(dispatcher, executor, logger, cfg.Remnawave.DefaultInternalSquads)
+	// The plugin-backed provider resolves its default squads the same way the
+	// direct gateway does, so both paths provision identical subscriptions.
+	squads, err := resolver.InternalSquads(context.Background())
+	if err != nil {
+		logger.Warn("remnawave: could not resolve default internal squads for the plugin VPN provider",
+			slog.Any("error", err))
+	}
+	return pluginadapter.NewPluginVPNProvider(dispatcher, executor, logger, squads)
 }
 
 // startSyncService spawns the periodic Remnawave binding sync as a background

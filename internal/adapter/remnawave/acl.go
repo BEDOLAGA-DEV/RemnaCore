@@ -1,7 +1,7 @@
 package remnawave
 
 import (
-	"fmt"
+	"strings"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/naming"
 )
@@ -91,15 +91,36 @@ func BuildUsername(platformUserID, purpose string, index int) string {
 // soon; positive = hours after expiry → expired N hours ago). Unknown
 // combinations fall back to "remnawave.{scope}.{event}".
 func MapWebhookEvent(p WebhookPayload) string {
-	if p.Scope == "user" && p.Event == "expiration" {
+	key := webhookEventKey(p)
+
+	if key == webhookEventUserExpiration {
 		if p.Meta.Expiration != nil && *p.Meta.Expiration > 0 {
 			return "subscription.expired_24h_ago"
 		}
 		return "subscription.expiring_soon"
 	}
-	key := p.Scope + "." + p.Event
+
 	if domainEvent, ok := webhookEventMap[key]; ok {
 		return domainEvent
 	}
-	return fmt.Sprintf("remnawave.%s.%s", p.Scope, p.Event)
+	return "remnawave." + key
+}
+
+// webhookEventUserExpiration is the unified expiry event whose direction is
+// carried by meta.expiration rather than by the event name.
+const webhookEventUserExpiration = "user.expiration"
+
+// webhookEventKey normalises a webhook into the "scope.event" form the mapping
+// table is keyed by.
+//
+// Remnawave 3 sends the event already qualified with its scope
+// ("user.created"); version 2 sent the bare name ("created") and relied on the
+// separate scope field to complete it. Prepending unconditionally produced
+// "user.user.created", which matched nothing and was published as a subject no
+// stream subscribes to.
+func webhookEventKey(p WebhookPayload) string {
+	if p.Scope == "" || strings.HasPrefix(p.Event, p.Scope+".") {
+		return p.Event
+	}
+	return p.Scope + "." + p.Event
 }

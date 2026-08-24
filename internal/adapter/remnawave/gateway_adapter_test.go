@@ -2,6 +2,7 @@ package remnawave
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -20,11 +21,12 @@ func TestGatewayAdapter_CreateUser_AppliesSquads(t *testing.T) {
 	var sentBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sentBody, _ = io.ReadAll(r.Body)
-		_, _ = w.Write([]byte(`{"response":{"uuid":"u1","shortUuid":"s1"}}`))
+		_, _ = w.Write([]byte(`{"response":{"id":1,"shortUuid":"s1"}}`))
 	}))
 	defer srv.Close()
 	mk := func(def []string) *GatewayAdapter {
-		return NewGatewayAdapter(NewResilientClient(NewClient(srv.URL, "t"), circuitbreaker.DefaultConfig(), slog.Default()), clock.NewReal(), def, slog.Default())
+		squads := func(context.Context) ([]string, error) { return def, nil }
+		return NewGatewayAdapter(NewResilientClient(NewClient(srv.URL, "t"), circuitbreaker.DefaultConfig(), slog.Default()), clock.NewReal(), squads, slog.Default())
 	}
 	_, err := mk([]string{"default-sq"}).CreateUser(context.Background(), multisub.CreateRemnawaveUserRequest{Username: "u"})
 	require.NoError(t, err)
@@ -92,4 +94,48 @@ func TestGatewayAdapter_AssignToSquad_RejectsPreV3Ref(t *testing.T) {
 	err := a.AssignToSquad(context.Background(), "user-uuid-1", "squad-uuid-9")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not a numeric id")
+}
+
+// Squads are resolved per provision, so a failure to reach the panel must not
+// abort provisioning: the user is still created, just without squads, and the
+// existing loud warning covers the consequence.
+func TestGatewayAdapter_CreateUser_SurvivesSquadResolutionFailure(t *testing.T) {
+	var sentBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sentBody, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte(`{"response":{"id":2,"shortUuid":"s2"}}`))
+	}))
+	defer srv.Close()
+
+	failing := func(context.Context) ([]string, error) { return nil, errors.New("panel unreachable") }
+	a := NewGatewayAdapter(NewResilientClient(NewClient(srv.URL, "t"), circuitbreaker.DefaultConfig(), slog.Default()),
+		clock.NewReal(), failing, slog.Default())
+
+	res, err := a.CreateUser(context.Background(), multisub.CreateRemnawaveUserRequest{Username: "u"})
+	require.NoError(t, err)
+	require.Equal(t, "2", res.UUID)
+	require.NotContains(t, string(sentBody), "activeInternalSquads")
+}
+
+// An explicit per-request override must win over whatever the resolver says,
+// and must not trigger a resolver call at all.
+func TestGatewayAdapter_CreateUser_OverrideSkipsResolver(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"response":{"id":3,"shortUuid":"s3"}}`))
+	}))
+	defer srv.Close()
+
+	called := false
+	resolver := func(context.Context) ([]string, error) {
+		called = true
+		return []string{"resolved"}, nil
+	}
+	a := NewGatewayAdapter(NewResilientClient(NewClient(srv.URL, "t"), circuitbreaker.DefaultConfig(), slog.Default()),
+		clock.NewReal(), resolver, slog.Default())
+
+	_, err := a.CreateUser(context.Background(), multisub.CreateRemnawaveUserRequest{
+		Username: "u", ActiveInternalSquads: []string{"explicit"},
+	})
+	require.NoError(t, err)
+	require.False(t, called, "resolver must not be consulted when the request names its own squads")
 }

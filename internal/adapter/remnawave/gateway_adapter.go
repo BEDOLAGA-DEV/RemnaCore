@@ -17,21 +17,32 @@ const DefaultBindingExpiryMonths = 1
 // GatewayAdapter implements multisub.RemnawaveGateway, translating between
 // domain port types and Remnawave client types. This is the Anti-Corruption
 // Layer boundary; no remnawave client types leak into the domain.
+// SquadsFunc reports the internal squads a newly provisioned user should join
+// when the request does not name any itself.
+type SquadsFunc func(context.Context) ([]string, error)
+
 type GatewayAdapter struct {
-	client                *ResilientClient
-	clock                 clock.Clock
-	defaultInternalSquads []string
-	logger                *slog.Logger
+	client        *ResilientClient
+	clock         clock.Clock
+	defaultSquads SquadsFunc
+	logger        *slog.Logger
 }
 
 // NewGatewayAdapter creates a GatewayAdapter backed by the given resilient
-// client. defaultInternalSquads is applied to every CreateUser call that does
-// not supply its own ActiveInternalSquads override.
-func NewGatewayAdapter(client *ResilientClient, clk clock.Clock, defaultInternalSquads []string, logger *slog.Logger) *GatewayAdapter {
+// client. defaultSquads is consulted for every CreateUser call that does not
+// supply its own ActiveInternalSquads override.
+//
+// The squads are resolved per provision rather than fixed at construction:
+// they come from the panel and from admin-managed configuration, neither of
+// which is known when the dependency graph is built.
+func NewGatewayAdapter(client *ResilientClient, clk clock.Clock, defaultSquads SquadsFunc, logger *slog.Logger) *GatewayAdapter {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &GatewayAdapter{client: client, clock: clk, defaultInternalSquads: defaultInternalSquads, logger: logger}
+	if defaultSquads == nil {
+		defaultSquads = func(context.Context) ([]string, error) { return nil, nil }
+	}
+	return &GatewayAdapter{client: client, clock: clk, defaultSquads: defaultSquads, logger: logger}
 }
 
 // CreateUser provisions a VPN user in Remnawave, translating the domain
@@ -43,13 +54,18 @@ func (a *GatewayAdapter) CreateUser(ctx context.Context, req multisub.CreateRemn
 	}
 	rwReq.ActiveInternalSquads = req.ActiveInternalSquads
 	if len(rwReq.ActiveInternalSquads) == 0 {
-		rwReq.ActiveInternalSquads = a.defaultInternalSquads
+		squads, err := a.defaultSquads(ctx)
+		if err != nil {
+			a.logger.WarnContext(ctx, "remnawave: could not resolve default internal squads",
+				slog.String("username", req.Username), slog.Any("error", err))
+		}
+		rwReq.ActiveInternalSquads = squads
 	}
 	if len(rwReq.ActiveInternalSquads) == 0 {
 		// A user with no internal squads gets an EMPTY, non-working subscription
 		// (no inbounds). This is almost always a misconfiguration — warn loudly
 		// per provision, not just once at boot, so it surfaces in operations.
-		a.logger.WarnContext(ctx, "remnawave: provisioning VPN user with NO internal squads — subscription will not work; set REMNAWAVE_DEFAULT_INTERNAL_SQUADS or supply squads per request",
+		a.logger.WarnContext(ctx, "remnawave: provisioning VPN user with NO internal squads — subscription will not work; create an internal squad on the panel, or set the plugin's Default Squad Assignment",
 			slog.String("username", req.Username))
 	}
 	if req.ExpireAt != nil {

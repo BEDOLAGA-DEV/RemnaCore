@@ -39,6 +39,10 @@ type PlatformConfig struct {
 	// WebhookSecret verifies the HMAC signature on inbound panel webhooks.
 	// Declared in the manifest as the "Webhook Signing Secret" field.
 	WebhookSecret string
+
+	// SquadStrategy decides which internal squads a newly provisioned VPN user
+	// joins. Declared in the manifest as "Default Squad Assignment".
+	SquadStrategy string
 }
 
 // Configured reports whether the panel can actually be reached. Callers use it
@@ -122,6 +126,7 @@ func (r *ConfigResolver) load(ctx context.Context) (PlatformConfig, error) {
 	p, err := r.plugins.GetBySlug(ctx, plugin.BuiltInSlugRemnawaveProvider)
 	if err == nil && p != nil {
 		cfg.WebhookSecret = p.Config[plugin.RemnawaveConfigKeyWebhookSecret]
+		cfg.SquadStrategy = p.Config[ConfigKeySquadStrategy]
 		cfg.URL = p.Config[plugin.RemnawaveConfigKeyURL]
 		cfg.APIToken = p.Config[plugin.RemnawaveConfigKeyAPIToken]
 	}
@@ -162,4 +167,75 @@ func (r *ConfigResolver) WebhookSecret(ctx context.Context) string {
 		return ""
 	}
 	return cfg.WebhookSecret
+}
+
+// Squad assignment strategies, as declared in the plugin manifest.
+const (
+	// SquadStrategyAllInternal puts every new user in every internal squad.
+	// This is the manifest default and the only sensible behaviour for a
+	// single-squad install.
+	SquadStrategyAllInternal = "all_internal"
+
+	// SquadStrategyManual leaves squad assignment to an operator or to an
+	// explicit per-request override.
+	SquadStrategyManual = "manual"
+
+	// ConfigKeySquadStrategy is the plugin config key holding the strategy.
+	ConfigKeySquadStrategy = "default_squad_strategy"
+)
+
+// InternalSquads returns the internal squad uuids a newly provisioned VPN user
+// should join.
+//
+// A user with no squads receives an empty, non-working subscription, so this
+// answers the question the provisioning saga cannot: which squads count as
+// "the default". The strategy comes from the plugin's configuration; an
+// unset value means the manifest default, all_internal.
+//
+// An empty result is a legitimate answer under the manual strategy. Under
+// all_internal it means the panel reported no internal squads, which the
+// caller reports as the misconfiguration it is.
+func (r *ConfigResolver) InternalSquads(ctx context.Context) ([]string, error) {
+	cfg, err := r.Resolve(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	strategy := cfg.SquadStrategy
+	if strategy == "" {
+		strategy = SquadStrategyAllInternal
+	}
+
+	switch strategy {
+	case SquadStrategyManual:
+		return nil, nil
+	case SquadStrategyAllInternal:
+		return r.allInternalSquads(ctx)
+	default:
+		// round_robin and geo_based are offered by the manifest but not
+		// implemented. Falling back to all_internal keeps subscriptions
+		// working rather than silently issuing empty ones.
+		return r.allInternalSquads(ctx)
+	}
+}
+
+// allInternalSquads lists every internal squad registered on the panel.
+func (r *ConfigResolver) allInternalSquads(ctx context.Context) ([]string, error) {
+	client, err := r.Client(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	squads, err := client.GetInternalSquads(tenantctx.WithPlatformScope(ctx))
+	if err != nil {
+		return nil, fmt.Errorf("list internal squads: %w", err)
+	}
+
+	uuids := make([]string, 0, len(squads))
+	for _, s := range squads {
+		if s.UUID != "" {
+			uuids = append(uuids, s.UUID)
+		}
+	}
+	return uuids, nil
 }
