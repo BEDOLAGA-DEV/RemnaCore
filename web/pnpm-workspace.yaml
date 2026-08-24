@@ -3,8 +3,8 @@ packages:
   - "cabinet"
   - "admin"
 
-# Перенесено из package.json: pnpm 10+ читает настройки отсюда, а не из
-# поля "pnpm" в package.json (pnpm 11 предупреждает и игнорирует его).
+# Moved here from package.json: pnpm 10 and later read settings from this file,
+# and pnpm 11 warns about — and ignores — the "pnpm" field in package.json.
 onlyBuiltDependencies:
   - "@biomejs/biome"
   - "esbuild"

@@ -172,11 +172,12 @@ architecture tests. The human-readable event catalog is in
 | Backend | Go 1.27.0, chi v5, Uber Fx |
 | Authentication | ECDSA P-256 / JWT ES256, Argon2id |
 | Database | PostgreSQL 18, pgx, sqlc, ledger-tracked SQL migrations |
+| VPN panel | Remnawave 3.x (API v3) |
 | Tenant security | PostgreSQL RLS, scoped RBAC, least-privilege application role |
 | Cache and limits | Valkey 9, resilient rate limiters, circuit breakers |
 | Messaging | NATS JetStream 2.12, Watermill, transactional outbox |
 | Plugins | Extism Go SDK / wazero-compatible WASM |
-| Frontend | React 19, TypeScript 6, Vite 8, Tailwind CSS 4 |
+| Frontend | React 19, TypeScript 7, Vite 8, Tailwind CSS 4 |
 | Client state | TanStack Query/Router, Zustand, React Hook Form, Zod |
 | Localization | i18next (`en`, `ru`) |
 | Telegram | `go-telegram/bot`, Telegram Mini App authentication |
@@ -236,13 +237,21 @@ After the script completes:
 
 1. Open the Admin Panel and create the first administrator through the setup wizard.
 2. Open the Remnawave Panel and create an API token.
-3. Set `REMNAWAVE_API_TOKEN` in `.env`.
-4. Restart the application:
+3. In the Admin Panel, open **Plugins → Remnawave Provider** and register a panel
+   connection with the panel URL (`http://remnawave-backend:3000` inside the
+   Compose network) and that API token.
+4. Confirm the platform can reach the panel:
 
 ```bash
-docker compose restart remnacore
 curl http://localhost/readyz
 ```
+
+> [!NOTE]
+> Remnawave settings live in the plugin configuration, not the environment.
+> `REMNAWAVE_URL`, `REMNAWAVE_API_TOKEN` and `REMNAWAVE_WEBHOOK_SECRET` are
+> still present in `.env` for the panel container itself, but the platform does
+> not read them — it takes the panel URL, API token, webhook signing secret and
+> default squad strategy from the plugin.
 
 > [!IMPORTANT]
 > Do not run the application with the PostgreSQL bootstrap/superuser account.
@@ -394,6 +403,10 @@ successful backups for 14 days by default.
 - [ ] Add staging E2E against real Remnawave and payment-provider sandboxes
 - [ ] Automate backup restore drills and document upgrade/rollback procedures
 - [ ] Wire the planned `invoice.paid` → reseller commission event consumer
+- [ ] Replace the two endpoints Remnawave 3 removed with no successor:
+      realtime node bandwidth and accessible nodes for an external squad
+- [ ] Implement the `round_robin` and `geo_based` squad strategies the plugin
+      manifest advertises — both currently fall back to `all_internal`
 
 > [!NOTE]
 > Email verification records and events already exist, but registration

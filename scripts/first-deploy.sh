@@ -69,7 +69,9 @@ REMNAWAVE_DB_USER=remnawave
 REMNAWAVE_DB_PASSWORD=${REMNAWAVE_DB_PASSWORD}
 REMNAWAVE_DB_NAME=remnawave
 
-# ACTION REQUIRED: set after Remnawave first login (panel UI → API tokens)
+# Consumed by the Remnawave container, not by the platform: RemnaCore takes the
+# panel URL and API token from the Remnawave plugin's configuration, which is
+# managed in the Admin Panel.
 REMNAWAVE_API_TOKEN=changeme
 
 REMNAWAVE_WEBHOOK_SECRET=${REMNAWAVE_WEBHOOK_SECRET}
@@ -229,8 +231,10 @@ echo -e "${YELLOW}ACTION REQUIRED:${NC}"
 echo "  1. Open the Admin panel at http://${SERVER_IP}:8081 and create the admin"
 echo "  2. Open Remnawave panel at http://${SERVER_IP}:8080"
 echo "  3. Create an API token in the Remnawave panel"
-echo "  4. Edit .env and set REMNAWAVE_API_TOKEN=<your-token>"
-echo "  5. Run: docker compose restart remnacore"
+echo "  4. In the Admin panel open Plugins -> Remnawave Provider and register a"
+echo "     panel connection: URL http://remnawave-backend:3000 and that token"
+echo "  5. Optional: set the plugin's Webhook Signing Secret to the value of"
+echo "     REMNAWAVE_WEBHOOK_SECRET_HEADER so inbound panel webhooks verify"
 echo ""
 echo -e "${YELLOW}RECOMMENDED:${NC} schedule database backups —"
 echo "  30 3 * * * cd ${PROJECT_DIR} && ./scripts/backup.sh >> /var/log/remnacore-backup.log 2>&1"
