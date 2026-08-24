@@ -1,29 +1,42 @@
 import { cn } from "@remnacore/shared";
 import {
   type ColumnDef,
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
+  type RowData,
+  tableFeatures,
+  useTable,
 } from "@tanstack/react-table";
 import { useTranslation } from "react-i18next";
 
-type DataTableProps<TData> = {
+// react-table v9 requires the feature set to be declared explicitly. This table
+// only renders rows — sorting, filtering and pagination are done server-side —
+// so the set is empty. The core row model is wired up automatically in v9 and is
+// no longer passed as an option.
+const features = tableFeatures({});
+
+// Column type for DataTable. Callers should use this instead of ColumnDef so the
+// feature set stays in one place.
+export type DataTableColumn<TData extends RowData> = ColumnDef<
+  typeof features,
+  TData
+>;
+
+type DataTableProps<TData extends RowData> = {
   data: TData[];
-  columns: ColumnDef<TData, unknown>[];
+  columns: DataTableColumn<TData>[];
   isLoading?: boolean;
 };
 
-export function DataTable<TData>({
+export function DataTable<TData extends RowData>({
   data,
   columns,
   isLoading,
 }: DataTableProps<TData>) {
   const { t } = useTranslation();
 
-  const table = useReactTable({
+  const table = useTable({
+    features,
     data,
     columns,
-    getCoreRowModel: getCoreRowModel(),
   });
 
   return (
@@ -41,12 +54,9 @@ export function DataTable<TData>({
                     key={header.id}
                     className="whitespace-nowrap px-3 py-2.5 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
                   >
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext(),
-                        )}
+                    {header.isPlaceholder ? null : (
+                      <table.FlexRender header={header} />
+                    )}
                   </th>
                 ))}
               </tr>
@@ -80,15 +90,12 @@ export function DataTable<TData>({
                     "last:border-0",
                   )}
                 >
-                  {row.getVisibleCells().map((cell) => (
+                  {row.getAllCells().map((cell) => (
                     <td
                       key={cell.id}
                       className="max-w-[220px] truncate px-3 py-2.5 text-sm text-foreground"
                     >
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext(),
-                      )}
+                      <table.FlexRender cell={cell} />
                     </td>
                   ))}
                 </tr>

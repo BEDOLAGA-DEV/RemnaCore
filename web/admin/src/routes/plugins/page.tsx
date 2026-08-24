@@ -11,7 +11,6 @@ import {
 } from "@remnacore/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
-import type { ColumnDef } from "@tanstack/react-table";
 import {
   Check,
   ChevronDown,
@@ -28,7 +27,7 @@ import { useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { PageHeader, Panel, PanelHeader, TermButton } from "@/components/ui";
-import { DataTable } from "../../components/DataTable.js";
+import { DataTable, type DataTableColumn } from "../../components/DataTable.js";
 
 // ─── Shared terminal field styles ───────────────────────────────────────────
 
@@ -379,9 +378,9 @@ function GenericPluginPage({
 
   // ─── Table columns ───────────────────────────────────────────────────────
 
-  const columns: ColumnDef<PluginDocument, unknown>[] = [
+  const columns: DataTableColumn<PluginDocument>[] = [
     ...columnKeys.map(
-      (key): ColumnDef<PluginDocument, unknown> => ({
+      (key): DataTableColumn<PluginDocument> => ({
         id: `data_${key}`,
         header: pageFields
           ? (pageFields.find((f) => f.key === key)?.label ?? prettifyKey(key))

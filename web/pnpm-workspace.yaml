@@ -2,3 +2,9 @@ packages:
   - "shared"
   - "cabinet"
   - "admin"
+
+# Перенесено из package.json: pnpm 10+ читает настройки отсюда, а не из
+# поля "pnpm" в package.json (pnpm 11 предупреждает и игнорирует его).
+onlyBuiltDependencies:
+  - "@biomejs/biome"
+  - "esbuild"

@@ -13,13 +13,7 @@
     "test": "pnpm -r test"
   },
   "engines": {
-    "node": ">=20",
-    "pnpm": ">=9"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@biomejs/biome",
-      "esbuild"
-    ]
+    "node": ">=20.11",
+    "pnpm": ">=10"
   }
 }
