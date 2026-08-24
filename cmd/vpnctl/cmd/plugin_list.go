@@ -18,10 +18,7 @@ type pluginListEntry struct {
 	Lang    string `json:"lang"`
 }
 
-// pluginListResponse wraps the API response.
-type pluginListResponse struct {
-	Data []pluginListEntry `json:"data"`
-}
+// The admin plugin listing returns a bare JSON array, not an envelope.
 
 var pluginListCmd = &cobra.Command{
 	Use:   "list",
@@ -48,14 +45,14 @@ func runPluginList(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("list failed (HTTP %d): %s", status, string(body))
 	}
 
-	var resp pluginListResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
+	var plugins []pluginListEntry
+	if err := json.Unmarshal(body, &plugins); err != nil {
 		return fmt.Errorf("parsing response: %w", err)
 	}
 
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
 	fmt.Fprintln(w, "ID\tSLUG\tNAME\tVERSION\tSTATUS\tLANG")
-	for _, p := range resp.Data {
+	for _, p := range plugins {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", p.ID, p.Slug, p.Name, p.Version, p.Status, p.Lang)
 	}
 	return w.Flush()

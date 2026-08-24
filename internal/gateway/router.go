@@ -116,11 +116,23 @@ func NewRouter(p RouterParams) http.Handler {
 		return otelhttp.NewHandler(next, observability.ServiceName)
 	})
 
+	// PluginInstallPath is the one endpoint that accepts a multi-megabyte upload.
+	// Declared here so the body-size exception and the route cannot drift apart.
+	const PluginInstallPath = "/api/admin/plugins"
+
 	// Global middleware stack.
 	r.Use(chimiddleware.Recoverer)
 	r.Use(chimiddleware.RealIP)
 	r.Use(middleware.RequestID)
-	r.Use(middleware.MaxBodySize(middleware.DefaultMaxBodyBytes))
+	r.Use(middleware.MaxBodySizeFunc(func(req *http.Request) int64 {
+		// Plugin installation uploads a compiled WASM module, which is far
+		// larger than anything else the API accepts. Everything else keeps the
+		// tight default.
+		if req.Method == http.MethodPost && req.URL.Path == PluginInstallPath {
+			return middleware.MaxUploadBodyBytes
+		}
+		return middleware.DefaultMaxBodyBytes
+	}))
 	r.Use(middleware.RequestLogger)
 	r.Use(chimiddleware.Compress(GzipCompressionLevel))
 	r.Use(middleware.RateLimit(p.RateLimiter))
