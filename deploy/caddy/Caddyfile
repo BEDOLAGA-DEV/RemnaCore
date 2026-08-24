@@ -18,7 +18,11 @@
     handle /healthz {
         reverse_proxy remnacore:4000
     }
-    handle /sub/* {
+    # handle_path strips the /sub prefix; the subscription proxy registers the
+    # short uuid at its root, so a plain `handle` would forward /sub/{uuid} and
+    # get a 404. Everything not matched here falls through to the cabinet SPA,
+    # which would otherwise answer subscription requests with its index.html.
+    handle_path /sub/* {
         reverse_proxy remnacore:4100
     }
     handle {
