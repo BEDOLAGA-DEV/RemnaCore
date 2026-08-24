@@ -1,6 +1,7 @@
 package remnawave
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -21,17 +22,27 @@ const (
 // WebhookHandler verifies HMAC-SHA256 signatures and dispatches parsed
 // WebhookPayload values to a callback.
 type WebhookHandler struct {
-	secret    string
+	secretFor func(context.Context) string
 	onPayload func(WebhookPayload)
 }
 
 // NewWebhookHandler returns a handler that verifies webhook signatures against
-// secret and forwards valid payloads to onPayload.
-func NewWebhookHandler(secret string, onPayload func(WebhookPayload)) *WebhookHandler {
+// the secret secretFor reports, and forwards valid payloads to onPayload.
+//
+// The secret is read per request rather than captured once: it is administered
+// through the Remnawave plugin's configuration, so an operator setting or
+// rotating it must take effect without restarting the platform.
+func NewWebhookHandler(secretFor func(context.Context) string, onPayload func(WebhookPayload)) *WebhookHandler {
 	return &WebhookHandler{
-		secret:    secret,
+		secretFor: secretFor,
 		onPayload: onPayload,
 	}
+}
+
+// NewWebhookHandlerWithSecret is the fixed-secret form, for tests and for
+// callers that genuinely hold a constant.
+func NewWebhookHandlerWithSecret(secret string, onPayload func(WebhookPayload)) *WebhookHandler {
+	return NewWebhookHandler(func(context.Context) string { return secret }, onPayload)
 }
 
 // ServeHTTP implements http.Handler. It reads the body (limited to
@@ -50,7 +61,7 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sigHex := r.Header.Get(HeaderWebhookSecret)
-	if !h.verifySignature(body, sigHex) {
+	if !h.verifySignature(r.Context(), body, sigHex) {
 		http.Error(w, "invalid signature", http.StatusForbidden)
 		return
 	}
@@ -67,11 +78,13 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // verifySignature computes HMAC-SHA256 of body using the shared secret and
 // compares it to the provided hex-encoded signature in constant time.
-func (h *WebhookHandler) verifySignature(body []byte, sigHex string) bool {
+func (h *WebhookHandler) verifySignature(ctx context.Context, body []byte, sigHex string) bool {
+	secret := h.secretFor(ctx)
+
 	// Fail closed on an unset secret: HMAC over an empty key is trivially
 	// forgeable, so an attacker could inject arbitrary Remnawave payloads. Reject
 	// every webhook until a real secret is configured.
-	if h.secret == "" {
+	if secret == "" {
 		return false
 	}
 
@@ -80,7 +93,7 @@ func (h *WebhookHandler) verifySignature(body []byte, sigHex string) bool {
 		return false
 	}
 
-	mac := hmac.New(sha256.New, []byte(h.secret))
+	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(body)
 	expected := mac.Sum(nil)
 

@@ -95,7 +95,7 @@ func (hm *HealthMonitor) checkAll(ctx context.Context) {
 	// Skip health checks when the Remnawave client has no URL configured.
 	// This happens when the connection is managed via the plugin UI and
 	// hasn't been set yet (or env vars were removed).
-	if !hm.remnawaveClient.IsConfigured() {
+	if !hm.remnawaveClient.IsConfigured(ctx) {
 		return
 	}
 

@@ -120,8 +120,8 @@ func NewResilientClient(client *Client, cfg circuitbreaker.Config, logger *slog.
 }
 
 // IsConfigured delegates to the underlying Client.
-func (rc *ResilientClient) IsConfigured() bool {
-	return rc.client.IsConfigured()
+func (rc *ResilientClient) IsConfigured(ctx context.Context) bool {
+	return rc.client.IsConfigured(ctx)
 }
 
 // withTimeout derives a context with the given per-operation timeout.

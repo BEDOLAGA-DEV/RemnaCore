@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"fmt"
+	"github.com/BEDOLAGA-DEV/RemnaCore/internal/plugin"
+	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/pluginstore"
 	"log/slog"
 	"net/http"
 	"time"
@@ -15,6 +17,7 @@ import (
 	natsadapter "github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/nats"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/postgres"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/adapter/remnawave"
+	builtinremnawave "github.com/BEDOLAGA-DEV/RemnaCore/internal/builtin/remnawave"
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/config"
 	billingaggregate "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/aggregate"
 	billingservice "github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/billing/service"
@@ -101,6 +104,12 @@ var natsWiring = fx.Options(
 	// Async plugin consumer
 	fx.Provide(natsadapter.NewPluginAsyncConsumer),
 
+	// Remnawave settings come from the admin-managed plugin configuration, not
+	// the environment, so both the resolver and the client it backs are wired
+	// here where the plugin package is visible.
+	fx.Provide(provideRemnawaveConfigResolver),
+	fx.Provide(provideRemnawaveClient),
+
 	// Webhook handler — provided as named http.Handler to avoid gateway→adapter import.
 	fx.Provide(fx.Annotate(provideWebhookHandler, fx.ResultTags(`name:"remnawave_webhook"`))),
 
@@ -128,8 +137,11 @@ var natsWiring = fx.Options(
 
 // provideWebhookHandler creates a Remnawave WebhookHandler that translates
 // incoming webhook payloads into domain events and publishes them to NATS.
-func provideWebhookHandler(cfg *config.Config, pub *natsadapter.EventPublisher, logger *slog.Logger) http.Handler {
-	return remnawave.NewWebhookHandler(cfg.Remnawave.WebhookSecret.Expose(), func(payload remnawave.WebhookPayload) {
+func provideWebhookHandler(resolver *builtinremnawave.ConfigResolver, pub *natsadapter.EventPublisher, logger *slog.Logger) http.Handler {
+	// The signing secret is administered through the Remnawave plugin, not the
+	// environment, so it is read per request. Reading it once here would have
+	// captured an empty string and rejected every inbound webhook.
+	return remnawave.NewWebhookHandler(resolver.WebhookSecret, func(payload remnawave.WebhookPayload) {
 		domainEvent := remnawave.MapWebhookEvent(payload)
 		logger.Info("remnawave webhook received",
 			slog.String("scope", payload.Scope),
@@ -268,5 +280,28 @@ func startPluginAsyncConsumer(lc fx.Lifecycle, consumer *natsadapter.PluginAsync
 			})
 			return nil
 		},
+	})
+}
+
+// provideRemnawaveConfigResolver exposes the admin-managed Remnawave settings
+// to the rest of the graph.
+func provideRemnawaveConfigResolver(
+	collections pluginstore.Store,
+	plugins plugin.PluginRepository,
+	clk clock.Clock,
+) *builtinremnawave.ConfigResolver {
+	return builtinremnawave.NewConfigResolver(collections, plugins, clk)
+}
+
+// provideRemnawaveClient builds the Remnawave client on top of that resolver so
+// it picks up the panel an administrator registers, instead of the environment
+// variables the config loader no longer reads.
+func provideRemnawaveClient(resolver *builtinremnawave.ConfigResolver) *remnawave.Client {
+	return remnawave.NewResolvingClient(func(ctx context.Context) (string, string, error) {
+		cfg, err := resolver.Resolve(ctx)
+		if err != nil {
+			return "", "", err
+		}
+		return cfg.URL, cfg.APIToken, nil
 	})
 }

@@ -1,6 +1,8 @@
 package remnawave
 
 import (
+	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -24,7 +26,7 @@ func TestWebhookHandler_ValidSignature(t *testing.T) {
 	body := `{"scope":"user","event":"created","timestamp":"2026-01-01T00:00:00Z","data":{"uuid":"u-1"}}`
 
 	var received *WebhookPayload
-	handler := NewWebhookHandler(secret, func(p WebhookPayload) {
+	handler := NewWebhookHandlerWithSecret(secret, func(p WebhookPayload) {
 		received = &p
 	})
 
@@ -44,7 +46,7 @@ func TestWebhookHandler_ValidSignature(t *testing.T) {
 }
 
 func TestWebhookHandler_InvalidSignature(t *testing.T) {
-	handler := NewWebhookHandler("correct-secret", func(p WebhookPayload) {
+	handler := NewWebhookHandlerWithSecret("correct-secret", func(p WebhookPayload) {
 		t.Fatal("callback should not be invoked for invalid signature")
 	})
 
@@ -61,7 +63,7 @@ func TestWebhookHandler_InvalidSignature(t *testing.T) {
 }
 
 func TestWebhookHandler_EmptyBody(t *testing.T) {
-	handler := NewWebhookHandler("secret", func(p WebhookPayload) {
+	handler := NewWebhookHandlerWithSecret("secret", func(p WebhookPayload) {
 		t.Fatal("callback should not be invoked for empty body")
 	})
 
@@ -84,7 +86,7 @@ func TestHeaderWebhookSecret_MatchesPanel(t *testing.T) {
 // is rejected (otherwise webhooks would be forgeable).
 func TestWebhookHandler_EmptySecretRejectsAll(t *testing.T) {
 	called := false
-	handler := NewWebhookHandler("", func(WebhookPayload) { called = true })
+	handler := NewWebhookHandlerWithSecret("", func(WebhookPayload) { called = true })
 
 	body := `{"scope":"user","event":"created"}`
 	// Signature an attacker would compute against the empty key.
@@ -97,4 +99,41 @@ func TestWebhookHandler_EmptySecretRejectsAll(t *testing.T) {
 
 	assert.Equal(t, http.StatusForbidden, rec.Code)
 	assert.False(t, called, "callback must not fire when the secret is unset")
+}
+
+// The signing secret is administered through the Remnawave plugin, so it must
+// be read per request: an operator setting or rotating it has to take effect
+// without restarting the platform.
+func TestWebhookHandler_ReadsSecretPerRequest(t *testing.T) {
+	current := ""
+	h := NewWebhookHandler(
+		func(context.Context) string { return current },
+		func(WebhookPayload) {},
+	)
+
+	body := []byte(`{"event":"x"}`)
+	sign := func(secret string) string {
+		mac := hmac.New(sha256.New, []byte(secret))
+		mac.Write(body)
+		return hex.EncodeToString(mac.Sum(nil))
+	}
+	post := func(sig string) int {
+		req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+		req.Header.Set(HeaderWebhookSecret, sig)
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		return rr.Code
+	}
+
+	// Before configuration the handler fails closed, whatever it is sent.
+	require.Equal(t, http.StatusForbidden, post(sign("later-secret")))
+
+	// Configuring the plugin takes effect on the next request, no restart.
+	current = "later-secret"
+	require.Equal(t, http.StatusOK, post(sign("later-secret")))
+
+	// Rotating it invalidates signatures made with the previous value.
+	current = "rotated-secret"
+	require.Equal(t, http.StatusForbidden, post(sign("later-secret")))
+	require.Equal(t, http.StatusOK, post(sign("rotated-secret")))
 }

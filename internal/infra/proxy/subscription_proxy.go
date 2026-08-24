@@ -57,7 +57,9 @@ const (
 	// L2CacheKeyPrefix is the Valkey key prefix for L2-cached subscription configs.
 	L2CacheKeyPrefix = "sub:"
 	// RemnawaveSubPath is the URL path segment for Remnawave subscription endpoints.
-	RemnawaveSubPath = "/sub/"
+	// Remnawave 3 serves subscription content under /api; version 2 exposed
+	// it at the root.
+	RemnawaveSubPath = "/api/sub/"
 
 	// MaxSubscriptionConfigBytes is the maximum allowed size for a subscription
 	// configuration response from Remnawave.
@@ -179,11 +181,25 @@ func (sp *SubscriptionProxy) ServeSubscription(w http.ResponseWriter, r *http.Re
 // fetchFromRemnawave retrieves the subscription config from Remnawave by
 // calling the subscription URL endpoint directly.
 func (sp *SubscriptionProxy) fetchFromRemnawave(ctx context.Context, shortUUID string) ([]byte, error) {
+	baseURL, err := sp.remnawaveClient.BaseURL(ctx)
+	if err != nil {
+		// No panel registered yet. Reported as-is so the operator sees
+		// "not configured" rather than a transport failure.
+		return nil, fmt.Errorf("subscription upstream: %w", err)
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		sp.remnawaveClient.BaseURL()+RemnawaveSubPath+shortUUID, nil)
+		baseURL+RemnawaveSubPath+shortUUID, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
+
+	// Remnawave refuses requests that did not arrive through a reverse proxy
+	// over HTTPS. The platform talks to it directly on the container network,
+	// so it presents the same headers the API client does — without them the
+	// panel closes the connection and this surfaces as an EOF.
+	req.Header.Set(httpconst.HeaderForwardedProto, remnawave.ForwardedProtoHTTPS)
+	req.Header.Set(httpconst.HeaderForwardedFor, remnawave.ForwardedLoopbackIP)
 
 	resp, err := sp.httpClient.Do(req)
 	if err != nil {

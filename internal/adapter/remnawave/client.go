@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -48,6 +49,11 @@ const (
 	subPathActionsReorder = "actions/reorder"
 )
 
+// ErrNotConfigured is returned when no Remnawave panel has been registered
+// yet. It is deliberately distinct from a transport error: the operator has to
+// add a panel connection, not debug the network.
+var ErrNotConfigured = errors.New("remnawave panel is not configured")
+
 // isHTTPSuccess reports whether the given HTTP status code is in the 2xx range.
 func isHTTPSuccess(statusCode int) bool {
 	const (
@@ -57,36 +63,57 @@ func isHTTPSuccess(statusCode int) bool {
 	return statusCode >= httpSuccessMin && statusCode < httpSuccessMax
 }
 
+// CredentialsFunc reports the Remnawave endpoint to talk to right now.
+type CredentialsFunc func(context.Context) (baseURL, apiToken string, err error)
+
 // Client communicates with the Remnawave REST API.
+//
+// Credentials are resolved per request rather than fixed at construction.
+// Remnawave is configured through the admin panel, not the environment, so a
+// client built during dependency wiring would hold an empty base URL for the
+// life of the process — which surfaced as `unsupported protocol scheme ""`
+// from the subscription proxy.
 type Client struct {
-	baseURL    string
-	apiToken   string
-	httpClient *http.Client
+	credentials CredentialsFunc
+	httpClient  *http.Client
 }
 
-// NewClient returns a Client configured for the given Remnawave instance.
+// NewClient returns a Client pinned to one Remnawave instance.
 func NewClient(baseURL, apiToken string) *Client {
+	return NewResolvingClient(func(context.Context) (string, string, error) {
+		return baseURL, apiToken, nil
+	})
+}
+
+// NewResolvingClient returns a Client that asks resolve for its endpoint on
+// every call, so configuration changes take effect without a restart.
+func NewResolvingClient(resolve CredentialsFunc) *Client {
 	return &Client{
-		baseURL:  baseURL,
-		apiToken: apiToken,
+		credentials: resolve,
 		httpClient: &http.Client{
 			Timeout: DefaultHTTPTimeout,
 		},
 	}
 }
 
-// BaseURL returns the configured Remnawave base URL. This is used by the
-// SubscriptionProxy to build direct subscription fetch URLs.
-func (c *Client) BaseURL() string {
-	return c.baseURL
+// BaseURL returns the Remnawave base URL currently configured. The
+// SubscriptionProxy uses it to build direct subscription fetch URLs.
+func (c *Client) BaseURL(ctx context.Context) (string, error) {
+	baseURL, _, err := c.credentials(ctx)
+	if err != nil {
+		return "", err
+	}
+	if baseURL == "" {
+		return "", ErrNotConfigured
+	}
+	return baseURL, nil
 }
 
-// IsConfigured reports whether the client has a non-empty base URL.
-// When Remnawave is configured via plugin UI (not env vars), the client
-// may be created with empty URL at startup and becomes usable only after
-// the admin sets the connection in the plugin config.
-func (c *Client) IsConfigured() bool {
-	return c.baseURL != ""
+// IsConfigured reports whether a panel endpoint is available. Until an
+// administrator registers one there is nothing to call.
+func (c *Client) IsConfigured(ctx context.Context) bool {
+	baseURL, token, err := c.credentials(ctx)
+	return err == nil && baseURL != "" && token != ""
 }
 
 // do executes an HTTP request against the Remnawave API and decodes the JSON
@@ -105,12 +132,20 @@ func (c *Client) do(ctx context.Context, method, path string, body any, dest any
 		reqBody = bytes.NewReader(encoded)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, reqBody)
+	baseURL, apiToken, err := c.credentials(ctx)
+	if err != nil {
+		return fmt.Errorf("resolve remnawave endpoint: %w", err)
+	}
+	if baseURL == "" {
+		return ErrNotConfigured
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, baseURL+path, reqBody)
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
 
-	req.Header.Set(httpconst.HeaderAuthorization, httpconst.BearerPrefix+c.apiToken)
+	req.Header.Set(httpconst.HeaderAuthorization, httpconst.BearerPrefix+apiToken)
 	req.Header.Set(httpconst.HeaderContentType, httpconst.ContentTypeJSON)
 	// Remnawave v2.7+ requires reverse proxy headers to bypass ProxyCheckMiddleware
 	req.Header.Set(httpconst.HeaderForwardedProto, ForwardedProtoHTTPS)
