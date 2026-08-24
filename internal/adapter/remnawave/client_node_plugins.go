@@ -10,7 +10,7 @@ const APIPathNodePlugins = "/api/node-plugins/"
 
 // Node plugin endpoint path segments.
 const (
-	nodePluginsPathClone = "actions/clone/"
+	nodePluginsPathClone = "actions/clone"
 )
 
 // GetNodePlugins returns all node plugins.
@@ -60,10 +60,12 @@ func (c *Client) ReorderNodePlugins(ctx context.Context, uuids []string) error {
 	return c.do(ctx, http.MethodPost, APIPathNodePlugins+subPathActionsReorder, req, nil)
 }
 
-// CloneNodePlugin duplicates an existing node plugin.
+// CloneNodePlugin duplicates an existing node plugin. Remnawave 3 moved the
+// source uuid out of the path and into the request body.
 func (c *Client) CloneNodePlugin(ctx context.Context, uuid string) (*NodePlugin, error) {
 	var resp APIResponse[NodePlugin]
-	if err := c.do(ctx, http.MethodPost, APIPathNodePlugins+nodePluginsPathClone+uuid, nil, &resp); err != nil {
+	body := cloneNodePluginRequest{CloneFromUUID: uuid}
+	if err := c.do(ctx, http.MethodPost, APIPathNodePlugins+nodePluginsPathClone, body, &resp); err != nil {
 		return nil, err
 	}
 	return &resp.Response, nil

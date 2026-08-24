@@ -28,3 +28,8 @@ type UpdateNodePluginRequest struct {
 	Config    json.RawMessage `json:"config,omitempty"`
 	IsEnabled *bool           `json:"isEnabled,omitempty"`
 }
+
+// cloneNodePluginRequest is the POST /api/node-plugins/actions/clone body.
+type cloneNodePluginRequest struct {
+	CloneFromUUID string `json:"cloneFromUuid"`
+}

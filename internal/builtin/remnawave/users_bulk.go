@@ -14,13 +14,15 @@ import (
 
 const maxBulkUUIDs = 1000
 
-func validateUUIDList(uuids []string, w http.ResponseWriter) bool {
-	if len(uuids) == 0 {
-		writeAPIError(w, apierror.ValidationFailed.WithDetails("uuids is required"))
+// validateUserIDList guards bulk user operations. Remnawave 3 addresses users
+// by numeric id, so the payload carries user_ids rather than uuids.
+func validateUserIDList(userIDs []int64, w http.ResponseWriter) bool {
+	if len(userIDs) == 0 {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("user_ids is required"))
 		return false
 	}
-	if len(uuids) > maxBulkUUIDs {
-		writeAPIError(w, apierror.ValidationFailed.WithDetails(fmt.Sprintf("maximum %d UUIDs per request", maxBulkUUIDs)))
+	if len(userIDs) > maxBulkUUIDs {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails(fmt.Sprintf("maximum %d user ids per request", maxBulkUUIDs)))
 		return false
 	}
 	return true
@@ -94,23 +96,23 @@ func (h *Handler) BulkResetTraffic(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		UUIDs []string `json:"uuids"`
+		UserIDs []int64 `json:"user_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, apierror.ValidationFailed.WithDetails("invalid request body"))
 		return
 	}
 
-	if !validateUUIDList(req.UUIDs, w) {
+	if !validateUserIDList(req.UserIDs, w) {
 		return
 	}
 
-	if err := client.BulkResetTraffic(r.Context(), req.UUIDs); err != nil {
+	if err := client.BulkResetTraffic(r.Context(), req.UserIDs); err != nil {
 		writeAPIError(w, apierror.Internal)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"action": "traffic_reset", "count": len(req.UUIDs)})
+	writeJSON(w, http.StatusOK, map[string]any{"action": "traffic_reset", "count": len(req.UserIDs)})
 }
 
 // BulkRevokeSubscription revokes subscriptions for multiple users.
@@ -124,23 +126,23 @@ func (h *Handler) BulkRevokeSubscription(w http.ResponseWriter, r *http.Request)
 	}
 
 	var req struct {
-		UUIDs []string `json:"uuids"`
+		UserIDs []int64 `json:"user_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, apierror.ValidationFailed.WithDetails("invalid request body"))
 		return
 	}
 
-	if !validateUUIDList(req.UUIDs, w) {
+	if !validateUserIDList(req.UserIDs, w) {
 		return
 	}
 
-	if err := client.BulkRevokeSubscription(r.Context(), req.UUIDs); err != nil {
+	if err := client.BulkRevokeSubscription(r.Context(), req.UserIDs); err != nil {
 		writeAPIError(w, apierror.Internal)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"action": "subscriptions_revoked", "count": len(req.UUIDs)})
+	writeJSON(w, http.StatusOK, map[string]any{"action": "subscriptions_revoked", "count": len(req.UserIDs)})
 }
 
 // BulkDeleteUsers deletes multiple users by UUIDs.
@@ -154,23 +156,23 @@ func (h *Handler) BulkDeleteUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		UUIDs []string `json:"uuids"`
+		UserIDs []int64 `json:"user_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, apierror.ValidationFailed.WithDetails("invalid request body"))
 		return
 	}
 
-	if !validateUUIDList(req.UUIDs, w) {
+	if !validateUserIDList(req.UserIDs, w) {
 		return
 	}
 
-	if err := client.BulkDeleteUsers(r.Context(), req.UUIDs); err != nil {
+	if err := client.BulkDeleteUsers(r.Context(), req.UserIDs); err != nil {
 		writeAPIError(w, apierror.Internal)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"action": "users_deleted", "count": len(req.UUIDs)})
+	writeJSON(w, http.StatusOK, map[string]any{"action": "users_deleted", "count": len(req.UserIDs)})
 }
 
 // BulkUpdateSquads updates squad assignments for multiple users.

@@ -195,10 +195,10 @@ func (rc *ResilientClient) DisableUser(ctx context.Context, uuid string) error {
 
 // AddUsersToInternalSquad assigns users to an internal squad through the
 // circuit breaker.
-func (rc *ResilientClient) AddUsersToInternalSquad(ctx context.Context, squadUUID string, userUUIDs []string) error {
+func (rc *ResilientClient) AddUsersToInternalSquad(ctx context.Context, squadUUID string, userIDs []int64) error {
 	ctx, cancel := withTimeout(ctx, TimeoutAssignSquad)
 	defer cancel()
 	return cbExecNoResult(rc.cb, func() error {
-		return rc.client.AddUsersToInternalSquad(ctx, squadUUID, userUUIDs)
+		return rc.client.AddUsersToInternalSquad(ctx, squadUUID, userIDs)
 	})
 }

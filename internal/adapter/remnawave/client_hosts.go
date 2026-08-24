@@ -74,15 +74,15 @@ func (c *Client) GetHostTags(ctx context.Context) ([]string, error) {
 
 // BulkEnableHosts enables the specified hosts.
 func (c *Client) BulkEnableHosts(ctx context.Context, uuids []string) error {
-	return c.do(ctx, http.MethodPost, APIPathHostsBulk+APIPathHostEnable, UUIDsRequest{UUIDs: uuids}, nil)
+	return c.do(ctx, http.MethodPost, APIPathHostsBulk+APIPathHostEnable, HostUUIDsRequest{UUIDs: uuids}, nil)
 }
 
 // BulkDisableHosts disables the specified hosts.
 func (c *Client) BulkDisableHosts(ctx context.Context, uuids []string) error {
-	return c.do(ctx, http.MethodPost, APIPathHostsBulk+APIPathHostDisable, UUIDsRequest{UUIDs: uuids}, nil)
+	return c.do(ctx, http.MethodPost, APIPathHostsBulk+APIPathHostDisable, HostUUIDsRequest{UUIDs: uuids}, nil)
 }
 
 // BulkDeleteHosts deletes the specified hosts.
 func (c *Client) BulkDeleteHosts(ctx context.Context, uuids []string) error {
-	return c.do(ctx, http.MethodPost, APIPathHostsBulk+APIPathHostDelete, UUIDsRequest{UUIDs: uuids}, nil)
+	return c.do(ctx, http.MethodPost, APIPathHostsBulk+APIPathHostDelete, HostUUIDsRequest{UUIDs: uuids}, nil)
 }

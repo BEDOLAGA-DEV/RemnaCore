@@ -3,6 +3,7 @@ package remnawave
 import (
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -29,10 +30,16 @@ func (h *Handler) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"panel_id": panelID, "subscriptions": subs})
 }
 
-// GetSubscriptionByUUID returns a subscription by UUID.
+// GetSubscriptionByUUID returns a subscription by its owner's user id.
+// Remnawave 3 removed lookup by subscription UUID; the route parameter keeps
+// its name so existing links stay valid.
 func (h *Handler) GetSubscriptionByUUID(w http.ResponseWriter, r *http.Request) {
 	panelID := chi.URLParam(r, "panelID")
-	subUUID := chi.URLParam(r, "subUUID")
+	userID, convErr := strconv.ParseInt(chi.URLParam(r, "subUUID"), 10, 64)
+	if convErr != nil {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("subscription lookup expects a numeric user id"))
+		return
+	}
 
 	client, err := h.buildClientForPanel(r.Context(), panelID)
 	if err != nil {
@@ -40,7 +47,7 @@ func (h *Handler) GetSubscriptionByUUID(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	sub, err := client.GetSubscriptionByUUID(r.Context(), subUUID)
+	sub, err := client.GetSubscriptionByUserID(r.Context(), userID)
 	if err != nil {
 		writeAPIError(w, apierror.Internal)
 		return

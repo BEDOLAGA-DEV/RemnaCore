@@ -137,11 +137,13 @@ services:
   remnawave-backend:
     restart: unless-stopped
     mem_limit: ${REMNAWAVE_BACKEND_MEM_LIMIT:-1024m}
-    image: remnawave/backend:2
+    image: remnawave/backend:3
     environment:
       APP_PORT: "3000"
       METRICS_PORT: "3001"
       DATABASE_URL: "postgres://${REMNAWAVE_DB_USER:-remnawave}:${REMNAWAVE_DB_PASSWORD:-secret}@remnawave-db:5432/${REMNAWAVE_DB_NAME:-remnawave}?sslmode=disable"
+      # v3 объединила раздельные JWT-секреты в один APP_SECRET.
+      APP_SECRET: "${REMNAWAVE_APP_SECRET:?set REMNAWAVE_APP_SECRET in .env}"
       JWT_AUTH_SECRET: "${REMNAWAVE_JWT_AUTH_SECRET:-changeme}"
       JWT_API_TOKENS_SECRET: "${REMNAWAVE_JWT_API_TOKENS_SECRET:-changeme}"
       SUB_PUBLIC_DOMAIN: "${SUB_PUBLIC_DOMAIN:-https://sub.example.com}"

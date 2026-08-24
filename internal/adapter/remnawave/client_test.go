@@ -36,9 +36,10 @@ func TestClient_CreateUser(t *testing.T) {
 
 		resp := APIResponse[RemnawaveUser]{
 			Response: RemnawaveUser{
-				UUID:     "uuid-123",
-				Username: req.Username,
-				Status:   "ACTIVE",
+				ID:        123,
+				VlessUUID: "0e5e2e1e-0000-4000-8000-000000000001",
+				Username:  req.Username,
+				Status:    "ACTIVE",
 			},
 		}
 		w.Header().Set(httpconst.HeaderContentType, httpconst.ContentTypeJSON)
@@ -54,7 +55,8 @@ func TestClient_CreateUser(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	assert.Equal(t, "uuid-123", user.UUID)
+	assert.Equal(t, int64(123), user.ID)
+	assert.Equal(t, "123", user.UserRef())
 	assert.Equal(t, "p_testuser_main_0", user.Username)
 	assert.Equal(t, "ACTIVE", user.Status)
 }
@@ -124,11 +126,11 @@ func TestUpdateUser_UsesPatch(t *testing.T) {
 	var gotMethod, gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethod, gotPath = r.Method, r.URL.Path
-		_, _ = w.Write([]byte(`{"response":{"uuid":"u1"}}`))
+		_, _ = w.Write([]byte(`{"response":{"id":1}}`))
 	}))
 	defer srv.Close()
 	c := NewClient(srv.URL, "tok")
-	_, err := c.UpdateUser(context.Background(), UpdateUserRequest{UUID: "u1"})
+	_, err := c.UpdateUser(context.Background(), UpdateUserRequest{ID: 1})
 	require.NoError(t, err)
 	require.Equal(t, http.MethodPatch, gotMethod)
 	require.Equal(t, "/api/users/", gotPath)

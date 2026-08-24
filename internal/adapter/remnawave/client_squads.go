@@ -2,6 +2,7 @@ package remnawave
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 )
 
@@ -14,8 +15,10 @@ const (
 // Squad sub-path constants.
 const (
 	subPathAccessibleNodes = "/accessible-nodes"
-	subPathBulkAddUsers    = "/bulk-actions/add-users"
-	subPathBulkRemoveUsers = "/bulk-actions/remove-users"
+	// "many-users" variants target the listed users. The bare add-users /
+	// remove-users endpoints apply to ALL users and take no body.
+	subPathBulkAddUsers    = "/bulk-actions/add-many-users"
+	subPathBulkRemoveUsers = "/bulk-actions/remove-many-users"
 )
 
 // ---------------------------------------------------------------------------
@@ -72,15 +75,15 @@ func (c *Client) GetInternalSquadNodes(ctx context.Context, uuid string) ([]Remn
 	return resp.Response, nil
 }
 
-// AddUsersToInternalSquad adds users to an internal squad by their UUIDs.
-func (c *Client) AddUsersToInternalSquad(ctx context.Context, uuid string, userUUIDs []string) error {
-	body := BulkUsersRequest{UserUUIDs: userUUIDs}
+// AddUsersToInternalSquad adds the listed users to an internal squad.
+func (c *Client) AddUsersToInternalSquad(ctx context.Context, uuid string, userIDs []int64) error {
+	body := BulkUsersRequest{UserIDs: userIDs}
 	return c.do(ctx, http.MethodPost, APIPathInternalSquads+uuid+subPathBulkAddUsers, body, nil)
 }
 
-// RemoveUsersFromInternalSquad removes users from an internal squad by their UUIDs.
-func (c *Client) RemoveUsersFromInternalSquad(ctx context.Context, uuid string, userUUIDs []string) error {
-	body := BulkUsersRequest{UserUUIDs: userUUIDs}
+// RemoveUsersFromInternalSquad removes the listed users from an internal squad.
+func (c *Client) RemoveUsersFromInternalSquad(ctx context.Context, uuid string, userIDs []int64) error {
+	body := BulkUsersRequest{UserIDs: userIDs}
 	return c.do(ctx, http.MethodDelete, APIPathInternalSquads+uuid+subPathBulkRemoveUsers, body, nil)
 }
 
@@ -144,16 +147,38 @@ func (c *Client) GetExternalSquadNodes(ctx context.Context, uuid string) ([]Remn
 	return resp.Response, nil
 }
 
-// AddUsersToExternalSquad adds users to an external squad by their UUIDs.
-func (c *Client) AddUsersToExternalSquad(ctx context.Context, uuid string, userUUIDs []string) error {
-	body := BulkUsersRequest{UserUUIDs: userUUIDs}
-	return c.do(ctx, http.MethodPost, APIPathExternalSquads+uuid+subPathBulkAddUsers, body, nil)
+// setUserExternalSquad points a single user at an external squad, or clears the
+// assignment when squadUUID is nil.
+func (c *Client) setUserExternalSquad(ctx context.Context, userID int64, squadUUID *string) error {
+	body := setExternalSquadRequest{ID: userID, ExternalSquadUUID: squadUUID}
+	return c.do(ctx, http.MethodPatch, APIPathUsers, body, nil)
 }
 
-// RemoveUsersFromExternalSquad removes users from an external squad by their UUIDs.
-func (c *Client) RemoveUsersFromExternalSquad(ctx context.Context, uuid string, userUUIDs []string) error {
-	body := BulkUsersRequest{UserUUIDs: userUUIDs}
-	return c.do(ctx, http.MethodDelete, APIPathExternalSquads+uuid+subPathBulkRemoveUsers, body, nil)
+// AddUsersToExternalSquad assigns each listed user to an external squad.
+//
+// Remnawave 3 has no per-user bulk endpoint for external squads — the bare
+// add-users endpoint applies to EVERY user and takes no body. The assignment
+// now lives on the user record as externalSquadUuid, so this patches the
+// users one at a time and fails on the first error rather than half-applying
+// silently.
+func (c *Client) AddUsersToExternalSquad(ctx context.Context, uuid string, userIDs []int64) error {
+	for _, id := range userIDs {
+		if err := c.setUserExternalSquad(ctx, id, &uuid); err != nil {
+			return fmt.Errorf("assign user %d to external squad %s: %w", id, uuid, err)
+		}
+	}
+	return nil
+}
+
+// RemoveUsersFromExternalSquad clears the external squad on each listed user.
+// See AddUsersToExternalSquad for why this is a per-user patch.
+func (c *Client) RemoveUsersFromExternalSquad(ctx context.Context, uuid string, userIDs []int64) error {
+	for _, id := range userIDs {
+		if err := c.setUserExternalSquad(ctx, id, nil); err != nil {
+			return fmt.Errorf("clear external squad %s on user %d: %w", uuid, id, err)
+		}
+	}
+	return nil
 }
 
 // ReorderExternalSquads sets the display order for external squads.

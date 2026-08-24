@@ -157,15 +157,14 @@ func (h *Handler) AddNodesToSquad(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		NodeUUIDs []string `json:"node_uuids"`
+		UserIDs []int64 `json:"user_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, apierror.ValidationFailed.WithDetails("invalid request body"))
 		return
 	}
 
-	// AddUsersToInternalSquad is the adapter method for adding members
-	if err := client.AddUsersToInternalSquad(r.Context(), squadUUID, req.NodeUUIDs); err != nil {
+	if err := client.AddUsersToInternalSquad(r.Context(), squadUUID, req.UserIDs); err != nil {
 		writeAPIError(w, apierror.Internal)
 		return
 	}
@@ -185,14 +184,14 @@ func (h *Handler) RemoveNodesFromSquad(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		NodeUUIDs []string `json:"node_uuids"`
+		UserIDs []int64 `json:"user_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, apierror.ValidationFailed.WithDetails("invalid request body"))
 		return
 	}
 
-	if err := client.RemoveUsersFromInternalSquad(r.Context(), squadUUID, req.NodeUUIDs); err != nil {
+	if err := client.RemoveUsersFromInternalSquad(r.Context(), squadUUID, req.UserIDs); err != nil {
 		writeAPIError(w, apierror.Internal)
 		return
 	}
@@ -354,13 +353,13 @@ func (h *Handler) AddUsersToExternalSquad(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var req struct {
-		UserUUIDs []string `json:"user_uuids"`
+		UserIDs []int64 `json:"user_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, apierror.ValidationFailed.WithDetails("invalid request body"))
 		return
 	}
-	if err := client.AddUsersToExternalSquad(r.Context(), squadUUID, req.UserUUIDs); err != nil {
+	if err := client.AddUsersToExternalSquad(r.Context(), squadUUID, req.UserIDs); err != nil {
 		writeAPIError(w, apierror.Internal)
 		return
 	}
@@ -377,13 +376,13 @@ func (h *Handler) RemoveUsersFromExternalSquad(w http.ResponseWriter, r *http.Re
 		return
 	}
 	var req struct {
-		UserUUIDs []string `json:"user_uuids"`
+		UserIDs []int64 `json:"user_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, apierror.ValidationFailed.WithDetails("invalid request body"))
 		return
 	}
-	if err := client.RemoveUsersFromExternalSquad(r.Context(), squadUUID, req.UserUUIDs); err != nil {
+	if err := client.RemoveUsersFromExternalSquad(r.Context(), squadUUID, req.UserIDs); err != nil {
 		writeAPIError(w, apierror.Internal)
 		return
 	}

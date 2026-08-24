@@ -181,10 +181,11 @@ type IPFetchResult struct {
 }
 
 // DropConnectionsBy selects WHICH connections to drop (discriminated union:
-// by = "userUuids" or "ipAddresses").
+// by = "userIds" or "ipAddresses"). Remnawave 3 renamed the user variant and
+// switched it to numeric ids.
 type DropConnectionsBy struct {
 	By          string   `json:"by"`
-	UserUuids   []string `json:"userUuids,omitempty"`
+	UserIDs     []int64  `json:"userIds,omitempty"`
 	IpAddresses []string `json:"ipAddresses,omitempty"`
 }
 
@@ -195,9 +196,9 @@ type DropConnectionsTarget struct {
 	NodeUuids []string `json:"nodeUuids,omitempty"`
 }
 
-// DropConnectionsRequest is the payload to drop active connections. The 2.8.0
-// (and 2.7.0) contract uses two discriminated unions; the previous flat
-// {userUuid, nodeUuid} shape failed Zod validation.
+// DropConnectionsRequest is the payload to drop active connections. The
+// contract uses two discriminated unions; a flat {userUuid, nodeUuid} shape
+// fails Zod validation.
 type DropConnectionsRequest struct {
 	DropBy      DropConnectionsBy     `json:"dropBy"`
 	TargetNodes DropConnectionsTarget `json:"targetNodes"`
@@ -205,9 +206,9 @@ type DropConnectionsRequest struct {
 
 // NewDropUserConnections builds a request that drops all of a single user's
 // connections across every node.
-func NewDropUserConnections(userUUID string) DropConnectionsRequest {
+func NewDropUserConnections(userID int64) DropConnectionsRequest {
 	return DropConnectionsRequest{
-		DropBy:      DropConnectionsBy{By: "userUuids", UserUuids: []string{userUUID}},
+		DropBy:      DropConnectionsBy{By: "userIds", UserIDs: []int64{userID}},
 		TargetNodes: DropConnectionsTarget{Target: "allNodes"},
 	}
 }

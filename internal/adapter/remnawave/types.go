@@ -4,6 +4,7 @@ package remnawave
 
 import (
 	"encoding/json"
+	"strconv"
 	"time"
 )
 
@@ -24,8 +25,9 @@ type CreateUserRequest struct {
 }
 
 // UpdateUserRequest is the payload sent to Remnawave to modify an existing VPN user.
+// Remnawave 3 identifies users by a numeric id; the string uuid of 2.x is gone.
 type UpdateUserRequest struct {
-	UUID                 string    `json:"uuid"`
+	ID                   int64     `json:"id"`
 	Username             string    `json:"username,omitempty"`
 	TrafficLimitBytes    float64   `json:"trafficLimitBytes,omitempty"`
 	ExpireAt             time.Time `json:"expireAt,omitempty"`
@@ -39,8 +41,13 @@ type APIResponse[T any] struct {
 }
 
 // RemnawaveUser represents a VPN user as returned by Remnawave.
+//
+// Remnawave 3 replaced the string "uuid" with a numeric "id" and moved the
+// former UUID identity to "vlessUuid". ID is the value every user endpoint
+// addresses; VlessUUID is protocol identity and is not an API key.
 type RemnawaveUser struct {
-	UUID              string    `json:"uuid"`
+	ID                int64     `json:"id"`
+	VlessUUID         string    `json:"vlessUuid"`
 	Username          string    `json:"username"`
 	Status            string    `json:"status"`
 	TrafficLimitBytes float64   `json:"trafficLimitBytes"`
@@ -51,8 +58,15 @@ type RemnawaveUser struct {
 	ShortUUID         string    `json:"shortUuid"`
 }
 
-// RemnawaveUserTraffic is the nested traffic object on the 2.8.0 extended user
-// schema (GET /api/users/{uuid}, by-short-uuid, by-username, list).
+// UserRef renders the numeric user id the way the platform stores and passes
+// it around — as a string. Multi-Sub keeps a text identifier for the bound
+// Remnawave user, so this is the single conversion point on the way out.
+func (u RemnawaveUser) UserRef() string {
+	return strconv.FormatInt(u.ID, 10)
+}
+
+// RemnawaveUserTraffic is the nested traffic object on the extended user
+// schema (GET /api/users/{userId}, by-short-uuid, by-username, list).
 type RemnawaveUserTraffic struct {
 	UsedTrafficBytes         float64    `json:"usedTrafficBytes"`
 	LifetimeUsedTrafficBytes float64    `json:"lifetimeUsedTrafficBytes"`

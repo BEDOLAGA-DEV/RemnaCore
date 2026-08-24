@@ -3,6 +3,7 @@ package remnawave
 import (
 	"context"
 	"net/http"
+	"strconv"
 )
 
 // Remnawave API path constant for subscription endpoints.
@@ -11,7 +12,7 @@ const APIPathSubscriptions = "/api/subscriptions/"
 // Subscription lookup sub-path constants.
 const (
 	subPathByUsername  = "by-username/"
-	subPathByUUID      = "by-uuid/"
+	subPathByUserID    = "by-id/"
 	subPathByShortUUID = "by-short-uuid/"
 )
 
@@ -33,10 +34,13 @@ func (c *Client) GetSubscriptionByUsername(ctx context.Context, username string)
 	return &resp.Response, nil
 }
 
-// GetSubscriptionByUUID retrieves a subscription by its UUID.
-func (c *Client) GetSubscriptionByUUID(ctx context.Context, uuid string) (*RemnawaveSubscription, error) {
+// GetSubscriptionByUserID retrieves a subscription by its owner's user id.
+// Remnawave 3 dropped by-uuid along with the user UUID and addresses the
+// subscription through the numeric user id instead.
+func (c *Client) GetSubscriptionByUserID(ctx context.Context, userID int64) (*RemnawaveSubscription, error) {
 	var resp APIResponse[RemnawaveSubscription]
-	if err := c.do(ctx, http.MethodGet, APIPathSubscriptions+subPathByUUID+uuid, nil, &resp); err != nil {
+	path := APIPathSubscriptions + subPathByUserID + strconv.FormatInt(userID, 10)
+	if err := c.do(ctx, http.MethodGet, path, nil, &resp); err != nil {
 		return nil, err
 	}
 	return &resp.Response, nil

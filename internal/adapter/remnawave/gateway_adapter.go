@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 
 	"github.com/BEDOLAGA-DEV/RemnaCore/internal/domain/multisub"
 	"github.com/BEDOLAGA-DEV/RemnaCore/pkg/clock"
@@ -64,7 +65,7 @@ func (a *GatewayAdapter) CreateUser(ctx context.Context, req multisub.CreateRemn
 	}
 
 	return &multisub.RemnawaveUserResult{
-		UUID:      user.UUID,
+		UUID:      user.UserRef(),
 		ShortUUID: user.ShortUUID,
 	}, nil
 }
@@ -77,7 +78,7 @@ func (a *GatewayAdapter) GetUser(ctx context.Context, remnawaveUUID string) (*mu
 	}
 
 	return &multisub.RemnawaveUserStatus{
-		UUID:      user.UUID,
+		UUID:      user.UserRef(),
 		Enabled:   user.Status == RemnawaveStatusActive,
 		Expired:   user.Status == RemnawaveStatusExpired || user.Status == RemnawaveStatusLimited,
 		UsedBytes: user.UsedTrafficBytesInt(),
@@ -111,10 +112,26 @@ func (a *GatewayAdapter) DisableUser(ctx context.Context, remnawaveUUID string) 
 // AssignToSquad assigns a Remnawave user to an internal squad (server group)
 // via the bulk-add-users endpoint.
 func (a *GatewayAdapter) AssignToSquad(ctx context.Context, remnawaveUUID, squadUUID string) error {
-	if err := a.client.AddUsersToInternalSquad(ctx, squadUUID, []string{remnawaveUUID}); err != nil {
+	userID, err := parseUserRef(remnawaveUUID)
+	if err != nil {
+		return fmt.Errorf("remnawave assign to squad %s: %w", squadUUID, err)
+	}
+	if err := a.client.AddUsersToInternalSquad(ctx, squadUUID, []int64{userID}); err != nil {
 		return fmt.Errorf("remnawave assign user %s to squad %s: %w", remnawaveUUID, squadUUID, err)
 	}
 	return nil
+}
+
+// parseUserRef turns the platform's text identifier for a bound Remnawave user
+// back into the numeric id the panel expects. Bindings created before the
+// Remnawave 3 migration hold a UUID string and cannot be addressed by the v3
+// API at all, so the failure is reported rather than passed along.
+func parseUserRef(ref string) (int64, error) {
+	id, err := strconv.ParseInt(ref, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("remnawave user ref %q is not a numeric id (pre-v3 binding?): %w", ref, err)
+	}
+	return id, nil
 }
 
 // compile-time interface check

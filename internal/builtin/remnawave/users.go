@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -77,10 +78,26 @@ func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// routeUserID reads the numeric Remnawave user id from the request path.
+// Remnawave 3 addresses users by id; the route parameter keeps its historical
+// name so existing links and the admin UI stay valid. It writes the validation
+// error itself and reports whether the caller may continue.
+func routeUserID(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "userUUID"), 10, 64)
+	if err != nil {
+		writeAPIError(w, apierror.ValidationFailed.WithDetails("user id must be numeric"))
+		return 0, false
+	}
+	return id, true
+}
+
 // UpdateUser updates a user's settings on a panel.
 func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	panelID := chi.URLParam(r, "panelID")
-	userUUID := chi.URLParam(r, "userUUID")
+	userID, ok := routeUserID(w, r)
+	if !ok {
+		return
+	}
 
 	client, err := h.buildClientForPanel(r.Context(), panelID)
 	if err != nil {
@@ -93,7 +110,7 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, apierror.ValidationFailed.WithDetails("invalid request body"))
 		return
 	}
-	req.UUID = userUUID
+	req.ID = userID
 
 	user, err := client.UpdateUser(r.Context(), req)
 	if err != nil {
@@ -149,7 +166,10 @@ func (h *Handler) RevokeUserSubscription(w http.ResponseWriter, r *http.Request)
 // DisconnectUser drops all active connections for a user.
 func (h *Handler) DisconnectUser(w http.ResponseWriter, r *http.Request) {
 	panelID := chi.URLParam(r, "panelID")
-	userUUID := chi.URLParam(r, "userUUID")
+	userID, ok := routeUserID(w, r)
+	if !ok {
+		return
+	}
 
 	client, err := h.buildClientForPanel(r.Context(), panelID)
 	if err != nil {
@@ -157,7 +177,7 @@ func (h *Handler) DisconnectUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := client.DropConnections(r.Context(), rwclient.NewDropUserConnections(userUUID)); err != nil {
+	if err := client.DropConnections(r.Context(), rwclient.NewDropUserConnections(userID)); err != nil {
 		writeAPIError(w, apierror.Internal)
 		return
 	}
@@ -168,7 +188,10 @@ func (h *Handler) DisconnectUser(w http.ResponseWriter, r *http.Request) {
 // GetUserSessions returns live sessions for a user (via IP fetch).
 func (h *Handler) GetUserSessions(w http.ResponseWriter, r *http.Request) {
 	panelID := chi.URLParam(r, "panelID")
-	userUUID := chi.URLParam(r, "userUUID")
+	userID, ok := routeUserID(w, r)
+	if !ok {
+		return
+	}
 
 	client, err := h.buildClientForPanel(r.Context(), panelID)
 	if err != nil {
@@ -176,16 +199,16 @@ func (h *Handler) GetUserSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := client.FetchUserIPs(r.Context(), userUUID)
+	job, err := client.FetchUserIPs(r.Context(), userID)
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"sessions": []any{}, "error": err.Error()})
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"panel_id":  panelID,
-		"user_uuid": userUUID,
-		"job_id":    job.JobID,
+		"panel_id": panelID,
+		"user_id":  userID,
+		"job_id":   job.JobID,
 	})
 }
 

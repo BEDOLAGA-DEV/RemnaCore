@@ -8,11 +8,13 @@ import (
 )
 
 func TestRemnawaveUserWithTraffic_NestedUserTraffic(t *testing.T) {
-	const body = `{"uuid":"u1","status":"ACTIVE","lastTrafficResetAt":"2026-01-01T00:00:00Z",
+	const body = `{"id":1,"vlessUuid":"0e5e2e1e-0000-4000-8000-000000000001","status":"ACTIVE","lastTrafficResetAt":"2026-01-01T00:00:00Z",
 		"userTraffic":{"usedTrafficBytes":2048,"lifetimeUsedTrafficBytes":4096,"onlineAt":null,"firstConnectedAt":null,"lastConnectedNodeUuid":null}}`
 	var u RemnawaveUserWithTraffic
 	require.NoError(t, json.Unmarshal([]byte(body), &u))
-	require.Equal(t, "u1", u.UUID)
+	require.Equal(t, int64(1), u.ID)
+	require.Equal(t, "1", u.UserRef())
+	require.Equal(t, "0e5e2e1e-0000-4000-8000-000000000001", u.VlessUUID)
 	require.Equal(t, int64(2048), u.UsedTrafficBytesInt())
 	require.Equal(t, float64(4096), u.UserTraffic.LifetimeUsedTrafficBytes)
 	require.Nil(t, u.UserTraffic.OnlineAt)
@@ -30,12 +32,12 @@ func TestCreateUserRequest_ActiveInternalSquads(t *testing.T) {
 }
 
 func TestUpdateUserRequest_ActiveInternalSquads(t *testing.T) {
-	b, err := json.Marshal(UpdateUserRequest{UUID: "u1", ActiveInternalSquads: []string{"sq1"}})
+	b, err := json.Marshal(UpdateUserRequest{ID: 1, ActiveInternalSquads: []string{"sq1"}})
 	require.NoError(t, err)
 	require.Contains(t, string(b), `"activeInternalSquads":["sq1"]`)
 	require.NotContains(t, string(b), "activeUserInbounds")
 
-	b2, err := json.Marshal(UpdateUserRequest{UUID: "u1"})
+	b2, err := json.Marshal(UpdateUserRequest{ID: 1})
 	require.NoError(t, err)
 	require.NotContains(t, string(b2), "activeInternalSquads") // omitempty
 }

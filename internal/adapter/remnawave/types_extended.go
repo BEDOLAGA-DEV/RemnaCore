@@ -11,33 +11,45 @@ type StatusRequest struct {
 	Status string `json:"status"`
 }
 
-// UUIDsRequest is a request body carrying a list of UUIDs.
-type UUIDsRequest struct {
+// HostUUIDsRequest is a request body carrying a list of host UUIDs. Hosts kept
+// string UUIDs in Remnawave 3 — only users moved to numeric ids — so this is
+// deliberately separate from UserIDsRequest.
+type HostUUIDsRequest struct {
 	UUIDs []string `json:"uuids"`
 }
 
-// BulkUpdateUsersRequest is the payload for bulk-updating selected users.
-type BulkUpdateUsersRequest struct {
-	UUIDs             []string   `json:"uuids"`
+// UserIDsRequest is a request body carrying a list of numeric user ids.
+type UserIDsRequest struct {
+	UserIDs []int64 `json:"userIds"`
+}
+
+// BulkUpdateFields carries the mutable user attributes of a bulk update.
+// Remnawave 3 nests them under "fields" instead of spreading them next to the
+// id list.
+type BulkUpdateFields struct {
 	Status            *string    `json:"status,omitempty"`
 	TrafficLimitBytes *float64   `json:"trafficLimitBytes,omitempty"`
 	ExpireAt          *time.Time `json:"expireAt,omitempty"`
 }
 
+// BulkUpdateUsersRequest is the payload for bulk-updating selected users.
+type BulkUpdateUsersRequest struct {
+	UserIDs []int64          `json:"userIds"`
+	Fields  BulkUpdateFields `json:"fields"`
+}
+
 // BulkUpdateSquadsRequest is the payload for bulk-updating squad assignments.
 type BulkUpdateSquadsRequest struct {
-	UUIDs    []string `json:"uuids"`
-	SquadIDs []string `json:"squadIds"`
+	UserIDs              []int64  `json:"userIds"`
+	ActiveInternalSquads []string `json:"activeInternalSquads"`
 }
 
 // BulkExtendExpirationRequest is the payload for extending expiration dates.
-// UUIDs is optional: when set, only those users are affected; when omitted,
-// the operation applies to all users.
+// UserIDs is optional: when set, only those users are affected; the /all/
+// variant of the endpoint ignores it and extends everyone.
 type BulkExtendExpirationRequest struct {
-	UUIDs  []string `json:"uuids,omitempty"`
-	Days   int      `json:"days"`
-	Hours  int      `json:"hours"`
-	Method string   `json:"method"` // "add" or "set"
+	UserIDs    []int64 `json:"userIds,omitempty"`
+	ExtendDays int     `json:"extendDays"`
 }
 
 // BulkUpdateAllRequest is the payload for updating all users at once.
@@ -131,8 +143,6 @@ type RemnawaveHost struct {
 	Path          string      `json:"path,omitempty"`
 	Host          string      `json:"host,omitempty"`
 	Tags          []string    `json:"tags,omitempty"`
-	CreatedAt     time.Time   `json:"createdAt"`
-	UpdatedAt     time.Time   `json:"updatedAt"`
 }
 
 // CreateHostRequest is the payload for creating a new host. The nested inbound

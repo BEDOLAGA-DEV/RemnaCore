@@ -49,10 +49,10 @@ func TestGatewayAdapter_GetUser_StatusMapping(t *testing.T) {
 	}
 	for _, tc := range cases {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprintf(w, `{"response":{"uuid":"u1","status":%q,"userTraffic":{"usedTrafficBytes":1024}}}`, tc.status)
+			fmt.Fprintf(w, `{"response":{"id":1,"status":%q,"userTraffic":{"usedTrafficBytes":1024}}}`, tc.status)
 		}))
 		a := NewGatewayAdapter(NewResilientClient(NewClient(srv.URL, "t"), circuitbreaker.DefaultConfig(), slog.Default()), clock.NewReal(), nil, slog.Default())
-		got, err := a.GetUser(context.Background(), "u1")
+		got, err := a.GetUser(context.Background(), "1")
 		require.NoError(t, err)
 		require.Equal(t, tc.wantEnabled, got.Enabled, "status %s enabled", tc.status)
 		require.Equal(t, tc.wantExpired, got.Expired, "status %s expired", tc.status)
@@ -61,7 +61,7 @@ func TestGatewayAdapter_GetUser_StatusMapping(t *testing.T) {
 	}
 }
 
-func TestGatewayAdapter_AssignToSquad_HitsBulkAddEndpoint(t *testing.T) {
+func TestGatewayAdapter_AssignToSquad_HitsManyUsersEndpoint(t *testing.T) {
 	var gotPath string
 	var gotBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -72,8 +72,24 @@ func TestGatewayAdapter_AssignToSquad_HitsBulkAddEndpoint(t *testing.T) {
 	defer srv.Close()
 
 	a := NewGatewayAdapter(NewResilientClient(NewClient(srv.URL, "t"), circuitbreaker.DefaultConfig(), slog.Default()), clock.NewReal(), nil, slog.Default())
-	err := a.AssignToSquad(context.Background(), "user-uuid-1", "squad-uuid-9")
+	err := a.AssignToSquad(context.Background(), "42", "squad-uuid-9")
 	require.NoError(t, err)
-	require.Equal(t, "/api/internal-squads/squad-uuid-9/bulk-actions/add-users", gotPath)
-	require.Contains(t, string(gotBody), "user-uuid-1")
+	// The bare add-users endpoint would enrol EVERY user in the squad, so the
+	// per-user variant is the only correct target.
+	require.Equal(t, "/api/internal-squads/squad-uuid-9/bulk-actions/add-many-users", gotPath)
+	require.Contains(t, string(gotBody), `"userIds":[42]`)
+}
+
+// A binding created before the Remnawave 3 migration holds a UUID, which the
+// v3 API cannot address. That must surface as an error, not a silent no-op.
+func TestGatewayAdapter_AssignToSquad_RejectsPreV3Ref(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("no request expected, got %s", r.URL.Path)
+	}))
+	defer srv.Close()
+
+	a := NewGatewayAdapter(NewResilientClient(NewClient(srv.URL, "t"), circuitbreaker.DefaultConfig(), slog.Default()), clock.NewReal(), nil, slog.Default())
+	err := a.AssignToSquad(context.Background(), "user-uuid-1", "squad-uuid-9")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not a numeric id")
 }

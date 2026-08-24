@@ -33,18 +33,18 @@ func (c *Client) BulkUpdateUsers(ctx context.Context, req BulkUpdateUsersRequest
 }
 
 // BulkResetTraffic resets traffic counters for the specified users.
-func (c *Client) BulkResetTraffic(ctx context.Context, uuids []string) error {
-	return c.do(ctx, http.MethodPost, APIPathUsersBulk+BulkActionResetTraffic, UUIDsRequest{UUIDs: uuids}, nil)
+func (c *Client) BulkResetTraffic(ctx context.Context, userIDs []int64) error {
+	return c.do(ctx, http.MethodPost, APIPathUsersBulk+BulkActionResetTraffic, UserIDsRequest{UserIDs: userIDs}, nil)
 }
 
 // BulkRevokeSubscription revokes subscriptions for the specified users.
-func (c *Client) BulkRevokeSubscription(ctx context.Context, uuids []string) error {
-	return c.do(ctx, http.MethodPost, APIPathUsersBulk+BulkActionRevokeSub, UUIDsRequest{UUIDs: uuids}, nil)
+func (c *Client) BulkRevokeSubscription(ctx context.Context, userIDs []int64) error {
+	return c.do(ctx, http.MethodPost, APIPathUsersBulk+BulkActionRevokeSub, UserIDsRequest{UserIDs: userIDs}, nil)
 }
 
-// BulkDeleteUsers deletes the specified users by UUID.
-func (c *Client) BulkDeleteUsers(ctx context.Context, uuids []string) error {
-	return c.do(ctx, http.MethodPost, APIPathUsersBulk+BulkActionDelete, UUIDsRequest{UUIDs: uuids}, nil)
+// BulkDeleteUsers deletes the specified users by id.
+func (c *Client) BulkDeleteUsers(ctx context.Context, userIDs []int64) error {
+	return c.do(ctx, http.MethodPost, APIPathUsersBulk+BulkActionDelete, UserIDsRequest{UserIDs: userIDs}, nil)
 }
 
 // BulkUpdateSquads updates squad assignments for the specified users.
