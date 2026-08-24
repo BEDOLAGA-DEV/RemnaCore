@@ -14,12 +14,15 @@ export default defineConfig({
   server: {
     port: 3001,
     proxy: {
+      // Caddy serves the admin vhost on :8081 and proxies /api and /readyz to
+      // remnacore:4000 there. Port 8080 is the Remnawave panel, and :4000 is
+      // not published to the host at all.
       "/api": {
-        target: "http://localhost:8080",
+        target: "http://localhost:8081",
         changeOrigin: true,
       },
       "/readyz": {
-        target: "http://localhost:4000",
+        target: "http://localhost:8081",
         changeOrigin: true,
       },
     },

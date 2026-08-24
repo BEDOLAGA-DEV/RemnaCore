@@ -14,8 +14,14 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
+      // Caddy serves the cabinet vhost on :80 and proxies /api and /sub to
+      // remnacore:4000 there. Port 8080 is the Remnawave panel, not this API.
       "/api": {
-        target: "http://localhost:8080",
+        target: "http://localhost",
+        changeOrigin: true,
+      },
+      "/sub": {
+        target: "http://localhost",
         changeOrigin: true,
       },
     },
