@@ -169,7 +169,7 @@ architecture tests. The human-readable event catalog is in
 
 | Layer | Technology |
 |---|---|
-| Backend | Go 1.26.4, chi v5, Uber Fx |
+| Backend | Go 1.27.0, chi v5, Uber Fx |
 | Authentication | ECDSA P-256 / JWT ES256, Argon2id |
 | Database | PostgreSQL 18, pgx, sqlc, ledger-tracked SQL migrations |
 | Tenant security | PostgreSQL RLS, scoped RBAC, least-privilege application role |

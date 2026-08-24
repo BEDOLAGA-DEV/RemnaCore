@@ -31,7 +31,7 @@ services:
       NATS_URL: "nats://nats:4222"
       JWT_PRIVATE_KEY_PATH: "${JWT_PRIVATE_KEY_PATH:-/etc/remnacore/keys/private.pem}"
       JWT_PUBLIC_KEY_PATH: "${JWT_PUBLIC_KEY_PATH:-/etc/remnacore/keys/public.pem}"
-      # Go 1.26 Green Tea GC tuning. Green Tea GC is enabled by default and
+      # Go Green Tea GC tuning. Green Tea GC is enabled by default and
       # provides 10-40% lower GC overhead for allocation-heavy workloads.
       # GOGC: target heap growth ratio (100 = double before GC). Lower = less
       #   memory, more CPU on GC. Try 50 for lower tail latency.

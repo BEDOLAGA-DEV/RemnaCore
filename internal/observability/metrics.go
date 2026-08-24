@@ -265,7 +265,7 @@ type Metrics struct {
 
 // registerRuntimeCollectors replaces the default Go and process collectors with
 // enhanced versions that expose runtime/metrics-based GC, memory, and scheduler
-// metrics. This is essential for observing Go 1.26 Green Tea GC behavior.
+// metrics. This is essential for observing Go Green Tea GC behavior.
 //
 // Exposed metric families include:
 //   - go_gc_duration_seconds (GC pause duration histogram)

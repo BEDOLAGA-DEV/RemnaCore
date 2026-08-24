@@ -20,9 +20,9 @@ import (
 )
 
 const (
-	GoVersion   = "1.26"
+	GoVersion   = "1.27"
 	GoImage     = "golang:" + GoVersion + "-alpine"
-	AlpineImage = "alpine:3.21"
+	AlpineImage = "alpine:3.24"
 
 	BinaryName   = "remnacore"
 	VpnctlBinary = "vpnctl"
