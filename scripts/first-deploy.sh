@@ -76,6 +76,11 @@ REMNAWAVE_WEBHOOK_SECRET=${REMNAWAVE_WEBHOOK_SECRET}
 REMNAWAVE_JWT_AUTH_SECRET=${REMNAWAVE_JWT_AUTH_SECRET}
 REMNAWAVE_JWT_API_TOKENS_SECRET=${REMNAWAVE_JWT_API_TOKENS_SECRET}
 
+# Remnawave 3 verifies stored password hashes and issued API tokens against
+# this one secret. On a fresh install any random value works; on an upgrade
+# from 2.x it MUST equal the previous JWT_AUTH_SECRET (see ensure_env below).
+REMNAWAVE_APP_SECRET=${REMNAWAVE_JWT_AUTH_SECRET}
+
 # ── Secrets ─────────────────────────────────────────────────────────────────
 SECURITY_ENCRYPTION_KEY=${SECURITY_ENCRYPTION_KEY}
 METRICS_USER=metrics
@@ -101,6 +106,11 @@ if [ -f .env ]; then
     ensure_env PLATFORM_APP_DB_USER "remnacore_app"
     ensure_env PLATFORM_APP_DB_PASSWORD "$(rand_secret 32)"
     ensure_env SECURITY_ENCRYPTION_KEY "$(openssl rand -base64 32)"
+    # Remnawave 3 replaced JWT_AUTH_SECRET / JWT_API_TOKENS_SECRET with a single
+    # APP_SECRET and verifies EXISTING password hashes and API tokens against
+    # it. Back-filling a random value here would lock every admin out of the
+    # panel with a 403, so an upgraded install inherits the old auth secret.
+    ensure_env REMNAWAVE_APP_SECRET "$(grep '^REMNAWAVE_JWT_AUTH_SECRET=' .env | head -1 | cut -d= -f2-)"
     ensure_env METRICS_USER "metrics"
     ensure_env METRICS_PASS "$(rand_secret 24)"
     ok "Required secrets present in .env"

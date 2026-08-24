@@ -142,10 +142,15 @@ services:
       APP_PORT: "3000"
       METRICS_PORT: "3001"
       DATABASE_URL: "postgres://${REMNAWAVE_DB_USER:-remnawave}:${REMNAWAVE_DB_PASSWORD:-secret}@remnawave-db:5432/${REMNAWAVE_DB_NAME:-remnawave}?sslmode=disable"
-      # v3 объединила раздельные JWT-секреты в один APP_SECRET.
+      # Remnawave 3 folded JWT_AUTH_SECRET and JWT_API_TOKENS_SECRET into a
+      # single APP_SECRET, and uses it when verifying stored password hashes
+      # and issued API tokens — not just for signing new ones.
+      #
+      # UPGRADING FROM 2.x: APP_SECRET must carry the value of the old
+      # JWT_AUTH_SECRET. Give it a fresh random value and every existing admin
+      # password stops verifying (the panel answers 403 "Invalid password")
+      # and previously issued API tokens are rejected.
       APP_SECRET: "${REMNAWAVE_APP_SECRET:?set REMNAWAVE_APP_SECRET in .env}"
-      JWT_AUTH_SECRET: "${REMNAWAVE_JWT_AUTH_SECRET:-changeme}"
-      JWT_API_TOKENS_SECRET: "${REMNAWAVE_JWT_API_TOKENS_SECRET:-changeme}"
       SUB_PUBLIC_DOMAIN: "${SUB_PUBLIC_DOMAIN:-https://sub.example.com}"
       PANEL_DOMAIN: "${PANEL_DOMAIN:-https://panel.example.com}"
       FRONT_END_DOMAIN: "${FRONT_END_DOMAIN:-https://panel.example.com}"
